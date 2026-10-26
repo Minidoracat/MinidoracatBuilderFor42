@@ -109,8 +109,10 @@ function Place.check(kind, spr, sq, player)
     end
     if p:has("IsMoveAble") then
         -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊…），伺服器能跑（bt-authority §4.2）。
-        -- 成功時回的不一定是 true（有工具時回工具、掛牆時回那面牆），照真假看。
+        -- 成功時回的不一定是 true（掛牆時回那面牆），照真假看。
         local props = ISMoveableSpriteProps.new(spr)
+        -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
+        props.placeTool = nil
         if not props:canPlaceMoveableInternal(player, sq, nil) then return false end
         return true, (props.isTableTop or props.isTable) and props.yOffsetCursor or 0
     end
