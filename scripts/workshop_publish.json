@@ -1,0 +1,23 @@
+{
+    "app_id": 108600,
+    "published_file_id": null,
+    "owner_steamid64": "76561198033176898",
+    "workshop_root": "MOD/MinidoracatBuilderFor42",
+    "mod_info": "MOD/MinidoracatBuilderFor42/Contents/mods/MinidoracatBuilderFor42/42/mod.info",
+    "preview_gif": "MOD/MinidoracatBuilderFor42/workshop/preview.gif",
+    "changelog": "STEAM_CHANGELOG.md",
+    "titles": {
+        "english": "[B42] Build Anything by Minidoracat",
+        "tchinese": "[B42] 自由建造 Build Anything by Minidoracat",
+        "schinese": "[B42] 自由建造 Build Anything by Minidoracat",
+        "japanese": "[B42] 自由建築 Build Anything by Minidoracat",
+        "koreana": "[B42] 자유 건축 Build Anything by Minidoracat"
+    },
+    "descriptions": {
+        "english": "STEAM_DESCRIPTION_EN.md",
+        "tchinese": "STEAM_DESCRIPTION.md",
+        "schinese": "STEAM_DESCRIPTION_CN.md",
+        "japanese": "STEAM_DESCRIPTION_JP.md",
+        "koreana": "STEAM_DESCRIPTION_KO.md"
+    }
+}
