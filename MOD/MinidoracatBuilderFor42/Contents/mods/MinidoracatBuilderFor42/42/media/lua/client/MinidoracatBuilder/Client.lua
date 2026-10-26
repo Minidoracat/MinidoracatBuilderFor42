@@ -23,7 +23,13 @@ local function walkTo(player, kind, spr, c)
         local north = Entry.north(kind, spr)
         luautils.walkAdjWall(player, sq, north, true) -- 原版 ISBuildingObject:walkTo 的牆寫法
     else
-        luautils.walkAdj(player, sq, true)
+        -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）
+        local cell, own = getCell(), {}
+        for _, d in ipairs(Entry.cells(spr)) do
+            local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
+            if o then own[#own + 1] = o end
+        end
+        luautils.walkAdj(player, sq, true, own)
     end
 end
 
