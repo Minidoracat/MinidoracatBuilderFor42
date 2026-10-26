@@ -83,10 +83,12 @@ local function decor(p, mt)
     return nil
 end
 
--- 加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
--- 每個牆、窗框、地板省 7 次 Java 呼叫；正式服 18 個 tiledef 的 MOD 組合逐格比對過結果不變（builder-e2e catalog-sp bench）
-local function objectExcluded(p)
-    return p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound") or p:has("CustomItem")
+-- 植物，以及加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
+-- 每個牆、窗框、地板省 12 次 Java 呼叫。正式服 147 個 MOD（離線讀 tiledef）與 E2E 載的 18 個 tiledef 組合
+-- （遊戲內和逐一照設計稿順序判斷的版本逐格比對）都沒有同時帶結構鍵與這些鍵的圖塊，結果不變。
+local function plantOrObject(p, mt)
+    return mt == "Vegitation" or p:has("tree") or p:has(vegitation) or p:has(canBeCut) or p:has("Bush")
+        or p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound") or p:has("CustomItem")
         or p:has("TV") or p:has("Microwave") or p:has("signal")
 end
 
@@ -97,10 +99,6 @@ function Rules.kindOf(name, p, t)
     if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
     local tc = TYPE[t]
     if tc == "tree" then return nil end
-    local mt = p:get("MoveType")
-    if mt == "Vegitation" or p:has("tree") or p:has(vegitation) or p:has(canBeCut) or p:has("Bush") then
-        return nil
-    end
     if tc == "stairs" then return "stairs" end -- 目錄只收湊得成三格的（Rules.stairsSet）
     if p:has("GarageDoor") then return "garage" end
     if p:has(doorN) or p:has(doorW) then return "door" end
@@ -117,7 +115,8 @@ function Rules.kindOf(name, p, t)
         return "wall"
     end
     if p:has(solidfloor) then return "floor" end -- 平屋頂地板也在這
-    if objectExcluded(p) then return nil end
+    local mt = p:get("MoveType")
+    if plantOrObject(p, mt) then return nil end
     if p:has("container") then return "container" end -- 冰箱帶燈，容器優先
     if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）

@@ -293,15 +293,15 @@ local function pass(step)
     for _ = 1, 200 do fire("OnTickEvenPaused") end
     return done
 end
--- 每次讀時鐘前進 1 ms：step 一次、迴圈開頭一次，第 128 格（第二次檢查）滿 2 ms
-check(pass(1) == 128, "2 ms 預算：每 tick 128 格就停")
+-- 每次讀時鐘前進 1 ms：step 一次、迴圈開頭一次，每 32 格看一次；第 64 格（第二次檢查）滿 2 ms
+check(pass(1) == 64, "2 ms 預算：每 tick 64 格就停")
 check(Catalog.state == "ready", "照預算分多個 tick 仍會做完")
 local many = {}
 for i = 1, 10000 do many[i] = sprite("filler_02_" .. i, 5000 + i, { flags = { "solidfloor" } }) end
 world(many)
 check(pass(0) == 4096, "時鐘不動：每 tick 最多 4096 格")
 world(list)
-check(pass(-1) == 64, "時鐘往回調：第一次檢查就停")
+check(pass(-1) == 32, "時鐘往回調：第一次檢查就停")
 
 print("情境七：出錯就停（不每 tick 重丟）")
 world({ sprite("walls_01_1", 301, { boom = true }) })

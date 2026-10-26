@@ -13,8 +13,9 @@ MinidoracatBuilder.Catalog = Catalog
 local Rules, Sources, Index = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources, MinidoracatBuilder.Index
 
 local LOG = "[MinidoracatBuilderFor42] "
--- 校準旋鈕：每 tick 最多 BUDGET_MS 毫秒、每 CHECK_EVERY 格看一次時鐘、每 tick 最多 CAP 格（牆鐘往回調也有上限）
-local BUDGET_MS, CHECK_EVERY, CAP = 2, 64, 4096
+-- 校準旋鈕：每 tick 最多 BUDGET_MS 毫秒、每 CHECK_EVERY 格看一次時鐘、每 tick 最多 CAP 格（牆鐘往回調也有上限）。
+-- 時鐘只到 1 ms，超過預算時最多再多跑一批：64 格一批（每格約 10 µs）實測有 4／341 個 tick 超過 3 ms，改 32 格。
+local BUDGET_MS, CHECK_EVERY, CAP = 2, 32, 4096
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite（UI 貼圖等）的預設 id（IsoSprite.java:129-130）
 
 Catalog.state = "idle" -- idle／running／ready／failed
