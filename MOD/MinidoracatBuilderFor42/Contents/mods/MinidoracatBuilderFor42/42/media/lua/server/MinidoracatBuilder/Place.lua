@@ -130,7 +130,9 @@ local function finish(sq, obj, index)
 end
 
 -- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
-local HEALTH = { wall = 450, windowFrame = 450, doorFrame = 450, fence = 300 }
+-- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
+-- 門開著也走不過去（IsoGridSquare.java:3804-3818）
+local HEALTH = { wall = 450, windowFrame = 450, fence = 300 }
 local function thumpable(c, kind, north)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
@@ -143,7 +145,7 @@ local function thumpable(c, kind, north)
     obj:setIsDoorFrame(kind == "doorFrame")
     obj:setCanBarricade(kind == "windowFrame")
     obj:setIsFloor(kind == "floor")
-    obj:setIsThumpable(HEALTH[kind] ~= nil) -- 殭屍只打牆、框、柵欄；家具照原版不打
+    obj:setIsThumpable(HEALTH[kind] ~= nil) -- 殭屍只打牆、窗框、柵欄；門框與家具照原版不打
     obj:setIsDismantable(true)
     local hp = HEALTH[kind] or 200
     obj:setMaxHealth(hp)
