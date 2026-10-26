@@ -745,6 +745,24 @@ local shSq = square(51, 50, 0, { owner = "someone" })
 ok, cmd, a = build(Q, 4, nil, { 51, 50, 0 })
 check(not ok and a.code == "SAFEHOUSE" and #shSq.objects == 0 and Q.inv:count("Base.Plank") == 4,
     "別人的安全屋：SAFEHOUSE、不放、不扣")
+local deniedAt = {}
+MinidoracatSafehouse = { v1 = { API_MAJOR = 1, CAPABILITIES = { denies = true }, BITS = { BUILD = 4, USE = 1 },
+    denies = function(_, x, y, _, bit, opts)
+        deniedAt[#deniedAt + 1] = { bit = bit, label = opts and opts.label }
+        return x == 51 and y == 49
+    end } }
+local permSq = square(51, 49, 0)
+ok, cmd, a = build(Q, 41, nil, { 51, 49, 0 })
+check(not ok and a.code == "PERM_DENIED" and #permSq.objects == 0 and Q.inv:count("Base.Plank") == 4
+    and deniedAt[1].bit == 4 and deniedAt[1].label == "MinidoracatBuilder:build",
+    "Safehouse MOD 的細分權限不准建造：PERM_DENIED、問的是 BUILD 位元、不放、不扣")
+MinidoracatSafehouse.v1.API_MAJOR = 2
+deniedAt = {}
+local Q2 = player({ id = 21, x = 50.5, y = 51.5 })
+Q2.inv:add(item("Base.Hammer", { HAMMER = true }))
+ok, cmd, a = build(Q2, 42, nil, { 51, 49, 0 })
+check(not ok and a.code == "NO_MATERIAL" and #deniedAt == 0, "Safehouse API 大版本不是 1：不呼叫 denies，照常往下判斷")
+MinidoracatSafehouse = nil
 ok, cmd = build(Q, 5)
 local w = wallSq.objects[1]
 check(ok and cmd == "placed" and w and w.mats["Base.Plank"] == "4" and w.mats["Base.Nails"] == "6",
