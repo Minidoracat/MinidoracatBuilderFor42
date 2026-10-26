@@ -31,14 +31,42 @@ local function hasSprite(sq, name, farming)
     return false
 end
 
--- 這條格邊已經有東西（牆、牆角、門框、窗框、柵欄、門、窗）
+-- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
+-- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）
 local function edgeTaken(sq, north)
     if north then
-        return sq:has(F.WallN) or sq:has(F.WallNTrans) or sq:has(F.WallNW) or sq:has(F.DoorWallN) or sq:has(F.WindowN)
-            or sq:has(F.HoppableN) or sq:has(F.TallHoppableN) or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
+        return sq:has(F.WallN) or sq:has(F.WallNTrans) or sq:has(F.WallNW) or sq:has(F.collideN)
+            or sq:has(F.DoorWallN) or sq:has("DoorWallNTrans") or sq:has(F.WindowN) or sq:has(F.HoppableN)
+            or sq:has(F.TallHoppableN) or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
     end
-    return sq:has(F.WallW) or sq:has(F.WallWTrans) or sq:has(F.WallNW) or sq:has(F.DoorWallW) or sq:has(F.WindowW)
-        or sq:has(F.HoppableW) or sq:has(F.TallHoppableW) or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+    return sq:has(F.WallW) or sq:has(F.WallWTrans) or sq:has(F.WallNW) or sq:has(F.collideW)
+        or sq:has(F.DoorWallW) or sq:has("DoorWallWTrans") or sq:has(F.WindowW) or sq:has(F.HoppableW)
+        or sq:has(F.TallHoppableW) or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+end
+
+local function doorFrameAt(sq, north)
+    if north then return sq:has(F.DoorWallN) or sq:has("DoorWallNTrans") end
+    return sq:has(F.DoorWallW) or sq:has("DoorWallWTrans")
+end
+
+-- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:388-399）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
+local function splitsGrid(sq, n, w)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local spr = objects:get(i):getSprite()
+        local grid = spr and spr:getSpriteGrid()
+        if grid and ((n and grid:getSpriteGridPosY(spr) > 0) or (w and grid:getSpriteGridPosX(spr) > 0)) then
+            return true
+        end
+    end
+    return false
+end
+
+-- IsoDoor 會把同一張表 +2 號當開門的圖（開著的那張則 −2，IsoDoor.java:856-868）；那一號不存在時引擎會建一個空 sprite
+local function doorPairExists(spr)
+    local tileset, num = spr:getName():match("^(.*)_(%d+)$")
+    local d = spr:getProperties():has(F.open) and -2 or 2
+    return tileset ~= nil and Entry.sprite(tileset .. "_" .. (tonumber(num) + d)) ~= nil
 end
 
 local function floorUnder(sq)
@@ -49,7 +77,8 @@ local function vegetation(sq)
     return sq:has(F.canBeCut) or sq:has("tree")
 end
 
--- 能不能在 sq 放 spr（種類 kind）。player 只給原版移動物件的判斷用（它順便查擺放技能與工具，照原版搬家具）。
+-- 能不能在 sq 放 spr（種類 kind）。回 ok 與桌面高度（放在桌上的物件要墊高，原版搬家具算的）。
+-- player 只給原版移動物件的判斷用（它順便查擺放技能與工具，照原版搬家具）。
 function Place.check(kind, spr, sq, player)
     if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
     local p = spr:getProperties()
@@ -61,9 +90,9 @@ function Place.check(kind, spr, sq, player)
         if sq:HasStairs() then return false end
         local n, w = Entry.edges(kind, spr)
         if kind == "door" then
-            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門）
-            return (n and sq:has(F.DoorWallN) and sq:getDoor(NS) == nil)
-                or (w and sq:has(F.DoorWallW) and sq:getDoor(EW) == nil)
+            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在
+            return doorPairExists(spr) and ((n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
+                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil))
         end
         if kind == "window" then
             return (n and sq:has(F.WindowN) and sq:getWindow(NS) == nil)
@@ -71,14 +100,24 @@ function Place.check(kind, spr, sq, player)
         end
         if not floorUnder(sq) and not sq:hasFloor(n) then return false end -- 樓上的牆要踩在地板上（ISWoodenWall:isValid）
         if not n and not w then return not sq:has(F.WallSE) end           -- 柱子
-        return not ((n and edgeTaken(sq, true)) or (w and edgeTaken(sq, false)))
+        return not ((n and edgeTaken(sq, true)) or (w and edgeTaken(sq, false)) or splitsGrid(sq, n, w))
+    end
+    -- 會擋路的東西：格上有人、殭屍或動物，或會擋到樓梯時不放（原版 isFree(true)、stairIsBlockingPlacement）
+    if (p:has(F.solid) or p:has(F.solidtrans))
+        and (not sq:getMovingObjects():isEmpty() or buildUtil.stairIsBlockingPlacement(sq, true)) then
+        return false
     end
     if p:has("IsMoveAble") then
-        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊…），伺服器能跑（bt-authority §4.2）
-        return ISMoveableSpriteProps.new(spr):canPlaceMoveableInternal(player, sq, nil) == true
+        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊…），伺服器能跑（bt-authority §4.2）。
+        -- 成功時回的不一定是 true（有工具時回工具、掛牆時回那面牆），照真假看。
+        local props = ISMoveableSpriteProps.new(spr)
+        if not props:canPlaceMoveableInternal(player, sq, nil) then return false end
+        return true, (props.isTableTop or props.isTable) and props.yOffsetCursor or 0
     end
     if not floorUnder(sq) or vegetation(sq) then return false end
-    if kind == "solid" then return not (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved)) end
+    if kind == "solid" then
+        return not (sq:isSolid() or sq:isSolidTrans()) and not (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved))
+    end
     return true
 end
 
@@ -89,9 +128,10 @@ local function finish(sq, obj, index)
     obj:transmitCompleteItemToClients()
 end
 
--- 建造者紀錄與退料：modData 客戶端改得到（ObjectModDataPacket），所以退料只寫 Java 欄位 buildMaterials（原版拆解讀它）
+-- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
 local HEALTH = { wall = 450, windowFrame = 450, doorFrame = 450, fence = 300 }
-local function thumpable(sq, spr, kind, north, cost)
+local function thumpable(c, kind, north)
+    local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
     -- 屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
@@ -107,14 +147,16 @@ local function thumpable(sq, spr, kind, north, cost)
     local hp = HEALTH[kind] or 200
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
+    if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
     local mats = obj:getBuildMaterials()
-    for ft, n in pairs(cost.items) do mats[ft] = tostring(n) end
-    obj:getModData().builderEntry = spr:getName() -- 只給畫面顯示，不拿來授權或計價
+    for ft, n in pairs(c.cost.items) do mats[ft] = tostring(n) end
+    obj:getModData().builderEntry = spr:getName()
     return obj
 end
 
 -- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
--- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。
+-- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
+-- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。
 local function removeForFloor(sq)
     local objects, rug = sq:getObjects(), nil
     for i = objects:size() - 1, 0, -1 do
@@ -125,7 +167,7 @@ local function removeForFloor(sq)
             rug = o
         elseif p and (p:has(F.canBeRemoved) or p:has(F.solidfloor) or p:has(F.noStart) or p:has(F.taintedWater)
             or (p:has(F.vegitation) and o:getType() ~= T.tree)) or tex:find("blends_grassoverlays", 1, true) then
-            sq:transmitRemoveItemFromSquare(o)
+            sq:transmitRemoveItemFromSquare(o, false)
         end
     end
     return rug and objects:indexOf(rug) or nil
@@ -153,13 +195,6 @@ local function placeFloor(sq, obj)
     if isServer() then sendServerCommand("erosion", "disableForSquare", { x = x, y = y, z = z }) end
 end
 
--- IsoDoor 會把同一張表 +2 號當開門的圖（開著的那張則 −2，IsoDoor.java:856-868）；那一號不存在時引擎會建一個空 sprite
-local function doorPairExists(spr)
-    local tileset, num = spr:getName():match("^(.*)_(%d+)$")
-    local d = spr:getProperties():has(F.open) and -2 or 2
-    return tileset ~= nil and Entry.sprite(tileset .. "_" .. (tonumber(num) + d)) ~= nil
-end
-
 local function placeWindow(sq, obj, north)
     local index = -1
     local objects = sq:getObjects()
@@ -170,29 +205,32 @@ local function placeWindow(sq, obj, north)
     finish(sq, obj, index)
 end
 
--- 依序放好 cells 的每一格（{ sq, spr, cost }），放好的物件記進 placed（失敗時拆回用）。丟錯由呼叫端 pcall 接。
+-- 依序放好 cells 的每一格（{ sq, spr, cost, yoff }）。物件一建好就記進 placed（之後出錯時拆回用；還沒加進格子的
+-- 拆回時會略過）。丟錯由呼叫端 pcall 接。
 function Place.build(kind, cells, placed)
     for _, c in ipairs(cells) do
         local sq, spr = c.sq, c.spr
         local north = Entry.north(kind, spr)
         local obj
         if kind == "door" then
-            if not doorPairExists(spr) then error("door sprite has no open/closed pair: " .. spr:getName()) end
             obj = IsoDoor.new(getCell(), sq, spr:getName(), north)
+            placed[#placed + 1] = obj
             finish(sq, obj)
         elseif kind == "window" then
             obj = IsoWindow.new(getCell(), sq, spr, north)
             obj:setIsLocked(false)
+            placed[#placed + 1] = obj
             placeWindow(sq, obj, north)
         else
-            obj = thumpable(sq, spr, kind, north, c.cost)
+            obj = thumpable(c, kind, north)
+            placed[#placed + 1] = obj
             if kind == "floor" then placeFloor(sq, obj) else finish(sq, obj) end
         end
-        placed[#placed + 1] = obj
     end
 end
 
 -- 拆回這次已放的物件（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
+-- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。
 function Place.undo(placed)
     for i = #placed, 1, -1 do
         local obj = placed[i]

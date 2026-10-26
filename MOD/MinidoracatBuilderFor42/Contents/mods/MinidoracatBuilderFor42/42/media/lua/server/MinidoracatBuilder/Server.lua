@@ -1,7 +1,6 @@
 -- 伺服器（單機在本機跑同一套）：開服建「tiledef 檔號 → MOD」表；建造的權威流程（bt-authority §9、設計稿「伺服器權威」）。
--- MP 的 timed action 只在伺服器跑 complete()，而且照客戶端送來的 new() 參數重建，連 character 都由客戶端指定
--- （NetTimedAction.java:141-170）。所以身分從 OnClientCommand 取（伺服器依連線反查）：客戶端先送 intent
--- （項目、朝向、各項的原點座標），動作只帶 nonce 與第幾項；complete() 只照 intent 做，sprite 一律由伺服器重算。
+-- 身分只認 OnClientCommand 的連線玩家：客戶端先送 intent（項目、朝向、各項的原點座標），動作只帶 nonce 與第幾項。
+-- complete() 不信任動作帶來的參數，只照這位玩家自己的 intent 做，sprite、種類、佔地、成本一律由伺服器重算。
 if isClient() then return end
 require "MinidoracatBuilder/Sources"
 require "MinidoracatBuilder/Entry"
@@ -20,7 +19,8 @@ local INTENT_TTL_MS = 60000           -- 每做完一項再延長：拖曳 32 �
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
--- Kahlua 沒有弱表，表裡的 player 物件靠新請求取代或過期清掉（pitfalls：Kahlua 沒有弱表）。
+local EARLY_TICKS = 25                -- 請求與動作走不同通道，動作先到時多等 0.5 秒再判斷
+-- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
 local rate, woken, quietUntil = {}, {}, {}
 
@@ -28,6 +28,11 @@ local function now() return getTimestampMs() end
 local function keyOf(player)
     if isServer() then return player:getOnlineID() end
     return "sp" .. player:getPlayerNum()
+end
+
+-- 帳號名稱可以有空白、控制字元與方括號，印進稽核行前換掉（pitfalls：寫入 username 前清理）
+local function who(player)
+    return (tostring(player:getUsername()):gsub("[%c%s%[%]]", "_"))
 end
 
 -- 伺服器 → 一位玩家。單機沒有通道（sendServerCommand 在單機不送），直接交給客戶端程式。
@@ -40,8 +45,7 @@ function Server.send(player, cmd, args)
 end
 
 function Server.refuse(player, n, i, code, extra)
-    print(LOG .. "REFUSE user=" .. tostring(player:getUsername()) .. " n=" .. tostring(n) .. " i=" .. tostring(i)
-        .. " code=" .. code)
+    print(LOG .. "REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " i=" .. tostring(i) .. " code=" .. code)
     local args = { n = n, i = i, code = code }
     for k, v in pairs(extra or {}) do args[k] = v end
     Server.send(player, "refused", args)
@@ -75,17 +79,16 @@ local function int(v, lo, hi)
 end
 
 -- 區域系統第一次看到一個 chunk 時會讀周圍 7×7 chunk 的快照，同一批晚到的牆會漏存（pitfalls「伺服器端蓋自建建築，
--- 要先讓區域系統發現那一帶」）。收到請求就先對錨點那一帶有地板的一格重推一次，回那一帶的喚醒時間。
--- ponytail：表只會長（每 24×24 格一筆）；玩家只能在自己附近蓋，量不大。
+-- 要先讓區域系統發現那一帶」）。收到請求就對錨點那一帶有地板的一格重推一次，回那一帶的喚醒時間；沒推成（格子沒載入、
+-- 沒地板）不記，下次再試。ponytail：表每 24×24 格一筆、不清；只記玩家附近的錨點（intent 先查距離），量跟著蓋過的範圍走。
 local function wake(x, y)
     local k = math.floor(x / WAKE_SPAN) .. "," .. math.floor(y / WAKE_SPAN)
     local t = woken[k]
     if t then return t end
     local sq = getCell():getGridSquare(x, y, 0)
-    if sq and sq:getFloor() then
-        IsoRegions.setPreviousFlags(nil)
-        IsoRegions.squareChanged(sq)
-    end
+    if not (sq and sq:getFloor()) then return 0 end
+    IsoRegions.setPreviousFlags(nil)
+    IsoRegions.squareChanged(sq)
     t = now()
     woken[k] = t
     return t
@@ -101,13 +104,24 @@ local function rateOk(k)
     return r.n <= RATE_MAX
 end
 
+-- 清掉過期的請求（先收集再刪，不在 pairs 途中改表）
+local function sweep(t)
+    local old = {}
+    for k, it in pairs(Server.intents) do
+        if it.exp < t then old[#old + 1] = k end
+    end
+    for _, k in ipairs(old) do Server.intents[k] = nil end
+end
+
 -- 客戶端請求：{ n = nonce, e = 項目 ID, d = 朝向 0..4, c = { x1, y1, z1, x2, ... }（各項原點，攤平）, v = Entry.digest() }
+-- 收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
 function Server.intent(player, args)
     if type(args) ~= "table" then return end
     local n = int(args.n, 1, 2147483647)
     if not n then return end -- 沒有 nonce 就無從回覆
     local k = keyOf(player)
     if not rateOk(k) then return end -- 洗包不回、不記 log
+    sweep(now())
     local why = notAllowed(player)
     if why then return Server.refuse(player, n, 0, why) end
     if args.v ~= Entry.digest() then return Server.refuse(player, n, 0, "STALE") end
@@ -115,12 +129,18 @@ function Server.intent(player, args)
     local c = args.c
     if not d or type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
+    -- 拖曳一排時玩家沿路走到每一項旁邊，錨點離玩家不會超過「距離上限＋一次的項數」
+    local near = setting("MaxDistance", 3) + maxItems
+    local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local anchors = {}
     for i = 1, maxItems * 3 + 1, 3 do
         if c[i] == nil then break end
         local x, y, z = int(c[i], 0, 1000000), int(c[i + 1], 0, 1000000), int(c[i + 2], -32, 31)
         if not (x and y and z) or #anchors >= maxItems or not getWorld():isValidSquare(x, y, z) then
             return Server.refuse(player, n, 0, "BAD_REQUEST")
+        end
+        if math.abs(x + 0.5 - px) > near or math.abs(y + 0.5 - py) > near or math.abs(z - pz) > 1 then
+            return Server.refuse(player, n, 0, "TOO_FAR", { x = x, y = y, z = z })
         end
         anchors[#anchors + 1] = { x, y, z }
     end
@@ -130,38 +150,57 @@ function Server.intent(player, args)
     if not Entry.face(entry, d) then return Server.refuse(player, n, 0, "BAD_FACE") end
     Server.intents[k] = { player = player, n = n, e = entry.name, d = d, c = anchors, done = {}, left = #anchors,
         exp = now() + INTENT_TTL_MS, wake = wake(anchors[1][1], anchors[1][2]) }
+    return true
 end
 
--- 這位玩家、這個 nonce、還沒做過的第 i 項；不符回 nil。比對 player 物件：偽造的 character 指向別人時，
--- 那個人的請求裡不會有這個 nonce（bt-authority §1.4）。
+-- 這位玩家（連線對應的角色）、這個 nonce、還沒做過的第 i 項；不符回 nil。過期的順手刪掉。
 local function intentFor(player, n, i)
-    local it = Server.intents[keyOf(player)]
-    if not it or it.n ~= n or it.player ~= player or it.exp < now() or not it.c[i] or it.done[i] then return nil end
+    local k = keyOf(player)
+    local it = Server.intents[k]
+    if not it then return nil end
+    if it.exp < now() then
+        Server.intents[k] = nil
+        return nil
+    end
+    if it.n ~= n or it.player ~= player or not it.c[i] or it.done[i] then return nil end
     return it
 end
 
--- 動作的施工時間（伺服器在 serverStart 前問一次）。找不到請求回 1，讓它馬上進 complete() 被拒。
+-- 動作的施工時間（伺服器在 serverStart 前問一次）。找不到請求時短等一下，之後在 complete() 照實判斷。
+-- 剛喚醒區域系統的那一帶，連即時動作也要等滿 WAKE_MS。
 function Server.duration(player, n, i)
     local it = intentFor(player, n, i)
-    if not it then return 1 end
-    if player:isTimedActionInstant() then return 1 end
-    local entry = Entry.resolve(it.e)
-    local ticks = Entry.duration(entry and entry.kind, player)
+    if not it then return EARLY_TICKS end
+    local ticks = 1
+    if not player:isTimedActionInstant() then
+        local entry = Entry.resolve(it.e)
+        ticks = Entry.duration(entry and entry.kind, player)
+    end
     local waitMs = it.wake + WAKE_MS - now()
     if waitMs > 0 then ticks = math.max(ticks, math.ceil(waitMs / 20)) end -- 伺服器每 tick 20 ms（NetTimedAction.java:77）
     return ticks
 end
 
--- 玩家到佔地最近一格的水平距離（格中心），與樓層差
+-- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格
 local function reach(player, cells)
     local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
-    local best, dz = math.huge, math.huge
+    local best, dz, near = math.huge, math.huge, nil
     for _, c in ipairs(cells) do
         local dx, dy = c.x + 0.5 - px, c.y + 0.5 - py
         local dist = math.sqrt(dx * dx + dy * dy)
-        if dist < best then best, dz = dist, math.abs(c.z - pz) end
+        if dist < best then best, dz, near = dist, math.abs(c.z - pz), c end
     end
-    return best, dz
+    return best, dz, near
+end
+
+-- 同一層隔著牆或關著的門放不到（LosUtil.lineClear；照 pitfalls「伺服器驗證要查可及性」）。
+-- 格邊種類本來就貼著那條邊、從哪一側都能蓋，不查。
+local function walledOff(player, c)
+    local pz = math.floor(player:getZ())
+    if c.z ~= pz then return false end
+    local r = tostring(LosUtil.lineClear(getCell(), math.floor(player:getX()), math.floor(player:getY()), pz,
+        c.x, c.y, c.z, false))
+    return r == "Blocked" or r == "ClearThroughClosedDoor"
 end
 
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，拒絕時它自己推通知）
@@ -185,16 +224,17 @@ local function costLine(items)
     return table.concat(parts, ",")
 end
 
--- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝客戶端收到 Reject 並清掉後面的動作，原因另外推。
--- 順序：身分 → 目錄重算 → 補格子 → 距離 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
+-- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
+-- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
+-- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
 function Server.complete(player, n, i)
     local it = intentFor(player, n, i)
     if not it then
-        -- 不推給 player：偽造時它是別人，推了等於讓人灌別人的訊息。log 每人每 5 秒最多一行（動作封包可以一直送）。
+        -- 沒有對應請求的動作不回覆，只記 log：每人每 5 秒最多一行（動作封包可以一直送）
         local k, t = keyOf(player), now()
         if (quietUntil[k] or 0) <= t then
             quietUntil[k] = t + RATE_WINDOW_MS
-            print(LOG .. "REFUSE user=" .. tostring(player:getUsername()) .. " n=" .. tostring(n) .. " code=NO_INTENT")
+            print(LOG .. "REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " code=NO_INTENT")
         end
         return false
     end
@@ -205,25 +245,35 @@ function Server.complete(player, n, i)
     local spr = Entry.face(entry, it.d)
     if not spr then return Server.refuse(player, n, i, "BAD_FACE") end
     local a = it.c[i]
-    local cells = {}
-    for _, d in ipairs(Entry.cells(spr)) do
-        local x, y, z = a[1] + d[1], a[2] + d[2], a[3] + d[3]
-        local sq = Place.square(x, y, z)
-        if not sq then return Server.refuse(player, n, i, "NOT_LOADED", { x = x, y = y, z = z }) end
-        cells[#cells + 1] = { x = x, y = y, z = z, sq = sq, spr = d[4] }
+    local cells, sprites = {}, {}
+    for j, d in ipairs(Entry.cells(spr)) do
+        cells[j] = { x = a[1] + d[1], y = a[2] + d[2], z = a[3] + d[3], spr = d[4] }
+        sprites[j] = d[4]
     end
-    local dist, dz = reach(player, cells)
+    -- 先用座標驗距離，通過才補格子（補格子會改世界）
+    local dist, dz, nearest = reach(player, cells)
     if dist > setting("MaxDistance", 3) or dz > 1 then
         return Server.refuse(player, n, i, "TOO_FAR", { x = a[1], y = a[2], z = a[3] })
+    end
+    if not Entry.EDGE[entry.kind] and walledOff(player, nearest) then
+        return Server.refuse(player, n, i, "UNREACHABLE", { x = nearest.x, y = nearest.y, z = nearest.z })
+    end
+    for _, c in ipairs(cells) do
+        c.sq = Place.square(c.x, c.y, c.z)
+        if not c.sq then return Server.refuse(player, n, i, "NOT_LOADED", { x = c.x, y = c.y, z = c.z }) end
     end
     for _, c in ipairs(cells) do
         local sh = safehouseCode(player, c)
         if sh then return Server.refuse(player, n, i, sh, { x = c.x, y = c.y, z = c.z }) end
     end
     for j, c in ipairs(cells) do
-        if not Place.check(entry.kind, c.spr, c.sq, player) then
-            return Server.refuse(player, n, i, "BLOCKED", { x = c.x, y = c.y, z = c.z })
+        local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player)
+        if not ok then
+            print(LOG .. "check failed e=" .. it.e .. ": " .. tostring(fine))
+            return Server.refuse(player, n, i, "INTERNAL")
         end
+        if not fine then return Server.refuse(player, n, i, "BLOCKED", { x = c.x, y = c.y, z = c.z }) end
+        c.yoff = yoff
         for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
             local o = cells[k2]
             if o.z == c.z and math.abs(o.x - c.x) + math.abs(o.y - c.y) == 1 and c.sq:isSomethingTo(o.sq) then
@@ -231,15 +281,11 @@ function Server.complete(player, n, i)
             end
         end
     end
-    local mult = setting("CostMultiplier", 1)
-    local costs = {}
-    for _, c in ipairs(cells) do
-        c.cost = Cost.of(entry.kind, c.spr, mult)
-        costs[#costs + 1] = c.cost
-    end
+    local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
+    for j, c in ipairs(cells) do c.cost = costs[j] end
     local total = Cost.sum(costs)
     local plan
-    if not player:isBuildCheat() then -- 伺服器上可信：ExtraInfo 封包要 UseBuildCheat 能力（ExtraInfoPacket.java:274-277）
+    if not player:isBuildCheat() then -- 伺服器上的這個旗標只有有 UseBuildCheat 能力的人開得了（ExtraInfoPacket.java:274-277）
         local missing, tools
         plan, missing, tools = Materials.plan(player, total)
         if not plan then
@@ -255,7 +301,7 @@ function Server.complete(player, n, i)
     end
     if plan then Materials.consume(player, plan) end
     Place.settle(cells)
-    print(LOG .. "BUILD user=" .. tostring(player:getUsername()) .. " id=" .. tostring(player:getOnlineID())
+    print(LOG .. "BUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. " kind=" .. entry.kind .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
         .. " cost=" .. (plan and costLine(total.items) or "free"))
     it.done[i] = true

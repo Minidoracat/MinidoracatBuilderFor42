@@ -1,7 +1,6 @@
 require "TimedActions/ISBaseTimedAction"
 
--- 蓋一項（建造請求裡的第 i 項）。MP 的伺服器照 new() 的參數重建這個動作（NetTimedAction.java:36-55），
--- 所以參數只放 character、nonce、第幾項；項目、朝向、座標都在伺服器收到的請求裡（Server.intent），
+-- 蓋一項（建造請求裡的第 i 項）。參數只放 nonce 與第幾項；項目、朝向、座標都在伺服器收到的請求裡（Server.intent），
 -- complete() 只在伺服器跑（單機在本機），交給 MinidoracatBuilder.Server.complete。
 -- 這個檔頂層不 require server 的檔（客戶端載不到）：用到時才從全域表找。
 MinidoracatBuilderPlaceAction = ISBaseTimedAction:derive("MinidoracatBuilderPlaceAction")
@@ -50,11 +49,12 @@ function MinidoracatBuilderPlaceAction:complete()
     return S ~= nil and S.complete(self.character, self.n, self.i) == true
 end
 
--- 伺服器（與單機）照請求算；MP 客戶端照自己送出的項目算，只給進度條用，完成時間由伺服器決定
+-- 伺服器（與單機）照請求算（即時動作也要等區域系統喚醒）；MP 客戶端照自己送出的項目算，只給進度條用，
+-- 完成時間由伺服器決定
 function MinidoracatBuilderPlaceAction:getDuration()
-    if self.character:isTimedActionInstant() then return 1 end
     local S = MinidoracatBuilder and MinidoracatBuilder.Server
     if S then return S.duration(self.character, self.n, self.i) end
+    if self.character:isTimedActionInstant() then return 1 end
     local b = pending(self)
     return MinidoracatBuilder.Entry.duration(b and b.kind, self.character)
 end

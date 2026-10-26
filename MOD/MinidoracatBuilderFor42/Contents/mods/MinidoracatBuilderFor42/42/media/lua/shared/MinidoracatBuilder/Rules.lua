@@ -101,7 +101,11 @@ function Rules.kindOf(name, p, t)
     if tc == "tree" then return nil end
     if tc == "stairs" then return "stairs" end -- 目錄只收湊得成三格的（Rules.stairsSet）
     if p:has("GarageDoor") then return "garage" end
-    if p:has(doorN) or p:has(doorW) then return "door" end
+    if p:has(doorN) or p:has(doorW) then
+        -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:789-796），單片放會開錯圖、MP 不同步；之後和車庫門一起做
+        if p:has("DoubleDoor") then return nil end
+        return "door"
+    end
     if p:has(windowN) or p:has(windowW) then return "window" end -- 窗一定也帶 WindowN/W，所以先判斷
     if p:has("WindowN") or p:has("WindowW") then return "windowFrame" end
     if p:has("DoorWallN") or p:has("DoorWallW") or p:has("DoorWallNTrans") or p:has("DoorWallWTrans") then

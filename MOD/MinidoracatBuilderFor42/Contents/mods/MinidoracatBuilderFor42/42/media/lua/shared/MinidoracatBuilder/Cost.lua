@@ -93,7 +93,12 @@ function Cost.of(kind, spr, multiplier)
     local p = spr:getProperties()
     local fam = family(kind, p)
     local items = {}
-    if not scrapInto(p, items) then
+    local m = multiplier or 1
+    if scrapInto(p, items) then
+        -- 有拆解材質的圖塊，原版拆解照圖塊材質給，不讀 buildMaterials（ISMoveableSpriteProps.lua:3690-3720,3318-3330）。
+        -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
+        if m < 1 then m = 1 end
+    else
         local base
         if fam == "ground" then
             base = { [GROUND[p:get("MaterialType")]] = 1 }
@@ -108,13 +113,14 @@ function Cost.of(kind, spr, multiplier)
         end
         copyInto(base, items)
     end
-    local m = multiplier or 1
     local out = {}
     for ft, n in pairs(items) do
         local v = math.ceil(n * m - 1e-9)
         if v > 0 then out[ft] = v end
     end
-    return { items = out, tools = TOOLS[fam] }
+    local tools = {}
+    for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
+    return { items = out, tools = tools }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
@@ -130,6 +136,28 @@ function Cost.sum(list)
         end
     end
     return { items = items, tools = tools }
+end
+
+-- 一個項目各格的成本（sprites＝各格 sprite，依 Entry.cells 的順序）。原版拆多格物件時每一片都照被點的那片材質給
+-- （ISMoveableSpriteProps.lua:3481-3495），各片材質不一定相同（原版有 4 組，例：病床椅），所以多格的每一格都收
+-- 各格的最大值，拆哪一片都不會比付的多。
+function Cost.forCells(kind, sprites, multiplier)
+    local each = {}
+    for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
+    if #each < 2 then return each end
+    local top = {}
+    for _, c in ipairs(each) do
+        for ft, n in pairs(c.items) do
+            if n > (top[ft] or 0) then top[ft] = n end
+        end
+    end
+    local tools = Cost.sum(each).tools
+    for i = 1, #each do
+        local items = {}
+        for ft, n in pairs(top) do items[ft] = n end
+        each[i] = { items = items, tools = tools }
+    end
+    return each
 end
 
 return Cost

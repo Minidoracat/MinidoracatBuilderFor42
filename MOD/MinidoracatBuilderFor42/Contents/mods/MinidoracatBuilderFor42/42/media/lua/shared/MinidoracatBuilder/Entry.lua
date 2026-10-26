@@ -124,11 +124,14 @@ function Entry.cells(spr)
 end
 
 -- 佔格邊的種類放在哪條邊：回 n（北邊）、w（西邊）。牆角（WallNW）兩條都佔，柱子（WallSE）都不佔。
+-- 透明牆角與透明門框只有字串鍵、沒有同名旗標（IsoWorld.java:932-965），字串鍵用 has(String) 查。
 local F = IsoFlagType
-local NORTH = { wall = { F.WallN, F.WallNTrans, F.WallNW }, windowFrame = { F.WindowN }, doorFrame = { F.DoorWallN },
-    fence = { F.HoppableN, F.TallHoppableN }, door = { F.doorN }, window = { F.windowN } }
-local WEST = { wall = { F.WallW, F.WallWTrans, F.WallNW }, windowFrame = { F.WindowW }, doorFrame = { F.DoorWallW },
-    fence = { F.HoppableW, F.TallHoppableW }, door = { F.doorW }, window = { F.windowW } }
+local NORTH = { wall = { F.WallN, F.WallNTrans, F.WallNW, "WallNWTrans" }, windowFrame = { F.WindowN },
+    doorFrame = { F.DoorWallN, "DoorWallNTrans" }, fence = { F.HoppableN, F.TallHoppableN }, door = { F.doorN },
+    window = { F.windowN } }
+local WEST = { wall = { F.WallW, F.WallWTrans, F.WallNW, "WallNWTrans" }, windowFrame = { F.WindowW },
+    doorFrame = { F.DoorWallW, "DoorWallWTrans" }, fence = { F.HoppableW, F.TallHoppableW }, door = { F.doorW },
+    window = { F.windowW } }
 local function anyFlag(p, list)
     for i = 1, #list do
         if p:has(list[i]) then return true end

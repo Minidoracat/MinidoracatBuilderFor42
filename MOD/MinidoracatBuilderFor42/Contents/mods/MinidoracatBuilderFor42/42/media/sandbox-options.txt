@@ -22,7 +22,7 @@ option MinidoracatBuilder.MaxDistance
 option MinidoracatBuilder.MaxCellsPerDrag
 {type = integer, min = 1, max = 64, default = 32, page = MinidoracatBuilder, translation = MinidoracatBuilder_MaxCellsPerDrag,}
 
-/* 材料倍率：0 免材料（工具照樣要），數量無條件進位 */
+/* 材料倍率：0 免材料（工具照樣要），數量無條件進位；會依自身材質拆出材料的物件低於 1 時照 1 收 */
 option MinidoracatBuilder.CostMultiplier
 {type = double, min = 0, max = 10, default = 1.0, page = MinidoracatBuilder, translation = MinidoracatBuilder_CostMultiplier,}
 

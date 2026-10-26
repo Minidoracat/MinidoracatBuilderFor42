@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Most items per drag",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 to 64. How many items one build request can place, for example when dragging a line of walls.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Material cost multiplier",
-    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 to 10. Multiplies every material amount, rounded up. 0 means no materials; tools are still needed. Admins with the build cheat on never pay.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 to 10. Multiplies every material amount, rounded up. 0 means no materials; tools are still needed. Objects that dismantle into materials by their own material type (most furniture) never go below 1, so dismantling never gives back more than was paid. Admins with the build cheat on never pay.",
     "Sandbox_MinidoracatBuilder_DisabledSources": "Disabled sources (mod IDs)",
     "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "Mod IDs separated by semicolons. Tiles from these mods cannot be built. By default the Minidoracat family mods and mods whose tiles belong to their own build menus are off.",
     "Sandbox_MinidoracatBuilder_DisabledTilesets": "Disabled tilesets",
