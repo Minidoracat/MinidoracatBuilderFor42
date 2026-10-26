@@ -1,11 +1,29 @@
 -- 圖塊分類規則：客戶端目錄與伺服器重算共用這一份。
 -- 只看 tile 屬性與型別，不看貼圖（專用伺服器的 sprite 沒有貼圖，hasNoTextures() 一律 true）。
 -- 順序照設計稿 Rules.classify（bt-catalog §3.2、§6；bt-newkinds §1.1）：排除先跑，第一條成立的規則決定種類。
+-- 目錄每個有貼圖的 sprite 都會跑一次（約 5.7 萬次），所以盡量少呼叫 Java：
+--   型別查表一次（不逐一比較：兩個不同的 Java 物件比 == 要查兩次 metatable，KahluaThread.java:545-560）、
+--   列舉值與 MoveType 各取一次。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Rules = MinidoracatBuilder.Rules or {}
 MinidoracatBuilder.Rules = Rules
 
 local T, F = IsoObjectType, IsoFlagType
+local EntityScript, vegitation, canBeCut = F.EntityScript, F.vegitation, F.canBeCut
+local doorN, doorW, windowN, windowW = F.doorN, F.doorW, F.windowN, F.windowW
+local HoppableN, HoppableW, TallHoppableN, TallHoppableW = F.HoppableN, F.HoppableW, F.TallHoppableN, F.TallHoppableW
+local WallSE, solidfloor, WallOverlay, FloorOverlay = F.WallSE, F.solidfloor, F.WallOverlay, F.FloorOverlay
+local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.cutW, F.solid, F.solidtrans
+local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
+local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
+
+-- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
+local TYPE = {}
+for _, k in ipairs({ "stairsTW", "stairsMW", "stairsBW", "stairsTN", "stairsMN", "stairsBN" }) do TYPE[T[k]] = "stairs" end
+for _, k in ipairs({ "curtainN", "curtainS", "curtainW", "curtainE" }) do TYPE[T[k]] = "curtain" end
+for _, k in ipairs({ "WestRoofB", "WestRoofM", "WestRoofT" }) do TYPE[T[k]] = "roof" end
+TYPE[T.tree] = "tree"
+TYPE[T.lightswitch] = "light"
 
 -- 原版每次載入 chunk 都會跑 Lua 改寫的圖塊（MapObjects.OnLoadWithSprite，server/Map/MapObjects/*.lua）。
 -- 玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。
@@ -29,21 +47,13 @@ function Rules.hasLuaBehaviour(name)
     return LUA_SPRITES[name] == true
 end
 
-function Rules.isStairs(t)
-    return t == T.stairsTW or t == T.stairsMW or t == T.stairsBW
-        or t == T.stairsTN or t == T.stairsMN or t == T.stairsBN
-end
-
-function Rules.isCurtain(t)
-    return t == T.curtainN or t == T.curtainS or t == T.curtainW or t == T.curtainE
-end
-
-function Rules.isRoof(t)
-    return t == T.WestRoofB or t == T.WestRoofM or t == T.WestRoofT
+-- 型別代碼："stairs"／"curtain"／"roof"／"tree"／"light"／nil
+function Rules.typeCode(t)
+    return TYPE[t]
 end
 
 -- 名稱前綴排除：侵蝕疊圖 e_（積雪屋頂）、植物 vegetation_、樹叢 f_bushes、巨樹 jumbo_（bt-catalog §6.3）。
--- 先看第一個字元再比字串：每個 sprite 都會跑，避免多數名稱建子字串。
+-- 先看第一個字元再比字串：避免多數名稱建子字串。
 local function excludedName(name)
     local c = name:byte(1)
     if c == 101 then -- e
@@ -59,62 +69,69 @@ local function excludedName(name)
 end
 
 -- 前面的種類都不符時：掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、實心物件、疊圖；都不符就不列
-function Rules.decor(p)
-    local mt = p:get("MoveType")
-    if mt == "WallObject" or p:has(F.WallOverlay) then return "wallObject" end
+local function decor(p, mt)
+    if mt == "WallObject" or p:has(WallOverlay) then return "wallObject" end
     if mt == "WindowObject" then return "windowObject" end
-    if mt == "FloorRug" or p:has(F.FloorOverlay) or p:has(F.attachedFloor) then return "floorOverlay" end
-    if p:has(F.cutN) or p:has(F.cutW) then return "wallOverlay" end -- 牆鍵已在前面判斷過
-    if p:has(F.attachedN) or p:has(F.attachedS) or p:has(F.attachedE) or p:has(F.attachedW)
-        or p:has(F.attachedNW) or p:has(F.attachedSE) or p:has(F.attachedCeiling) then
+    if mt == "FloorRug" or p:has(FloorOverlay) or p:has(attachedFloor) then return "floorOverlay" end
+    if p:has(cutN) or p:has(cutW) then return "wallOverlay" end -- 牆鍵已在前面判斷過
+    if p:has(attachedN) or p:has(attachedS) or p:has(attachedE) or p:has(attachedW)
+        or p:has(attachedNW) or p:has(attachedSE) or p:has(attachedCeiling) then
         return "attached"
     end
-    if p:has("BlocksPlacement") or p:has(F.solid) or p:has(F.solidtrans) then return "solid" end
+    if p:has("BlocksPlacement") or p:has(solid) or p:has(solidtrans) then return "solid" end
     if p:has("TileOverlay") then return "overlay" end
     return nil
 end
 
+-- 加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
+-- 每個牆、窗框、地板省 7 次 Java 呼叫；正式服 18 個 tiledef 的 MOD 組合逐格比對過結果不變（builder-e2e catalog-sp bench）
+local function objectExcluded(p)
+    return p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound") or p:has("CustomItem")
+        or p:has("TV") or p:has("Microwave") or p:has("signal")
+end
+
 -- 回傳種類字串；nil＝不列（排除或不屬於任何種類）
-function Rules.classify(spr)
-    local name = spr:getName()
-    if not name or excludedName(name) then return nil end
-    local p, t = spr:getProperties(), spr:getType()
-    if p:has(F.EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
-    if LUA_SPRITES[name] then return nil end
-    if p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound") or p:has("CustomItem")
-        or p:has("TV") or p:has("Microwave") or p:has("signal") then
-        return nil -- 加油機、專用類別、發電機、物品 entity、家電
-    end
-    if t == T.tree or p:has("tree") or p:has(F.vegitation) or p:has(F.canBeCut) or p:has("Bush")
-        or p:get("MoveType") == "Vegitation" then
+-- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
+function Rules.kindOf(name, p, t)
+    if not name or LUA_SPRITES[name] or excludedName(name) then return nil end
+    if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
+    local tc = TYPE[t]
+    if tc == "tree" then return nil end
+    local mt = p:get("MoveType")
+    if mt == "Vegitation" or p:has("tree") or p:has(vegitation) or p:has(canBeCut) or p:has("Bush") then
         return nil
     end
-    if Rules.isStairs(t) then return "stairs" end -- 目錄只收湊得成三格的（Rules.stairsSet）
+    if tc == "stairs" then return "stairs" end -- 目錄只收湊得成三格的（Rules.stairsSet）
     if p:has("GarageDoor") then return "garage" end
-    if p:has(F.doorN) or p:has(F.doorW) then return "door" end
-    if p:has(F.windowN) or p:has(F.windowW) then return "window" end -- 窗一定也帶 WindowN/W，所以先判斷
+    if p:has(doorN) or p:has(doorW) then return "door" end
+    if p:has(windowN) or p:has(windowW) then return "window" end -- 窗一定也帶 WindowN/W，所以先判斷
     if p:has("WindowN") or p:has("WindowW") then return "windowFrame" end
     if p:has("DoorWallN") or p:has("DoorWallW") or p:has("DoorWallNTrans") or p:has("DoorWallWTrans") then
         return "doorFrame"
     end
-    if p:has(F.HoppableN) or p:has(F.HoppableW) or p:has(F.TallHoppableN) or p:has(F.TallHoppableW) then
+    if p:has(HoppableN) or p:has(HoppableW) or p:has(TallHoppableN) or p:has(TallHoppableW) then
         return "fence" -- 先於牆：低柵欄也帶牆鍵
     end
     if p:has("WallN") or p:has("WallW") or p:has("WallNW") or p:has("WallNTrans") or p:has("WallWTrans")
-        or p:has("WallNWTrans") or p:has(F.WallSE) then
+        or p:has("WallNWTrans") or p:has(WallSE) then
         return "wall"
     end
-    if p:has(F.solidfloor) then return "floor" end -- 平屋頂地板也在這
+    if p:has(solidfloor) then return "floor" end -- 平屋頂地板也在這
+    if objectExcluded(p) then return nil end
     if p:has("container") then return "container" end -- 冰箱帶燈，容器優先
-    if t == T.lightswitch or p:has("LightRadius") then
+    if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）
-        if t ~= T.lightswitch and not p:has("lightR") then return nil end
+        if tc ~= "light" and not p:has("lightR") then return nil end
         return "light"
     end
-    if Rules.isCurtain(t) and p:get("MoveType") == "WindowObject" then return "curtain" end -- 床單、帳篷布不列
+    if tc == "curtain" and mt == "WindowObject" then return "curtain" end -- 床單、帳篷布不列
     if p:has("IsMoveAble") then return "furniture" end -- 可搬的遮雨棚也在這
-    if Rules.isRoof(t) or p:has("RoofGroup") then return "roof" end -- 屋簷也算
-    return Rules.decor(p)
+    if tc == "roof" or p:has("RoofGroup") then return "roof" end -- 屋簷也算
+    return decor(p, mt)
+end
+
+function Rules.classify(spr)
+    return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType())
 end
 
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。

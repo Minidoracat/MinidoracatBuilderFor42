@@ -24,20 +24,22 @@ local function now()
     return getTimestampMs()
 end
 
+-- 每次 Java 呼叫在遊戲裡約 0.45–0.58 µs（catalog-sp bench），單價主要看呼叫次數。
 local function scanSprite(spr, named)
+    -- 約四成的 tiledef 格沒有圖：先濾掉，省一次 getID。
     -- 名稱 "" 的空 sprite id 是 −1（IsoSpriteManager.java:16-24）；原版第一格 id 是 0，所以不能寫 id > 0
+    if spr:hasNoTextures() then return end
     local id = spr:getID()
-    if id < 0 or id == NO_TILE_ID or spr:hasNoTextures() then return end
-    local kind = Rules.classify(spr)
+    if id < 0 or id == NO_TILE_ID then return end
+    local name, p = spr:getName(), spr:getProperties()
+    local kind = Rules.kindOf(name, p, spr:getType())
     if not kind then return end
-    local name = spr:getName()
     local key, raw
     if kind == "stairs" then
         if not Rules.stairsSet(named, name) then return end -- 只收湊得成三格的 B 片
     else
         local grid = spr:getSpriteGrid()
         if grid and grid:getAnchorSprite() ~= spr then return end -- 多格只收原點
-        local p = spr:getProperties()
         local custom = p:get("CustomName")
         if custom then
             local group = p:get("GroupName")
@@ -45,7 +47,7 @@ local function scanSprite(spr, named)
             key = (group or "") .. "|" .. custom
         end
     end
-    local tileset, num = name:match("^(.*)_(%d+)$")
+    local tileset, num = name:match("^(.*)_(%d+)$") -- 比 find＋sub 快（bench：1.4 對 2.0 µs）
     if not tileset then return end
     Index.add(kind, name, tileset, tonumber(num), Sources.fileOf(id), key and (tileset .. "|" .. key), raw)
 end
