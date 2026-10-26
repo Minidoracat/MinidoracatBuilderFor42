@@ -758,7 +758,7 @@ check(not ok and a.code == "PERM_DENIED" and #permSq.objects == 0 and Q.inv:coun
     "Safehouse MOD 的細分權限不准建造：PERM_DENIED、問的是 BUILD 位元、不放、不扣")
 MinidoracatSafehouse.v1.API_MAJOR = 2
 deniedAt = {}
-local Q2 = player({ id = 21, x = 50.5, y = 51.5 })
+local Q2 = player({ id = 30, x = 50.5, y = 51.5 })
 Q2.inv:add(item("Base.Hammer", { HAMMER = true }))
 ok, cmd, a = build(Q2, 42, nil, { 51, 49, 0 })
 check(not ok and a.code == "NO_MATERIAL" and #deniedAt == 0, "Safehouse API 大版本不是 1：不呼叫 denies，照常往下判斷")
@@ -813,6 +813,15 @@ check(not ok and a.code == "BLOCKED", "會擋路的東西：格上有人時 BLOC
 square(47, 51, 0, { solid = true })
 ok, cmd, a = build(Q, 19, "crate_01_0", { 47, 51, 0 })
 check(not ok and a.code == "BLOCKED", "不能搬的實心容器：不疊在已經實心的格子上")
+local sinkS = sprite("sink_test_01_0", 952, { flags = { "solid", "waterPiped" } })
+world({ wallN, solidS, crateS, sinkS })
+local sinkSq = square(60, 60, 0)
+local S = player({ id = 31, x = 60.5, y = 61.5, here = square(60, 61, 0) })
+S.inv:add(item("Base.Hammer", { HAMMER = true }))
+give(S, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
+ok = build(S, 32, "sink_test_01_0", { 60, 60, 0 })
+check(ok and sinkSq.objects[1] and sinkSq.objects[1].md.canBeWaterPiped == true and w.md.canBeWaterPiped == nil,
+    "接水管的物件：照原版標成要重新接水管，放好不會直接有水")
 square(48, 53, 0, { noReach = true })
 ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 53, 0 })
 check(not ok and a.code == "UNREACHABLE", "走不到那一格（隔著牆、透明牆或關著的門）：UNREACHABLE")

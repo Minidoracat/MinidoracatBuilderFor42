@@ -158,6 +158,8 @@ local function thumpable(c, kind, north)
     local mats = obj:getBuildMaterials()
     for ft, n in pairs(c.cost.items) do mats[ft] = tostring(n) end
     obj:getModData().builderEntry = spr:getName()
+    -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
+    if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end
     return obj
 end
 
