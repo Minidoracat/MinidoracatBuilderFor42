@@ -111,6 +111,7 @@ end
 IsoSpriteManager = { instance = { getNamedMap = function()
     return {
         get = function(_, k) return spriteMap[k] end,
+        containsKey = function(_, k) return spriteMap[k] ~= nil end,
         values = function() return javaList(spriteOrder) end,
     }
 end } }
@@ -151,6 +152,37 @@ Translator = { getMoveableDisplayNameOrNull = function(raw)
     return nil
 end }
 
+-- 第二階段（建造請求）用到的全域
+Perks = { Woodwork = "Woodwork" }
+GridSquareEdgeFacingDirection = { NORTH_SOUTH = { name = "NS" }, EAST_WEST = { name = "EW" } }
+SandboxVars = { MinidoracatBuilder = {} }
+function getWorld() return { isValidSquare = function(_, x, y, z) return z >= -32 and z <= 31 end } end
+-- 格子一律不存在、也建不出來：通過身分檢查的動作會走到 NOT_LOADED 並推 refused，和 NO_INTENT（不推）分得開
+function getCell() return { getGridSquare = function() return nil end, createNewGridSquare = function() return nil end } end
+local regionPokes = 0
+IsoRegions = { setPreviousFlags = function() end, squareChanged = function() regionPokes = regionPokes + 1 end }
+Capability = { UseBuildCheat = "UseBuildCheat", CanGoInsideSafehouses = "CanGoInsideSafehouses" }
+function checkPermissions(player, cap) return player.admin == true end
+local sent = {}
+function sendServerCommand(player, module, cmd, args) sent[#sent + 1] = { player = player, cmd = cmd, args = args } end
+local scrapDefs = {}
+ISMoveableDefinitions = { getInstance = function()
+    return { getScrapDefinition = function(mat) return scrapDefs[mat] end }
+end }
+-- 假玩家：onlineID、木工等級、是否管理員、是否死亡
+local function player(o)
+    o = o or {}
+    local p = { admin = o.admin }
+    function p:getOnlineID() return o.id or 1 end
+    function p:getPlayerNum() return 0 end
+    function p:getUsername() return o.name or "tester" end
+    function p:isDead() return o.dead == true end
+    function p:getVehicle() return nil end
+    function p:getPerkLevel() return o.woodwork or 0 end
+    function p:isTimedActionInstant() return o.instant == true end
+    return p
+end
+
 -- ===== 載入受測程式碼 =====
 local loaded = {}
 function require(name)
@@ -166,8 +198,12 @@ end
 require "MinidoracatBuilder/Rules"
 require "MinidoracatBuilder/Sources"
 require "MinidoracatBuilder/Catalog"
+require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Cost"
+require "MinidoracatBuilder/Server"
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 local Index, Catalog = MinidoracatBuilder.Index, MinidoracatBuilder.Catalog
+local Entry, Cost, Server = MinidoracatBuilder.Entry, MinidoracatBuilder.Cost, MinidoracatBuilder.Server
 
 -- ===== 測試工具 =====
 local failures = 0
@@ -311,6 +347,176 @@ Catalog.start()
 fire("OnTickEvenPaused")
 check(Catalog.state == "failed", "分類丟錯：狀態 failed")
 check(count("OnTickEvenPaused") == 0, "出錯後 tick 事件已摘掉")
+
+print("情境八：項目解析（伺服器重算這一項）")
+-- 假 grid：cells[y][x] = sprite；原點＝第一個非空成員（IsoSpriteGrid.getAnchorSprite）
+local function fakeGrid(w, h, cells)
+    local g = {}
+    function g:getWidth() return w end
+    function g:getHeight() return h end
+    function g:getLevels() return 1 end
+    function g:getSprite(x, y, z) return z == 0 and cells[y + 1] and cells[y + 1][x + 1] or nil end
+    function g:getAnchorSprite()
+        for y = 0, h - 1 do
+            for x = 0, w - 1 do
+                local s = g:getSprite(x, y, 0)
+                if s then return s end
+            end
+        end
+    end
+    function g:getSpriteGridPosX(s)
+        for y = 0, h - 1 do for x = 0, w - 1 do if g:getSprite(x, y, 0) == s then return x end end end
+    end
+    function g:getSpriteGridPosY(s)
+        for y = 0, h - 1 do for x = 0, w - 1 do if g:getSprite(x, y, 0) == s then return y end end end
+    end
+    for _, row in pairs(cells) do for _, s in pairs(row) do s.grid = g end end
+    return g
+end
+local wallN = sprite("walls_test_01_4", 5000, { flags = { "WallN" }, keys = { WallN = "" } })
+local modFloor = sprite("tk_01_9", MOD_ID_BASE + 9, { flags = { "solidfloor" } })
+local stairsB = sprite("st_01_0", 1, { type = T.stairsBW })
+local tree = sprite("tree_01_0", 2, { type = T.tree })
+local chair = {}
+for i, f in ipairs({ "E", "N", "S", "W" }) do
+    local keys = { IsMoveAble = "", Facing = f, GroupName = "G", CustomName = "Chair" }
+    for j, g in ipairs({ "E", "N", "S", "W" }) do
+        if g ~= f then keys[g .. "offset"] = tostring(j - i) end -- 引擎替其他面寫的偏移
+    end
+    chair[i] = sprite("chair_01_" .. (i - 1), 600 + i, { keys = keys })
+end
+local oddFace = sprite("odd_01_0", 700, { keys = { IsMoveAble = "", Noffset = "1" } })
+local oddTree = sprite("odd_01_1", 701, { type = T.tree })
+local bedA = sprite("bed_01_1", 801, { keys = { IsMoveAble = "" } })
+local bedB = sprite("bed_01_2", 802, { keys = { IsMoveAble = "" } })
+local bedC = sprite("bed_01_3", 803, { keys = { IsMoveAble = "" } })
+fakeGrid(2, 2, { { nil, bedA }, { bedB, bedC } })
+world({ wallN, modFloor, stairsB, tree, chair[1], chair[2], chair[3], chair[4], oddFace, oddTree, bedA, bedB, bedC })
+Sources.byFile = { [7001] = "UMCTP" }
+local sb = SandboxVars.MinidoracatBuilder
+local e1 = Entry.resolve("walls_test_01_4")
+check(e1 and e1.kind == "wall" and e1.tileset == "walls_test_01" and e1.num == 4, "牆：種類與 tileset 由伺服器重算")
+check(select(2, Entry.resolve("nope_01_0")) == "UNKNOWN", "不存在的圖塊：UNKNOWN（不新增空 sprite）")
+check(select(2, Entry.resolve("tree_01_0")) == "UNKNOWN", "排除的圖塊（樹）：UNKNOWN")
+check(select(2, Entry.resolve("st_01_0")) == "UNSUPPORTED", "樓梯第四階段才做：UNSUPPORTED")
+check(select(2, Entry.resolve("bed_01_2")) == "UNKNOWN", "多格的非原點：UNKNOWN")
+check(Entry.resolve("bed_01_1") ~= nil, "多格原點可以")
+check(Entry.resolve("tk_01_9").mod == "UMCTP", "MOD 圖塊帶來源")
+sb.DisabledSources = " Foo ; UMCTP "
+check(select(2, Entry.resolve("tk_01_9")) == "DISABLED", "關掉的來源：DISABLED（分號分隔、去空白）")
+sb.DisabledSources = "Foo"
+check(Entry.resolve("tk_01_9") ~= nil, "改設定後重切清單")
+sb.DisabledTilesets = "walls_test_01"
+check(select(2, Entry.resolve("walls_test_01_4")) == "DISABLED", "關掉的 tileset：DISABLED")
+sb.DisabledTilesets = ""
+
+print("情境九：朝向與佔地")
+local ce = Entry.resolve("chair_01_0")
+check(Entry.face(ce, 0) == chair[1], "d=0：項目本身那一面")
+check(Entry.face(ce, 1) == chair[2], "d=1（N）：照 Noffset 換到北面")
+check(Entry.face(ce, 2) == chair[1], "d=2（E）：自己就是東面（引擎不替自己那面寫偏移）")
+check(Entry.face(ce, 4) == chair[4], "d=4（W）")
+check(Entry.face(ce, 5) == nil, "朝向超出範圍：nil")
+check(Entry.face(Entry.resolve("walls_test_01_4"), 1) == nil, "沒有其他面的圖塊：只有 d=0")
+check(Entry.face(Entry.resolve("odd_01_0"), 1) == nil, "偏移指到別的種類（樹）：nil")
+local cells = Entry.cells(bedA)
+check(#cells == 3 and cells[1][1] == 0 and cells[1][2] == 0, "多格：原點不在 (0,0) 時以原點為準")
+check(cells[2][1] == -1 and cells[2][2] == 1 and cells[2][4] == bedB, "多格：其他成員的相對位置")
+check(#Entry.cells(wallN) == 1, "單格：只有自己")
+local nN, nW = Entry.edges("wall", wallN)
+check(nN and not nW and Entry.north("wall", wallN), "北牆佔北邊、north=true")
+local corner = sprite("walls_test_01_2", 5002, { flags = { "WallNW" } })
+local cN, cW = Entry.edges("wall", corner)
+check(cN and cW, "牆角兩條邊都佔")
+check(Entry.north("furniture", chair[3]) and not Entry.north("furniture", chair[1]), "家具照 Facing：S 算北、E 不算")
+
+print("情境十：成本")
+local function cost(kind, o, mult) return Cost.of(kind, sprite("c_01_0", 900, o), mult) end
+local c = cost("wall", { flags = { "WallN" } })
+check(c.items["Base.Plank"] == 4 and c.items["Base.Nails"] == 6 and c.tools[1] == "HAMMER", "木牆：框＋牆一級的木板 4、釘子 6、要鐵鎚")
+c = cost("wall", { keys = { MaterialType = "Brick" } })
+check(c.items["Base.ClayBrick"] == 4 and c.items["Base.Plank"] == nil and c.tools[1] == "MASONS_TROWEL", "磚牆：黏土磚 4、抹刀")
+c = cost("wall", { keys = { MaterialType = "Metal_Large" } })
+check(c.items["Base.MetalBar"] == 3 and c.items["Base.SmallSheetMetal"] == 3 and #c.tools == 2, "金屬牆：鐵條＋金屬片、噴燈與面罩")
+c = cost("floor", { keys = { MaterialType = "Gravel" } })
+check(c.items["Base.Gravelbag"] == 1 and #c.tools == 0, "碎石地板：一袋碎石、不用工具")
+c = cost("door", { keys = { MaterialType = "Brick" } })
+check(c.items["Base.Hinge"] == 2 and c.tools[1] == "HAMMER", "磚造門沒有對應配方：照木門")
+scrapDefs.Wood = { returnItemsStatic = { { returnItem = "Base.Plank", maxAmount = 2 } } }
+scrapDefs.Electric = { returnItems = { { returnItem = "Base.ElectronicsScrap", maxAmount = 1 },
+    { returnItem = "Base.ElectricWire", maxAmount = 3 } } }
+scrapDefs.Fabric = { returnItems = {} }
+local scrapKeys = { Material = "Wood", Material2 = "Electric", Material3 = "Undefined" }
+c = cost("furniture", { keys = scrapKeys })
+check(c.items["Base.Plank"] == 2 and c.items["Base.ElectronicsScrap"] == 1 and c.items["Base.ElectricWire"] == 3
+    and c.items["Base.Nails"] == nil, "有拆解材質：照拆解產出上限，不用基本價")
+scrapKeys.CanScrap, scrapKeys.ScrapSize = "", "Large"
+c = cost("furniture", { keys = scrapKeys })
+check(c.items["Base.Plank"] == 4 and c.items["Base.ElectricWire"] == 6, "可拆、Large：加倍")
+scrapKeys.ScrapSize = "Small"
+c = cost("furniture", { keys = scrapKeys })
+check(c.items["Base.Plank"] == 1 and c.items["Base.ElectronicsScrap"] == 1 and c.items["Base.ElectricWire"] == 1,
+    "可拆、Small：減半、至少 1、1.5 照原版只算 1")
+c = cost("furniture", { keys = { Material = "Fabric" } })
+check(c.items["Base.Plank"] == 4, "拆解材質沒有產出：照種類基本價")
+c = cost("wall", { flags = { "WallN" } }, 0.3)
+check(c.items["Base.Plank"] == 2 and c.items["Base.Nails"] == 2, "倍率 0.3：無條件進位（1.2→2、1.8→2）")
+c = cost("wall", { flags = { "WallN" } }, 0)
+check(next(c.items) == nil and c.tools[1] == "HAMMER", "倍率 0：免材料、工具照樣要")
+local s = Cost.sum({ cost("wall", {}), cost("wall", { keys = { MaterialType = "Brick" } }) })
+check(s.items["Base.Plank"] == 4 and s.items["Base.ClayBrick"] == 4 and #s.tools == 2, "多格加總：材料相加、工具聯集")
+
+print("情境十一：建造請求（身分、限流、型別、單一待辦）")
+clockStep = 0
+sb.MaxCellsPerDrag = 2
+local P = player({ id = 7 })
+local function intent(p, o)
+    local args = { n = o.n or 5, e = o.e or "walls_test_01_4", d = o.d or 0, c = o.c or { 10, 20, 0 },
+        v = o.v or Entry.digest() }
+    sent = {}
+    Server.intent(p, args)
+    return sent[1] and sent[1].args.code
+end
+check(intent(P, {}) == nil and Server.intents[7] and Server.intents[7].c[1][2] == 20, "合法請求：存下、不回覆")
+check(regionPokes == 0, "那一帶沒有地板格：不喚醒區域系統（只記時間）")
+check(intent(P, { v = "r0:1" }) == "STALE", "設定摘要不同：STALE")
+check(intent(P, { c = {} }) == "BAD_REQUEST", "沒有座標：BAD_REQUEST")
+check(intent(P, { c = { 1, 2, 0, 3, 4, 0, 5, 6, 0 } }) == "BAD_REQUEST", "超過每次上限：BAD_REQUEST")
+check(intent(P, { c = { 1.5, 2, 0 } }) == "BAD_REQUEST", "座標不是整數：BAD_REQUEST")
+check(intent(P, { c = { 1, 2, 40 } }) == "BAD_REQUEST", "樓層超出範圍：BAD_REQUEST")
+check(intent(P, { e = "tree_01_0" }) == "UNKNOWN", "排除的項目：UNKNOWN")
+check(intent(P, { d = 1 }) == "BAD_FACE", "不存在的朝向：BAD_FACE")
+check(intent(P, { n = 6 }) == nil and Server.intents[7].n == 6, "新請求取代舊的（每人只留一個）")
+-- NO_INTENT 不推任何訊息；通過身分檢查的會一路走到 NOT_LOADED 並推 refused
+local function noIntent(p, n, i)
+    sent = {}
+    return Server.complete(p, n, i) == false and #sent == 0
+end
+check(noIntent(P, 5, 1), "舊 nonce 的動作：拒絕、不推給 character")
+check(noIntent(player({ id = 7 }), 6, 1), "同一個 onlineID、不同玩家物件（重連或偽造）：拒絕")
+check(noIntent(P, 6, 2), "請求裡沒有第 2 項：拒絕")
+local A = player({ id = 8 })
+intent(A, { n = 100 })
+check(noIntent(P, 100, 1), "character 被改成別人：那人的請求裡沒有這個 nonce，拒絕")
+sent = {}
+check(Server.complete(P, 6, 1) == false and sent[1] and sent[1].args.code == "NOT_LOADED",
+    "身分對了才往下驗（這裡格子建不出來：NOT_LOADED）")
+check(Server.duration(P, 6, 1) == 200, "施工時間：木工 0 的牆 200 tick（剛喚醒的 3 秒＝150 tick 以內）")
+check(Server.duration(player({ id = 7, instant = true }), 6, 1) == 1, "別的玩家物件問不到請求：1 tick 後被拒")
+check(Server.duration(P, 99, 1) == 1, "找不到請求：1 tick")
+sb.WhoCanUse = 2
+check(intent(P, { n = 7 }) == "NOT_ALLOWED", "只限管理員：一般玩家 NOT_ALLOWED")
+check(intent(player({ id = 9, admin = true }), { n = 7 }) == nil, "只限管理員：管理員可以")
+sb.WhoCanUse, sb.Enabled = 1, false
+check(intent(P, { n = 8 }) == "OFF", "總開關關掉：OFF")
+sb.Enabled = nil
+check(intent(player({ id = 10, dead = true }), {}) == "STATE", "死掉的玩家：STATE")
+local R = player({ id = 11 })
+local refusedCount = 0
+for k = 1, 25 do
+    if intent(R, { n = 1000 + k, v = "bad" }) then refusedCount = refusedCount + 1 end
+end
+check(refusedCount == 20, "限流：5 秒內第 21 個起不處理、不回覆")
 
 print()
 if failures > 0 then

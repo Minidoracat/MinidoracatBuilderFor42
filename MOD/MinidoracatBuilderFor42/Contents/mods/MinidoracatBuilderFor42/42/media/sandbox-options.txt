@@ -1,0 +1,35 @@
+VERSION = 1,
+
+/* 自由建造 Build Anything。選項鍵不可改名。伺服器每次放置都重讀；改了以後，舊視窗送出的請求會被拒（STALE），提示重開。 */
+
+/* 總開關：關掉後伺服器拒絕所有建造請求（OFF） */
+option MinidoracatBuilder.Enabled
+{type = boolean, default = true, page = MinidoracatBuilder, translation = MinidoracatBuilder_Enabled,}
+
+/* 誰能用：1 所有人、2 只有管理員（伺服器看 UseBuildCheat 能力；單機主機算管理員） */
+option MinidoracatBuilder.WhoCanUse
+{type = enum, numValues = 2, default = 1, page = MinidoracatBuilder, translation = MinidoracatBuilder_WhoCanUse,}
+
+/* 在哪裡蓋：1 照原版（無主的地方，與有建造權的安全屋）、2 只能在有建造權的安全屋裡 */
+option MinidoracatBuilder.WhereCanBuild
+{type = enum, numValues = 2, default = 1, page = MinidoracatBuilder, translation = MinidoracatBuilder_WhereCanBuild,}
+
+/* 玩家到要蓋的格子最遠幾格（水平；樓層差另限 1 層） */
+option MinidoracatBuilder.MaxDistance
+{type = integer, min = 2, max = 8, default = 3, page = MinidoracatBuilder, translation = MinidoracatBuilder_MaxDistance,}
+
+/* 一次請求最多幾項（拖曳畫線） */
+option MinidoracatBuilder.MaxCellsPerDrag
+{type = integer, min = 1, max = 64, default = 32, page = MinidoracatBuilder, translation = MinidoracatBuilder_MaxCellsPerDrag,}
+
+/* 材料倍率：0 免材料（工具照樣要），數量無條件進位 */
+option MinidoracatBuilder.CostMultiplier
+{type = double, min = 0, max = 10, default = 1.0, page = MinidoracatBuilder, translation = MinidoracatBuilder_CostMultiplier,}
+
+/* 關掉的來源：MOD ID，以分號分隔（不能用逗號：ScriptParser 拿它當欄位分隔）。預設關家族 MOD 與 entity 來源（設計稿） */
+option MinidoracatBuilder.DisabledSources
+{type = string, default = MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns, page = MinidoracatBuilder, translation = MinidoracatBuilder_DisabledSources,}
+
+/* 關掉的 tileset：名稱以分號分隔 */
+option MinidoracatBuilder.DisabledTilesets
+{type = string, default = , page = MinidoracatBuilder, translation = MinidoracatBuilder_DisabledTilesets,}

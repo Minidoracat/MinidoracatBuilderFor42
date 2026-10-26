@@ -44,6 +44,12 @@ function Sources.build()
     return byFile
 end
 
+-- 目前的檔號表；還沒建就建一次（伺服器在 OnServerStarted 建好，單機由目錄第二段建，請求可能比它早到）
+function Sources.map()
+    if not Sources.byFile then Sources.byFile = Sources.build() end
+    return Sources.byFile
+end
+
 -- 依檔號由小到大印出（不用 table.sort：檔號上限 8189，直接掃一遍）
 function Sources.describe(byFile)
     local parts = {}
