@@ -115,7 +115,8 @@ function Place.check(kind, spr, sq, player)
         return true, (props.isTableTop or props.isTable) and props.yOffsetCursor or 0
     end
     if not floorUnder(sq) or vegetation(sq) then return false end
-    if kind == "solid" then
+    -- 實心或擋放置的東西（含不能搬的實心容器）不疊在已經實心、已經擋放置的格子上
+    if kind == "solid" or kind == "container" or p:has(F.solid) or p:has(F.solidtrans) then
         return not (sq:isSolid() or sq:isSolidTrans()) and not (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved))
     end
     return true

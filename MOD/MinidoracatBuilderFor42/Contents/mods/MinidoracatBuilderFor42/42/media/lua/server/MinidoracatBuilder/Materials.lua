@@ -117,13 +117,9 @@ function Materials.consume(player, plan)
         local inv = player:getInventory()
         sendAddItemsToContainer(inv, inv:AddItems(NAILS, plan.left))
     end
-    if #plan.ground > 0 then -- 地上的少了，物品欄的「地上」要重畫（ISBuildUtil.lua:290-296）
-        if isServer() then
-            sendServerCommand(player, "ui", "dirtyUI", {})
-        elseif ISInventoryPage then
-            ISInventoryPage.dirtyUI()
-        end
-    end
+    -- 單機地上的少了，物品欄的「地上」要重畫（ISBuildUtil.lua:290-296）；MP 由移除封包觸發 OnContainerUpdate
+    -- （RemoveItemFromSquarePacket.java:83-94）
+    if #plan.ground > 0 and not isServer() and ISInventoryPage then ISInventoryPage.dirtyUI() end
 end
 
 return Materials

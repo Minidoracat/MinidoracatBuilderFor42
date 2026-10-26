@@ -19,7 +19,7 @@ local INTENT_TTL_MS = 60000           -- 每做完一項再延長：拖曳 32 �
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
-local EARLY_TICKS = 25                -- 請求與動作走不同通道，動作先到時多等 0.5 秒再判斷
+local INTENT_REACH = 100              -- 錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
 local rate, woken, quietUntil = {}, {}, {}
@@ -129,8 +129,7 @@ function Server.intent(player, args)
     local c = args.c
     if not d or type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
-    -- 拖曳一排時玩家沿路走到每一項旁邊，錨點離玩家不會超過「距離上限＋一次的項數」
-    local near = setting("MaxDistance", 3) + maxItems
+    local near = INTENT_REACH
     local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local anchors = {}
     for i = 1, maxItems * 3 + 1, 3 do
@@ -150,6 +149,8 @@ function Server.intent(player, args)
     if not Entry.face(entry, d) then return Server.refuse(player, n, 0, "BAD_FACE") end
     Server.intents[k] = { player = player, n = n, e = entry.name, d = d, c = anchors, done = {}, left = #anchors,
         exp = now() + INTENT_TTL_MS, wake = wake(anchors[1][1], anchors[1][2]) }
+    -- 收下才回 accepted，客戶端收到才排動作：請求與動作走不同通道，動作不能比請求先到
+    Server.send(player, "accepted", { n = n })
     return true
 end
 
@@ -166,17 +167,17 @@ local function intentFor(player, n, i)
     return it
 end
 
--- 動作的施工時間（伺服器在 serverStart 前問一次）。找不到請求時短等一下，之後在 complete() 照實判斷。
--- 剛喚醒區域系統的那一帶，連即時動作也要等滿 WAKE_MS。
+-- 動作的施工時間（伺服器在 serverStart 前問一次；單機在建立動作時就問）。找不到請求回 1，讓它馬上進 complete() 被拒。
+-- 剛喚醒區域系統的那一帶，第一項連即時動作也要等滿 WAKE_MS；後面的項目排在第一項之後，不用再等。
 function Server.duration(player, n, i)
     local it = intentFor(player, n, i)
-    if not it then return EARLY_TICKS end
+    if not it then return 1 end
     local ticks = 1
     if not player:isTimedActionInstant() then
         local entry = Entry.resolve(it.e)
         ticks = Entry.duration(entry and entry.kind, player)
     end
-    local waitMs = it.wake + WAKE_MS - now()
+    local waitMs = i == 1 and it.wake + WAKE_MS - now() or 0
     if waitMs > 0 then ticks = math.max(ticks, math.ceil(waitMs / 20)) end -- 伺服器每 tick 20 ms（NetTimedAction.java:77）
     return ticks
 end
@@ -193,14 +194,39 @@ local function reach(player, cells)
     return best, dz, near
 end
 
--- 同一層隔著牆或關著的門放不到（LosUtil.lineClear；照 pitfalls「伺服器驗證要查可及性」）。
--- 格邊種類本來就貼著那條邊、從哪一側都能蓋，不查。
-local function walledOff(player, c)
+-- 同一層：玩家走得到最近那一格嗎。在兩格圍成的範圍外加一圈裡，沿 canReachTo 找路：牆（含透明牆）、關著的門窗都擋
+-- （IsoGridSquare.java:939-961；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
+-- ponytail：範圍最大約 (2×MaxDistance＋3)² 格，只在 complete() 跑一次。
+local function reachable(player, c)
     local pz = math.floor(player:getZ())
-    if c.z ~= pz then return false end
-    local r = tostring(LosUtil.lineClear(getCell(), math.floor(player:getX()), math.floor(player:getY()), pz,
-        c.x, c.y, c.z, false))
-    return r == "Blocked" or r == "ClearThroughClosedDoor"
+    if c.z ~= pz then return true end -- 上下樓層另由樓層差限制
+    local px, py = math.floor(player:getX()), math.floor(player:getY())
+    local cell = getCell()
+    local start = cell:getGridSquare(px, py, pz)
+    if not start then return false end
+    local x0, x1 = math.min(px, c.x) - 1, math.max(px, c.x) + 1
+    local y0, y1 = math.min(py, c.y) - 1, math.max(py, c.y) + 1
+    local seen, queue, head = { [px .. "," .. py] = true }, { start }, 1
+    while queue[head] do
+        local sq = queue[head]
+        head = head + 1
+        local x, y = sq:getX(), sq:getY()
+        if x == c.x and y == c.y then return true end
+        for dy = -1, 1 do
+            for dx = -1, 1 do
+                local nx, ny = x + dx, y + dy
+                local k = nx .. "," .. ny
+                if not seen[k] and nx >= x0 and nx <= x1 and ny >= y0 and ny <= y1 then
+                    local nsq = cell:getGridSquare(nx, ny, pz)
+                    if nsq and sq:canReachTo(nsq) then
+                        seen[k] = true
+                        queue[#queue + 1] = nsq
+                    end
+                end
+            end
+        end
+    end
+    return false
 end
 
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，拒絕時它自己推通知）
@@ -230,8 +256,10 @@ end
 function Server.complete(player, n, i)
     local it = intentFor(player, n, i)
     if not it then
-        -- 沒有對應請求的動作不回覆，只記 log：每人每 5 秒最多一行（動作封包可以一直送）
+        -- 沒有對應請求的動作只記 log（每人每 5 秒最多一行，動作封包可以一直送），MP 不回覆；
+        -- 單機是本機玩家自己的佇列（例：請求放太久過期），回 refused 讓客戶端清掉後面的動作
         local k, t = keyOf(player), now()
+        if not isServer() then return Server.refuse(player, n, i, "NO_INTENT") end
         if (quietUntil[k] or 0) <= t then
             quietUntil[k] = t + RATE_WINDOW_MS
             print(LOG .. "REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " code=NO_INTENT")
@@ -255,7 +283,7 @@ function Server.complete(player, n, i)
     if dist > setting("MaxDistance", 3) or dz > 1 then
         return Server.refuse(player, n, i, "TOO_FAR", { x = a[1], y = a[2], z = a[3] })
     end
-    if not Entry.EDGE[entry.kind] and walledOff(player, nearest) then
+    if not Entry.EDGE[entry.kind] and not reachable(player, nearest) then
         return Server.refuse(player, n, i, "UNREACHABLE", { x = nearest.x, y = nearest.y, z = nearest.z })
     end
     for _, c in ipairs(cells) do

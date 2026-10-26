@@ -62,7 +62,7 @@ end
 function MinidoracatBuilderPlaceAction:new(character, n, i)
     local o = ISBaseTimedAction.new(self, character)
     o.n, o.i = n, i
-    -- 伺服器在 parse 時就會跑 new()（這時還沒驗連線），只存欄位；它另外呼叫 getDuration（NetTimedAction.java:70-83）
+    -- new() 只存欄位；伺服器另外呼叫 getDuration（NetTimedAction.java:70-83）
     if not isServer() then o.maxTime = o:getDuration() end
     return o
 end

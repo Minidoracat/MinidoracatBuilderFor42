@@ -29,6 +29,7 @@ end
 
 -- 蓋 e（項目 ID）朝向 d（0＝項目本身那一面、1..4＝N、E、S、W），每個原點 cells[i] = { x, y, z } 一項。
 -- 回 nonce；不能送（項目或朝向不存在、單機時請求當場被拒）回 nil 與原因碼。會清掉玩家目前排著的動作（每人只留一個請求，設計稿）。
+-- 動作等伺服器回 accepted 才排（單機當場就回）。
 function Client.build(player, e, d, cells)
     local entry, code = Entry.resolve(e)
     if not entry then return nil, code end
@@ -43,7 +44,7 @@ function Client.build(player, e, d, cells)
         flat[#flat + 1] = c[3]
     end
     local args = { n = n, e = e, d = d, c = flat, v = Entry.digest() }
-    Client.pending = { n = n, e = e, d = d, kind = entry.kind, cells = cells, player = player }
+    Client.pending = { n = n, e = e, d = d, kind = entry.kind, spr = spr, cells = cells, player = player }
     ISTimedActionQueue.clear(player)
     if isClient() then
         sendClientCommand(player, MODULE, "intent", args)
@@ -51,25 +52,31 @@ function Client.build(player, e, d, cells)
         local r = Client.results[#Client.results]
         return nil, (r and r.n == n and r.code) or "RATE_LIMITED"
     end
-    for i, c in ipairs(cells) do
-        walkTo(player, entry.kind, spr, c)
-        ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(player, n, i))
-    end
     return n
 end
 
--- refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }
+-- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
+local function queue(b)
+    b.queued = true
+    for i, c in ipairs(b.cells) do
+        walkTo(b.player, b.kind, b.spr, c)
+        ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(b.player, b.n, i))
+    end
+end
+
+-- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
 -- placed：{ n, i }
 -- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
 function Client.onServerCommand(cmd, args)
-    if cmd ~= "refused" and cmd ~= "placed" then return end
+    if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
+    local b = Client.pending
+    if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end
     args.cmd = cmd
     local list = Client.results
     list[#list + 1] = args
     if #list > KEEP then table.remove(list, 1) end
     if cmd == "refused" then
         print(LOG .. "refused n=" .. tostring(args.n) .. " i=" .. tostring(args.i) .. " code=" .. tostring(args.code))
-        local b = Client.pending
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
     end
 end

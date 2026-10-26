@@ -157,17 +157,26 @@ Perks = { Woodwork = "Woodwork" }
 GridSquareEdgeFacingDirection = { NORTH_SOUTH = { name = "NS" }, EAST_WEST = { name = "EW" } }
 SandboxVars = { MinidoracatBuilder = {} }
 function getWorld() return { isValidSquare = function(_, x, y, z) return z >= -32 and z <= 31 end } end
--- 假格子：squares 裡有的才存在；createNewGridSquare 一律建不出來但記次數（驗「先驗距離才補格子」）。
--- 沒登記的格子：通過身分檢查的動作會走到 NOT_LOADED 並推 refused，和 NO_INTENT（不推）分得開
-local squares, created, failAdd = {}, 0, false
+-- 假格子：squares 裡有的才存在；(40..60, 40..60, 0) 是空地，第一次查時自動建一格（BFS 找路要鄰格），holes 除外。
+-- createNewGridSquare 一律建不出來但記次數（驗「先驗距離才補格子」）。
+-- 沒有的格子：通過身分檢查的動作會走到 NOT_LOADED 並推 refused，和 NO_INTENT（不推）分得開
+local squares, holes, created, failAdd = {}, {}, 0, false
+local square
 function getCell()
     return {
-        getGridSquare = function(_, x, y, z) return squares[x .. "," .. y .. "," .. z] end,
+        getGridSquare = function(_, x, y, z)
+            local k = x .. "," .. y .. "," .. z
+            if squares[k] then return squares[k] end
+            if z == 0 and x >= 40 and x <= 60 and y >= 40 and y <= 60 and not holes[k] then return square(x, y, z) end
+            return nil
+        end,
         createNewGridSquare = function() created = created + 1 return nil end,
+        checkHaveRoof = function() end,
     }
 end
+DesignationZoneAnimal = { addNewRoof = function() end }
 -- o.flags＝格子上的旗標／字串鍵（名稱 → true）；o.owner＝安全屋主人；o.moving＝格上的人；o.floor；o.noReach＝走不到
-local function square(x, y, z, o)
+square = function(x, y, z, o)
     o = o or {}
     local sq = { objects = {}, world = {}, moving = o.moving or {}, owner = o.owner, noReach = o.noReach }
     local flags = o.flags or {}
@@ -189,20 +198,34 @@ local function square(x, y, z, o)
     function sq:hasFloor() return o.floor ~= nil end
     function sq:isSomethingTo() return false end
     function sq:getMovingObjects() return { isEmpty = function() return #sq.moving == 0 end } end
-    function sq:isSolid() return false end
+    function sq:isSolid() return o.solid == true end
     function sq:isSolidTrans() return false end
     function sq:AddSpecialObject(obj) -- failAdd：加進去之後才出錯（驗拆回）
         self.objects[#self.objects + 1] = obj
         if failAdd then error("injected failure after AddSpecialObject") end
     end
-    function sq:transmitRemoveItemFromSquare(obj)
-        for _, list in ipairs({ self.objects, self.world }) do
+    local function removeHere(obj)
+        for _, list in ipairs({ sq.objects, sq.world }) do
             for k, v in ipairs(list) do
                 if v == obj then table.remove(list, k) return k - 1 end
             end
         end
         return -1
     end
+    -- 照引擎：預設（safelyRemove 不是 false）時多格物件整組拆（IsoGridSquare.java:5942-5965）
+    function sq:transmitRemoveItemFromSquare(obj, safely)
+        if safely ~= false and obj.group then
+            for _, m in ipairs(obj.group) do m.sq.removeHere(m.o) end
+            return 0
+        end
+        return removeHere(obj)
+    end
+    sq.removeHere = removeHere
+    function sq:connectedWithFloor() return true end
+    function sq:RecalcProperties() end
+    function sq:getCell() return getCell() end
+    function sq:clearWater() end
+    function sq:disableErosion() end
     function sq:RecalcAllWithNeighbours() end
     function sq:getWorldObjects() return javaList(self.world) end
     function sq:canReachTo(other) return not other.noReach end
@@ -215,8 +238,19 @@ SafeHouse = {
     isSafehouseAllowLoot = function(sq, p) return not (sq.owner and sq.owner ~= p:getUsername()) end,
 }
 buildUtil = { setHaveConstruction = function() end, stairIsBlockingPlacement = function() return false end }
-local losResult = "Clear"
-LosUtil = { lineClear = function() return losResult end }
+-- 舊的多格物件（例：跨兩格的植物）：group＝{ { sq, o }, ... }，可被換地板拆掉
+local function oldPiece(sq, group)
+    local o = { group = group }
+    function o:getProperties()
+        return { has = function(_, k) return type(k) == "table" and k.name == "canBeRemoved" end }
+    end
+    function o:getTextureName() return "vegetation_test_01_0" end
+    function o:getType() return IsoObjectType.normal end
+    function o:getSprite() return nil end
+    sq.objects[#sq.objects + 1] = o
+    group[#group + 1] = { sq = sq, o = o }
+    return o
+end
 IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
@@ -278,7 +312,11 @@ IsoRegions = { setPreviousFlags = function() end, squareChanged = function() reg
 Capability = { UseBuildCheat = "UseBuildCheat", CanGoInsideSafehouses = "CanGoInsideSafehouses" }
 function checkPermissions(player, cap) return player.admin == true end
 local sent = {}
-function sendServerCommand(player, module, cmd, args) sent[#sent + 1] = { player = player, cmd = cmd, args = args } end
+-- 只記送給玩家的（四個參數）；三個參數的是廣播（例：換地板後的 erosion），不記
+function sendServerCommand(player, module, cmd, args)
+    if args == nil then return end
+    sent[#sent + 1] = { player = player, cmd = cmd, args = args }
+end
 local scrapDefs = {}
 ISMoveableDefinitions = { getInstance = function()
     return { getScrapDefinition = function(mat) return scrapDefs[mat] end }
@@ -618,7 +656,8 @@ local function intent(p, o)
     Server.intent(p, args)
     return sent[1] and sent[1].args.code
 end
-check(intent(P, {}) == nil and Server.intents[7] and Server.intents[7].c[1][2] == 20, "合法請求：存下、不回覆")
+check(intent(P, {}) == nil and sent[1] and sent[1].cmd == "accepted" and Server.intents[7]
+    and Server.intents[7].c[1][2] == 20, "合法請求：存下、回 accepted")
 check(regionPokes == 0, "那一帶沒有地板格：不喚醒區域系統（也不記，下次再試）")
 check(intent(P, { v = "r0:1" }) == "STALE", "設定摘要不同：STALE")
 check(intent(P, { c = {} }) == "BAD_REQUEST", "沒有座標：BAD_REQUEST")
@@ -643,9 +682,12 @@ sent = {}
 check(Server.complete(P, 6, 1) == false and sent[1] and sent[1].args.code == "NOT_LOADED",
     "身分對了才往下驗（這裡格子建不出來：NOT_LOADED）")
 check(Server.duration(P, 6, 1) == 200, "施工時間：木工 0 的牆 200 tick（那一帶沒喚醒，不加等待）")
-check(Server.duration(player({ id = 7, instant = true }), 6, 1) == 25, "別的玩家物件問不到請求：短等 0.5 秒後在 complete() 被拒")
-check(Server.duration(P, 99, 1) == 25, "找不到請求（動作比請求先到）：短等 0.5 秒")
-check(intent(P, { n = 9, c = { 30, 20, 0 } }) == "TOO_FAR", "錨點離玩家比「距離＋每次項數」還遠：TOO_FAR")
+check(Server.duration(player({ id = 7, instant = true }), 6, 1) == 1, "別的玩家物件問不到請求：1 tick 後被拒")
+check(Server.duration(P, 99, 1) == 1, "找不到請求：1 tick")
+check(intent(P, { n = 9, c = { 200, 20, 0 } }) == "TOO_FAR", "錨點離玩家超過 100 格：TOO_FAR")
+check(intent(P, { n = 10, c = { 60, 20, 0 } }) == nil and Server.intents[7].n == 10,
+    "點遠處（50 格）再走過去：收下（和每次項數無關）")
+intent(P, { n = 6 })
 check(Server.intents[7] == nil or Server.intents[7].n ~= 9, "被拒的請求不取代舊的")
 sb.WhoCanUse = 2
 check(intent(P, { n = 7 }) == "NOT_ALLOWED", "只限管理員：一般玩家 NOT_ALLOWED")
@@ -664,7 +706,8 @@ check(refusedCount == 20, "限流：5 秒內第 21 個起不處理、不回覆")
 print("情境十二：放置（假格子、假背包）：放好才扣料、擋下時世界與背包都不動")
 sb.MaxCellsPerDrag = 4
 local solidS = sprite("solid_01_0", 950, { flags = { "solid" } })
-world({ wallN, solidS })
+local crateS = sprite("crate_01_0", 951, { keys = { container = "crate" } })
+world({ wallN, solidS, crateS })
 local hammer = item("Base.Hammer", { HAMMER = true })
 local function give(p, spec)
     for ft, n in pairs(spec) do for _ = 1, n do p.inv:add(item(ft)) end end
@@ -672,7 +715,8 @@ end
 local function build(p, n, e, at)
     sent = {}
     Server.intent(p, { n = n, e = e or "walls_test_01_4", d = 0, c = at or { 50, 50, 0 }, v = Entry.digest() })
-    if sent[1] then return false, sent[1].cmd, sent[1].args end
+    if sent[1] and sent[1].cmd == "refused" then return false, sent[1].cmd, sent[1].args end
+    sent = {}
     local ok = Server.complete(p, n, 1)
     return ok, sent[1] and sent[1].cmd, sent[1] and sent[1].args or {}
 end
@@ -689,6 +733,7 @@ ok, cmd, a = build(Q, 2)
 check(not ok and a.code == "NO_TOOL" and a.tools[1] == "HAMMER" and #wallSq.objects == 0, "沒有鐵鎚：NO_TOOL")
 Q.inv:add(hammer)
 sent = {}
+holes["52,52,0"], holes["49,52,0"] = true, true
 Server.intent(Q, { n = 3, e = "walls_test_01_4", d = 0, c = { 52, 52, 0 }, v = Entry.digest() })
 Q.pos.x = 57.5
 local before = created
@@ -747,19 +792,34 @@ check(ok and #open.world == 3 and #behind.world == 6, "釘子在走得到的地�
 square(48, 52, 0, { moving = { {} } })
 ok, cmd, a = build(Q, 11, "solid_01_0", { 48, 52, 0 })
 check(not ok and a.code == "BLOCKED", "會擋路的東西：格上有人時 BLOCKED")
-losResult = "Blocked"
-ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 52, 0 })
-check(not ok and a.code == "UNREACHABLE", "同一層隔著牆：UNREACHABLE")
+square(47, 51, 0, { solid = true })
+ok, cmd, a = build(Q, 19, "crate_01_0", { 47, 51, 0 })
+check(not ok and a.code == "BLOCKED", "不能搬的實心容器：不疊在已經實心的格子上")
+square(48, 53, 0, { noReach = true })
+ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 53, 0 })
+check(not ok and a.code == "UNREACHABLE", "走不到那一格（隔著牆、透明牆或關著的門）：UNREACHABLE")
 ok, cmd, a = build(Q, 13, nil, { 49, 52, 0 })
-losResult = "Clear"
-check(a.code == "NOT_LOADED", "格邊種類（牆）不看視線：照常往下驗")
+check(a.code == "NOT_LOADED", "格邊種類（牆）不查走不走得到：照常往下驗")
+local floorS = sprite("floor_01_0", 960, { flags = { "solidfloor" } })
+world({ wallN, solidS, crateS, floorS })
+local fA, fB = square(45, 45, 0), square(45, 44, 0, { owner = "someone" })
+local grp = {}
+oldPiece(fA, grp)
+oldPiece(fB, grp)
+give(Q, { ["Base.Plank"] = 1 })
+Q.pos.x, Q.pos.y = 45.5, 46.5
+ok = build(Q, 18, "floor_01_0", { 45, 45, 0 })
+Q.pos.x, Q.pos.y = 50.5, 51.5
+check(ok and #fA.objects == 1 and fA.objects[1].name == "floor_01_0" and #fB.objects == 1,
+    "換地板只拆這一格的那片：跨到別人安全屋的另一片留著")
 square(96, 96, 0, { floor = {} })
 local I = player({ id = 23, x = 96.5, y = 97.5, instant = true })
 before = regionPokes
 sent = {}
-Server.intent(I, { n = 14, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
+Server.intent(I, { n = 14, e = "walls_test_01_4", d = 0, c = { 96, 96, 0, 97, 96, 0 }, v = Entry.digest() })
 check(regionPokes == before + 1, "那一帶有地板：喚醒區域系統一次")
-check(Server.duration(I, 14, 1) == 150, "即時動作也等滿喚醒的 3 秒（150 tick）")
+check(Server.duration(I, 14, 1) == 150, "即時動作的第一項也等滿喚醒的 3 秒（150 tick）")
+check(Server.duration(I, 14, 2) == 1, "第二項排在第一項之後：不再等")
 Server.intent(I, { n = 15, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
 check(regionPokes == before + 1, "同一帶第二次請求：不再喚醒")
 local X = player({ id = 24, x = 96.5, y = 97.5 })
@@ -790,6 +850,27 @@ local nn, why = Client.build(player({ id = 30 }), "walls_test_01_4", 0, { { 10, 
 sb.Enabled = nil
 isServer = realIsServer
 check(nn == nil and why == "OFF" and added == 0, "單機請求當場被拒：回原因碼、不排動作")
+isServer = function() return false end
+local nn2 = Client.build(player({ id = 31 }), "walls_test_01_4", 0, { { 10, 20, 0 }, { 11, 20, 0 } })
+isServer = realIsServer
+check(nn2 ~= nil and added == 2, "單機請求收下：伺服器當場回 accepted，排兩項動作")
+local realIsClient = isClient
+isClient = function() return true end
+function sendClientCommand() end
+added = 0
+local nn3 = Client.build(player({ id = 32 }), "walls_test_01_4", 0, { { 10, 20, 0 } })
+check(nn3 ~= nil and added == 0, "MP：送出請求時還不排動作（動作不能比請求先到）")
+Client.onServerCommand("accepted", { n = nn3 })
+check(added == 1, "MP：收到 accepted 才排動作")
+Client.onServerCommand("accepted", { n = nn3 })
+check(added == 1, "重複的 accepted 不重排")
+isClient = realIsClient
+isServer = function() return false end
+Client.pending = { n = 777, player = "PB" }
+cleared = {}
+Server.complete(player({ id = 33 }), 777, 1)
+isServer = realIsServer
+check(cleared[1] == "PB", "單機：沒有請求的動作（例：放太久過期）回 NO_INTENT、清掉後面的動作")
 
 print()
 if failures > 0 then
