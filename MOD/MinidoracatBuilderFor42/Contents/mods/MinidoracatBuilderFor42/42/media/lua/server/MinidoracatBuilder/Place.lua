@@ -149,6 +149,8 @@ local function thumpable(c, kind, north)
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
+    -- 建構子不建容器（IsoThumpable.java:397-405）；照 sprite 的 container 屬性建，原版搬家具放下也這樣（:2486）
+    obj:createContainersFromSpriteProperties()
     local mats = obj:getBuildMaterials()
     for ft, n in pairs(c.cost.items) do mats[ft] = tostring(n) end
     obj:getModData().builderEntry = spr:getName()

@@ -255,7 +255,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setRenderYOffset", "setExplored", "transmitCompleteItemToClients" }) do
+        "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "createContainersFromSpriteProperties" }) do
         o[s] = function() end
     end
     function o:getBuildMaterials() return self.mats end
