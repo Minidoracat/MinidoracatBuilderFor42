@@ -159,6 +159,7 @@ function addXp(p, perk, n) xpLog[#xpLog + 1] = { p = p, perk = perk, n = n } end
 GridSquareEdgeFacingDirection = { NORTH_SOUTH = { name = "NS" }, EAST_WEST = { name = "EW" } }
 SandboxVars = { MinidoracatBuilder = {} }
 function getWorld() return { isValidSquare = function(_, x, y, z) return z >= -32 and z <= 31 end } end
+function getMaximumWorldLevel() return 31 end
 -- 假格子：squares 裡有的才存在；(40..60, 40..60, 0) 是空地，第一次查時自動建一格（BFS 找路要鄰格），holes 除外。
 -- createNewGridSquare 一律建不出來但記次數（驗「先驗距離才補格子」）。
 -- 沒有的格子：通過身分檢查的動作會走到 NOT_LOADED 並推 refused，和 NO_INTENT（不推）分得開
@@ -173,11 +174,12 @@ function getCell()
             return nil
         end,
         createNewGridSquare = function() created = created + 1 return nil end,
-        checkHaveRoof = function() end,
+        checkHaveRoof = function() HARNESS_ROOF = (HARNESS_ROOF or 0) + 1 end, -- 全域：記呼叫次數（屋頂情境驗）
     }
 end
 DesignationZoneAnimal = { addNewRoof = function() end }
--- o.flags＝格子上的旗標／字串鍵（名稱 → true）；o.owner＝安全屋主人；o.moving＝格上的人；o.floor；o.noReach＝走不到
+-- o.flags＝格子上的旗標／字串鍵（名稱 → true）；o.owner＝安全屋主人；o.moving＝格上的人；o.floor；o.noReach＝走不到；
+-- o.stairs＝格上有樓梯；o.wallN／o.wallW＝那條邊的牆（getWall 回它）
 square = function(x, y, z, o)
     o = o or {}
     local sq = { objects = {}, world = {}, moving = o.moving or {}, owner = o.owner, noReach = o.noReach }
@@ -188,7 +190,7 @@ square = function(x, y, z, o)
     function sq:EnsureSurroundNotNull() end
     function sq:isVehicleIntersecting() return false end
     function sq:getObjects() return javaList(self.objects) end
-    function sq:HasStairs() return false end
+    function sq:HasStairs() return o.stairs == true end
     function sq:HasStairsBelow() return false end
     function sq:has(k)
         if type(k) == "table" then return flags[k.name] == true end
@@ -202,9 +204,25 @@ square = function(x, y, z, o)
     function sq:getMovingObjects() return { isEmpty = function() return #sq.moving == 0 end } end
     function sq:isSolid() return o.solid == true end
     function sq:isSolidTrans() return false end
-    function sq:AddSpecialObject(obj) -- failAdd：加進去之後才出錯（驗拆回）
-        self.objects[#self.objects + 1] = obj
+    function sq:AddSpecialObject(obj, index) -- failAdd：加進去之後才出錯（驗拆回）；index 照引擎插在那個位置
+        if index and index >= 0 and index < #self.objects then
+            table.insert(self.objects, index + 1, obj)
+        else
+            self.objects[#self.objects + 1] = obj
+        end
         if failAdd then error("injected failure after AddSpecialObject") end
+    end
+    function sq:getWall(north) if north then return o.wallN end return o.wallW end
+    function sq:getWallSE() return nil end
+    function sq:hasModData() return sq.md ~= nil end
+    function sq:getModData() sq.md = sq.md or {}; return sq.md end
+    function sq:getRoomID() return -1 end
+    function sq:addFloor(name) -- 照引擎：地板物件加在格子上、格子帶 solidfloor
+        local f = { name = name }
+        function f:getSquare() return sq end
+        flags.solidfloor = true
+        sq.objects[#sq.objects + 1] = f
+        return f
     end
     local function removeHere(obj)
         for _, list in ipairs({ sq.objects, sq.world }) do
@@ -257,9 +275,10 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {}, set = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients" }) do
+        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "setIsStairs" }) do
         o[s] = function(self, v) self.set[s] = v end -- 記最後一次設的值
     end
+    function o:getSprite() return spriteMap[name] end
     function o:getBuildMaterials() return self.mats end
     function o:getModData() return self.md end
     function o:getSquare() return sq end
@@ -407,6 +426,12 @@ check(kind({ keys = { lightR = "1" }, flags = { "solid" } }) == "solid", "只帶
 check(kind({ keys = { RoofGroup = "1" }, flags = { "attachedN" } }) == "roof", "屋簷帶附著旗標：歸屋頂")
 check(kind({ type = T.curtainS, keys = { MoveType = "WindowObject", IsMoveAble = "" } }) == "curtain", "窗簾")
 check(kind({ type = T.curtainS, keys = { IsMoveAble = "" } }) == "furniture", "窗簾型別但不是窗上物件（床單）：不歸窗簾")
+check(kind({ type = T.curtainS, keys = { MoveType = "WindowObject", IsMoveAble = "", IsClosedState = "" } }) == nil,
+    "關著的窗簾：不列（項目是打開那張，關著的是它的 −4 號）")
+check(kind({ type = T.lightswitch, keys = { lightR = "200", LightRadius = "5" } }) == nil
+    and kind({ keys = { lightR = "200", lightG = "200", LightRadius = "5" } }) == nil
+    and kind({ keys = { lightR = "200", lightG = "200", lightB = "1", LightRadius = "5" } }) == "light",
+    "有 lightR 但缺 lightG 或 lightB：不列（IsoLightSwitch 建構子三色都要，缺一個就丟錯）；三色都有照列")
 check(kind({ keys = { IsMoveAble = "" } }) == "furniture", "可搬：家具")
 check(kind({ flags = { "solidfloor" }, keys = { RoofGroup = "1" } }) == "floor", "平屋頂地板：歸地板")
 check(kind({ type = T.stairsBW }) == "stairs", "樓梯型別")
@@ -642,14 +667,16 @@ local bedA = sprite("bed_01_1", 801, { keys = { IsMoveAble = "" } })
 local bedB = sprite("bed_01_2", 802, { keys = { IsMoveAble = "" } })
 local bedC = sprite("bed_01_3", 803, { keys = { IsMoveAble = "" } })
 fakeGrid(2, 2, { { nil, bedA }, { bedB, bedC } })
-world({ wallN, modFloor, stairsB, tree, chair[1], chair[2], chair[3], chair[4], oddFace, oddTree, bedA, bedB, bedC })
+world({ wallN, modFloor, stairsB, tree, chair[1], chair[2], chair[3], chair[4], oddFace, oddTree, bedA, bedB, bedC,
+    sprite("gd_01_0", 3, { flags = { "doorW" }, keys = { GarageDoor = "" } }) })
 Sources.byFile = { [7001] = "UMCTP" }
 local sb = SandboxVars.MinidoracatBuilder
 local e1 = Entry.resolve("walls_test_01_4")
 check(e1 and e1.kind == "wall" and e1.tileset == "walls_test_01" and e1.num == 4, "牆：種類與 tileset 由伺服器重算")
 check(select(2, Entry.resolve("nope_01_0")) == "UNKNOWN", "不存在的圖塊：UNKNOWN（不新增空 sprite）")
 check(select(2, Entry.resolve("tree_01_0")) == "UNKNOWN", "排除的圖塊（樹）：UNKNOWN")
-check(select(2, Entry.resolve("st_01_0")) == "UNSUPPORTED", "樓梯第四階段才做：UNSUPPORTED")
+check(select(2, Entry.resolve("st_01_0")) == "UNKNOWN", "湊不成三格的樓梯底片：UNKNOWN（目錄也不收）")
+check(select(2, Entry.resolve("gd_01_0")) == "UNSUPPORTED", "車庫門第二版才做：UNSUPPORTED")
 check(select(2, Entry.resolve("bed_01_2")) == "UNKNOWN", "多格的非原點：UNKNOWN")
 check(Entry.resolve("bed_01_1") ~= nil, "多格原點可以")
 check(Entry.resolve("tk_01_9").mod == "UMCTP", "MOD 圖塊帶來源")
@@ -1546,9 +1573,12 @@ do
             for _, k in ipairs(kinds) do want["IGUI_MBLD_Kind_" .. k] = true end
         end
         for _, t in ipairs(W.TABS) do want["IGUI_MBLD_Tab_" .. t] = true end
-        for _, r in ipairs({ "pickup", "scrap", "materials", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
+        for _, r in ipairs({ "pickup", "scrap", "materials", "sheet", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
         for d = 0, 4 do want["IGUI_MBLD_Face_" .. d] = true end
-        for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK" }) do want["IGUI_MBLD_Tool_" .. t] = true end
+        for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER" }) do
+            want["IGUI_MBLD_Tool_" .. t] = true
+        end
+        for _, k in ipairs({ "stairs", "roof", "light", "curtain" }) do want["IGUI_MBLD_Note_" .. k] = true end
         local missing = {}
         for _, lang in ipairs({ "EN", "CH" }) do
             local f = assert(io.open(MEDIA .. "/shared/Translate/" .. lang .. "/IG_UI.json", "rb"))
@@ -1572,6 +1602,219 @@ do
     check(Messages.refusal("WHAT", {}):find("IGUI_MBLD_Refuse_Other(WHAT)", 1, true), "不認得的碼：通用訊息附上碼")
     getText = realGetText
 end
+
+print("情境二十：第四階段新種類（樓梯、燈、窗簾、屋頂）")
+-- 包成函式：區域變數多，放在主區塊的 do…end 會超過主程式 200 個的上限
+local function newKinds()
+    nowMs = nowMs + 60000 -- 前面的請求、限流都過期
+    local BP = { BlocksPlacement = "" }
+    local stW = { sprite("stw_01_0", 2101, { type = T.stairsBW, keys = BP }), sprite("stw_01_1", 2102, { type = T.stairsMW, keys = BP }),
+        sprite("stw_01_2", 2103, { type = T.stairsTW, keys = BP }) }
+    local stN = { sprite("stn_01_2", 2104, { type = T.stairsBN }), sprite("stn_01_1", 2105, { type = T.stairsMN }),
+        sprite("stn_01_0", 2106, { type = T.stairsTN }) }
+    local landing = sprite("carpentry_02_57", 2107, { flags = { "solidfloor" } })
+    local lamp = sprite("lamp_01_0", 2110, { type = T.lightswitch, flags = { "solidtrans" },
+        keys = { IsMoveAble = "", lightR = "200", lightG = "180", lightB = "150", LightRadius = "6" } })
+    local switch = sprite("switch_01_0", 2111, { type = T.lightswitch })
+    local CUR = { MoveType = "WindowObject", IsMoveAble = "", CurtainSound = "Long" }
+    local function curtain(name, id, facing, closed)
+        local keys = { Facing = facing }
+        for k, v in pairs(CUR) do keys[k] = v end
+        if closed then keys.IsClosedState = "" end
+        return sprite(name, id, { type = T.curtainW, keys = keys })
+    end
+    local roof = sprite("roof_01_0", 2130, { type = T.WestRoofB, keys = { RoofGroup = "1" } })
+    local eave = sprite("roof_01_1", 2131, { type = T.WestRoofT, flags = { "isEave" }, keys = { RoofGroup = "1" } })
+    world({ stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave,
+        curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
+        curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
+        curtain("curx_01_4", 2126, "E") })
+    local function who(id, x, y)
+        local p = player({ id = id, x = x, y = y })
+        p.inv:add(item("Base.Hammer", { HAMMER = true }))
+        return p
+    end
+    local function at(sq, name) -- 格上第一個叫 name 的物件
+        for _, o in ipairs(sq.objects) do if o.name == name or (o.spr and o.spr.name == name) then return o end end
+    end
+
+    -- 樓梯：項目＝底片，原點＝頂片；W 型沿 +x、平台在 x−1、上一層
+    check(select(2, Entry.resolve("stw_01_1")) == "UNKNOWN" and Entry.resolve("stw_01_0").kind == "stairs",
+        "樓梯只收湊得成三格的底片：中片當項目 UNKNOWN")
+    local cw, cn = Entry.cells(stW[1]), Entry.cells(stN[1])
+    check(#cw == 4 and cw[1][4] == stW[3] and cw[1][5] == "top" and cw[2][1] == 1 and cw[3][1] == 2 and cw[3][4] == stW[1]
+        and cw[4][1] == -1 and cw[4][3] == 1 and cw[4][4] == landing and cw[4][5] == "platform"
+        and cn[2][2] == 1 and cn[3][2] == 2 and cn[4][2] == -1 and cn[4][3] == 1,
+        "樓梯佔地：頂片在原點、中片、底片沿爬的反方向排，平台在頂片前一格的上一層（N 型沿 +y）")
+    local sc = Cost.forCells("stairs", { stW[3], stW[2], stW[1], landing }, 1)
+    local st = Cost.sum(sc)
+    check(sc[1].items["Base.Plank"] == 13 and sc[1].items["Base.Nails"] == 8 and next(sc[2].items) == nil
+        and next(sc[4].items) == nil and st.items["Base.Plank"] == 13 and st.tools[1] == "HAMMER",
+        "樓梯整組照 Wood_Stairs 收一次（木板 13、釘子 8），收在頂片那一格")
+    local ms = Cost.of("stairs", sprite("ms_01_0", 2140, { type = T.stairsBW, keys = { MaterialType = "Metal_Solid" } }))
+    local ws = Cost.of("stairs", sprite("ws_01_0", 2141, { type = T.stairsBW, keys = { Material = "Wood" } }))
+    check(ms.items["Base.MetalBar"] == 4 and ms.items["Base.SmallSheetMetal"] == 6 and #ms.tools == 2
+        and ws.items["Base.Plank"] == 13 and ws.back == true and next(Cost.xp({ ws }, player())) == nil,
+        "金屬樓梯照 Metal_Stairs；有拆解材質的不照拆解產出收，原版拆時照退料表可能全拿回，不給經驗")
+    for _, q in ipairs({ { 40, 57, 1 }, { 41, 57, 1 }, { 40, 58, 1 }, { 40, 59, 1 }, { 40, 56, 1 }, { 40, 55, 1 } }) do
+        square(q[1], q[2], q[3])
+    end
+    square(40, 60, 1, { solid = true })
+    local SP = who(2101, 44.5, 57.5)
+    give(SP, { ["Base.Plank"] = 13, ["Base.Nails"] = 8 })
+    xpLog = {}
+    local sok = build(SP, 1, "stw_01_0", { 41, 57, 0 })
+    local T0, M0, B0 = at(squares["41,57,0"], "stw_01_2"), at(squares["42,57,0"], "stw_01_1"), at(squares["43,57,0"], "stw_01_0")
+    local plat = squares["40,57,1"]
+    check(sok and T0 and M0 and B0 and T0.set.setIsStairs == true and B0.set.setIsStairs == true and T0.north == true
+        and T0.mats["Base.Plank"] == "13" and M0.mats["Base.Nails"] == "8" and B0.mats["Base.Plank"] == "13"
+        and T0.set.setMaxHealth == 450 and T0.set.setIsThumpable == true and T0.set.setBlockAllTheSquare == true
+        and T0.set.setCanPassThrough == true,
+        "樓梯三片：IsoThumpable、標成樓梯、450 血、照原版整格擋（BlocksPlacement）、走得過，三片都寫整組的退料")
+    check(at(plat, "carpentry_02_57") and plat.md and plat.md.ConnectedToStairsfalse == true
+        and SP.inv:count("Base.Plank") == 0 and #xpLog == 1 and xpLog[1].n == 105,
+        "平台：上一層補原版平台地板、記 ConnectedToStairs（同向樓梯不能再蓋在這），整組扣一次料、木工 105（21 件）")
+    local cs = square(42, 55, 0)
+    cs:getModData().ConnectedToStairsfalse = true
+    square(42, 56, 0, { flags = { water = true } })
+    square(42, 58, 1, { floor = {} })
+    square(41, 59, 1, { wallW = {} })
+    local function stairsCode(y)
+        local code, extra = Check.item(who(2102, 44.5, y + 0.5), "stw_01_0", 0, { 41, y, 0 })
+        return code, extra and extra.x, extra and extra.z
+    end
+    local c1, x1 = stairsCode(58)
+    local c2, x2 = stairsCode(59)
+    local c3, x3, z3 = stairsCode(60)
+    local c4, x4 = stairsCode(56)
+    local c5, x5 = stairsCode(55)
+    check(c1 == "BLOCKED" and x1 == 42 and c2 == "BLOCKED" and x2 == 41 and c3 == "BLOCKED" and x3 == 40 and z3 == 1
+        and c4 == "BLOCKED" and x4 == 42 and c5 == "BLOCKED" and x5 == 42,
+        "樓梯擋下：片的正上方有地板、頂片上一層朝平台那邊有牆、平台實心、片在水上、片在同向樓梯的平台上")
+
+    -- 燈：IsoLightSwitch；可搬又帶 lightR 的另收燈泡（拿得下來），燈泡不給經驗
+    local made = {}
+    IsoLightSwitch = { new = function(_, sq, spr, room)
+        local o = { spr = spr, room = room, md = {}, lights = 0 }
+        function o:addLightSourceFromSprite() if spr:getProperties():has("lightR") then self.lights = self.lights + 1 end end
+        function o:setActivated(v) self.on = v end
+        function o:setRenderYOffset(v) self.yoff = v end
+        function o:setMovedThumpable(v) self.moved = v end
+        function o:getModData() return self.md end
+        function o:setExplored() end
+        function o:transmitCompleteItemToClients() self.sent = true end
+        function o:getSquare() return sq end
+        made[#made + 1] = o
+        return o
+    end }
+    ISMoveableSpriteProps = { new = function() return { canPlaceMoveableInternal = function() return true end } end }
+    local lc = Cost.of("light", lamp, 0)
+    check(lc.items["Base.LightBulb"] == 1 and lc.items["Base.ElectronicsScrap"] == nil and lc.tools[1] == "SCREWDRIVER",
+        "可搬的燈：燈泡倍率 0 也收 1 個（拿得下來），其他基本價照倍率免")
+    local LP = player({ id = 2103, x = 51.5, y = 57.5 })
+    LP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    give(LP, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
+    local lok, _, la = build(LP, 1, "lamp_01_0", { 50, 57, 0 })
+    check(not lok and la.code == "NO_MATERIAL" and la.need["Base.LightBulb"] == 1 and #made == 0, "缺燈泡：NO_MATERIAL、不放")
+    give(LP, { ["Base.LightBulb"] = 1 })
+    xpLog = {}
+    lok = build(LP, 2, "lamp_01_0", { 50, 57, 0 })
+    local L = made[1]
+    check(lok and L and L.lights == 1 and L.on == true and L.moved == true and L.sent and L.md.builderEntry == "lamp_01_0"
+        and squares["50,57,0"].objects[1] == L and LP.inv:count("Base.LightBulb") == 0
+        and #xpLog == 1 and xpLog[1].perk == "perk:Electricity" and xpLog[1].n == 10,
+        "燈：建 IsoLightSwitch、照 sprite 掛光源、開著、擋路的殭屍打得壞；電工 10（燈泡不算）")
+    local SW = player({ id = 2104, x = 51.5, y = 58.5 })
+    SW.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    give(SW, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
+    check(build(SW, 1, "switch_01_0", { 50, 58, 0 }) and made[2] and made[2].lights == 0 and made[2].moved == nil,
+        "牆面開關（沒有 lightR）：照樣是 IsoLightSwitch、不掛光源、不收燈泡")
+    ISMoveableSpriteProps = nil
+
+    -- 窗簾：掛在窗框上；面向 E 的窗框在本格西邊，面向 W 的在東邊那格
+    local function framed(x, y, extra)
+        local flags = { WindowW = true }
+        for k, v in pairs(extra or {}) do flags[k] = v end
+        local sq = square(x, y, 0, { flags = flags })
+        local props = { has = function(_, k) return (type(k) == "table" and k.name or k) == "WindowW" end,
+            get = function() return nil end }
+        sq.objects[1] = { getProperties = function() return props end, getSprite = function() return nil end }
+        return sq
+    end
+    local cq = framed(53, 57)
+    local other = { getProperties = function() return { has = function() return false end, get = function() return nil end } end,
+        getSprite = function() return nil end }
+    cq.objects[2] = other
+    framed(53, 58, { exterior = true })
+    square(53, 59, 0)
+    local CP = player({ id = 2105, x = 54.5, y = 57.5 })
+    local function cur(name, x, y) return (Check.item(CP, name, 0, { x, y, 0 })) end
+    check(cur("cur_01_4", 53, 57) == nil and cur("cur_01_5", 52, 57) == nil,
+        "窗簾：面向 E 掛在本格的窗框、面向 W 掛在東邊那格的窗框")
+    check(cur("cur_01_4", 53, 58) == "BLOCKED" and cur("cur_01_4", 53, 59) == "BLOCKED" and cur("curx_01_4", 53, 57) == "BLOCKED"
+        and cur("cur_01_5", 53, 57) == "BLOCKED",
+        "窗簾擋下：室外（沒有房間、沒有屋頂）、沒有窗框、關著那張（−4 號）不存在、窗框在另一邊")
+    IsoCurtain = { new = function(_, sq, name, north)
+        local o = { name = name, north = north, md = {} }
+        function o:getModData() return self.md end
+        function o:setExplored() end
+        function o:transmitCompleteItemToClients() end
+        function o:getSquare() return sq end
+        function o:getSprite() return spriteMap[name] end
+        function o:getProperties() return spriteMap[name]:getProperties() end
+        function o:getType() return spriteMap[name]:getType() end
+        return o
+    end }
+    check(Cost.of("curtain", spriteMap["cur_01_4"], 0).items["Base.Sheet"] == 2
+        and Cost.of("curtain", sprite("cs_01_4", 2150, { type = T.curtainW, keys = { MoveType = "WindowObject" } }), 0).items["Base.Sheet"] == 1
+        and #Cost.of("curtain", spriteMap["cur_01_4"]).tools == 0,
+        "窗簾：長窗簾 2 張床單、其他 1 張，倍率 0 也照收（移除窗簾退 1 張）；不要工具")
+    give(CP, { ["Base.Sheet"] = 2 })
+    xpLog = {}
+    local cok = build(CP, 1, "cur_01_4", { 53, 57, 0 })
+    local co = cq.objects[2]
+    check(cok and co and co.name == "cur_01_4" and co.north == false and cq.objects[3] == other and co.md.builderEntry == "cur_01_4"
+        and CP.inv:count("Base.Sheet") == 0 and #xpLog == 0,
+        "窗簾：IsoCurtain（面向 E 不是 north）、插在窗框後面、扣 2 張床單、不給經驗")
+    check(cur("cur2_01_4", 53, 57) == "BLOCKED", "同一面已經有窗上物件：擋下")
+    local sheet = framed(55, 59)
+    local free = cur("cur_01_4", 55, 59)
+    sheet.objects[2] = { getProperties = function() return { has = function() return false end, get = function() return nil end } end,
+        getType = function() return T.curtainW end, getSprite = function() return nil end, isCurtain = true }
+    local realInstanceof = instanceof
+    instanceof = function(o, cls) return cls == "IsoCurtain" and o.isCurtain == true end
+    check(free == nil and cur("cur_01_4", 55, 59) == "BLOCKED", "同一面掛著床單窗簾：擋下（原版搬家具同規則）")
+    instanceof = realInstanceof
+
+    -- 屋頂：二樓起、要有東西撐著（正下方有牆、四鄰有地板或屋頂）；殭屍不打、不擋整格、重算有沒有屋頂
+    square(56, 57, 0, { wallW = {} })
+    square(56, 57, 1)
+    square(57, 57, 1)
+    square(58, 58, 1)
+    square(59, 57, 0, { stairs = true, wallW = {} })
+    square(59, 57, 1)
+    square(59, 58, 0, { wallN = {} })
+    local RP = who(2106, 57.5, 57.5)
+    local PV = { preview = true }
+    check(Check.item(RP, "roof_01_0", 0, { 58, 58, 1 }) == "BLOCKED" and Check.item(RP, "roof_01_0", 0, { 56, 58, 0 }) == "BLOCKED"
+        and Check.item(RP, "roof_01_0", 0, { 59, 57, 1 }) == "BLOCKED",
+        "屋頂擋下：沒有東西撐著、蓋在一樓、正下方是樓梯")
+    check(Check.item(RP, "roof_01_0", 0, { 58, 59, 1 }, PV) == "BLOCKED" and Check.item(RP, "roof_01_0", 0, { 59, 58, 1 }, PV) == nil
+        and squares["58,59,1"] == nil and squares["59,58,1"] == nil,
+        "預覽：上一層的格子還沒建也照座標查撐不撐得住（不補格子）")
+    check(Cost.of("roof", eave).items["Base.Nails"] == 1 and Cost.of("roof", roof).items["Base.Nails"] == 2,
+        "屋頂木板 1、釘子 2；屋簷釘子 1")
+    give(RP, { ["Base.Plank"] = 2, ["Base.Nails"] = 4 })
+    HARNESS_ROOF = 0
+    local rok = build(RP, 1, "roof_01_0", { 56, 57, 1 })
+    local R1 = squares["56,57,1"].objects[1]
+    check(rok and R1 and R1.name == "roof_01_0" and R1.set.setIsThumpable == false and R1.set.setBlockAllTheSquare == false
+        and R1.set.setCanPassThrough == true and R1.mats["Base.Nails"] == "2" and HARNESS_ROOF == 1,
+        "屋頂：IsoThumpable、殭屍不打、不擋整格、寫退料，伺服器重算下面幾層有沒有屋頂")
+    check(build(RP, 2, "roof_01_0", { 57, 57, 1 }) and squares["57,57,1"].objects[1],
+        "旁邊已經有屋頂：撐得住（照常蓋）")
+end
+newKinds()
 
 print()
 if failures > 0 then

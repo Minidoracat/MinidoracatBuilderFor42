@@ -9,14 +9,18 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 3
+Entry.VERSION = 4
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
--- 這一階段能蓋的種類。樓梯、燈、窗簾、屋頂第四階段才做；車庫門第二版（設計稿 Rules.classify 的註記）。
+-- 能蓋的種類。車庫門、雙開門第二版（設計稿 Rules.classify 的註記）。
 Entry.BUILDABLE = { floor = true, wall = true, windowFrame = true, doorFrame = true, fence = true, door = true,
     window = true, furniture = true, container = true, wallObject = true, windowObject = true, floorOverlay = true,
-    wallOverlay = true, attached = true, solid = true, overlay = true }
+    wallOverlay = true, attached = true, solid = true, overlay = true, stairs = true, light = true, curtain = true,
+    roof = true }
+
+-- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:252-255）
+Entry.STAIR_FLOOR = "carpentry_02_57"
 
 -- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著
 Entry.EDGE = { wall = true, windowFrame = true, doorFrame = true, fence = true, door = true, window = true }
@@ -73,6 +77,10 @@ function Entry.resolve(name)
     local kind = Rules.classify(spr)
     if not kind then return nil, "UNKNOWN" end
     if not Entry.BUILDABLE[kind] then return nil, "UNSUPPORTED" end
+    -- 樓梯只收湊得成三格的底片（目錄同一條規則，Catalog.scanSprite）
+    if kind == "stairs" and not Rules.stairsSet(IsoSpriteManager.instance:getNamedMap(), name) then
+        return nil, "UNKNOWN"
+    end
     local grid = spr:getSpriteGrid()
     if grid and grid:getAnchorSprite() ~= spr then return nil, "UNKNOWN" end -- 多格只收原點
     local tileset, num = name:match("^(.*)_(%d+)$")
@@ -105,9 +113,21 @@ function Entry.face(entry, d)
     return nil
 end
 
--- 佔地：{ { dx, dy, dz, sprite }, ... }，相對原點那一格。單格就是自己。
+-- 佔地：{ { dx, dy, dz, sprite[, 角色] }, ... }，相對原點那一格。單格就是自己。
 -- 原點＝grid 第一層第一個非空成員（IsoSpriteGrid.java:23-31），不一定在 (0,0)。
+-- 樓梯（項目＝底片）：原點是頂片，接著中片、底片，最後是上一層的平台（角色 top／mid／bottom／platform）。
+-- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:190-200,257-283）。
 function Entry.cells(spr)
+    if Rules.typeCode(spr:getType()) == "stairs" then
+        local named = IsoSpriteManager.instance:getNamedMap()
+        local set = Rules.stairsSet(named, spr:getName())
+        if set then
+            local dx, dy = 1, 0
+            if set.dir == "N" then dx, dy = 0, 1 end
+            return { { 0, 0, 0, named:get(set.t), "top" }, { dx, dy, 0, named:get(set.m), "mid" },
+                { 2 * dx, 2 * dy, 0, spr, "bottom" }, { -dx, -dy, 1, named:get(Entry.STAIR_FLOOR) or spr, "platform" } }
+        end
+    end
     local grid = spr:getSpriteGrid()
     if not grid then return { { 0, 0, 0, spr } } end
     local anchor = grid:getAnchorSprite()
@@ -155,8 +175,10 @@ function Entry.north(kind, spr)
     return f == "N" or f == "S"
 end
 
--- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）
-local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100 }
+-- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
+-- 樓梯一個動作蓋整組
+local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100,
+    stairs = 200, roof = 120 }
 function Entry.duration(kind, player)
     local level = player and player:getPerkLevel(Perks.Woodwork) or 0
     return math.max(20, (TIME[kind] or 100) - level * 5)

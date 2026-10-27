@@ -25,6 +25,11 @@ for _, k in ipairs({ "curtainN", "curtainS", "curtainW", "curtainE" }) do TYPE[T
 for _, k in ipairs({ "WestRoofB", "WestRoofM", "WestRoofT" }) do TYPE[T[k]] = "roof" end
 TYPE[T.tree] = "tree"
 TYPE[T.lightswitch] = "light"
+-- 往西爬的樓梯片（W 型：沿 +x 排、平台在 x−1；原版叫 north，ISBuildIsoEntity.lua:18-20）
+local WEST_STAIRS = { [T.stairsTW] = true, [T.stairsMW] = true, [T.stairsBW] = true }
+function Rules.westStairs(t)
+    return WEST_STAIRS[t] == true
+end
 
 -- 依名稱不列的圖塊（kindOf 第一行查，一次表查詢）：
 -- 1. 原版每次載入 chunk 都會跑 Lua 改寫的圖塊（MapObjects.OnLoadWithSprite，server/Map/MapObjects/*.lua）。
@@ -284,11 +289,14 @@ function Rules.kindOf(name, p, t)
     if plantOrObject(p, mt) or infiniteWater(p) then return nil end
     if p:has("container") then return "container" end -- 冰箱帶燈，容器優先
     if tc == "light" or p:has("LightRadius") then
-        -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）
+        -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）。有 lightR 就要三色都有：
+        -- 建構子三色都照字串轉數字，缺一個就丟錯（IsoLightSwitch.java:76-83；原版 lighting_indoor_03_5 只有 lightR）
         if tc ~= "light" and not p:has("lightR") then return nil end
+        if p:has("lightR") and not (p:has("lightG") and p:has("lightB")) then return nil end
         return "light"
     end
-    if tc == "curtain" and mt == "WindowObject" then return "curtain" end -- 床單、帳篷布不列
+    -- 窗簾只列打開的那張：IsoCurtain 把給的那張當開著、編號 −4 當關著（IsoCurtain.java:91-96）。床單、帳篷布不列
+    if tc == "curtain" and mt == "WindowObject" then return not p:has("IsClosedState") and "curtain" or nil end
     if p:has("IsMoveAble") then return "furniture" end -- 可搬的遮雨棚也在這
     if tc == "roof" or p:has("RoofGroup") then return "roof" end -- 屋簷也算
     return decor(p, mt)

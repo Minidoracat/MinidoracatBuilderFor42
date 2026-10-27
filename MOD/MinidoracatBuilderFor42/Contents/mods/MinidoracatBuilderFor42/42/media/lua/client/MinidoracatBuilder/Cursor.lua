@@ -21,7 +21,7 @@ local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials,
 -- （PackThrow ThrowCursor.lua 同做法）。
 local Class, Overlay
 local LOG = "[MinidoracatBuilderFor42] "
-local DRAG = { floor = true, wall = true, fence = true } -- 能按住拖一排的種類（第三階段的決定）
+local DRAG = { floor = true, wall = true, fence = true, roof = true } -- 能按住拖一排的種類（第三、四階段的決定）
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算走不到（MP 的 placed 比客戶端動作結束晚到）
@@ -132,6 +132,8 @@ function Cursor.new(player, entry, d)
     o.faces = Cursor.faces(entry)
     o:setFace(Cursor.pickFace(entry, o.faces, d))
     o.canDrag = DRAG[entry.kind] == true and not o.joypad -- 手把只做單格
+    -- 屋頂預設蓋在上一層：站在下面那層往上蓋。PgUp／PgDn、手把 X 切換（isValid 照它換算）
+    o.up = entry.kind == "roof"
     o.max = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
     local key = getCore():getKey(KeybindId.ROTATE_BUILDING)
     o.rotateName = key and key > 0 and getKeyName(key) or nil
@@ -185,9 +187,15 @@ function Cursor:getSprite()
     return self.sprName
 end
 
--- R：原版全域按鍵處理只轉 getDrag(0)（ISBuildingObject.lua:588-592），所以只有玩家 0 能用鍵盤轉
+-- R：原版全域按鍵處理只轉 getDrag(0)（ISBuildingObject.lua:588-592），所以只有玩家 0 能用鍵盤轉、換層
 function Cursor:rotateKey(key)
-    if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then self:turn(1) end
+    if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
+    if self.entry.kind ~= "roof" then return end
+    if key == Keyboard.KEY_PRIOR then
+        self.up = true
+    elseif key == Keyboard.KEY_NEXT then
+        self.up = false
+    end
 end
 
 -- 按住左鍵時每幀呼叫，x, y 是滑鼠目前那格；self.square 是按下那格（ISBuildingObject.lua:114-135）。
@@ -211,12 +219,22 @@ function Cursor:rotateMouse(x, y)
     end
 end
 
--- 手把：LB／RB 在有的朝向之間轉；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:623-649）。A 由引擎的
--- isBuildButtonDown 處理（手把是 Interact 鍵，CharacterInputComponent.java:385-391）。
+-- 手把：LB／RB 在有的朝向之間轉；X 換層（屋頂）；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:623-649）。
+-- A 由引擎的 isBuildButtonDown 處理（手把是 Interact 鍵，CharacterInputComponent.java:385-391）。
 function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
     if button == Joypad.RBumper then return self:turn(1) end
     if button == Joypad.LBumper then return self:turn(-1) end
+    if button == Joypad.XButton and self.entry.kind == "roof" then
+        self.up = not self.up
+        return
+    end
     ISBuildingObject.onJoypadPressButton(self, joypadIndex, joypadData, button)
+end
+
+-- 原版按鈕提示列照拖曳物件的 getXPrompt 顯示 X（ISButtonPrompt.lua:1012-1013）
+function Cursor:getXPrompt()
+    if self.entry.kind ~= "roof" then return nil end
+    return getText(self.up and "IGUI_MBLD_PadLayerHere" or "IGUI_MBLD_PadLayerUp")
 end
 
 function Cursor:getLBPrompt()
@@ -273,10 +291,12 @@ function Cursor:isValid(square)
     local ex, ey = self.lineX or ax, self.lineY or ay
     local px, py, pz = math.floor(p:getX()), math.floor(p:getY()), math.floor(p:getZ())
     if ax ~= self.kx or ay ~= self.ky or az ~= self.kz or ex ~= self.kex or ey ~= self.key or self.d ~= self.kd
-        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen then
+        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or self.up ~= self.kup then
         self.kx, self.ky, self.kz, self.kex, self.key, self.kd = ax, ay, az, ex, ey, self.d
-        self.kpx, self.kpy, self.kpz, self.kgen = px, py, pz, self.sGen
-        self:refresh(ax, ay, az, ex, ey)
+        self.kpx, self.kpy, self.kpz, self.kgen, self.kup = px, py, pz, self.sGen, self.up
+        -- 上一層：畫面上同一個位置，上一層是 (x+3, y+3)（IsoUtils.XToIso／YToIso 每層加 3 格）
+        local u = self.up and 3 or 0
+        self:refresh(ax + u, ay + u, az + (self.up and 1 or 0), ex + u, ey + u)
     end
     return self.okN > 0
 end
@@ -359,6 +379,9 @@ function Cursor:texts()
         end
         if self.faces.n > 1 and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
+        end
+        if self.entry.kind == "roof" then
+            parts[#parts + 1] = getText(self.up and "IGUI_MBLD_HintLayerHere" or "IGUI_MBLD_HintLayerUp")
         end
         parts[#parts + 1] = getText("IGUI_MBLD_HintCancel")
         hint = table.concat(parts, getText("IGUI_MBLD_HintSep"))

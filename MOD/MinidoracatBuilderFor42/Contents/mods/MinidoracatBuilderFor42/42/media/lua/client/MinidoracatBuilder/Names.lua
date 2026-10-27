@@ -57,6 +57,10 @@ local function compose(name, kind)
         local n = #Entry.cells(spr)
         if n > 1 then shown = getText("IGUI_MBLD_Name_Cells", shown, tostring(n)) end
     end
+    local t = spr:getType()
+    if Rules.typeCode(t) == "stairs" then -- 樓梯沒有朝向可選，各組只有一個方向：名稱帶往哪邊爬
+        shown = shown .. getText("IGUI_MBLD_Sep") .. Names.face(Rules.westStairs(t) and 4 or 1)
+    end
     return shown
 end
 

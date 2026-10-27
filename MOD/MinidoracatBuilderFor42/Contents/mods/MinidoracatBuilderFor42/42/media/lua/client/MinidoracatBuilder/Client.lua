@@ -19,18 +19,24 @@ local lastNonce = getTimestampMs() % 1000000
 
 -- 回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
 local function walkTo(player, kind, spr, c)
-    local sq = getCell():getGridSquare(c[1], c[2], c[3])
-    if not sq then return nil end
+    local cell = getCell()
     if Entry.EDGE[kind] then
+        local sq = cell:getGridSquare(c[1], c[2], c[3])
+        if not sq then return nil end
         local north = Entry.north(kind, spr)
         return luautils.walkAdjWall(player, sq, north, true) -- 原版 ISBuildingObject:walkTo 的牆寫法
     end
-    -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）
-    local cell, own = getCell(), {}
+    -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
+    -- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）；蓋在上一層的（屋頂）走到正下方那格旁邊。
+    local own, x, y, z = {}, c[1], c[2], c[3]
     for _, d in ipairs(Entry.cells(spr)) do
         local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
         if o then own[#own + 1] = o end
+        if d[5] == "bottom" then x, y = c[1] + d[1], c[2] + d[2] end
     end
+    if z > math.floor(player:getZ()) then z = z - 1 end
+    local sq = cell:getGridSquare(x, y, z)
+    if not sq then return nil end
     return luautils.walkAdj(player, sq, true, own)
 end
 

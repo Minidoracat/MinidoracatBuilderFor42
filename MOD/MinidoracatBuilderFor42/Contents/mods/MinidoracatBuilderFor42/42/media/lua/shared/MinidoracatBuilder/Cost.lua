@@ -18,6 +18,8 @@ local WOOD = {
     door = { [PLANK] = 4, [NAILS] = 4, ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1 }, -- WoodenDoorLvl1
     window = { ["Base.GlassPanel"] = 4, [PLANK] = 2, [NAILS] = 4 },         -- Wooden_Windows
     solid = { [PLANK] = 2, [NAILS] = 2 },
+    stairs = { [PLANK] = 13, [NAILS] = 8 },                                 -- Wood_Stairs（整組，stairs/entity_carpentry_stairs.txt）
+    roof = { [PLANK] = 1, [NAILS] = 2 },                                    -- 原版沒有屋頂配方：比照木地板，斜面多一根釘子
 }
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
@@ -30,6 +32,14 @@ local function byWeight(p)
     return HEAVY
 end
 local SMALL = { [PLANK] = 1, [NAILS] = 1 } -- 掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、疊圖
+local EAVE = { [PLANK] = 1, [NAILS] = 1 }  -- 屋簷：isEave 是旗標（IsoFlagType.java:109），字串鍵查不到
+-- 燈：原版沒有建造配方。沒有拆解材質的收電子零件與電線各 1、要螺絲起子、給電工經驗
+local LIGHT_BASE = { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 }
+-- 可搬又帶 lightR 的燈裝著燈泡，原版拿得下來（canBeModified，IsoLightSwitch.java:76-79）：每片另收 1 個，不給經驗
+local BULB = "Base.LightBulb"
+-- 窗簾：床單 1 張，長窗簾（CurtainSound=Long）2 張；不要工具、不給經驗。任何 IsoCurtain 都能用原版「移除窗簾」
+-- 拿回 1 張床單（IsoCurtain.removeSheet；ISWorldObjectContextMenu.lua:2214-2251），所以倍率低於 1 也照 1 收
+local CURTAIN, LONG_CURTAIN = { ["Base.Sheet"] = 1 }, { ["Base.Sheet"] = 2 }
 -- 磚石：BrickWall／BrickFloor 等（混凝土是液體容器，ponytail：不收，要收時改用 use: 扣容量）
 local MASONRY = {
     floor = { ["Base.ClayTile"] = 4 },
@@ -45,10 +55,12 @@ local METAL = {
     door = { ["Base.SmallSheetMetal"] = 3, ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1 },
     furniture = { ["Base.SmallSheetMetal"] = 2 }, container = { ["Base.SmallSheetMetal"] = 2 },
     solid = { ["Base.SmallSheetMetal"] = 2 },
+    stairs = { ["Base.MetalBar"] = 4, ["Base.SmallSheetMetal"] = 6 },     -- Metal_Stairs（stairs/entity_welding_stairs.txt）
 }
 -- 土、碎石、沙地板（DirtFloor／GravelFloor／SandFloor，不用工具）
 local GROUND = { Dirt = "Base.Dirtbag", Grass = "Base.Dirtbag", Gravel = "Base.Gravelbag", Sand = "Base.Sandbag" }
-local TOOLS = { wood = { "HAMMER" }, masonry = { "MASONS_TROWEL" }, metal = { "BLOW_TORCH", "WELDING_MASK" }, ground = {} }
+local TOOLS = { wood = { "HAMMER" }, masonry = { "MASONS_TROWEL" }, metal = { "BLOW_TORCH", "WELDING_MASK" }, ground = {},
+    electric = { "SCREWDRIVER" }, cloth = {} }
 local MASONRY_TYPES = { Brick = true, Stone = true, Cinderblock = true, Concrete = true, Ceramic = true }
 -- 照拆解價收的：工具照原版拆第一個 Material 要的主工具（原版 hasScrapTool 只看 self.material，
 -- ISMoveableSpriteProps.lua:3986-4015；定義 ISMoveableDefinitions.lua:388-541）。噴槍另要焊接面罩（原版第二組工具）；
@@ -80,7 +92,7 @@ local ESCRAP = "Base.ElectronicsScrap"
 -- 不花料就能一直練。照機率退料的再乘上「拆掉時這件退不回來的機率」（使用者 2026-10-27 選）：原版退料率＝10＋技能等級×10
 -- ＋baseChance（getChanceByDef，ISMoveableSpriteProps.lua:3834-3849）。等級看蓋的人蓋的當下（Cost.xp 的 player）。
 -- 電器費那幾件拆了不退，不打折。
-local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding" }
+local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding", electric = "Electricity" }
 local XP_PER_ITEM = 5
 
 -- 記這種材料的經驗給哪個技能（false＝不給）；已經記了別的技能時改成不給
@@ -111,9 +123,9 @@ end
 -- back 有兩種：
 -- ① 沒有 CanScrap、不能搬、第一個 Material 有產出的 IsoThumpable：原版改走 ISThumpableSpriteProps，照 buildMaterials
 --    每項退 1..v 件（v＝付的數量，1 件的一定全退；ISMoveableSpriteProps.lua:41-44,104-122,4232,4323-4340）。
---    門窗不是 IsoThumpable，不走這條。
+--    門窗、燈（IsoLightSwitch）、窗簾（IsoCurtain）不是 IsoThumpable，不走這條。
 -- ② 一定會退的產出：沙包固定 3 個（:3368-3378），每輪機率 ≥ 100 的（窗簾）技能夠就每輪都中。
-local NOT_THUMPABLE = { door = true, window = true }
+local NOT_THUMPABLE = { door = true, window = true, light = true, curtain = true }
 local function scrapInto(kind, p, out, perkOf, chanceOf)
     local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
     if not defs then return false, false end
@@ -167,6 +179,11 @@ function Cost.of(kind, spr, multiplier)
     local items, perkOf, chanceOf = {}, {}, {}
     local m = multiplier or 1
     local scrapped, back, first, elec = scrapInto(kind, p, items, perkOf, chanceOf)
+    if kind == "stairs" then
+        -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）。有拆解材質的（例：原版 fixtures_stairs_01）原版拆時
+        -- 照 buildMaterials 每項退 1..v 件，back 照算
+        items, perkOf, chanceOf, scrapped, elec = {}, {}, {}, false, false
+    end
     local toolSet
     if scrapped then
         -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
@@ -176,7 +193,13 @@ function Cost.of(kind, spr, multiplier)
         toolSet = scrapTools(first)
     else
         local base
-        if fam == "ground" then
+        if kind == "light" then
+            fam, base = "electric", LIGHT_BASE
+        elseif kind == "curtain" then
+            fam = "cloth"
+            base = p:get("CurtainSound") == "Long" and LONG_CURTAIN or CURTAIN
+            if m < 1 then m = 1 end
+        elseif fam == "ground" then
             base = { [GROUND[p:get("MaterialType")]] = 1 }
         elseif fam == "metal" then
             base = METAL[kind]
@@ -185,7 +208,13 @@ function Cost.of(kind, spr, multiplier)
         end
         if not base then -- 這個材質沒有對應的配方（例：磚造家具）：照木頭
             fam = "wood"
-            if kind == "furniture" or kind == "container" then base = byWeight(p) else base = WOOD[kind] or SMALL end
+            if kind == "furniture" or kind == "container" then
+                base = byWeight(p)
+            elseif kind == "roof" and p:has(IsoFlagType.isEave) then
+                base = EAVE
+            else
+                base = WOOD[kind] or SMALL
+            end
         end
         copyInto(base, items)
         for ft in pairs(base) do perkOf[ft] = PERK[fam] or false end
@@ -199,6 +228,10 @@ function Cost.of(kind, spr, multiplier)
     for ft, n in pairs(items) do
         local v = math.ceil(n * m - 1e-9)
         if v > 0 then out[ft] = v end
+    end
+    if kind == "light" and p:has("IsMoveAble") and p:has("lightR") then -- 燈泡拆得下來：倍率低於 1 也照 1 收
+        out[BULB] = (out[BULB] or 0) + math.max(1, math.ceil(m - 1e-9))
+        perkOf[BULB] = false
     end
     local fee = {}
     if elec then
@@ -230,8 +263,18 @@ end
 -- （ISMoveableSpriteProps.lua:3481-3495），各片材質不一定相同（原版有 4 組，例：病床椅），所以多格的每一格都收
 -- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗；
 -- 同一種材料在各片的技能不同時，退料機率看點的那片，拿自己高的技能拆就能便宜練另一個，這種材料也不給。
+-- 樓梯例外：整組照配方收一次，放在第一格（頂片）；其他格（中片、底片、平台）不收，三片的 buildMaterials 都寫整組
+-- （Place.build），原版拆哪一片都照那片的 buildMaterials 退。
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
+    if kind == "stairs" then
+        local c = Cost.of(kind, sprites[1], multiplier)
+        each[1] = c
+        for i = 2, #sprites do
+            each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back }
+        end
+        return each
+    end
     for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
     if #each < 2 then return each end
     local top, perkOf, chanceOf, fee, back = {}, {}, {}, {}, false
@@ -294,11 +337,13 @@ end
 --   "materials"：第二階段放的 IsoThumpable（門、窗以外）不能搬、不能照材質拆，第一個 Material 有拆解定義時改走
 --     ISThumpableSpriteProps，照 buildMaterials 每項退 1..v（:4232 isScrapDefinitionValid、:4320-4340、canScrapObject :4369-4378；
 --     判斷照 ISMoveableDefinitions.lua:172-180）。
+--   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
 --   "none"：其他（例：沒有拆解產出的門、窗，它們不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
 -- 只看 sprite 屬性與拆解定義，不碰世界；伺服器沒有 ISMoveableDefinitions 時當 "none"。
 function Cost.refund(kind, spr)
     local p = spr:getProperties()
     if p:has("IsMoveAble") then return "pickup" end
+    if kind == "curtain" then return "sheet" end
     local mat = p:get("Material")
     if p:has("CanScrap") and mat and mat ~= "Undefined" then
         return scrapInto(kind, p, {}, {}) and "scrap" or "none"

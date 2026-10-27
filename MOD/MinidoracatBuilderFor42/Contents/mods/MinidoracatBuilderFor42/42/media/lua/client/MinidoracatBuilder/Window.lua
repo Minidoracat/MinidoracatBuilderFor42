@@ -36,13 +36,16 @@ local RECENT_MAX = 30
 local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的最多約 300 格）
 local DIM_MAX = 1024    -- 缺料快取：滿了整張清掉，要比一個畫面看得到的格子多很多（4K 大視窗約 300 格）
 
--- 頁籤與種類（主代理已定；只列 Entry.BUILDABLE，第四階段再加樓梯、屋頂、燈、窗簾）
-W.TABS = { "all", "floor", "wall", "doorWindow", "furniture", "decor" }
+-- 頁籤與種類（設計稿的九個頁籤；只列 Entry.BUILDABLE）
+W.TABS = { "all", "floor", "wall", "doorWindow", "roof", "stairs", "furniture", "light", "decor" }
 W.TAB_KINDS = {
     floor = { "floor", "floorOverlay" },
     wall = { "wall", "fence", "wallOverlay" },
-    doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject" },
+    doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
+    roof = { "roof" },
+    stairs = { "stairs" },
     furniture = { "furniture", "container", "solid" },
+    light = { "light" },
     decor = { "wallObject", "attached", "overlay" },
 }
 do
@@ -646,7 +649,13 @@ local function toolName(tag)
     return getTextOrNull("IGUI_MBLD_Tool_" .. tag) or tag
 end
 
+-- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3（上一層的平台不算）
 local function footprint(spr)
+    local t = spr:getType()
+    if B.Rules.typeCode(t) == "stairs" then
+        if B.Rules.westStairs(t) then return 3, 1 end
+        return 1, 3
+    end
     local grid = spr:getSpriteGrid()
     if not grid then return 1, 1 end
     return grid:getWidth(), grid:getHeight()
@@ -702,6 +711,14 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         if none then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw - x, v.font)) do
             text(ops, line, x, y, none and c.warning or c.textMuted, v.font)
+            y = y + lh
+        end
+    end
+    -- 種類說明（樓梯、屋頂、燈、窗簾）：蓋之前要知道的限制
+    local note = getTextOrNull("IGUI_MBLD_Note_" .. e.kind)
+    if note then
+        for _, line in ipairs(Text.wrap(note, dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
             y = y + lh
         end
     end

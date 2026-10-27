@@ -28,14 +28,14 @@ function Check.setting(name, default)
 end
 local setting = Check.setting
 
--- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格
+-- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格。樓梯的平台不算（在上一層，靠近它不等於靠近樓梯）。
 local function reach(player, cells)
     local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local best, dz, near = math.huge, math.huge, nil
     for _, c in ipairs(cells) do
         local dx, dy = c.x + 0.5 - px, c.y + 0.5 - py
         local dist = math.sqrt(dx * dx + dy * dy)
-        if dist < best then best, dz, near = dist, math.abs(c.z - pz), c end
+        if dist < best and c.role ~= "platform" then best, dz, near = dist, math.abs(c.z - pz), c end
     end
     return best, dz, near
 end
@@ -111,7 +111,7 @@ function Check.item(player, name, d, anchor, opts)
     info.spr = spr
     local cells, sprites = {}, {}
     for j, o in ipairs(Entry.cells(spr)) do
-        cells[j] = { x = anchor[1] + o[1], y = anchor[2] + o[2], z = anchor[3] + o[3], spr = o[4] }
+        cells[j] = { x = anchor[1] + o[1], y = anchor[2] + o[2], z = anchor[3] + o[3], spr = o[4], role = o[5] }
         sprites[j] = o[4]
     end
     info.cells, info.sprites = cells, sprites
@@ -149,7 +149,7 @@ function Check.item(player, name, d, anchor, opts)
     end
     for j, c in ipairs(cells) do
         if c.sq then
-            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player)
+            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role)
             if not ok then
                 print(LOG .. "check failed e=" .. name .. ": " .. tostring(fine))
                 return "INTERNAL", nil, info
@@ -162,6 +162,9 @@ function Check.item(player, name, d, anchor, opts)
                     return "BLOCKED", { x = o.x, y = o.y, z = o.z }, info
                 end
             end
+        elseif entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z) then
+            -- 預覽：上一層的格子常常還沒建，屋頂照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
+            return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end
     local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))

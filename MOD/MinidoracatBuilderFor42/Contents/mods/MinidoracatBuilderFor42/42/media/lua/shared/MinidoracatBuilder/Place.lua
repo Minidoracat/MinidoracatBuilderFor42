@@ -4,11 +4,12 @@
 -- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4430-4471）。
 require "MinidoracatBuilder/Entry"
 
-local Entry = MinidoracatBuilder.Entry
+local Entry, Rules = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules
 local Place = MinidoracatBuilder.Place or {}
 MinidoracatBuilder.Place = Place
 
 local F, T = IsoFlagType, IsoObjectType
+local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
 -- 格子不存在時補建（原版 ISBuildIsoEntity.lua:517-529）；chunk 沒載入時建不出來（IsoCell.java:4337-4362）
@@ -77,15 +78,93 @@ local function vegetation(sq)
     return sq:has(F.canBeCut) or sq:has("tree")
 end
 
+-- 樓梯一片（照原版 BuildRecipeCode.stairs.OnIsValid，buildRecipeCode.lua:163-212）。role＝top／mid／bottom／platform
+-- （Entry.cells）。west＝往西爬的那種，原版叫 north（ISBuildIsoEntity.lua:18-20）。
+-- 不在最高層、不是別組同向樓梯的頂端平台、正上方沒有地板（頭會撞到）；頂片上一層朝平台那邊沒有牆；平台不實心。
+-- 比原版嚴：三片都要踩在地板上（z=0 的地面也算），不放在水上（原版底片不能，中、頂片會補地板），不補懸空的柱子。
+-- 跟其他擋路的東西一樣不放在高草、樹、實心或擋放置的東西上，格上沒有人，也不擋到別的樓梯。
+local function stairsOk(spr, sq, role)
+    if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
+    local west = Rules.westStairs(spr:getType())
+    local x, y, z = sq:getX(), sq:getY(), sq:getZ()
+    if z >= getMaximumWorldLevel() or sq:isVehicleIntersecting() or sq:HasStairs() then return false end
+    if sq:hasModData() and sq:getModData()["ConnectedToStairs" .. tostring(not west)] then return false end
+    local above = getCell():getGridSquare(x, y, z + 1)
+    if above and above:getFloor() then return false end
+    if role == "top" and above and above:getWall(not west) then return false end
+    if not floorUnder(sq) or vegetation(sq) or sq:has(F.water) or sq:has(F.taintedWater) then return false end
+    if sq:isSolid() or sq:isSolidTrans() or (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved)) then return false end
+    return sq:getMovingObjects():isEmpty() and not buildUtil.stairIsBlockingPlacement(sq, true)
+end
+
+-- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：從二樓起，正下方不是樓梯（同原版地板的 HasStairsBelow）；
+-- 要有東西撐著：正下方那格有牆，或這格、四鄰有地板或屋頂（四鄰有地板＝connectedWithFloor，不含斜坡）。
+-- 照座標查、不要這格存在：客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
+local function supports(sq)
+    if not sq then return false end
+    if sq:has(F.solidfloor) then return true end
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local s = objects:get(i):getSprite()
+        if s and (Rules.typeCode(s:getType()) == "roof" or s:getProperties():has("RoofGroup")) then return true end
+    end
+    return false
+end
+function Place.roofAt(x, y, z)
+    if z < 1 then return false end
+    local cell = getCell()
+    local below = cell:getGridSquare(x, y, z - 1)
+    if below and below:HasStairs() then return false end
+    if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
+    return supports(cell:getGridSquare(x, y, z)) or supports(cell:getGridSquare(x - 1, y, z))
+        or supports(cell:getGridSquare(x + 1, y, z)) or supports(cell:getGridSquare(x, y - 1, z))
+        or supports(cell:getGridSquare(x, y + 1, z))
+end
+
+-- 窗簾（原版搬動放窗上物件，ISMoveableSpriteProps.lua:1896-1937；找窗框 getWallForFacing :2651-2691）：
+-- 面向 S、E 的掛在這格的窗框上，面向 N、W 的掛在南邊、東邊那格的窗框上。這格不能是室外：exterior＝沒有房間而且
+-- 沒有屋頂（IsoGridSquare.java:7306-7317），所以自建屋要先有屋頂或上一層地板。同一面不能已經有窗上物件，也不能有
+-- 擋同一面的床單窗簾。關著的那張（編號 −4）要在：不在時建構子會建空 sprite，存檔記它的 id（IsoCurtain.java:91-96）。
+-- 原版還要求玩家不站在室外；這裡不查，伺服器另查走得到。
+local CLASH = { S = T.curtainN, N = T.curtainS, E = T.curtainW, W = T.curtainE }
+local function curtainOk(spr, sq)
+    local facing = spr:getProperties():get("Facing")
+    local clash = facing and CLASH[facing]
+    if not clash or sq:has(F.exterior) then return false end
+    local ns = facing == "N" or facing == "S"
+    local frame = sq
+    if facing == "N" then
+        frame = getCell():getGridSquare(sq:getX(), sq:getY() + 1, sq:getZ())
+    elseif facing == "W" then
+        frame = getCell():getGridSquare(sq:getX() + 1, sq:getY(), sq:getZ())
+    end
+    if not (frame and frame:has(ns and F.WindowN or F.WindowW)) then return false end
+    local tileset, num = spr:getName():match("^(.*)_(%d+)$")
+    local closed = tileset and Entry.sprite(tileset .. "_" .. (tonumber(num) - 4))
+    if not closed or closed:getID() < 0 or closed:getID() == NO_TILE_ID then return false end
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local op = o:getProperties()
+        if op and op:get("MoveType") == "WindowObject" and op:get("Facing") == facing then return false end
+        if instanceof(o, "IsoCurtain") and o:getType() == clash then return false end
+    end
+    return true
+end
+
 -- 能不能在 sq 放 spr（種類 kind）。回 ok 與桌面高度（放在桌上的物件要墊高，原版搬家具算的）。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
-function Place.check(kind, spr, sq, player)
+-- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。
+function Place.check(kind, spr, sq, player, role)
+    if kind == "stairs" then return stairsOk(spr, sq, role) end
     if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
     local p = spr:getProperties()
     if kind == "floor" then
         -- 原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）
         return not sq:HasStairsBelow() and sq:connectedWithFloor()
     end
+    if kind == "roof" then return Place.roofAt(sq:getX(), sq:getY(), sq:getZ()) end
+    if kind == "curtain" then return curtainOk(spr, sq) end
     if Entry.EDGE[kind] then
         if sq:HasStairs() then return false end
         local n, w = Entry.edges(kind, spr)
@@ -134,7 +213,8 @@ end
 -- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
-local HEALTH = { wall = 450, windowFrame = 450, fence = 300 }
+-- 樓梯照 Wood_Stairs：health 150＋skillBaseHealth 50 × 要求等級 6（stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:38-48）
+local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450 }
 -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
 --   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
 --   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
@@ -227,16 +307,67 @@ end
 local function placeWindow(sq, obj, north)
     local index = -1
     local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do -- 窗插在窗框後面（ISMoveableSpriteProps.lua:2141-2170）
+    for i = 0, objects:size() - 1 do -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）
         local p = objects:get(i):getProperties()
         if p and p:has(north and F.WindowN or F.WindowW) then index = i + 1 end
     end
     finish(sq, obj, index)
 end
 
--- 依序放好 cells 的每一格（{ sq, spr, cost, yoff }）。物件一建好就記進 placed（之後出錯時拆回用；還沒加進格子的
+-- 樓梯：照原版 BuildRecipeCode.stairs.OnCreate（buildRecipeCode.lua:219-336）。三片都是 IsoThumpable，buildMaterials 都寫
+-- 整組的（Cost.forCells 收在頂片那一格；原版拆哪一片都照那片退）；照原版清掉這格的草（地毯留著）。頂端上一層補平台
+-- 地板（addFloor 自己會同步，IsoGridSquare.java:4741-4789），記 ConnectedToStairs（同向的樓梯不能再蓋在平台上），
+-- 平台與頂片正上方那格重算。
+local function placeStairs(cells, placed)
+    local set, west, top, landing = cells[1].cost, false, nil, nil
+    for _, c in ipairs(cells) do
+        if c.role == "platform" then
+            landing = c
+        else
+            west = Rules.westStairs(c.spr:getType())
+            local objects = c.sq:getObjects()
+            for i = objects:size() - 1, 0, -1 do
+                local o = objects:get(i)
+                local op = o:getProperties()
+                if op and (op:has(F.canBeRemoved) or (op:has(F.vegitation) and o:getType() ~= T.tree))
+                    and not (o:getTextureName() or ""):find("floors_rugs", 1, true) then
+                    c.sq:transmitRemoveItemFromSquare(o, false)
+                end
+            end
+            local obj = thumpable({ sq = c.sq, spr = c.spr, cost = set }, "stairs", west)
+            obj:setIsStairs(true)
+            placed[#placed + 1] = obj
+            finish(c.sq, obj)
+            if c.role == "top" then top = c end
+        end
+    end
+    local sq = landing.sq
+    if not sq:has(F.solidfloor) then placed[#placed + 1] = sq:addFloor(Entry.STAIR_FLOOR) end
+    sq:getModData()["ConnectedToStairs" .. tostring(not west)] = true
+    sq:RecalcAllWithNeighbours(true)
+    local above = Place.square(top.x, top.y, top.z + 1)
+    if above then above:RecalcAllWithNeighbours(true) end
+end
+
+-- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
+-- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，只控制地圖房間的燈（IsoLightSwitch.java:73-99）。
+-- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）。
+local function newLight(c)
+    local sq, spr = c.sq, c.spr
+    local p = spr:getProperties()
+    local obj = IsoLightSwitch.new(getCell(), sq, spr, sq:getRoomID())
+    obj:addLightSourceFromSprite()
+    obj:setActivated(true)
+    if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
+    if p:has(F.solid) or p:has(F.solidtrans) then obj:setMovedThumpable(true) end
+    obj:getModData().builderEntry = spr:getName()
+    return obj
+end
+
+-- 依序放好 cells 的每一格（{ sq, spr, cost, yoff, role }）。物件一建好就記進 placed（之後出錯時拆回用；還沒加進格子的
 -- 拆回時會略過）。丟錯由呼叫端 pcall 接。
 function Place.build(kind, cells, placed)
+    if kind == "stairs" then return placeStairs(cells, placed) end
     for _, c in ipairs(cells) do
         local sq, spr = c.sq, c.spr
         local north = Entry.north(kind, spr)
@@ -250,10 +381,25 @@ function Place.build(kind, cells, placed)
             obj:setIsLocked(false)
             placed[#placed + 1] = obj
             placeWindow(sq, obj, north)
+        elseif kind == "light" then
+            obj = newLight(c)
+            placed[#placed + 1] = obj
+            finish(sq, obj)
+        elseif kind == "curtain" then
+            -- 照原版搬動放窗上物件（ISMoveableSpriteProps.lua:2195-2210）：north＝面向 N 或 S
+            local facing = spr:getProperties():get("Facing")
+            obj = IsoCurtain.new(getCell(), sq, spr:getName(), north)
+            obj:getModData().builderEntry = spr:getName()
+            placed[#placed + 1] = obj
+            if facing == "S" or facing == "E" then placeWindow(sq, obj, north) else finish(sq, obj) end
         else
             obj = thumpable(c, kind, north)
+            -- 屋頂不擋整格；AddSpecialObject 不會重算下面幾層「有屋頂」（客戶端收到 AddItemToMap 才算，
+            -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對（bt-newkinds §5.2）
+            if kind == "roof" then obj:setBlockAllTheSquare(false) end
             placed[#placed + 1] = obj
             if kind == "floor" then placeFloor(sq, obj) else finish(sq, obj) end
+            if kind == "roof" then getCell():checkHaveRoof(sq:getX(), sq:getY()) end
         end
     end
 end
