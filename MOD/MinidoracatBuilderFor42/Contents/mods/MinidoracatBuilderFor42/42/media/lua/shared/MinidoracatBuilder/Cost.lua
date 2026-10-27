@@ -172,10 +172,6 @@ function Cost.of(kind, spr, multiplier)
         -- back ① 那類照 buildMaterials 退 1..v 件。兩種都不會退得比這裡收的多。
         -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
         if m < 1 then m = 1 end
-        if elec then
-            items[ESCRAP] = (items[ESCRAP] or 0) + 1
-            mark(perkOf, ESCRAP, "Electricity")
-        end
         toolSet = scrapTools(first)
     else
         local base
@@ -193,15 +189,21 @@ function Cost.of(kind, spr, multiplier)
         copyInto(base, items)
         for ft in pairs(base) do perkOf[ft] = PERK[fam] or false end
     end
+    -- 電器費（照拆解價或基本價都收）：照倍率算進 items，另記在 fee，Place 不寫進 buildMaterials（拆了不退）
+    if elec then
+        items[ESCRAP] = (items[ESCRAP] or 0) + 1
+        mark(perkOf, ESCRAP, "Electricity")
+    end
     local out = {}
     for ft, n in pairs(items) do
         local v = math.ceil(n * m - 1e-9)
         if v > 0 then out[ft] = v end
     end
-    -- 電器費照倍率算進 items，另記在 fee：Place 不寫進 buildMaterials（拆了不退）。只在照拆解價收時有：電工定義沒有
-    -- 產出的照基本價收，拆了不退任何東西，不必另收
     local fee = {}
-    if scrapped and elec then fee[ESCRAP] = out[ESCRAP] - math.ceil((items[ESCRAP] - 1) * m - 1e-9) end
+    if elec then
+        local f = (out[ESCRAP] or 0) - math.ceil((items[ESCRAP] - 1) * m - 1e-9)
+        if f > 0 then fee[ESCRAP] = f end
+    end
     local tools = {}
     for i, t in ipairs(toolSet or TOOLS[fam]) do tools[i] = t end
     if back then perkOf = {} end

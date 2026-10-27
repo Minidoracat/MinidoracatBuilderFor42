@@ -819,8 +819,10 @@ do
         "多格只有一片是電器：每格照最大值收，電器費也照收（原版拆多格每一片各給一次經驗）")
     scrapDefs.EmptyElec = { perk = perkObj("Electricity"), tools = { "Base.Screwdriver" }, returnItems = {} }
     local ee = cost("furniture", { keys = { Material = "EmptyElec", PickUpWeight = "15" } }, 2)
-    check(ee.items["Base.Plank"] == 2 and ee.items["Base.ElectronicsScrap"] == nil and ee.fee["Base.ElectronicsScrap"] == nil,
-        "電工拆解定義沒有產出（MOD 可能這樣登記）：照基本價收、不收電器費、不出錯")
+    check(ee.items["Base.Plank"] == 2 and ee.items["Base.ElectronicsScrap"] == 2 and ee.fee["Base.ElectronicsScrap"] == 2
+        and Cost.xp({ ee }, player()).Electricity == 10,
+        "電工拆解定義沒有產出（MOD 可能這樣登記）：照基本價收，電器費照收（倍率 2 收 2 個、不退、經驗全給），不出錯")
+    check(next(cost("furniture", { keys = { Material = "EmptyElec" } }, 0).fee) == nil, "倍率 0：照基本價的電器費也免")
 end
 
 print("情境十一：建造請求（身分、限流、型別、單一待辦）")
