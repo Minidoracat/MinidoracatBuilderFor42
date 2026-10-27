@@ -1,7 +1,7 @@
--- 放置（伺服器；單機在本機跑）：補格子、每格能不能放、依種類建立物件並同步。出處 bt-authority §2、§4.2。
+-- 放置：補格子、每格能不能放、依種類建立物件並同步。出處 bt-authority §2、§4.2。
+-- 兩端共用：伺服器（單機在本機）放置；客戶端只用 Place.check 給游標預覽（Check.item 的 preview 不補格子，只查已有的格子）。
 -- 通則：建好物件、設完屬性，才 AddSpecialObject（引擎自己更新室內判定與碰撞），再 transmit 一次。
 -- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4430-4471）。
-if isClient() then return end
 require "MinidoracatBuilder/Entry"
 
 local Entry = MinidoracatBuilder.Entry

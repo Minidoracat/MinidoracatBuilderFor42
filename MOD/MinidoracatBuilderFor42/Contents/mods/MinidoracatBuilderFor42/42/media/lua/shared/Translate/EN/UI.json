@@ -1,0 +1,7 @@
+{
+  "UI_MinidoracatBuilder_Options": "Build Anything",
+  "UI_MinidoracatBuilder_ShowDock": "Show toolbar button",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "The Build Anything button on the family toolbar. When it is off, open the window with the key set in Key bindings > [MinidoracatBuilder].",
+  "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
+  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Open or close the build window"
+}

@@ -302,6 +302,9 @@ local function inventory()
         end
         return javaList(out)
     end
+    function inv:getCountTypeEvalRecurse(ft, pred)
+        return self:getSomeTypeEvalRecurse(ft, pred, math.huge):size()
+    end
     function inv:AddItems(ft, n)
         local out = {}
         for k = 1, n do out[k] = self:add(item(ft)) end
@@ -362,9 +365,11 @@ require "MinidoracatBuilder/Catalog"
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Server"
+require "MinidoracatBuilder/Check"
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 local Index, Catalog = MinidoracatBuilder.Index, MinidoracatBuilder.Catalog
 local Entry, Cost, Server = MinidoracatBuilder.Entry, MinidoracatBuilder.Cost, MinidoracatBuilder.Server
+local Check, Materials = MinidoracatBuilder.Check, MinidoracatBuilder.Materials
 
 -- ===== 測試工具 =====
 local failures = 0
@@ -450,10 +455,12 @@ local list = {
     sprite("", -1), sprite("ui_icon", 20000000, { keys = { IsMoveAble = "" } }),
     sprite("walls_01_0", 300, { keys = { WallN = "" }, noTex = true }),
     sprite("walls_01_1", 301, { keys = { WallN = "" } }),
-    chairA, chairB, bedA, bedB,
+    -- 椅子兩面中間夾著床（另一個 tileset）：群組代表換到後面那張時，要寫回椅子自己的桶
+    chairA, bedA, bedB, chairB,
     sprite("st_01_0", 1, { type = T.stairsBW }), sprite("st_01_1", 2, { type = T.stairsMW }),
     sprite("st_01_2", 3, { type = T.stairsTW }),
     sprite("tk_01_3", MOD_ID_BASE + 3, { flags = { "solidfloor" } }),
+    sprite("fancy_tiles_7", 400, { flags = { "solidfloor" } }), -- tileset 本身沒有結尾編號
 }
 for i = 1, 2000 do list[#list + 1] = sprite("filler_01_" .. i, 1000 + i, { flags = { "solidfloor" } }) end
 world(list)
@@ -464,9 +471,9 @@ check(count("OnTickEvenPaused") == 1, "start 只掛一個 tick 事件")
 for _ = 1, 50 do fire("OnTickEvenPaused") end
 check(Catalog.state == "ready", "整理完成")
 check(count("OnTickEvenPaused") == 0, "做完自己摘掉 tick 事件")
-local wall, furn, floor = Index.byKind.wall, Index.byKind.furniture, Index.byKind.floor
-check(wall and wall.n == 1 and wall[1] == "walls_01_1", "沒有貼圖、id −1、非 tile 都濾掉")
-check(furn and furn.n == 2, "兩面椅子算一項、兩格床只收原點")
+local wall, furn, floor = Index.names("wall"), Index.names("furniture"), Index.names("floor")
+check(wall.n == 1 and wall[1] == "walls_01_1", "沒有貼圖、id −1、非 tile 都濾掉")
+check(furn.n == 2, "兩面椅子算一項、兩格床只收原點")
 local hasChairB, hasBedB = false, false
 for i = 1, furn.n do
     if furn[i] == "furniture_01_2" then hasChairB = true end
@@ -474,9 +481,28 @@ for i = 1, furn.n do
 end
 check(hasChairB, "群組代表取編號最小的那張（furniture_01_2）")
 check(not hasBedB, "多格的非原點不列")
-check(Index.byKind.stairs and Index.byKind.stairs.n == 1 and Index.byKind.stairs[1] == "st_01_0", "樓梯只收 B 片")
-check(floor and floor.n == 2001, "地板 2001 項")
-check(Index.items == 2005, "總項目數（牆 1＋家具 2＋樓梯 1＋地板 2001）")
+local stairs = Index.names("stairs")
+check(stairs.n == 1 and stairs[1] == "st_01_0", "樓梯只收 B 片")
+check(floor.n == 2002, "地板 2002 項")
+check(Index.items == 2006, "總項目數（牆 1＋家具 2＋樓梯 1＋地板 2002）")
+local fb = Index.bucket.furniture
+check(fb.furniture_01.n == 1 and fb.furniture_01[1] == "furniture_01_2" and fb.beds_01.n == 1
+    and fb.beds_01[1] == "beds_01_0", "分桶：群組代表換到後面那張時寫回自己的 tileset 桶，不蓋到別的桶")
+local fs = Index.kindSets.floor
+check(fs.n == 3 and fs[1] == "tk_01" and fs[2] == "fancy_tiles" and fs[3] == "filler_01"
+    and floor[1] == "tk_01_3" and floor[2] == "fancy_tiles_7" and floor[3] == "filler_01_1",
+    "種類裡的 tileset 照第一次出現的順序；Index.names 照這個順序攤平")
+check(Index.kindCount.wall == 1 and Index.kindCount.furniture == 2 and Index.kindCount.stairs == 1
+    and Index.kindCount.floor == 2002, "每個種類的項目數（群組只算一項）")
+wall[1] = "changed"
+check(Index.names("wall")[1] == "walls_01_1" and Index.names("nope").n == 0, "Index.names 回新陣列；沒有的種類回空陣列")
+check(Index.family.filler_01 == "filler" and Index.family.tk_01 == "tk" and Index.family.fancy_tiles == "fancy_tiles"
+    and Index.family.furniture_01 == "furniture", "圖塊組＝tileset 去掉結尾 _數字；沒有編號的照原樣")
+local kindOf, setOf = {}, {}
+for i = 1, Index.nameKey.n do kindOf[Index.nameItem[i]], setOf[Index.nameItem[i]] = Index.nameKind[i], Index.nameSet[i] end
+check(kindOf.furniture_01_2 == "furniture" and setOf.furniture_01_2 == "furniture_01" and setOf.beds_01_0 == "beds_01"
+    and Index.nameKind.n == Index.nameKey.n and Index.nameSet.n == Index.nameKey.n,
+    "名稱鍵的每一項都記種類與 tileset（和 nameItem 同一項）")
 check(Index.nameKey.n == 2, "有名稱的項目建兩個搜尋鍵")
 local keyed = {}
 for i = 1, Index.nameKey.n do keyed[Index.nameItem[i]] = Index.nameKey[i] end
@@ -971,6 +997,327 @@ cleared = {}
 Server.complete(player({ id = 33 }), 777, 1)
 isServer = realIsServer
 check(cleared[1] == "PB", "單機：沒有請求的動作（例：放太久過期）回 NO_INTENT、清掉後面的動作")
+
+print("情境十四：材料摘要（Materials.summary／short／take）和 plan 對同一個玩家狀態判斷相同")
+do
+    local function same(a, b) -- 兩個 { fullType = 數量 } 或 nil
+        if a == nil or b == nil then return a == b end
+        for k, v in pairs(a) do if b[k] ~= v then return false end end
+        for k, v in pairs(b) do if a[k] ~= v then return false end end
+        return true
+    end
+    local function names(a) return a and table.concat(a, ",") or "" end
+    -- plan 成功若且唯若 short 回 nil, nil；缺的數量與工具也一樣。另回 short 的結果給後面斷言
+    local function agree(p, cost)
+        local plan, m1, t1 = Materials.plan(p, cost)
+        local m2, t2 = Materials.short(Materials.summary(p), cost)
+        return (plan ~= nil) == (m2 == nil and t2 == nil) and same(m1, m2) and names(t1) == names(t2), m2, t2
+    end
+    local W = { items = { ["Base.Plank"] = 4, ["Base.Nails"] = 6 }, tools = { "HAMMER" } }
+    local M1 = player({ id = 50 })
+    M1.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(M1, { ["Base.Plank"] = 4, ["Base.Nails"] = 6 })
+    local ok1, m = agree(M1, W)
+    local ok2, m7 = agree(M1, { items = { ["Base.Plank"] = 4, ["Base.Nails"] = 7 }, tools = { "HAMMER" } })
+    check(ok1 and m == nil and ok2 and m7 and m7["Base.Nails"] == 1 and m7["Base.Plank"] == nil,
+        "只有背包：剛好夠時都通過；多要一根時都報缺 1 根")
+    local mHere = square(42, 42, 0)
+    local mBehind, mOpen = square(43, 42, 0, { noReach = true }), square(41, 42, 0)
+    local mOwned = square(42, 41, 0, { owner = "someone" })
+    drop(mOpen, "Base.Nails", 4)
+    drop(mBehind, "Base.Nails", 9)
+    drop(mOwned, "Base.Nails", 9)
+    local M2 = player({ id = 51, x = 42.5, y = 42.5, here = mHere })
+    M2.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(M2, { ["Base.Plank"] = 4 })
+    local okG, mG = agree(M2, W)
+    check(okG and mG and mG["Base.Nails"] == 2 and Materials.summary(M2).items["Base.Nails"] == 4,
+        "地上：只算走得到、不在別人安全屋的（隔牆 9 根、別人安全屋 9 根都不算），兩邊都缺 2 根")
+    drop(mOpen, "Base.Nails", 2)
+    local okG2, mG2 = agree(M2, W)
+    check(okG2 and mG2 == nil, "地上補到 6 根：兩邊都通過")
+    local M3 = player({ id = 52 })
+    give(M3, { ["Base.NailsBox"] = 1, ["Base.Nails"] = 30 })
+    local N150 = { items = { ["Base.Nails"] = 150 }, tools = {} }
+    local okB, mB = agree(M3, N150)
+    check(okB and mB and mB["Base.Nails"] == 20 and Materials.summary(M3).items["Base.Nails"] == 130,
+        "釘子盒：每盒算 100 根（30＋100），要 150 時兩邊都缺 20")
+    give(M3, { ["Base.NailsBox"] = 1 })
+    local okB2, mB2 = agree(M3, N150)
+    check(okB2 and mB2 == nil, "多一盒：兩邊都通過")
+    local M4 = player({ id = 53 })
+    give(M4, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
+    M4.inv:add(item("Base.WeldingMask", { WELDING_MASK = true }))
+    local okT, mT, tT = agree(M4, W)
+    local okM, _, tM = agree(M4, { items = {}, tools = { "BLOW_TORCH", "WELDING_MASK", "NOPE" } })
+    check(okT and mT == nil and names(tT) == "HAMMER" and okM and names(tM) == "BLOW_TORCH,NOPE",
+        "缺工具：兩邊都報同一串（照 cost.tools 順序；這個版本沒有的標籤當沒帶）")
+    local S = Materials.summary(M1)
+    local first = Materials.short(S, W)
+    Materials.take(S, W)
+    local second = Materials.short(S, W)
+    check(first == nil and second and second["Base.Plank"] == 4 and second["Base.Nails"] == 6,
+        "拖曳逐格累計：第一格扣掉後，第二格缺一整份")
+    Materials.take(S, W)
+    check(S.items["Base.Plank"] == 0 and M1.inv:count("Base.Plank") == 4, "不夠的扣到 0、不變負數；摘要只是估算，背包不動")
+end
+
+print("情境十五：Check.item 預覽與伺服器同一份判斷；預覽不補格子、不寫東西")
+do
+    world({ wallN, solidS, crateS, floorS })
+    local kHere = square(56, 44, 0)
+    local K = player({ id = 60, x = 56.5, y = 44.5, here = kHere })
+    square(57, 44, 0, { moving = { {} } })   -- 格上有人：實心的東西 BLOCKED
+    square(55, 44, 0, { noReach = true })    -- 走不到
+    square(56, 43, 0, { owner = "someone" }) -- 別人的安全屋
+    local PV = { preview = true }
+    local cases = {
+        { "nope_01_0", 0, { 56, 45, 0 }, "UNKNOWN" },
+        { "walls_test_01_4", 1, { 56, 45, 0 }, "BAD_FACE" },
+        { "walls_test_01_4", 0, { 56, 49, 0 }, "TOO_FAR", 49 },
+        { "solid_01_0", 0, { 55, 44, 0 }, "UNREACHABLE", 44 },
+        { "walls_test_01_4", 0, { 56, 43, 0 }, "SAFEHOUSE", 43 },
+        { "solid_01_0", 0, { 57, 44, 0 }, "BLOCKED", 44 },
+        { "walls_test_01_4", 0, { 56, 45, 0 }, nil },
+    }
+    for _, c in ipairs(cases) do
+        local cP, eP = Check.item(K, c[1], c[2], c[3], PV)
+        local cS, eS = Check.item(K, c[1], c[2], c[3])
+        check(cP == c[4] and cS == c[4] and (eP and eP.y) == c[5] and (eS and eS.y) == c[5],
+            "預覽與伺服器同一個拒絕碼與座標：" .. tostring(c[4]) .. "（" .. c[1] .. "）")
+    end
+    local _, _, okInfo = Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV)
+    check(okInfo.entry.kind == "wall" and okInfo.cells[1].sq ~= nil and okInfo.costs[1].items["Base.Plank"] == 4
+        and okInfo.total.items["Base.Nails"] == 6 and okInfo.total.tools[1] == "HAMMER", "通過時 info 帶格子、各格成本與加總")
+    holes["58,46,0"], holes["57,46,0"] = true, true
+    local before = created
+    local cMiss, _, iMiss = Check.item(K, "walls_test_01_4", 0, { 58, 46, 0 }, PV)
+    check(cMiss == nil and created == before and iMiss.cells[1].sq == nil and iMiss.total.items["Base.Plank"] == 4,
+        "預覽：格子不存在時不補格子、略過要格子的檢查（交給伺服器），成本照算")
+    local cSrv, eSrv = Check.item(K, "walls_test_01_4", 0, { 58, 46, 0 })
+    check(cSrv == "NOT_LOADED" and eSrv.x == 58 and created == before + 1, "伺服器：照舊補格子，建不出來 NOT_LOADED")
+    check(Check.item(K, "solid_01_0", 0, { 57, 46, 0 }, PV) == nil and created == before + 1,
+        "預覽：最近那一格不存在時不判斷走不走得到")
+    local WK = { preview = true, walk = true }
+    check(Check.item(K, "walls_test_01_4", 0, { 56, 49, 0 }, WK) == nil and Check.item(K, "solid_01_0", 0, { 55, 44, 0 }, WK) == nil,
+        "游標預覽（walk）：會先走過去，不看 MaxDistance、不查走不走得到")
+    check(Check.item(K, "walls_test_01_4", 0, { 56, 146, 0 }, WK) == "TOO_FAR"
+        and Check.item(K, "walls_test_01_4", 0, { 56, 45, 2 }, WK) == "TOO_FAR",
+        "游標預覽（walk）：照請求的規則，超過 100 格或差兩層仍是 TOO_FAR")
+    check(Check.item(K, "walls_test_01_4", 0, { 56, 49, 0 }, { walk = true }) == "TOO_FAR",
+        "walk 沒配 preview：照伺服器規則（不能用來放寬伺服器判斷）")
+    local opts = {}
+    MinidoracatSafehouse = { v1 = { API_MAJOR = 1, CAPABILITIES = { denies = true }, BITS = { BUILD = 4 },
+        denies = function(_, x, y, _, _, o)
+            opts[#opts + 1] = o
+            return x == 56 and y == 46
+        end } }
+    local cDP = Check.item(K, "walls_test_01_4", 0, { 56, 46, 0 }, PV)
+    local cDS = Check.item(K, "walls_test_01_4", 0, { 56, 46, 0 })
+    MinidoracatSafehouse = nil
+    check(cDP == "PERM_DENIED" and cDS == "PERM_DENIED" and opts[1].preview == true and opts[2].preview ~= true
+        and opts[2].label == "MinidoracatBuilder:build", "Safehouse 細分權限：預覽帶 preview（不寫稽核、不推通知），伺服器照常")
+    local K2 = player({ id = 61, x = 56.5, y = 44.5, here = kHere })
+    K2.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(K2, { ["Base.Plank"] = 4, ["Base.Nails"] = 5 })
+    local cN, eN = Check.item(K2, "walls_test_01_4", 0, { 56, 45, 0 }, { preview = true, summary = Materials.summary(K2) })
+    check(cN == "NO_MATERIAL" and eN.need["Base.Nails"] == 1 and eN.need["Base.Plank"] == nil,
+        "預覽帶摘要：缺料回 NO_MATERIAL 與缺的數量（和伺服器 plan 同一份）")
+    check(Check.item(K2, "walls_test_01_4", 0, { 56, 45, 0 }, PV) == nil
+        and Check.item(K2, "walls_test_01_4", 0, { 56, 45, 0 }) == nil,
+        "沒給摘要的預覽與伺服器模式都不查材料（伺服器在 Server.complete 自己 plan）")
+    local K3 = player({ id = 62, x = 56.5, y = 44.5, here = kHere })
+    give(K3, { ["Base.Plank"] = 4, ["Base.Nails"] = 6 })
+    local cT, eT = Check.item(K3, "walls_test_01_4", 0, { 56, 45, 0 }, { preview = true, summary = Materials.summary(K3) })
+    check(cT == "NO_TOOL" and eT.tools[1] == "HAMMER" and eT.need == nil, "預覽帶摘要：料夠、缺工具回 NO_TOOL")
+    local K4 = player({ id = 63, x = 56.5, y = 44.5, here = kHere, cheat = true })
+    local S4 = Materials.summary(K4)
+    check(Check.item(K4, "walls_test_01_4", 0, { 56, 45, 0 }, { preview = true, summary = S4 }) == nil,
+        "建造作弊：預覽不查材料（伺服器也不扣）")
+    local S2 = Materials.summary(K2)
+    local aM, aT, aTotal = Check.affordable(S2, "walls_test_01_4")
+    check(aM and aM["Base.Nails"] == 1 and aT == nil and aTotal.items["Base.Plank"] == 4, "affordable：缺 1 根釘子")
+    local zM, zT, zTotal = Check.affordable(S2, "walls_test_01_4", 0)
+    check(zM == nil and zT == nil and next(zTotal.items) == nil, "affordable 倍率 0：免材料，鐵鎚有帶就夠")
+    local nM, nT, nTotal = Check.affordable(S2, "nope_01_0")
+    local cM, cTl, cTotal = Check.affordable(S4, "walls_test_01_4")
+    check(nM == nil and nT == nil and nTotal == nil and cM == nil and cTl == nil and cTotal.items["Base.Plank"] == 4,
+        "affordable：解析不了的項目 total 是 nil（不是夠料）；建造作弊都夠、照樣回成本")
+end
+
+print("情境十六：拆除方式（Cost.refund）")
+do
+    local function refund(kind, keys) return Cost.refund(kind, sprite("rf_01_0", 990, { keys = keys })) end
+    check(refund("furniture", { IsMoveAble = "", CanScrap = "", Material = "Wood" }) == "pickup"
+        and refund("door", { IsMoveAble = "" }) == "pickup", "能搬：拿起來（也能拆的照樣是拿起來）")
+    check(refund("furniture", { CanScrap = "", Material = "Wood" }) == "scrap"
+        and refund("door", { CanScrap = "", Material = "Wood" }) == "scrap", "CanScrap 且材質有產出：照材質拆（門也一樣）")
+    check(refund("furniture", { CanScrap = "", Material = "Fabric" }) == "none", "CanScrap 但材質沒有產出：拆了沒東西")
+    check(refund("wall", { Material = "Wood" }) == "materials" and refund("furniture", { Material = "Wood" }) == "materials"
+        and refund("wall", { CanScrap = "", Material = "Undefined", Material2 = "Wood" }) == "none",
+        "IsoThumpable 不能搬、不能照材質拆：第一個材質有拆解定義才照 buildMaterials 退（Undefined 不算）")
+    check(refund("wall", {}) == "none" and refund("wall", { Material = "Fabric", Material2 = "Wood" }) == "none",
+        "IsoThumpable 第一個材質沒有拆解產出（第二個有也一樣）：只能砸")
+    check(refund("door", { Material = "Wood" }) == "none" and refund("window", { Material = "Wood" }) == "none",
+        "門窗不是 IsoThumpable、不能搬、不能拆：只能砸，不退料")
+end
+
+print("情境十七：目錄視窗（篩選、分類、來源、完整圖塊名、最愛、名稱）")
+do
+    local realIsServer, realGetText = isServer, getText
+    isServer = function() return false end
+    function getItemName(ft) return ft end
+    require "MinidoracatBuilder/Names"
+    require "MinidoracatBuilder/Favorites"
+    require "MinidoracatBuilder/Window"
+    isServer = realIsServer
+    local W, Names, Fav = MinidoracatBuilder.Window, MinidoracatBuilder.Names, MinidoracatBuilder.Favorites
+    -- 帶參數的 getText 把參數接在後面，名稱組合與數量才看得出來
+    getText = function(k, ...)
+        local a = { ... }
+        if #a == 0 then return k end
+        return k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local mod = MOD_ID_BASE -- 檔號 7001＝UMCTP
+    local fl0 = sprite("floors_interior_01_0", 10, { flags = { "solidfloor" } })
+    local fl1 = sprite("floors_interior_01_1", 11, { flags = { "solidfloor" } })
+    local chair = sprite("furniture_seat_01_0", 20, { keys = { IsMoveAble = "", GroupName = "Furniture", CustomName = "Red Chair" } })
+    local stool = sprite("furniture_seat_01_1", 21, { keys = { IsMoveAble = "" } })
+    local modBox = sprite("umctp_boxes_01_0", mod + 5, { keys = { IsMoveAble = "" } })
+    local offWall = sprite("walls_off_01_0", 30, { flags = { "WallN" }, keys = { WallN = "" } })
+    world({ fl0, fl1, chair, stool, modBox, offWall })
+    Sources.byFile = { [7001] = "UMCTP" }
+    Index.reset()
+    Index.add("floor", "floors_interior_01_0", "floors_interior_01", 0, 1)
+    Index.add("floor", "floors_interior_01_1", "floors_interior_01", 1, 1)
+    Index.add("furniture", "furniture_seat_01_0", "furniture_seat_01", 0, 1, "furniture_seat_01|Furniture|Red Chair",
+        "Furniture Red Chair")
+    Index.add("furniture", "furniture_seat_01_1", "furniture_seat_01", 1, 1)
+    Index.add("furniture", "umctp_boxes_01_0", "umctp_boxes_01", 0, 7001)
+    Index.add("wall", "walls_off_01_0", "walls_off_01", 0, 1)
+    Index.addNameKey(Index.groupList[1])
+    for i = 1, Index.setName.n do
+        Index.addSetKey(i, Index.setName[i] == "umctp_boxes_01" and "UMCTP Mod" or "")
+    end
+    sb.DisabledSources, sb.DisabledTilesets = "", "walls_off_01"
+    local function st(o)
+        local s = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+        for k, v in pairs(o or {}) do s[k] = v end
+        return s
+    end
+    local function has(list, name)
+        for i = 1, list.n do if list[i] == name then return true end end
+        return false
+    end
+    local all = W.filter(st())
+    check(all.n == 5 and not has(all, "walls_off_01_0"), "全部頁、沒有搜尋字：5 項，管理員關掉的 tileset 不列")
+    local q = W.filter(st({ query = "red chair" }))
+    check(q.n == 1 and q[1] == "furniture_seat_01_0", "搜尋名稱：只列名稱命中的那一項，不列整個 tileset")
+    local m = W.filter(st({ query = "UMCTP mod" }))
+    check(m.n == 1 and m[1] == "umctp_boxes_01_0", "搜尋來源 MOD 名：列出那個 tileset 的整桶")
+    local f = W.filter(st({ tab = "floor" }))
+    check(f.n == 2 and has(f, "floors_interior_01_1") and not has(f, "furniture_seat_01_0"), "地板頁：只列地板")
+    local kv = W.filter(st({ cat = "k:furniture", source = "vanilla" }))
+    check(kv.n == 2 and not has(kv, "umctp_boxes_01_0"), "種類分類＋原版來源：只列原版的家具")
+    local km = W.filter(st({ source = "UMCTP" }))
+    check(km.n == 1 and km[1] == "umctp_boxes_01_0", "來源選 MOD：只列那個 MOD 的")
+    local fam = W.filter(st({ cat = "f:furniture_seat" }))
+    check(fam.n == 2 and has(fam, "furniture_seat_01_1"), "圖塊組分類：tileset 去掉結尾編號後相同的都列")
+    local ex, jump = W.filter(st({ tab = "wall", query = "  floors_interior_01_1 " }))
+    check(jump == "floors_interior_01_1" and ex.n == 2, "完整圖塊名（前後空白去掉）：不管頁籤，回它所在的整桶並選取它")
+    local exOff, jumpOff = W.filter(st({ query = "walls_off_01_0" }))
+    check(jumpOff == nil and exOff.n == 0, "完整圖塊名但 tileset 被管理員關掉：不跳、不列")
+    check(W.filter(st({ query = "zzz" })).n == 0, "沒有命中：空清單")
+    local favs = { n = 3, "furniture_seat_01_1", "gone_01_0", "floors_interior_01_0" }
+    local fv = W.filter(st({ tab = "furniture", cat = "fav", fav = favs }))
+    check(fv.n == 1 and fv[1] == "furniture_seat_01_1", "最愛：這個伺服器沒有的略過，照頁籤篩")
+    local groups = W.categories("all")
+    local famIds = {}
+    for i, it in ipairs(groups[3].items) do famIds[i] = it.id end
+    check(table.concat(famIds, ",") == "f:floors_interior,f:furniture_seat,f:umctp_boxes",
+        "分類的圖塊組：照顯示名排序，管理員關掉的不列")
+    local opts = W.sources()
+    check(#opts == 3 and opts[1].id == "all" and opts[2].id == "vanilla" and opts[3].id == "UMCTP",
+        "來源下拉：全部、原版、各 MOD")
+    local list = Fav.parse(" a_1 \r\n\nb_2\na_1\n")
+    check(list.n == 2 and list[1] == "a_1" and list[2] == "b_2" and Fav.serialize(list) == "a_1\nb_2\n"
+        and Fav.serialize({ n = 0 }) == "", "最愛檔：去空白、空行、重複；寫回一行一個")
+    Names.reset()
+    check(Names.of("furniture_seat_01_0") == "Red Chair CH", "名稱：有原版移動物件翻譯就用")
+    local composed = Names.of("furniture_seat_01_1")
+    check(composed:find("IGUI_MBLD_Name_Composed", 1, true) and composed:find("IGUI_MBLD_Kind_furniture", 1, true)
+        and composed:find("furniture seat 01", 1, true) and composed:find(",1)", 1, true),
+        "名稱：沒有翻譯就組「種類 · 圖塊組 · 編號」")
+    check(Names.of("gone_01_0") == "gone_01_0", "名稱：不存在的圖塊回 sprite 名稱本身")
+    sb.DisabledTilesets = ""
+    getText = realGetText
+    Names.reset()
+end
+
+print("情境十八：建造游標（拖一排、朝向循環、逐格累計扣料）")
+do
+    require "MinidoracatBuilder/Cursor"
+    local Cursor = MinidoracatBuilder.Cursor
+    local l1 = Cursor.line(10, 10, 0, 14, 11, 32)
+    check(#l1 == 5 and l1[5][1] == 14 and l1[5][2] == 10, "拖一排：取位移大的那一軸（x），5 格")
+    local l2 = Cursor.line(10, 10, 0, 9, 3, 32)
+    check(#l2 == 8 and l2[8][1] == 10 and l2[8][2] == 3, "拖一排：往 y 負方向 8 格")
+    check(#Cursor.line(10, 10, 0, 10, 10, 32) == 1, "起點終點同一格：1 格")
+    local l3 = Cursor.line(10, 10, 0, 100, 10, 32)
+    check(#l3 == 32 and l3[32][1] == 41, "超過上限：只到第 32 格")
+    local l4 = Cursor.line(10, 10, 0, 0, 10, 4)
+    check(#l4 == 4 and l4[4][1] == 7, "上限 4、往 x 負方向")
+    local faces = { n = 3, 1, 2, 4 }
+    check(Cursor.nextFace(faces, 4, 1) == 1 and Cursor.nextFace(faces, 1, -1) == 4 and Cursor.nextFace(faces, 2, 1) == 4
+        and Cursor.nextFace(faces, 3, 1) == 1 and Cursor.nextFace({ n = 1, 0 }, 0, 1) == 0,
+        "朝向循環：只在有的朝向之間轉，不在清單的回第一個")
+    local realItem = Check.item
+    Check.item = function(_, _, _, a, opts)
+        if a[1] == 2 then return "BLOCKED", { x = 2 } end
+        local have = opts.summary.items["Base.Plank"]
+        if have < 2 then return "NO_MATERIAL", { need = { ["Base.Plank"] = 2 - have } } end
+        return nil, nil, { total = { items = { ["Base.Plank"] = 2 }, tools = {} } }
+    end
+    local S = { cheat = false, tools = {}, items = setmetatable({}, { __index = function(t, k)
+        local v = k == "Base.Plank" and 5 or 0
+        rawset(t, k, v)
+        return v
+    end }) }
+    local anchors = {}
+    for x = 0, 4 do anchors[#anchors + 1] = { x, 0, 0 } end
+    local res, ok, short = Cursor.preview(nil, "x_01_0", 0, anchors, S)
+    check(ok == 2 and short == 2 and res[1].code == nil and res[2].code == nil and res[3].code == "BLOCKED"
+        and res[4].code == "NO_MATERIAL" and res[5].code == "NO_MATERIAL",
+        "一排逐格累計：木板 5、每格 2，前兩格可蓋，被擋的不扣，後兩格缺料")
+    check(S.items["Base.Plank"] == 5, "累計只扣在副本，原摘要不動")
+    Check.item = realItem
+end
+
+print("情境十九：拒絕碼的玩家訊息")
+do
+    local Messages = MinidoracatBuilder.Messages
+    local realGetText = getText
+    getText = function(k, ...)
+        local a = { ... }
+        if #a == 0 then return k end
+        return k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local allKeyed = true
+    for code in pairs(Messages.CODES) do
+        if not Messages.refusal(code, {}):find("IGUI_MBLD_Refuse_" .. code, 1, true) then allKeyed = false end
+    end
+    check(allKeyed, "每個拒絕碼都有自己的訊息鍵")
+    for _, code in ipairs({ "OFF", "NOT_ALLOWED", "STATE", "STALE", "RATE_LIMITED", "BAD_REQUEST", "NO_INTENT", "UNKNOWN",
+        "UNSUPPORTED", "DISABLED", "BAD_FACE", "TOO_FAR", "UNREACHABLE", "NOT_LOADED", "SAFEHOUSE", "PERM_DENIED",
+        "OUTSIDE_SAFEHOUSE", "BLOCKED", "NO_MATERIAL", "NO_TOOL", "INTERNAL", "WALK" }) do
+        if not Messages.CODES[code] then allKeyed = false end
+    end
+    check(allKeyed, "伺服器的拒絕碼與走不到都在訊息表裡")
+    local nm = Messages.refusal("NO_MATERIAL", { need = { ["Base.Plank"] = 2 }, tools = { "HAMMER" } })
+    check(nm:find("Base.Plank", 1, true) and nm:find("HAMMER", 1, true), "缺料：材料與缺的工具都列出")
+    check(Messages.refusal("WHAT", {}):find("IGUI_MBLD_Refuse_Other(WHAT)", 1, true), "不認得的碼：通用訊息附上碼")
+    getText = realGetText
+end
 
 print()
 if failures > 0 then

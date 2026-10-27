@@ -218,4 +218,28 @@ function Cost.xp(costs)
     return out
 end
 
+-- 蓋好之後拆掉退什麼（介面的「拆除方式」）。原版拆解怎麼分流（ISMoveableSpriteProps.fromObject，:33-47）：
+--   "pickup"：能搬（IsMoveAble），拿起來帶走。
+--   "scrap"：CanScrap 且 Material 有定義（:104-123）、有拆解產出：照圖塊材質重查產出（getScrapItemsList，:3304-3348）。
+--   "materials"：第二階段放的 IsoThumpable（門、窗以外）不能搬、不能照材質拆，第一個 Material 有拆解定義時改走
+--     ISThumpableSpriteProps，照 buildMaterials 每項退 1..v（:4232 isScrapDefinitionValid、:4320-4340、canScrapObject :4369-4378；
+--     判斷照 ISMoveableDefinitions.lua:172-180）。
+--   "none"：其他（例：沒有拆解產出的門、窗，它們不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
+-- 只看 sprite 屬性與拆解定義，不碰世界；伺服器沒有 ISMoveableDefinitions 時當 "none"。
+function Cost.refund(kind, spr)
+    local p = spr:getProperties()
+    if p:has("IsMoveAble") then return "pickup" end
+    local mat = p:get("Material")
+    if p:has("CanScrap") and mat and mat ~= "Undefined" then
+        return scrapInto(kind, p, {}, {}) and "scrap" or "none"
+    end
+    if NOT_THUMPABLE[kind] then return "none" end
+    local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
+    local def = defs and mat and defs.getScrapDefinition(mat)
+    if def and ((def.returnItems and #def.returnItems > 0) or (def.returnItemsStatic and #def.returnItemsStatic > 0)) then
+        return "materials"
+    end
+    return "none"
+end
+
 return Cost

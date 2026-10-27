@@ -7,9 +7,10 @@ require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Materials"
+require "MinidoracatBuilder/Check"
 
 local Sources, Entry, Cost = MinidoracatBuilder.Sources, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
-local Place, Materials = MinidoracatBuilder.Place, MinidoracatBuilder.Materials
+local Place, Materials, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Materials, MinidoracatBuilder.Check
 local Server = MinidoracatBuilder.Server or {}
 MinidoracatBuilder.Server = Server
 
@@ -19,7 +20,6 @@ local INTENT_TTL_MS = 60000           -- 每做完一項再延長：拖曳 32 �
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
-local INTENT_REACH = 100              -- 錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
 local rate, woken, quietUntil = {}, {}, {}
@@ -52,11 +52,7 @@ function Server.refuse(player, n, i, code, extra)
     return false
 end
 
-local function setting(name, default)
-    local v = Entry.settings()[name]
-    if v == nil then return default end
-    return v
-end
+local setting = Check.setting
 
 -- 單機的本機玩家就是主機，算管理員；伺服器問連線的角色能力（UseBuildCheat：能開建造作弊的就是建造的管理員）
 local function isAdmin(player)
@@ -129,7 +125,7 @@ function Server.intent(player, args)
     local c = args.c
     if not d or type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
-    local near = INTENT_REACH
+    local near = Check.INTENT_REACH
     local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local anchors = {}
     for i = 1, maxItems * 3 + 1, 3 do
@@ -182,68 +178,6 @@ function Server.duration(player, n, i)
     return ticks
 end
 
--- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格
-local function reach(player, cells)
-    local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
-    local best, dz, near = math.huge, math.huge, nil
-    for _, c in ipairs(cells) do
-        local dx, dy = c.x + 0.5 - px, c.y + 0.5 - py
-        local dist = math.sqrt(dx * dx + dy * dy)
-        if dist < best then best, dz, near = dist, math.abs(c.z - pz), c end
-    end
-    return best, dz, near
-end
-
--- 同一層：玩家走得到最近那一格嗎。在兩格圍成的範圍外加一圈裡，沿 canReachTo 找路：牆（含透明牆）、關著的門窗都擋
--- （IsoGridSquare.java:939-961；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
--- ponytail：範圍最大約 (2×MaxDistance＋3)² 格，只在 complete() 跑一次。
-local function reachable(player, c)
-    local pz = math.floor(player:getZ())
-    if c.z ~= pz then return true end -- 上下樓層另由樓層差限制
-    local px, py = math.floor(player:getX()), math.floor(player:getY())
-    local cell = getCell()
-    local start = cell:getGridSquare(px, py, pz)
-    if not start then return false end
-    local x0, x1 = math.min(px, c.x) - 1, math.max(px, c.x) + 1
-    local y0, y1 = math.min(py, c.y) - 1, math.max(py, c.y) + 1
-    local seen, queue, head = { [px .. "," .. py] = true }, { start }, 1
-    while queue[head] do
-        local sq = queue[head]
-        head = head + 1
-        local x, y = sq:getX(), sq:getY()
-        if x == c.x and y == c.y then return true end
-        for dy = -1, 1 do
-            for dx = -1, 1 do
-                local nx, ny = x + dx, y + dy
-                local k = nx .. "," .. ny
-                if not seen[k] and nx >= x0 and nx <= x1 and ny >= y0 and ny <= y1 then
-                    local nsq = cell:getGridSquare(nx, ny, pz)
-                    if nsq and sq:canReachTo(nsq) then
-                        seen[k] = true
-                        queue[#queue + 1] = nsq
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
--- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，拒絕時它自己推通知）
-local function safehouseCode(player, c)
-    if not (isServer() and checkPermissions(player, Capability.CanGoInsideSafehouses) == true)
-        and SafeHouse.isSafeHouse(c.sq, player:getUsername(), true) ~= nil then
-        return "SAFEHOUSE"
-    end
-    local api = MinidoracatSafehouse and MinidoracatSafehouse.v1
-    if api and api.API_MAJOR == 1 and type(api.CAPABILITIES) == "table" and api.CAPABILITIES.denies == true
-        and api.denies(player, c.x, c.y, c.z, api.BITS.BUILD, { label = "MinidoracatBuilder:build" }) then
-        return "PERM_DENIED"
-    end
-    if setting("WhereCanBuild", 1) == 2 and SafeHouse.getSafeHouse(c.sq) == nil then return "OUTSIDE_SAFEHOUSE" end
-    return nil
-end
-
 local function costLine(items)
     local parts = {}
     for ft, n in pairs(items) do parts[#parts + 1] = ft .. "x" .. n end
@@ -280,50 +214,11 @@ function Server.complete(player, n, i)
     end
     local why = notAllowed(player)
     if why then return Server.refuse(player, n, i, why) end
-    local entry, code = Entry.resolve(it.e) -- 設定可能在施工途中被改
-    if not entry then return Server.refuse(player, n, i, code) end
-    local spr = Entry.face(entry, it.d)
-    if not spr then return Server.refuse(player, n, i, "BAD_FACE") end
+    -- 目錄重算、距離、補格子、安全屋、可放置（和客戶端預覽同一份）
     local a = it.c[i]
-    local cells, sprites = {}, {}
-    for j, d in ipairs(Entry.cells(spr)) do
-        cells[j] = { x = a[1] + d[1], y = a[2] + d[2], z = a[3] + d[3], spr = d[4] }
-        sprites[j] = d[4]
-    end
-    -- 先用座標驗距離，通過才補格子（補格子會改世界）
-    local dist, dz, nearest = reach(player, cells)
-    if dist > setting("MaxDistance", 3) or dz > 1 then
-        return Server.refuse(player, n, i, "TOO_FAR", { x = a[1], y = a[2], z = a[3] })
-    end
-    if not Entry.EDGE[entry.kind] and not reachable(player, nearest) then
-        return Server.refuse(player, n, i, "UNREACHABLE", { x = nearest.x, y = nearest.y, z = nearest.z })
-    end
-    for _, c in ipairs(cells) do
-        c.sq = Place.square(c.x, c.y, c.z)
-        if not c.sq then return Server.refuse(player, n, i, "NOT_LOADED", { x = c.x, y = c.y, z = c.z }) end
-    end
-    for _, c in ipairs(cells) do
-        local sh = safehouseCode(player, c)
-        if sh then return Server.refuse(player, n, i, sh, { x = c.x, y = c.y, z = c.z }) end
-    end
-    for j, c in ipairs(cells) do
-        local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player)
-        if not ok then
-            print(LOG .. "check failed e=" .. it.e .. ": " .. tostring(fine))
-            return Server.refuse(player, n, i, "INTERNAL")
-        end
-        if not fine then return Server.refuse(player, n, i, "BLOCKED", { x = c.x, y = c.y, z = c.z }) end
-        c.yoff = yoff
-        for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
-            local o = cells[k2]
-            if o.z == c.z and math.abs(o.x - c.x) + math.abs(o.y - c.y) == 1 and c.sq:isSomethingTo(o.sq) then
-                return Server.refuse(player, n, i, "BLOCKED", { x = o.x, y = o.y, z = o.z })
-            end
-        end
-    end
-    local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
-    for j, c in ipairs(cells) do c.cost = costs[j] end
-    local total = Cost.sum(costs)
+    local code, extra, info = Check.item(player, it.e, it.d, a)
+    if code then return Server.refuse(player, n, i, code, extra) end
+    local entry, spr, cells, costs, total = info.entry, info.spr, info.cells, info.costs, info.total
     local plan
     if not player:isBuildCheat() then -- 伺服器上的這個旗標只有有 UseBuildCheat 能力的人開得了（ExtraInfoPacket.java:274-277）
         local missing, tools

@@ -14,6 +14,7 @@ local KEEP = 32 -- Client.results 只留最近幾筆
 
 Client.pending = nil -- 最近送出的請求：{ n, e, d, kind, cells = { { x, y, z }, ... } }
 Client.results = {}  -- 伺服器回覆（refused／placed），新的在後；介面與 E2E 讀
+-- Client.onResult(cmd, args)：游標設定（Cursor.lua）；每則回覆（accepted／refused／placed）收進 results 之後呼叫
 local lastNonce = getTimestampMs() % 1000000
 
 local function walkTo(player, kind, spr, c)
@@ -85,6 +86,7 @@ function Client.onServerCommand(cmd, args)
         print(LOG .. "refused n=" .. tostring(args.n) .. " i=" .. tostring(args.i) .. " code=" .. tostring(args.code))
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
     end
+    if Client.onResult then Client.onResult(cmd, args) end
 end
 
 Events.OnServerCommand.Add(function(module, command, args)

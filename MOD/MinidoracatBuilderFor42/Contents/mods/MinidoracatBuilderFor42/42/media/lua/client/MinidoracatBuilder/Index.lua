@@ -1,42 +1,59 @@
 -- 目錄索引：整場遊戲留在記憶體，不存硬碟（bt-perf §4、§8）。
--- byKind[種類] = { n = 數量, 名稱1, 名稱2, … }：只存 sprite 名稱字串（Java 端同一個物件，不另佔空間），
+-- bucket[種類][tileset] = { n = 數量, 名稱1, 名稱2, … }：只存 sprite 名稱字串（Java 端同一個物件，不另佔空間），
 -- 不存每項一張表（3.5 萬項：名稱陣列約 2 MB，每項一張表約 12 MB）。陣列自己記 n：Kahlua 的 #t 是二分搜尋。
+-- 按「種類 × tileset」分桶：介面的頁籤（種類）與分類（圖塊組）直接取桶，不必每次掃全部。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Index = MinidoracatBuilder.Index or {}
 MinidoracatBuilder.Index = Index
 
 function Index.reset()
-    Index.byKind = {}
+    Index.bucket = {}    -- 種類 → tileset → { n, 名稱… }
+    Index.kindSets = {}  -- 種類 → { n, tileset… }（這個種類裡第一次出現的順序）
+    Index.kindCount = {} -- 種類 → 項目數
     Index.sets = {}      -- tileset → 項目數
     Index.setFile = {}   -- tileset → tiledef 檔號（來源用 Sources 對到 MOD）
     Index.setName = { n = 0 } -- 出現過的 tileset，依第一次出現的順序
+    Index.family = {}    -- tileset → 圖塊組（去掉結尾 _數字；第二段建）
     Index.items = 0
-    Index.groups = {}    -- 整理期間用：多面、多格家具的群組鍵 → { kind, slot, num, raw }；完成後丟掉
+    Index.groups = {}    -- 整理期間用：多面、多格家具的群組鍵 → { kind, tileset, arr, slot, num, raw }；完成後丟掉
     Index.groupList = { n = 0 }
-    -- 搜尋鍵（第二段）：nameKey[i] 對 nameItem[i]；setKey[i] 對 setName[i]
+    -- 搜尋鍵（第二段）：nameKey[i] 對 nameItem[i]（名稱）、nameKind[i]、nameSet[i]；setKey[i] 對 setName[i]
     Index.nameKey, Index.nameItem = { n = 0 }, { n = 0 }
+    Index.nameKind, Index.nameSet = { n = 0 }, { n = 0 }
     Index.setKey = { n = 0 }
 end
 Index.reset()
 
 -- 加一個項目。key＝「tileset|GroupName|CustomName」（沒有 CustomName 時 nil＝自己一項）。
 -- 同一群組（各面、各格）只留一項：取編號最小的那張當代表，兩端與每次整理都相同。
+-- 每次整理約跑 5.7 萬次：只做表操作，不呼叫 Java（AGENTS.md 踩坑「目錄整理的成本幾乎只看 Java 呼叫次數」）。
 function Index.add(kind, name, tileset, num, file, key, raw)
     local g = key and Index.groups[key]
     if g then
         if num < g.num then
-            Index.byKind[g.kind][g.slot] = name
+            g.arr[g.slot] = name
             g.num = num
         end
         return
     end
-    local arr = Index.byKind[kind]
+    local sets = Index.bucket[kind]
+    if not sets then
+        sets = {}
+        Index.bucket[kind] = sets
+        Index.kindSets[kind] = { n = 0 }
+        Index.kindCount[kind] = 0
+    end
+    local arr = sets[tileset]
     if not arr then
         arr = { n = 0 }
-        Index.byKind[kind] = arr
+        sets[tileset] = arr
+        local ks = Index.kindSets[kind]
+        ks.n = ks.n + 1
+        ks[ks.n] = tileset
     end
     arr.n = arr.n + 1
     arr[arr.n] = name
+    Index.kindCount[kind] = Index.kindCount[kind] + 1
     Index.items = Index.items + 1
     local count = Index.sets[tileset]
     Index.sets[tileset] = (count or 0) + 1
@@ -47,7 +64,7 @@ function Index.add(kind, name, tileset, num, file, key, raw)
         sn[sn.n] = tileset
     end
     if key then
-        g = { kind = kind, slot = arr.n, num = num, raw = raw }
+        g = { kind = kind, tileset = tileset, arr = arr, slot = arr.n, num = num, raw = raw }
         Index.groups[key] = g
         local gl = Index.groupList
         gl.n = gl.n + 1
@@ -55,21 +72,44 @@ function Index.add(kind, name, tileset, num, file, key, raw)
     end
 end
 
+-- 一個種類的全部名稱攤平成新陣列 { n, 名稱… }（tileset 照第一次出現的順序）。E2E、測試用，不在每幀呼叫。
+function Index.names(kind)
+    local out, n = { n = 0 }, 0
+    local sets, order = Index.bucket[kind], Index.kindSets[kind]
+    for i = 1, order and order.n or 0 do
+        local arr = sets[order[i]]
+        for j = 1, arr.n do
+            n = n + 1
+            out[n] = arr[j]
+        end
+    end
+    out.n = n
+    return out
+end
+
 -- 第二段：有名稱項目的搜尋鍵＝小寫「顯示名|原名」。顯示名用原版移動物件翻譯，
 -- 先自己去掉 "."（Translator.getMoveableDisplayName 的 replace 不吃 regex，名稱有點就查不到；bt-catalog §4.1）
 function Index.addNameKey(g)
     local shown = Translator.getMoveableDisplayNameOrNull((g.raw:gsub("%.", "")))
-    local keys, items = Index.nameKey, Index.nameItem
-    keys.n = keys.n + 1
-    keys[keys.n] = string.lower((shown or "") .. "|" .. g.raw)
-    items.n = keys.n
-    items[items.n] = Index.byKind[g.kind][g.slot]
+    local keys = Index.nameKey
+    local i = keys.n + 1
+    keys.n = i
+    keys[i] = string.lower((shown or "") .. "|" .. g.raw)
+    local items, kinds, sets = Index.nameItem, Index.nameKind, Index.nameSet
+    items.n, kinds.n, sets.n = i, i, i
+    items[i] = g.arr[g.slot]
+    kinds[i] = g.kind
+    sets[i] = g.tileset
 end
 
--- 第 i 個 tileset 的搜尋鍵＝小寫「顯示名|原名|來源 MOD 名」；命中 tileset＝該 tileset 的全部項目
+-- 第 i 個 tileset 的搜尋鍵＝小寫「顯示名|原名|來源 MOD 名」；命中 tileset＝該 tileset 的全部項目。
+-- 順便記它的圖塊組（例：furniture_seating_indoor_01 → furniture_seating_indoor）。顯示名和 Names.tileset 同一個鍵
+-- （IGUI_MBLD_Family_<組>），搜得到的就是畫面上看到的名字。
 function Index.addSetKey(i, modName)
     local tileset = Index.setName[i]
-    local shown = getTextOrNull("IGUI_MinidoracatBuilder_Tileset_" .. tileset) or (tileset:gsub("_", " "))
+    local fam = tileset:match("^(.-)_%d+$") or tileset
+    Index.family[tileset] = fam
+    local shown = getTextOrNull("IGUI_MBLD_Family_" .. fam) or (tileset:gsub("_", " "))
     Index.setKey[i] = string.lower(shown .. "|" .. tileset .. "|" .. (modName or ""))
     Index.setKey.n = i
 end

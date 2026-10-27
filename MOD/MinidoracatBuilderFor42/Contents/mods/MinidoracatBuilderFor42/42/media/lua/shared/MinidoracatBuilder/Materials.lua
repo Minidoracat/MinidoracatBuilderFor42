@@ -1,9 +1,9 @@
--- 材料（伺服器；單機在本機跑）：伺服器自己找，不收客戶端給的清單（bt-authority §5.1）。
+-- 材料：自己找，不收客戶端給的清單（bt-authority §5.1）。
 -- 找的順序照原版建造扣料（buildUtil.consumeMaterial，ISBuildUtil.lua:125-237）：背包（含袋子）→ 周圍 3×3 地上 →
 -- 釘子還不夠就拆背包裡的釘子盒。差別：地上以玩家所在格為中心（原版以建造格為中心），隔牆、隔關著的門窗的不拿。
 -- ponytail：家具、車上的容器不找；要找時照 §5.1 逐個過安全屋拿取權限、上鎖與 2.5 格。
--- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣（§5.6）。扣料只在 complete() 跑，MP 只發生一次。
-if isClient() then return end
+-- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣（§5.6）。plan／consume 只在伺服器的 complete() 跑，
+-- MP 只發生一次。客戶端只用 summary／short／take 給畫面看（同一套找法），伺服器照樣重算。
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Materials = MinidoracatBuilder.Materials or {}
@@ -47,13 +47,18 @@ local function groundItems(player, want)
     return out
 end
 
+-- 帶著沒壞的這種工具（ItemTag 欄位名；這個版本沒有的標籤當沒帶）。plan 與 summary 共用，兩邊才不會判斷不同。
+local function hasTool(inv, name)
+    local tag = ItemTag[name]
+    return tag ~= nil and inv:getFirstTagEvalRecurse(tag, notBroken) ~= nil
+end
+
 -- cost＝Cost.sum 的結果。回 plan，或 nil, missing（fullType → 還差幾個）, tools（缺的 ItemTag 欄位名）
 function Materials.plan(player, cost)
     local inv = player:getInventory()
     local missingTools
     for _, name in ipairs(cost.tools) do
-        local tag = ItemTag[name]
-        if not (tag and inv:getFirstTagEvalRecurse(tag, notBroken)) then
+        if not hasTool(inv, name) then
             missingTools = missingTools or {}
             missingTools[#missingTools + 1] = name
         end
@@ -93,6 +98,58 @@ function Materials.plan(player, cost)
     end
     if missing or missingTools then return nil, missing, missingTools end
     return { take = take, ground = ground, boxes = boxes, left = left }
+end
+
+-- 玩家此刻可用材料的摘要（客戶端預覽、目錄變暗用；不動任何東西）。和 plan 同一套找法：背包（含袋子）＋周圍 3×3
+-- 走得到、可拿的地上物品，Base.Nails 另加背包裡的釘子盒每盒 100 根。
+-- S.items[fullType]＝數量、S.tools[ItemTag 欄位名]＝true|false，都是第一次讀到才查（每種一次 Java 查詢，之後讀表），
+-- 所以 pairs(S.items) 只列出查過的種類。S.cheat＝建造作弊（伺服器不扣料，Check 看它）。
+-- 背包用 getCountTypeEvalRecurse：和 plan 的 getSomeTypeEvalRecurse 走同一套遞迴、同一個 predicate
+-- （ItemContainer.java:1267-1300,1316-1343,1357-1360,1435-1438）。
+function Materials.summary(player)
+    local inv = player:getInventory()
+    local items = setmetatable({}, { __index = function(t, ft)
+        local n = inv:getCountTypeEvalRecurse(ft, usable)
+        local list = groundItems(player, { [ft] = math.huge })[ft]
+        if list then n = n + #list end
+        if ft == NAILS then n = n + inv:getCountTypeEvalRecurse(NAILS_BOX, usable) * PER_BOX end
+        rawset(t, ft, n)
+        return n
+    end })
+    local tools = setmetatable({}, { __index = function(t, name)
+        local v = hasTool(inv, name)
+        rawset(t, name, v)
+        return v
+    end })
+    return { items = items, tools = tools, cheat = player:isBuildCheat() }
+end
+
+-- 摘要夠不夠付 cost（Cost.sum 的結果）。回 missing（fullType → 還差幾個）或 nil、tools（缺的 ItemTag 欄位名）或 nil；
+-- 同一個玩家狀態下，和 plan 的 missing、tools 相同（plan 成功時兩個都是 nil）。不看建造作弊。
+function Materials.short(S, cost)
+    local missingTools, missing
+    for _, name in ipairs(cost.tools) do
+        if not S.tools[name] then
+            missingTools = missingTools or {}
+            missingTools[#missingTools + 1] = name
+        end
+    end
+    for ft, n in pairs(cost.items) do
+        local have = S.items[ft]
+        if have < n then
+            missing = missing or {}
+            missing[ft] = n - have
+        end
+    end
+    return missing, missingTools
+end
+
+-- 從摘要扣掉 cost.items（拖曳時照順序逐格累計：前面的格子用掉的，後面的不能再算）；不夠的扣到 0
+function Materials.take(S, cost)
+    for ft, n in pairs(cost.items) do
+        local left = S.items[ft] - n
+        S.items[ft] = left > 0 and left or 0
+    end
 end
 
 -- 伺服器上 sendRemoveItemFromContainer 只送封包，要先 Remove（pitfalls：伺服器端 send 不動容器）
