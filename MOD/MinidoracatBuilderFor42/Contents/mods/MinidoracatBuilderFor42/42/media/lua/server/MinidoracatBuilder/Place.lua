@@ -78,7 +78,7 @@ local function vegetation(sq)
 end
 
 -- 能不能在 sq 放 spr（種類 kind）。回 ok 與桌面高度（放在桌上的物件要墊高，原版搬家具算的）。
--- player 只給原版移動物件的判斷用（它順便查擺放技能與工具，照原版搬家具）。
+-- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 function Place.check(kind, spr, sq, player)
     if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
     local p = spr:getProperties()
@@ -126,8 +126,8 @@ end
 
 -- ---------------------------------------------------------------- 建立
 local function finish(sq, obj, index)
-    sq:AddSpecialObject(obj, index or -1)
-    obj:setExplored(true) -- 蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:736-737）
+    sq:AddSpecialObject(obj, index or -1) -- 會呼叫 addToWorld，照 sprite 的 container 屬性建容器（IsoObject.java:4502-4504）
+    obj:setExplored(true) -- 所以排在這之後：蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:736-737）
     obj:transmitCompleteItemToClients()
 end
 
@@ -153,8 +153,6 @@ local function thumpable(c, kind, north)
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
-    -- 建構子不建容器（IsoThumpable.java:397-405）；照 sprite 的 container 屬性建，原版搬家具放下也這樣（:2486）
-    obj:createContainersFromSpriteProperties()
     local mats = obj:getBuildMaterials()
     for ft, n in pairs(c.cost.items) do mats[ft] = tostring(n) end
     obj:getModData().builderEntry = spr:getName()

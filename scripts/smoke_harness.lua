@@ -257,7 +257,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "createContainersFromSpriteProperties" }) do
+        "setRenderYOffset", "setExplored", "transmitCompleteItemToClients" }) do
         o[s] = function() end
     end
     function o:getBuildMaterials() return self.mats end
@@ -657,12 +657,24 @@ check(cost("wall", { flags = { "WallN" } }).perk == "Woodwork" and cost("wall", 
     and cost("door", { keys = { MaterialType = "Brick" } }).perk == "Woodwork"
     and cost("floor", { keys = { MaterialType = "Gravel" } }).perk == nil,
     "經驗的技能照材質（同工具）：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
-local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", { keys = { MaterialType = "Brick" } }),
+local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", {}), cost("floor", { keys = { MaterialType = "Brick" } }),
     cost("floor", { keys = { MaterialType = "Gravel" } }) })
-check(xp.Woodwork == 50 and xp.Masonry == 20,
-    "經驗：每付一件材料 5 點（木牆 10 件＝50、磚地板 4 件＝20），碎石地板沒有")
+check(xp.Woodwork == 60 and xp.Masonry == 20,
+    "經驗：每付一件材料 5 點、同技能跨格累加（木牆 10 件＋木地板 2 件＝60、磚地板 4 件＝20），碎石地板沒有")
 check(next(Cost.xp({ cost("wall", { flags = { "WallN" } }, 0) })) == nil, "倍率 0：沒付材料、沒有經驗")
-check(Cost.forCells("furniture", { fa, fb }, 1)[2].perk == "Woodwork", "多格：每格保留自己的技能")
+check(cost("furniture", { keys = { Material = "Wood" } }).perk == nil and cost("floor", { keys = { Material = "Wood" } }).perk == nil,
+    "不能搬、沒有 CanScrap、第一個材質有產出：原版照退料表退 1..v 件、可能全拿回，不給經驗")
+check(cost("furniture", { keys = { Material = "Wood", IsMoveAble = "" } }).perk == "Woodwork"
+    and cost("furniture", { keys = { Material = "Wood", CanScrap = "" } }).perk == "Woodwork"
+    and cost("door", { keys = { Material = "Wood" } }).perk == "Woodwork"
+    and cost("furniture", { keys = { Material = "Fabric", Material2 = "Wood" } }).perk == "Woodwork",
+    "能搬、CanScrap（照機率退）、門、第一個材質沒有產出（拆不了）：照常給經驗")
+scrapDefs.Sandbag = { returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3, chancePerRoll = 100 } } }
+check(cost("solid", { keys = { Material = "Sandbag", CanScrap = "" } }).perk == nil, "沙包牆：拆掉固定退 3 個，不給經驗")
+local ma = sprite("fm_01_0", 912, { keys = { IsMoveAble = "", Material = "Wood" } })
+local mb = sprite("fm_01_1", 913, { keys = { IsMoveAble = "", Material = "Electric", MaterialType = "Metal_Large" } })
+local fm = Cost.forCells("furniture", { ma, mb }, 1)
+check(fm[1].perk == "Woodwork" and fm[2].perk == "MetalWelding", "多格：每格保留自己的技能")
 
 print("情境十一：建造請求（身分、限流、型別、單一待辦）")
 clockStep = 0

@@ -43,7 +43,8 @@ local MASONRY_TYPES = { Brick = true, Stone = true, Cinderblock = true, Concrete
 -- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給）：技能跟工具同一套材質，土、碎石、沙地板照原版不給
 -- （entity_floor_dirt／gravel／sand 沒有 xpAward）。每付一件材料 5 點，和原版一級木地板一樣
 -- （WoodFloorLvl1：1 木板＋1 釘子給 Woodwork 10，scripts/generated/entities/walls/entity_wood_floorlvl1.txt）。
--- 照付的件數算：倍率改了經驗跟著改，沒付材料（倍率 0、建造作弊）就沒有。
+-- 照付的件數算：倍率改了經驗跟著改，沒付材料（建造作弊；倍率 0 時不照拆解價收的）就沒有。
+-- 拆掉可能把付的料全拿回的不給（Cost.of 的 back），不然蓋了拆、拆了蓋，不花料就能一直練。
 local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding" }
 local XP_PER_ITEM = 5
 
@@ -60,17 +61,26 @@ end
 -- 原版拆解產出的上限（ISMoveableSpriteProps:getScrapItemsList、addScrapItemToList，shared/Moveables）：
 -- 每個 Material 取 returnItemsStatic（有的話）否則 returnItems；每項 maxAmount 輪，可拆（CanScrap）時 Small 減半
 -- （至少 1）、Large 加倍；沙包固定 3。原版每輪有機率，這裡取每輪都中，所以不低於拆掉換到的。
-local function scrapInto(p, out)
+-- 回 any（有產出）, back（拆掉可能把付的料全拿回）。back 有兩種：
+-- ① 沒有 CanScrap、不能搬、第一個 Material 有產出的 IsoThumpable：原版改走 ISThumpableSpriteProps，照 buildMaterials
+--    每項退 1..v 件（v＝付的數量，1 件的一定全退；ISMoveableSpriteProps.lua:41-44,104-122,4232,4323-4340）。
+--    門窗不是 IsoThumpable，不走這條。
+-- ② 一定會退的產出：沙包固定 3 個（:3368-3378），每輪機率 ≥ 100 的（窗簾）技能夠就每輪都中。
+local NOT_THUMPABLE = { door = true, window = true }
+local function scrapInto(kind, p, out)
     local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
-    if not defs then return false end
+    if not defs then return false, false end
     local size = p:has("CanScrap") and (p:get("ScrapSize") or "Medium") or nil
-    local any = false
-    for _, key in ipairs({ "Material", "Material2", "Material3" }) do
+    local any, back = false, false
+    for i, key in ipairs({ "Material", "Material2", "Material3" }) do
         local mat = p:get(key)
         local def = mat and mat ~= "Undefined" and defs.getScrapDefinition(mat)
         if def then
             local list = def.returnItemsStatic
             if not list or #list < 1 then list = def.returnItems end
+            if i == 1 and list and #list > 0 and not size and not NOT_THUMPABLE[kind] and not p:has("IsMoveAble") then
+                back = true
+            end
             for _, r in ipairs(list or {}) do
                 local n = r.maxAmount or 0
                 if size == "Small" then
@@ -83,11 +93,12 @@ local function scrapInto(p, out)
                 if n > 0 then
                     out[r.returnItem] = (out[r.returnItem] or 0) + n
                     any = true
+                    if r.returnItem == "Base.Sandbag" or (r.chancePerRoll or 0) >= 100 then back = true end
                 end
             end
         end
     end
-    return any
+    return any, back
 end
 
 local function copyInto(src, out)
@@ -100,8 +111,10 @@ function Cost.of(kind, spr, multiplier)
     local fam = family(kind, p)
     local items = {}
     local m = multiplier or 1
-    if scrapInto(p, items) then
-        -- 有拆解材質的圖塊，原版拆解照圖塊材質給，不讀 buildMaterials（ISMoveableSpriteProps.lua:3690-3720,3318-3330）。
+    local scrapped, back = scrapInto(kind, p, items)
+    if scrapped then
+        -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
+        -- back ① 那類照 buildMaterials 退 1..v 件。兩種都不會退得比這裡收的多。
         -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
         if m < 1 then m = 1 end
     else
@@ -126,7 +139,7 @@ function Cost.of(kind, spr, multiplier)
     end
     local tools = {}
     for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
-    return { items = out, tools = tools, perk = PERK[fam] }
+    return { items = out, tools = tools, perk = not back and PERK[fam] or nil }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
