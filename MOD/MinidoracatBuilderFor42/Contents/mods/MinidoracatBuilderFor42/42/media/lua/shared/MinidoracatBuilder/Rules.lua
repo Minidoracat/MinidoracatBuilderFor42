@@ -16,6 +16,7 @@ local WallSE, solidfloor, WallOverlay, FloorOverlay = F.WallSE, F.solidfloor, F.
 local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.cutW, F.solid, F.solidtrans
 local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
 local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
+local invincible = F.makeWindowInvincible
 
 -- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
 local TYPE = {}
@@ -25,26 +26,36 @@ for _, k in ipairs({ "WestRoofB", "WestRoofM", "WestRoofT" }) do TYPE[T[k]] = "r
 TYPE[T.tree] = "tree"
 TYPE[T.lightswitch] = "light"
 
--- 原版每次載入 chunk 都會跑 Lua 改寫的圖塊（MapObjects.OnLoadWithSprite，server/Map/MapObjects/*.lua）。
--- 玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。
--- 設計稿不包 MapObjects 的原版函式，改用清單；其他 MOD 可以 Rules.addLuaSprites 補。
-local LUA_SPRITES = {}
-function Rules.addLuaSprites(names)
-    for i = 1, #names do LUA_SPRITES[names[i]] = true end
+-- 依名稱不列的圖塊（kindOf 第一行查，一次表查詢）：
+-- 1. 原版每次載入 chunk 都會跑 Lua 改寫的圖塊（MapObjects.OnLoadWithSprite，server/Map/MapObjects/*.lua）。
+--    玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。
+--    設計稿不包 MapObjects 的原版函式，改用清單；其他 MOD 可以 Rules.addLuaSprites 補。
+-- 2. 其他 MOD 照 sprite 名稱給功能的圖塊：MapObjects 的登記表是 Java 私有欄位（MapObjects.java:23-24），
+--    名稱比對寫在各 MOD 自己的 Lua 裡，查不到，只能列。
+-- 3. 引擎內部用的圖塊。
+local UNLISTED = {}
+local function unlist(names)
+    for i = 1, #names do UNLISTED[names[i]] = true end
 end
+Rules.addLuaSprites = unlist
 local function addRange(tileset, from, to)
-    for i = from, to do LUA_SPRITES[tileset .. "_" .. i] = true end
+    for i = from, to do UNLISTED[tileset .. "_" .. i] = true end
 end
-Rules.addLuaSprites({ "crafted_04_120", "camping_01_4", "camping_01_5", "camping_01_6",
+unlist({ "crafted_04_120", "camping_01_4", "camping_01_5", "camping_01_6",
     "vegetation_farming_01_13", "vegetation_farming_01_14" })
 addRange("location_farm_accesories_01", 4, 7)      -- MOFeedingTrough.lua:131-158
 addRange("location_farm_accesories_01", 14, 29)
 addRange("location_farm_accesories_01", 32, 35)
 addRange("constructedobjects_01", 2, 13)           -- server/Traps/TrapDefinition.lua（MOTrap.lua:131-135）
 addRange("constructedobjects_01", 16, 19)
+-- PSR（正式服有裝）與 Immersive Solar Arrays 共用的太陽能 tileset（兩者都是 40 格）：面板接上電池組就照面板數發電，
+-- 認的只是 sprite 名稱（PSR shared/PSR/WorldUtilities.lua 的 PSRTypes、PowerBankObject_Server.lua 的 checkPanels）
+addRange("solarmod_tileset_01", 0, 39)
+-- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4834-4844）
+unlist({ "invisible_01_0", "underground_01_0", "underground_01_1" })
 
-function Rules.hasLuaBehaviour(name)
-    return LUA_SPRITES[name] == true
+function Rules.unlistedByName(name)
+    return UNLISTED[name] == true
 end
 
 -- 窗開著、破了、拆了玻璃的三種狀態圖不列。引擎建 IsoWindow 時把關著那張的屬性與型別整份加到這三張
@@ -178,7 +189,9 @@ local function decor(p, mt)
     if mt == "WallObject" or p:has(WallOverlay) then return "wallObject" end
     if mt == "WindowObject" then return "windowObject" end
     if mt == "FloorRug" or p:has(FloorOverlay) or p:has(attachedFloor) then return "floorOverlay" end
-    if p:has(cutN) or p:has(cutW) then return "wallOverlay" end -- 牆鍵已在前面判斷過
+    if p:has(cutN) or p:has(cutW) then -- 牆鍵已在前面判斷過
+        return not p:has(invincible) and "wallOverlay" or nil
+    end
     if p:has(attachedN) or p:has(attachedS) or p:has(attachedE) or p:has(attachedW)
         or p:has(attachedNW) or p:has(attachedSE) or p:has(attachedCeiling) then
         return "attached"
@@ -208,7 +221,7 @@ end
 -- 回傳種類字串；nil＝不列（排除或不屬於任何種類）
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
 function Rules.kindOf(name, p, t)
-    if not name or LUA_SPRITES[name] or WINDOW_STATE[name] or excludedName(name) then return nil end
+    if not name or UNLISTED[name] or WINDOW_STATE[name] or excludedName(name) then return nil end
     if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
     local tc = TYPE[t]
     if tc == "tree" then return nil end
@@ -222,8 +235,14 @@ function Rules.kindOf(name, p, t)
         if p:has("DoubleDoor") then return nil end
         return "door"
     end
-    if p:has(windowN) or p:has(windowW) then return "window" end -- 窗一定也帶 WindowN/W，所以先判斷
-    if p:has("WindowN") or p:has("WindowW") then return "windowFrame" end
+    -- 打不破的窗不列：窗自己帶 makeWindowInvincible，或同一格同方向帶 cutN/W 的物件帶它，窗就打不破、爬不過，
+    -- 殭屍也不開（IsoWindow.java:1150-1172,436,1111-1135,1314）。原版 tiledef 帶它的 10 張（8 扇窗、2 片商場鐵捲門）
+    -- 都搬不動，玩家拿不到。2026-10-27 傾印的目錄（正式服 13 個 tiledef MOD）也只有這 10 張，所以只在窗、窗框、牆、
+    -- 牆面疊圖查，不每格多一次 Java 呼叫。
+    if p:has(windowN) or p:has(windowW) then -- 窗一定也帶 WindowN/W，所以先判斷
+        return not p:has(invincible) and "window" or nil
+    end
+    if p:has("WindowN") or p:has("WindowW") then return not p:has(invincible) and "windowFrame" or nil end
     if p:has("DoorWallN") or p:has("DoorWallW") or p:has("DoorWallNTrans") or p:has("DoorWallWTrans") then
         return "doorFrame"
     end
@@ -232,7 +251,7 @@ function Rules.kindOf(name, p, t)
     end
     if p:has("WallN") or p:has("WallW") or p:has("WallNW") or p:has("WallNTrans") or p:has("WallWTrans")
         or p:has("WallNWTrans") or p:has(WallSE) then
-        return "wall"
+        return not p:has(invincible) and "wall" or nil
     end
     if p:has(solidfloor) then -- 平屋頂地板也在這
         if infiniteWater(p) then return nil end

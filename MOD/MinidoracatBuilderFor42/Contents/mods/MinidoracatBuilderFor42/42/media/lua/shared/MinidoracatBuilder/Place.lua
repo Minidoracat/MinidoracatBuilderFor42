@@ -135,21 +135,42 @@ end
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
 local HEALTH = { wall = 450, windowFrame = 450, fence = 300 }
+-- 會擋路的家具、容器、實心物件照原版搬家具放下（ISMoveableSpriteProps.lua:2330,2379-2388）：殭屍打得壞，一隻就能打
+-- （thumpDmg 1，IsoThumpable.java:1029-1041），而且整格擋住，不然會被 getSpecialWall 當成格邊的牆（IsoGridSquare.java:3804-3818）。
+-- 原版特地讓放下的擋路物件都打得壞（ISMoveableSpriteProps.lua:2501-2504）。地毯、掛牆物、放在桌上的照原版不打。
+local function blocking(p)
+    if not (p:has(F.solid) or p:has(F.solidtrans)) or p:has("IsTableTop") then return false end
+    local mt = p:get("MoveType")
+    return mt ~= "FloorRug" and mt ~= "WallObject"
+end
+-- 血量照原版：搬運重量（沒寫當 50）× 材質倍率（ISMoveableSpriteProps.lua:148,322-325；ISMoveableDefinitions.lua:688-690）
+local function furnitureHealth(p)
+    local mat = p:get("Material")
+    local m = mat and ISMoveableDefinitions:getInstance().getHealthDefinition(mat) or 1
+    return (tonumber(p:get("PickUpWeight")) or 50) * m
+end
 local function thumpable(c, kind, north)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
+    local furniture = not Entry.EDGE[kind] and blocking(p)
     -- 屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
     obj:setCanPassThrough(not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN) or p:has(F.WallNTrans)
         or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
-    obj:setBlockAllTheSquare(p:has("BlocksPlacement"))
+    obj:setBlockAllTheSquare(furniture or p:has("BlocksPlacement"))
     obj:setIsHoppable(kind == "fence")
     obj:setIsDoorFrame(kind == "doorFrame")
     obj:setCanBarricade(kind == "windowFrame")
     obj:setIsFloor(kind == "floor")
-    obj:setIsThumpable(HEALTH[kind] ~= nil) -- 殭屍只打牆、窗框、柵欄；門框與家具照原版不打
+    local hp = HEALTH[kind]
+    if furniture then
+        hp = furnitureHealth(p)
+        obj:setThumpDmg(1)
+        obj:setBreakSound(IsoThumpable.GetBreakFurnitureSound(spr:getName()))
+    end
+    obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的家具照原版不打
     obj:setIsDismantable(true)
-    local hp = HEALTH[kind] or 200
+    hp = hp or 200
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
