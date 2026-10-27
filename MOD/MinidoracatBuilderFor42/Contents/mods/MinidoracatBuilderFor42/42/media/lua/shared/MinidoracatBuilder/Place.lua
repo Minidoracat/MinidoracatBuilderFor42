@@ -440,4 +440,14 @@ function Place.settle(cells)
     end
 end
 
+-- 本 MOD 蓋的 IsoThumpable 移出世界前清掉退料表：原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、
+-- ISBuildingObject.lua:51-69），已經移除的物件不該再退料。
+function Place.onAboutToBeRemoved(obj)
+    if not (instanceof(obj, "IsoThumpable") and obj:hasModData() and obj:getModData().builderEntry) then return end
+    local mats, keys = obj:getBuildMaterials(), {}
+    for k in pairs(mats) do keys[#keys + 1] = k end
+    for i = 1, #keys do mats[keys[i]] = nil end
+end
+Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAboutToBeRemoved(obj) end)
+
 return Place

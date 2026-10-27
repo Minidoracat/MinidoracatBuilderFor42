@@ -1732,6 +1732,20 @@ local function newKinds()
     check(at(plat, "carpentry_02_57") and plat.md and plat.md.ConnectedToStairsfalse == true
         and SP.inv:count("Base.Plank") == 0 and #xpLog == 1 and xpLog[1].n == 105,
         "平台：上一層補原版平台地板、記 ConnectedToStairs（同向樓梯不能再蓋在這），整組扣一次料、木工 105（21 件）")
+    -- 原版拆一片會整組移除：每片移除前觸發 OnObjectAboutToBeRemoved，本 MOD 的片清掉退料表，別人的照舊
+    do
+        local realInst = instanceof
+        instanceof = function(o, c) return c == "IsoThumpable" and o.mats ~= nil end
+        local other = IsoThumpable.new(nil, squares["44,57,0"], "stw_01_0", true, {})
+        other.mats["Base.Plank"] = "2"
+        for _, o in ipairs({ T0, M0, B0, other }) do
+            function o:hasModData() return next(self.md) ~= nil end
+            fire("OnObjectAboutToBeRemoved", o)
+        end
+        instanceof = realInst
+        check(next(T0.mats) == nil and next(M0.mats) == nil and next(B0.mats) == nil and other.mats["Base.Plank"] == "2",
+            "本 MOD 蓋的物件移出世界前清掉退料表（拆解、打壞都先讀再移除）；不是本 MOD 蓋的不動")
+    end
     -- 平台格上有跨到別格的植物（多格）：只拆平台這一片，另一片（沒驗證過的格子）留著
     local pq, pn = square(40, 53, 1), square(39, 53, 1)
     local grp = {}
