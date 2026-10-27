@@ -51,12 +51,19 @@ end
 -- （IsoWindow.java:99-121），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
 -- 20 張在窗與附著物之間換（E2E ui-mp 1027f／g），客戶端與伺服器也可能不同。圖塊定義剛載入、還沒載入任何
 -- chunk 時（OnLoadedTileDefinitions，IsoWorld.java:1977-1978，chunk 在 :2188 才載）照關著那張的偏移記下來。
--- 原版 276 張窗指到的狀態圖不是沒有窗旗標，就是沒有自己偏移的窗（也是狀態圖；離線讀 tiledef 查過），整批不列不會誤傷。
+-- 只從「關著那張」算：有窗旗標、有偏移、自己不是別張窗偏移指到的圖。被引擎改過的狀態圖也帶著關著那張的
+-- 旗標與偏移，靠最後這條跳過，所以 chunk 載入後才補記也不會把「狀態圖＋偏移」（可能是下一扇窗）誤記。
+-- 原版 276 張窗指到的圖不是沒有窗旗標，就是沒有自己偏移的窗（也是狀態圖）。本機 312 個 tiledef 檔（原版＋Workshop＋
+-- Zomboid/mods）有 642 處指到帶自己偏移的窗（作者把關著那張的屬性複製到狀態圖，例 tikitown_windows_01_16 → _18），
+-- 照這條也算狀態圖、它的偏移不用（2026-10-27 離線讀 tiledef）。
 local STATE_KEYS = { "OpenTileOffset", "SmashedTileOffset", "GlassRemovedOffset" }
-local WINDOW_STATE = {}
-Rules.windowStates = nil -- 記了幾張；nil＝還沒記
+-- 集合放在 Rules 表上：只重載這個檔案（不是整個 Lua 重設）時沿用圖塊剛載入時記的那份
+local WINDOW_STATE = Rules.windowStateSet or {}
+Rules.windowStateSet = WINDOW_STATE
+-- Rules.windowStates：記了幾張；nil＝還沒記
 function Rules.recordWindowStates(sprites, late)
-    local t0, n = getTimestampMs(), 0
+    local t0 = getTimestampMs()
+    local wins, targets, wn, pointed = {}, {}, 0, {}
     for i = 0, sprites:size() - 1 do
         local spr = sprites:get(i)
         local p = spr:getProperties()
@@ -65,28 +72,44 @@ function Rules.recordWindowStates(sprites, late)
             local tileset, num
             if name then tileset, num = name:match("^(.*)_(%d+)$") end
             if tileset then
+                local list
                 for k = 1, 3 do
                     local off = tonumber(p:get(STATE_KEYS[k]))
                     if off and off ~= 0 then
                         local target = tileset .. "_" .. (tonumber(num) + off)
-                        if not WINDOW_STATE[target] then
-                            WINDOW_STATE[target] = true
-                            n = n + 1
-                        end
+                        pointed[target] = true
+                        list = list or {}
+                        list[#list + 1] = target
                     end
+                end
+                if list then
+                    wn = wn + 1
+                    wins[wn], targets[wn] = name, list
                 end
             end
         end
     end
-    Rules.windowStates = n
-    print("[MinidoracatBuilderFor42] window state sprites: " .. n .. " of " .. sprites:size() .. " in "
-        .. (getTimestampMs() - t0) .. " ms" .. (late and " (late: windows already loaded may add extra)" or ""))
+    local n = 0
+    for j = 1, wn do
+        if not pointed[wins[j]] then
+            local list = targets[j]
+            for k = 1, #list do
+                if not WINDOW_STATE[list[k]] then
+                    WINDOW_STATE[list[k]] = true
+                    n = n + 1
+                end
+            end
+        end
+    end
+    Rules.windowStates = (Rules.windowStates or 0) + n
+    print("[MinidoracatBuilderFor42] window state sprites: " .. n .. " from " .. wn .. " windows, " .. sprites:size()
+        .. " sprites in " .. (getTimestampMs() - t0) .. " ms" .. (late and " (late)" or ""))
 end
 Events.OnLoadedTileDefinitions.Add(function(manager)
     MinidoracatBuilder.Rules.recordWindowStates(ArrayList.new(manager:getNamedMap():values()))
 end)
 
--- 沒趕上 OnLoadedTileDefinitions（Lua 在世界載入後才重載）時，第一次分類前照現在的屬性補記
+-- 沒趕上 OnLoadedTileDefinitions（整個 Lua 在世界載入後才重設）時，第一次分類前照現在的屬性補記
 function Rules.ensureWindowStates()
     if Rules.windowStates == nil then
         Rules.recordWindowStates(ArrayList.new(IsoSpriteManager.instance:getNamedMap():values()), true)

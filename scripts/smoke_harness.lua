@@ -416,6 +416,7 @@ check(kind({ flags = { "solidfloor" }, keys = { waterAmount = "9998" } }) == "fl
     and kind({ keys = { IsMoveAble = "", waterAmount = "20" } }) == "furniture", "waterAmount 低於 9999（雨水桶等）：照常列")
 check(kind({}) == nil, "沒有任何分類屬性：不列")
 print("情境二之一：窗的狀態圖（開、破、拆玻璃）不列，不看這次載入過哪些窗")
+do -- 主程式區域變數上限 200
 local WIN0 = { flags = { "windowN" }, keys = { WindowN = "", OpenTileOffset = "2", SmashedTileOffset = "4", GlassRemovedOffset = "6" } }
 world({ sprite("win_01_0", 1, WIN0), sprite("win_01_8", 2, { flags = { "windowN" }, keys = { WindowN = "" } }),
     sprite("win_01_4", 3, { flags = { "attachedN" } }), sprite("nameless", 4, { flags = { "windowW" }, keys = { OpenTileOffset = "2" } }) })
@@ -425,6 +426,15 @@ check(kind({ flags = { "attachedN" } }, "win_01_4") == nil, "狀態圖還沒被�
 check(kind(WIN0, "win_01_2") == nil, "狀態圖被引擎改過（帶窗旗標與關著那張的偏移）：也不列")
 check(kind(WIN0, "win_01_0") == "window" and kind({ flags = { "windowN" }, keys = { WindowN = "" } }, "win_01_8") == "window",
     "關著的窗照列，偏移指不到的下一扇窗也照列")
+-- 補記（Lua 在世界載入後才重設）：win_01_2 已被引擎改過，帶著 win_01_0 的旗標與偏移；2＋6＝8 是下一扇真的窗
+world({ sprite("win_01_0", 1, WIN0), sprite("win_01_2", 5, WIN0), sprite("win_01_8", 2, { flags = { "windowN" }, keys = { WindowN = "" } }) })
+Rules.windowStates = nil
+local stateEntry, stateCode = Entry.resolve("win_01_2")
+check(Rules.windowStates ~= nil and stateEntry == nil and stateCode == "UNKNOWN",
+    "沒趕上事件時第一次 Entry.resolve 先補記；伺服器入口對狀態圖回 UNKNOWN（" .. tostring(stateCode) .. "）")
+local nextWin = Entry.resolve("win_01_8")
+check(nextWin and nextWin.kind == "window", "補記時被改過的狀態圖不當關著那張：它的偏移指到的下一扇窗照列")
+end
 
 print("情境三：樓梯湊組")
 world({ sprite("st_01_0", 1, { type = T.stairsBW }), sprite("st_01_1", 2, { type = T.stairsMW }),

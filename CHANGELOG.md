@@ -27,4 +27,4 @@
 - **手把**：視窗裡 LB／RB 換頁籤、方向鍵選、A 選取後再按一次 A 開始建造、Y 加入最愛、B 關閉。建造時視窗先收起，LB／RB 旋轉、A 建造、B 取消，結束後視窗回來
 - **通知**：伺服器拒絕時跳出原因；角色走不到要蓋的地方（旁邊沒有站得到的格子，或走到一半被打斷）時也會提示
 
-> 技術要點：放置走自訂 timed action，`complete()` 只在伺服器跑；退料寫在物件的 buildMaterials。原版 entity 圖塊、有載入 Lua 的原版圖塊、雙開門、`waterAmount` 9999 以上（引擎當成無限水）的圖塊不列。樓梯、燈與開關、窗簾、屋頂在之後的版本加入；車庫門、雙開門暫不支援。介面需要 Minidoracat UI 框架（API rev 22 以上）；客戶端預覽和伺服器用同一份判斷，伺服器照樣重算。最愛存在 `Zomboid/Lua/MinidoracatBuilder/favorites.txt`。分割畫面只有第一位玩家有入口。
+> 技術要點：放置走自訂 timed action，`complete()` 只在伺服器跑；退料寫在物件的 buildMaterials。原版 entity 圖塊、有載入 Lua 的原版圖塊、雙開門、`waterAmount` 9999 以上（引擎當成無限水）的圖塊、窗開著／破了／拆了玻璃的狀態圖不列。樓梯、燈與開關、窗簾、屋頂在之後的版本加入；車庫門、雙開門暫不支援。介面需要 Minidoracat UI 框架（API rev 22 以上）；客戶端預覽和伺服器用同一份判斷，伺服器照樣重算。最愛存在 `Zomboid/Lua/MinidoracatBuilder/favorites.txt`。分割畫面只有第一位玩家有入口。
