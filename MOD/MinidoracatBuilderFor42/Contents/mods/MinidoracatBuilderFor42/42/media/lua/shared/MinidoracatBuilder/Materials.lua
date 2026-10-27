@@ -71,9 +71,14 @@ local function groundCounts(player)
 end
 
 -- 帶著沒壞的這種工具（ItemTag 欄位名；這個版本沒有的標籤當沒帶）。plan 與 summary 共用，兩邊才不會判斷不同。
+-- 噴槍另外照型別找：42.21 的 item BlowTorch 沒有 Tags（scripts/generated/items/drainable.txt），沒有物品帶這個標籤，
+-- 原版自己也照型別找（ISMoveableSpriteProps.lua:4-6、ISVehicleMenu.lua:878）。
+local BY_TYPE = { BLOW_TORCH = "BlowTorch" }
 local function hasTool(inv, name)
     local tag = ItemTag[name]
-    return tag ~= nil and inv:getFirstTagEvalRecurse(tag, notBroken) ~= nil
+    if tag ~= nil and inv:getFirstTagEvalRecurse(tag, notBroken) ~= nil then return true end
+    local ty = BY_TYPE[name]
+    return ty ~= nil and inv:getFirstTypeEvalRecurse(ty, notBroken) ~= nil
 end
 
 -- cost＝Cost.sum 的結果。回 plan，或 nil, missing（fullType → 還差幾個）, tools（缺的 ItemTag 欄位名）

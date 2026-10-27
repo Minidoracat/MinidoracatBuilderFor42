@@ -295,6 +295,13 @@ local function inventory()
         for _, v in ipairs(self.items) do if v.tags[tag] and pred(v) then return v end end
         return nil
     end
+    function inv:getFirstTypeEvalRecurse(ty, pred) -- 型別沒有「.」時只比「.」後面（ItemContainer.java:1197-1200）
+        for _, v in ipairs(self.items) do
+            local t = ty:find(".", 1, true) and v.ft or v.ft:match("[^.]+$")
+            if t == ty and pred(v) then return v end
+        end
+        return nil
+    end
     function inv:getSomeTypeEvalRecurse(ft, pred, n)
         local out = {}
         for _, v in ipairs(self.items) do
@@ -1073,7 +1080,7 @@ do
         { 37, 70, "rug_test_01_0", "地毯（木頭、搬運重量 40）" } }) do
         local o = put(t[1], t[2], t[3])
         check(o and o.set.setIsThumpable == true and o.set.setMaxHealth == 100 and o.set.setThumpDmg == nil
-            and o.set.setBlockAllTheSquare == true, t[4] .. "帶 solid：照原版打得壞，血量 100、8 隻一起打才每下扣 1、整格擋住")
+            and o.set.setBlockAllTheSquare == true, t[4] .. "帶 solid：照原版打得壞，血量 100、thumpDmg 維持預設 8、整格擋住")
     end
     local fo = put(38, 72, "fence_test_01_0")
     check(fo and fo.set.setIsThumpable == true and fo.set.setMaxHealth == 300 and fo.set.setThumpDmg == nil
@@ -1210,6 +1217,9 @@ do
     local okM, _, tM = agree(M4, { items = {}, tools = { "BLOW_TORCH", "WELDING_MASK", "NOPE" } })
     check(okT and mT == nil and names(tT) == "HAMMER" and okM and names(tM) == "BLOW_TORCH,NOPE",
         "缺工具：兩邊都報同一串（照 cost.tools 順序；這個版本沒有的標籤當沒帶）")
+    M4.inv:add(item("Base.BlowTorch")) -- 原版的噴槍沒有標籤
+    local okBT, _, tBT = agree(M4, { items = {}, tools = { "BLOW_TORCH", "WELDING_MASK" } })
+    check(okBT and tBT == nil, "噴槍沒有標籤（42.21 的 item BlowTorch 沒有 Tags）：照型別找到，兩邊都不缺")
     local S = Materials.summary(M1)
     local first = Materials.short(S, W)
     Materials.take(S, W)

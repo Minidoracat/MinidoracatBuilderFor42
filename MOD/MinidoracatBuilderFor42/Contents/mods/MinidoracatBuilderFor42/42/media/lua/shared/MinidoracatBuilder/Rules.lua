@@ -31,8 +31,8 @@ TYPE[T.lightswitch] = "light"
 --    玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。
 --    設計稿不包 MapObjects 的原版函式，改用清單；其他 MOD 可以 Rules.addLuaSprites 補。
 -- 2. 其他 MOD 照 sprite 名稱給功能的圖塊：MapObjects 的登記表是 Java 私有欄位（MapObjects.java:23-24），
---    名稱比對寫在各 MOD 自己的 Lua 裡，查不到，只能列。MOD 自己的 tileset 一律列；原版圖塊只在有啟用那個 MOD 時列
---    （沒裝時只是原版裝飾）。2026-10-27 用 audit_mods.py 掃正式服 147 個 MOD 找到的見下方。
+--    名稱比對寫在各 MOD 自己的 Lua 裡，查不到，只能列清單。MOD 自己的 tileset 一律不列；原版圖塊只在有啟用那個 MOD
+--    時不列（BY_MOD；沒裝時只是原版裝飾）。2026-10-27 用 audit_mods.py 掃正式服 147 個 MOD 找到的見下方。
 -- 3. 引擎內部用的圖塊。
 local UNLISTED = {}
 local function unlist(names)

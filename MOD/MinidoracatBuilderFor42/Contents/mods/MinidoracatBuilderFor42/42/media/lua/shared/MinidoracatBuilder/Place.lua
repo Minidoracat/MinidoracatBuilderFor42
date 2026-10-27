@@ -139,7 +139,9 @@ local HEALTH = { wall = 450, windowFrame = 450, fence = 300 }
 --   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
 --   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
 --   地毯、掛牆物、放在桌上的：原版做成一般物件再設 movedThumpable（ISMoveableSpriteProps.lua:2330,2501-2504），血量 100、
---   8 隻殭屍一起打才每下扣 1（IsoObject.java:205,5747-5759）；IsoThumpable 的 thumpDmg 預設就是 8（IsoThumpable.java:101）。
+--   每下扣「圍著打的殭屍數 ÷ 8」、最多 1，不足 1 的累積（IsoObject.java:205,5747-5759）；IsoThumpable 的 thumpDmg 預設就是 8
+--   （IsoThumpable.java:101,1027-1041 同一算法）。這裡做成 IsoThumpable，和原版那種一般物件差在：受沙盒「殭屍破壞
+--   建築」控制（IsoThumpable.java:994）、玩家揮武器打得到（CombatManager.java:277-283）。
 -- 回傳血量與 thumpDmg（nil＝不改預設）
 local function solidHealth(p)
     local mt = p:get("MoveType")
