@@ -139,7 +139,7 @@ function Cost.of(kind, spr, multiplier)
     end
     local tools = {}
     for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
-    return { items = out, tools = tools, perk = not back and PERK[fam] or nil }
+    return { items = out, tools = tools, perk = not back and PERK[fam] or nil, back = back }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
@@ -159,7 +159,7 @@ end
 
 -- 一個項目各格的成本（sprites＝各格 sprite，依 Entry.cells 的順序）。原版拆多格物件時每一片都照被點的那片材質給
 -- （ISMoveableSpriteProps.lua:3481-3495），各片材質不一定相同（原版有 4 組，例：病床椅），所以多格的每一格都收
--- 各格的最大值，拆哪一片都不會比付的多。
+-- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗。
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
     for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
@@ -171,10 +171,12 @@ function Cost.forCells(kind, sprites, multiplier)
         end
     end
     local tools = Cost.sum(each).tools
+    local back = false
+    for _, c in ipairs(each) do back = back or c.back end
     for i = 1, #each do
         local items = {}
         for ft, n in pairs(top) do items[ft] = n end
-        each[i] = { items = items, tools = tools, perk = each[i].perk }
+        each[i] = { items = items, tools = tools, perk = not back and each[i].perk or nil, back = back }
     end
     return each
 end

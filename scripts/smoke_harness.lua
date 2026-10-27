@@ -669,12 +669,17 @@ check(cost("furniture", { keys = { Material = "Wood", IsMoveAble = "" } }).perk 
     and cost("door", { keys = { Material = "Wood" } }).perk == "Woodwork"
     and cost("furniture", { keys = { Material = "Fabric", Material2 = "Wood" } }).perk == "Woodwork",
     "能搬、CanScrap（照機率退）、門、第一個材質沒有產出（拆不了）：照常給經驗")
-scrapDefs.Sandbag = { returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3, chancePerRoll = 100 } } }
+scrapDefs.Sandbag = { returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3 } } }
+scrapDefs.Curtain = { returnItemsStatic = { { returnItem = "Base.Sheet", maxAmount = 1, chancePerRoll = 10000 } } }
 check(cost("solid", { keys = { Material = "Sandbag", CanScrap = "" } }).perk == nil, "沙包牆：拆掉固定退 3 個，不給經驗")
+check(cost("furniture", { keys = { Material = "Curtain", CanScrap = "" } }).perk == nil,
+    "每輪機率 ≥ 100 的產出（窗簾）：技能夠就全退，不給經驗")
 local ma = sprite("fm_01_0", 912, { keys = { IsMoveAble = "", Material = "Wood" } })
 local mb = sprite("fm_01_1", 913, { keys = { IsMoveAble = "", Material = "Electric", MaterialType = "Metal_Large" } })
 local fm = Cost.forCells("furniture", { ma, mb }, 1)
 check(fm[1].perk == "Woodwork" and fm[2].perk == "MetalWelding", "多格：每格保留自己的技能")
+local mixed = Cost.forCells("furniture", { sprite("fm_02_0", 914, { keys = { CanScrap = "", Material = "Curtain" } }), ma }, 1)
+check(next(Cost.xp(mixed)) == nil, "多格有一片拆掉一定全退：點那片拆整組都退，整組不給經驗")
 
 print("情境十一：建造請求（身分、限流、型別、單一待辦）")
 clockStep = 0
