@@ -845,19 +845,14 @@ function W.pump(panel)
         v.selName = name
         v.detailDirty = true
     end
+    -- 材料摘要每秒重算一次（地上 3×3 的材料也算）。不靠 OnContainerUpdate：伺服器扣料、發料時客戶端不一定觸發
+    -- （E2E ui-mp 1027f：蓋完以後詳情與方格還照扣料前顯示）。
     local p = getSpecificPlayer(W.playerNum)
-    if p then
-        local sq = p:getCurrentSquare()
-        if sq ~= v.lastSq then
-            v.lastSq = sq
-            v.sumDirty = true -- 地上 3×3 的材料也算（Materials.summary）
-        end
-    end
-    if v.sumDirty and p and now - v.sumAt >= SUMMARY_MS then
+    if p and now - v.sumAt >= SUMMARY_MS then
         local M = B.Materials
         local S = M and M.summary and M.summary(p) or nil
-        v.sumAt, v.sumDirty = now, false
-        -- 走路換格時大多沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
+        v.sumAt = now
+        -- 大多時候沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
         if not (S and M.same(v.S, S)) then
             v.S = S
             v.dim, v.dimN = {}, 0
@@ -1285,7 +1280,7 @@ function W.create(UI)
     local w = math.max(math.floor(360 * s), math.min(sw - 40, want))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
-        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0, sumDirty = true }
+        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0 }
     v.iconH = math.floor(56 * s)
     local opts = { x = math.max(sx, sx + sw - w - 20), y = sy + 60, width = w, height = h,
         title = getText("IGUI_MBLD_Title"), icon = "house", theme = theme, resizable = true,
@@ -1410,7 +1405,7 @@ function W.open(playerNum)
         v = W.v
     end
     v.hiddenForBuild = false
-    v.sumDirty = true
+    v.sumAt = 0 -- 下一幀就重算材料
     -- 管理員改了沙盒（關掉或打開來源、圖塊組、成本倍率）：重開視窗時重排來源、分類與清單
     local dg = Entry.digest()
     if v.digest ~= dg then
@@ -1441,12 +1436,6 @@ end
 function W.onClosed()
     local v = W.v
     if v then v.UI.Dropdown.close(v.win) end -- 只關這個視窗的下拉（ARCH §3.17）
-end
-
--- 背包或附近容器變了：下一次（每秒最多一次）重算材料摘要
-function W.onInventory()
-    local v = W.v
-    if v then v.sumDirty = true end
 end
 
 -- ===== 入口：Dock、按鍵、ModOptions =====
@@ -1514,7 +1503,6 @@ if first then
         MinidoracatBuilder.Window.readOptions()
         MinidoracatBuilder.Window.registerDock()
     end)
-    Events.OnContainerUpdate.Add(function() MinidoracatBuilder.Window.onInventory() end)
 end
 
 return W
