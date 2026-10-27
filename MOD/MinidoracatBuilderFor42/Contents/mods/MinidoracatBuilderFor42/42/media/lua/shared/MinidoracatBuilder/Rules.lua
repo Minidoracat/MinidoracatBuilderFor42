@@ -47,6 +47,56 @@ function Rules.hasLuaBehaviour(name)
     return LUA_SPRITES[name] == true
 end
 
+-- 窗開著、破了、拆了玻璃的三種狀態圖不列。引擎建 IsoWindow 時把關著那張的屬性與型別整份加到這三張
+-- （IsoWindow.java:99-121），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
+-- 20 張在窗與附著物之間換（E2E ui-mp 1027f／g），客戶端與伺服器也可能不同。圖塊定義剛載入、還沒載入任何
+-- chunk 時（OnLoadedTileDefinitions，IsoWorld.java:1977-1978，chunk 在 :2188 才載）照關著那張的偏移記下來。
+-- 原版 276 張窗指到的狀態圖不是沒有窗旗標，就是沒有自己偏移的窗（也是狀態圖；離線讀 tiledef 查過），整批不列不會誤傷。
+local STATE_KEYS = { "OpenTileOffset", "SmashedTileOffset", "GlassRemovedOffset" }
+local WINDOW_STATE = {}
+Rules.windowStates = nil -- 記了幾張；nil＝還沒記
+function Rules.recordWindowStates(sprites, late)
+    local t0, n = getTimestampMs(), 0
+    for i = 0, sprites:size() - 1 do
+        local spr = sprites:get(i)
+        local p = spr:getProperties()
+        if p:has(windowN) or p:has(windowW) then
+            local name = spr:getName()
+            local tileset, num
+            if name then tileset, num = name:match("^(.*)_(%d+)$") end
+            if tileset then
+                for k = 1, 3 do
+                    local off = tonumber(p:get(STATE_KEYS[k]))
+                    if off and off ~= 0 then
+                        local target = tileset .. "_" .. (tonumber(num) + off)
+                        if not WINDOW_STATE[target] then
+                            WINDOW_STATE[target] = true
+                            n = n + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    Rules.windowStates = n
+    print("[MinidoracatBuilderFor42] window state sprites: " .. n .. " of " .. sprites:size() .. " in "
+        .. (getTimestampMs() - t0) .. " ms" .. (late and " (late: windows already loaded may add extra)" or ""))
+end
+Events.OnLoadedTileDefinitions.Add(function(manager)
+    MinidoracatBuilder.Rules.recordWindowStates(ArrayList.new(manager:getNamedMap():values()))
+end)
+
+-- 沒趕上 OnLoadedTileDefinitions（Lua 在世界載入後才重載）時，第一次分類前照現在的屬性補記
+function Rules.ensureWindowStates()
+    if Rules.windowStates == nil then
+        Rules.recordWindowStates(ArrayList.new(IsoSpriteManager.instance:getNamedMap():values()), true)
+    end
+end
+
+function Rules.isWindowState(name)
+    return WINDOW_STATE[name] == true
+end
+
 -- 型別代碼："stairs"／"curtain"／"roof"／"tree"／"light"／nil
 function Rules.typeCode(t)
     return TYPE[t]
@@ -103,7 +153,7 @@ end
 -- 回傳種類字串；nil＝不列（排除或不屬於任何種類）
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
 function Rules.kindOf(name, p, t)
-    if not name or LUA_SPRITES[name] or excludedName(name) then return nil end
+    if not name or LUA_SPRITES[name] or WINDOW_STATE[name] or excludedName(name) then return nil end
     if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
     local tc = TYPE[t]
     if tc == "tree" then return nil end

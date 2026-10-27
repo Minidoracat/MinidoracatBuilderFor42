@@ -9,7 +9,7 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 2
+Entry.VERSION = 3
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
@@ -67,6 +67,7 @@ end
 function Entry.resolve(name)
     local spr = Entry.sprite(name)
     if not spr then return nil, "UNKNOWN" end
+    Rules.ensureWindowStates()
     local id = spr:getID()
     if id < 0 or id == NO_TILE_ID then return nil, "UNKNOWN" end
     local kind = Rules.classify(spr)

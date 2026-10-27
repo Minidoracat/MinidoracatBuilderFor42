@@ -415,6 +415,16 @@ check(kind({ type = T.stairsBN, keys = { waterAmount = "99999" } }) == nil, "無
 check(kind({ flags = { "solidfloor" }, keys = { waterAmount = "9998" } }) == "floor"
     and kind({ keys = { IsMoveAble = "", waterAmount = "20" } }) == "furniture", "waterAmount 低於 9999（雨水桶等）：照常列")
 check(kind({}) == nil, "沒有任何分類屬性：不列")
+print("情境二之一：窗的狀態圖（開、破、拆玻璃）不列，不看這次載入過哪些窗")
+local WIN0 = { flags = { "windowN" }, keys = { WindowN = "", OpenTileOffset = "2", SmashedTileOffset = "4", GlassRemovedOffset = "6" } }
+world({ sprite("win_01_0", 1, WIN0), sprite("win_01_8", 2, { flags = { "windowN" }, keys = { WindowN = "" } }),
+    sprite("win_01_4", 3, { flags = { "attachedN" } }), sprite("nameless", 4, { flags = { "windowW" }, keys = { OpenTileOffset = "2" } }) })
+fire("OnLoadedTileDefinitions", IsoSpriteManager.instance)
+check(Rules.windowStates == 3, "關著的窗三個偏移記成三張狀態圖；沒有偏移、名稱沒有編號的不記（" .. tostring(Rules.windowStates) .. "）")
+check(kind({ flags = { "attachedN" } }, "win_01_4") == nil, "狀態圖還沒被引擎改過（原本是附著物）：不列")
+check(kind(WIN0, "win_01_2") == nil, "狀態圖被引擎改過（帶窗旗標與關著那張的偏移）：也不列")
+check(kind(WIN0, "win_01_0") == "window" and kind({ flags = { "windowN" }, keys = { WindowN = "" } }, "win_01_8") == "window",
+    "關著的窗照列，偏移指不到的下一扇窗也照列")
 
 print("情境三：樓梯湊組")
 world({ sprite("st_01_0", 1, { type = T.stairsBW }), sprite("st_01_1", 2, { type = T.stairsMW }),

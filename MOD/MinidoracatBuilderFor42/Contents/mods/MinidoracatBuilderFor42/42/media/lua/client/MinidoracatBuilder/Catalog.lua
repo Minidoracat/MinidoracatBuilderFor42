@@ -169,6 +169,7 @@ end
 
 function Catalog.start()
     if job or Catalog.state == "ready" then return end
+    Rules.ensureWindowStates()
     local named = IsoSpriteManager.instance:getNamedMap()
     -- HashMap.values() 的類別沒公開，丟進公開的 ArrayList 建構子；也避免之後 getSprite 新增項目時迭代器失效
     local list = ArrayList.new(named:values())
