@@ -184,12 +184,12 @@ local function costLine(items)
     return table.concat(parts, ",")
 end
 
--- 照付的材料給經驗（Cost.xp）。addXp 和原版建造一樣（ISBuildUtil.lua:107,232）套經驗倍率（沒有加成的技能 ×0.25 等，
--- IsoGameCharacter.java:17457-17521）；伺服器上加在連線玩家自己身上，並更新防作弊的經驗基準，一次拖曳很多項也不會被當成
--- 經驗漲太快（LuaManager.java:11845-11857、GameServer.java:1862-1869、AntiCheatXPUpdate.java）。
+-- 照付的材料給經驗（Cost.xp，退料率照蓋的人現在的技能等級）。addXp 和原版建造一樣（ISBuildUtil.lua:107,232）套經驗倍率
+-- （沒有加成的技能 ×0.25 等，IsoGameCharacter.java:17457-17521）；伺服器上加在連線玩家自己身上，並更新防作弊的經驗基準，
+-- 一次拖曳很多項也不會被當成經驗漲太快（LuaManager.java:11845-11857、GameServer.java:1862-1869、AntiCheatXPUpdate.java）。
 local function giveXp(player, costs)
     local parts = {}
-    for perk, xp in pairs(Cost.xp(costs)) do
+    for perk, xp in pairs(Cost.xp(costs, player)) do
         addXp(player, Perks.FromString(perk), xp)
         parts[#parts + 1] = perk .. "+" .. xp
     end

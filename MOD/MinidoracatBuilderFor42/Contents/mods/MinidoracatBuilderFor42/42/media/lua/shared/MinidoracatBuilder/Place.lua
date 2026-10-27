@@ -153,8 +153,11 @@ local function thumpable(c, kind, north)
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
-    local mats = obj:getBuildMaterials()
-    for ft, n in pairs(c.cost.items) do mats[ft] = tostring(n) end
+    local mats, fee = obj:getBuildMaterials(), c.cost.fee or {}
+    for ft, n in pairs(c.cost.items) do
+        local v = n - (fee[ft] or 0) -- 電器費拆了不退（Cost.of）
+        if v > 0 then mats[ft] = tostring(v) end
+    end
     obj:getModData().builderEntry = spr:getName()
     -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
     if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end

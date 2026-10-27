@@ -65,6 +65,7 @@
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Mason's Trowel",
   "IGUI_MBLD_Tool_BLOW_TORCH": "Welding Torch",
   "IGUI_MBLD_Tool_WELDING_MASK": "Welder Mask",
+  "IGUI_MBLD_Tool_SCREWDRIVER": "Screwdriver",
   "IGUI_MBLD_Name_Composed": "%1 · %2 #%3",
   "IGUI_MBLD_Name_Cells": "%1 (%2 tiles)",
   "IGUI_MBLD_Kind_floor": "Floor",

@@ -742,8 +742,10 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     end
     y = y + 4
     local parts = {}
-    for perk, pts in pairs(Cost.xp(costs)) do
-        parts[#parts + 1] = getText("IGUI_MBLD_XpItem", getText("IGUI_perks_" .. perk), tostring(pts))
+    for perk, pts in pairs(Cost.xp(costs, getSpecificPlayer(W.playerNum))) do
+        local s = string.format("%.1f", pts)
+        if s:sub(-2) == ".0" then s = s:sub(1, -3) end
+        parts[#parts + 1] = getText("IGUI_MBLD_XpItem", getText("IGUI_perks_" .. perk), s)
     end
     local xp = #parts > 0 and getText("IGUI_MBLD_Detail_Xp", table.concat(parts, getText("IGUI_MBLD_ListSep")))
         or getText("IGUI_MBLD_Detail_NoXp")
@@ -852,6 +854,7 @@ function W.pump(panel)
         local M = B.Materials
         local S = M and M.summary and M.summary(p) or nil
         v.sumAt = now
+        v.detailDirty = v.detailDirty or v.selName ~= nil -- 經驗照技能等級打折，等級變了材料不一定變
         -- 大多時候沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
         if not (S and M.same(v.S, S)) then
             v.S = S

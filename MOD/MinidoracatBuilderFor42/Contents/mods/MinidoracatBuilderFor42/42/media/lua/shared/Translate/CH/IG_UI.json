@@ -65,6 +65,7 @@
   "IGUI_MBLD_Tool_MASONS_TROWEL": "石工抹刀",
   "IGUI_MBLD_Tool_BLOW_TORCH": "瓦斯噴槍",
   "IGUI_MBLD_Tool_WELDING_MASK": "焊接面罩",
+  "IGUI_MBLD_Tool_SCREWDRIVER": "螺絲起子",
   "IGUI_MBLD_Name_Composed": "%1 · %2 · %3 號",
   "IGUI_MBLD_Name_Cells": "%1（%2 格）",
   "IGUI_MBLD_Kind_floor": "地板",

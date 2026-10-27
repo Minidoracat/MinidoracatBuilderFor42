@@ -266,7 +266,8 @@ IsoThumpable = { new = function(_, sq, name, north)
     return o
 end }
 -- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）
-ItemTag = { HAMMER = "HAMMER", MASONS_TROWEL = "MASONS_TROWEL", BLOW_TORCH = "BLOW_TORCH", WELDING_MASK = "WELDING_MASK" }
+ItemTag = { HAMMER = "HAMMER", MASONS_TROWEL = "MASONS_TROWEL", BLOW_TORCH = "BLOW_TORCH", WELDING_MASK = "WELDING_MASK",
+    SCREWDRIVER = "SCREWDRIVER" }
 function instanceof() return false end
 function sendRemoveItemFromContainer() end
 function sendAddItemsToContainer() end
@@ -326,7 +327,8 @@ local scrapDefs = {}
 ISMoveableDefinitions = { getInstance = function()
     return { getScrapDefinition = function(mat) return scrapDefs[mat] end }
 end }
--- 假玩家：onlineID、木工等級、是否管理員、是否死亡、位置（pos 可改）、背包、建造作弊、所在格
+-- 假玩家：onlineID、木工等級（perks＝{ ["perk:技能"] = 等級 } 可個別指定）、是否管理員、是否死亡、位置（pos 可改）、背包、
+-- 建造作弊、搬運作弊、所在格
 local function player(o)
     o = o or {}
     local p = { admin = o.admin, inv = inventory(), pos = { x = o.x or 10.5, y = o.y or 20.5, z = o.z or 0 } }
@@ -335,7 +337,8 @@ local function player(o)
     function p:getUsername() return o.name or "tester" end
     function p:isDead() return o.dead == true end
     function p:getVehicle() return nil end
-    function p:getPerkLevel() return o.woodwork or 0 end
+    function p:getPerkLevel(perk) return o.perks and o.perks[perk] or o.woodwork or 0 end
+    function p:isMovablesCheat() return o.movCheat == true end
     function p:isTimedActionInstant() return o.instant == true end
     function p:getX() return self.pos.x end
     function p:getY() return self.pos.y end
@@ -669,23 +672,24 @@ c = cost("door", { keys = { MaterialType = "Brick" } })
 check(c.items["Base.Hinge"] == 2 and c.tools[1] == "HAMMER", "磚造門沒有對應配方：照木門")
 -- 原版的 perk 是 Java Perk 物件、toString 才是技能 ID（PerkFactory.java:320-322）；用物件假冒，少了 tostring 會被抓到
 local function perkObj(id) return setmetatable({}, { __tostring = function() return id end }) end
-scrapDefs.Wood = { perk = perkObj("Woodwork"), returnItemsStatic = { { returnItem = "Base.Plank", maxAmount = 2 } } }
-scrapDefs.Electric = { perk = perkObj("Electricity"), returnItems = { { returnItem = "Base.ElectronicsScrap", maxAmount = 1 },
-    { returnItem = "Base.ElectricWire", maxAmount = 3 } } }
+scrapDefs.Wood = { perk = perkObj("Woodwork"), tools = { "Base.Hammer", "Base.HammerStone" }, tools2 = { "Base.Saw" },
+    returnItemsStatic = { { returnItem = "Base.Plank", maxAmount = 2 } } }
+scrapDefs.Electric = { perk = perkObj("Electricity"), tools = { "Base.Screwdriver" },
+    returnItems = { { returnItem = "Base.ElectronicsScrap", maxAmount = 1 }, { returnItem = "Base.ElectricWire", maxAmount = 3 } } }
 scrapDefs.Fabric = { perk = perkObj("Woodwork"), returnItems = {} }
 local scrapKeys = { Material = "Wood", Material2 = "Electric", Material3 = "Undefined" }
 c = cost("furniture", { keys = scrapKeys })
-check(c.items["Base.Plank"] == 2 and c.items["Base.ElectronicsScrap"] == 1 and c.items["Base.ElectricWire"] == 3
-    and c.items["Base.Nails"] == nil, "有拆解材質：照拆解產出上限，不用基本價")
+check(c.items["Base.Plank"] == 2 and c.items["Base.ElectronicsScrap"] == 2 and c.items["Base.ElectricWire"] == 3
+    and c.items["Base.Nails"] == nil, "有拆解材質：照拆解產出上限，不用基本價；電器另收 1 個電子零件（1＋1）")
 scrapKeys.CanScrap, scrapKeys.ScrapSize = "", "Large"
 c = cost("furniture", { keys = scrapKeys })
 check(c.items["Base.Plank"] == 4 and c.items["Base.ElectricWire"] == 6, "可拆、Large：加倍")
 scrapKeys.ScrapSize = "Small"
 c = cost("furniture", { keys = scrapKeys })
-check(c.items["Base.Plank"] == 1 and c.items["Base.ElectronicsScrap"] == 1 and c.items["Base.ElectricWire"] == 1,
-    "可拆、Small：減半、至少 1、1.5 照原版只算 1")
+check(c.items["Base.Plank"] == 1 and c.items["Base.ElectronicsScrap"] == 2 and c.items["Base.ElectricWire"] == 1,
+    "可拆、Small：減半、至少 1、1.5 照原版只算 1；電器費照收")
 c = cost("furniture", { keys = { Material = "Fabric" } })
-check(c.items["Base.Plank"] == 4, "拆解材質沒有產出：照種類基本價")
+check(c.items["Base.Plank"] == 2 and c.items["Base.Nails"] == 2, "拆解材質沒有產出：照種類基本價（沒寫重量當 5 公斤：2＋2）")
 c = cost("wall", { flags = { "WallN" } }, 0.3)
 check(c.items["Base.Plank"] == 2 and c.items["Base.Nails"] == 2, "倍率 0.3：無條件進位（1.2→2、1.8→2）")
 c = cost("wall", { flags = { "WallN" } }, 0)
@@ -700,15 +704,15 @@ local fa = sprite("fa_01_0", 910, { keys = { Material = "Wood" } })
 local fb = sprite("fa_01_1", 911, { keys = { Material = "Electric" } })
 local fc = Cost.forCells("furniture", { fa, fb }, 1)
 check(fc[1].items["Base.Plank"] == 2 and fc[1].items["Base.ElectricWire"] == 3 and fc[2].items["Base.Plank"] == 2
-    and fc[2].items["Base.ElectronicsScrap"] == 1, "多格各片材質不同：每格都收各格的最大值")
+    and fc[2].items["Base.ElectronicsScrap"] == 2, "多格各片材質不同：每格都收各格的最大值")
 fc[1].items["Base.Plank"] = 99
 local t1 = Cost.of("wall", wallN).tools
 t1[#t1 + 1] = "X"
 check(fc[2].items["Base.Plank"] == 2 and #Cost.of("wall", wallN).tools == 1, "各格成本與工具清單互不共用")
--- 這格給經驗的技能，排序後用逗號接起來；不給是 ""
+-- 這格給經驗的技能（蓋的人技能都 0 級），排序後用逗號接起來；不給是 ""
 local function perks(c)
     local t = {}
-    for k in pairs(Cost.xp({ c })) do t[#t + 1] = k end
+    for k in pairs(Cost.xp({ c }, player())) do t[#t + 1] = k end
     table.sort(t)
     return table.concat(t, ",")
 end
@@ -718,10 +722,10 @@ check(perks(cost("wall", { flags = { "WallN" } })) == "Woodwork" and perks(cost(
     and perks(cost("floor", { keys = { MaterialType = "Gravel" } })) == "",
     "沒有拆解材質的經驗照工具那套材質：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
 local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", {}), cost("floor", { keys = { MaterialType = "Brick" } }),
-    cost("floor", { keys = { MaterialType = "Gravel" } }) })
+    cost("floor", { keys = { MaterialType = "Gravel" } }) }, player({ woodwork = 9 }))
 check(xp.Woodwork == 60 and xp.Masonry == 20,
-    "經驗：每付一件材料 5 點、同技能跨格累加（木牆 10 件＋木地板 2 件＝60、磚地板 4 件＝20），碎石地板沒有")
-check(next(Cost.xp({ cost("wall", { flags = { "WallN" } }, 0) })) == nil, "倍率 0：沒付材料、沒有經驗")
+    "經驗：每付一件材料 5 點、同技能跨格累加（木牆 10 件＋木地板 2 件＝60、磚地板 4 件＝20），碎石地板沒有；照基本價收的不看技能等級")
+check(next(Cost.xp({ cost("wall", { flags = { "WallN" } }, 0) }, player())) == nil, "倍率 0：沒付材料、沒有經驗")
 check(perks(cost("furniture", { keys = { Material = "Wood" } })) == "" and perks(cost("floor", { keys = { Material = "Wood" } })) == "",
     "不能搬、沒有 CanScrap、第一個材質有產出：原版照退料表退 1..v 件、可能全拿回，不給經驗")
 check(perks(cost("furniture", { keys = { Material = "Wood", IsMoveAble = "" } })) == "Woodwork"
@@ -740,30 +744,84 @@ check(perks(cost("solid", { keys = { Material = "Sandbag", CanScrap = "" } })) =
 check(perks(cost("furniture", { keys = { Material = "Curtain", CanScrap = "" } })) == "",
     "每輪機率 ≥ 100 的產出（窗簾）：技能夠就全退，不給經驗")
 c = cost("furniture", { keys = { IsMoveAble = "", Material = "Wood", MaterialType = "Metal_Large" } })
-check(perks(c) == "Woodwork" and c.tools[1] == "BLOW_TORCH",
-    "有拆解材質的經驗照拆解技能（退料機率看它），不照 MaterialType；工具仍照 MaterialType")
-local ew = Cost.xp({ cost("furniture", { keys = { IsMoveAble = "", Material = "Electric", Material2 = "Wood" } }) })
-check(ew.Electricity == 20 and ew.Woodwork == 10,
-    "各材料給產出它的那個 Material 的技能（原版各 Material 照自己的技能擲退料）：電子零件＋電線 4 件給電工、木板 2 件給木工")
-local fx = Cost.xp({ cost("furniture", { keys = { IsMoveAble = "", Material = "FakeMax", Material2 = "Wood" } }) })
-check(fx.Woodwork == 10 and fx.MAX == nil, "技能是 Perks.MAX（原版拆了不給經驗）的材料不給，同一格其他材料照給")
-check(perks(cost("furniture", { keys = { IsMoveAble = "", Material = "Wood", Material2 = "FakePlankElec" } })) == "",
-    "同一種材料兩個 Material 的技能不同：這種材料不給")
+check(perks(c) == "Woodwork" and #c.tools == 1 and c.tools[1] == "HAMMER",
+    "有拆解材質的經驗與工具照第一個拆解材質（拆木頭用鐵鎚），不照 MaterialType（金屬是噴槍）")
+local ew = Cost.xp({ cost("furniture", { keys = { IsMoveAble = "", Material = "Electric", Material2 = "Wood" } }) }, player())
+check(ew.Electricity == 23 and ew.Woodwork == 9,
+    "各材料給產出它的那個 Material 的技能、×(100−10)%：電子零件 1＋電線 3 給電工 18、電器費 1 件不打折 5、木板 2 給木工 9")
+local fx = Cost.xp({ cost("furniture", { keys = { IsMoveAble = "", Material = "FakeMax", Material2 = "Wood" } }) }, player())
+check(fx.Woodwork == 9 and fx.MAX == nil, "技能是 Perks.MAX（原版拆了不給經驗）的材料不給，同一格其他材料照給")
+check(perks(cost("furniture", { keys = { IsMoveAble = "", Material = "Wood", Material2 = "FakePlankElec" } })) == "Electricity",
+    "同一種材料兩個 Material 的技能不同：這種材料不給（只剩電器費給電工）")
 check(perks(cost("furniture", { keys = { IsMoveAble = "", Material = "FakeMaxPlank", Material2 = "Wood" } })) == ""
     and next(Cost.xp(Cost.forCells("furniture",
         { sprite("fm_04_0", 916, { keys = { IsMoveAble = "", Material = "FakeMaxPlank" } }),
-          sprite("fm_04_1", 917, { keys = { IsMoveAble = "", Material = "Wood" } }) }, 1))) == nil,
+          sprite("fm_04_1", 917, { keys = { IsMoveAble = "", Material = "Wood" } }) }, 1), player())) == nil,
     "同一種材料先記成不給（MAX）、後面的 Material 或另一片有技能：仍然不給（那一份照 MAX 的定義退）")
 local ma = sprite("fm_01_0", 912, { keys = { IsMoveAble = "", Material = "Wood" } })
 local mb = sprite("fm_01_1", 913, { keys = { IsMoveAble = "", Material = "Electric", MaterialType = "Metal_Large" } })
-local fm = Cost.xp(Cost.forCells("furniture", { ma, mb }, 1))
-check(fm.Woodwork == 20 and fm.Electricity == 40,
-    "多格各片材質不同、同一種材料技能一致：每格照收到的最大值給（木板 2 給木工、電子零件＋電線 4 給電工，兩格）")
+local fm = Cost.xp(Cost.forCells("furniture", { ma, mb }, 1), player())
+check(fm.Woodwork == 18 and fm.Electricity == 46,
+    "多格各片材質不同、同一種材料技能一致：每格照收到的最大值給（木板 2 給木工 9、電工 18＋電器費 5，兩格）")
 local mc = sprite("fm_02_1", 915, { keys = { IsMoveAble = "", Material = "FakePlankElec" } })
-check(next(Cost.xp(Cost.forCells("furniture", { ma, mc }, 1))) == nil,
-    "多格同一種材料在各片的技能不同（點自己技能高的那片拆，整組照它的機率退）：這種材料不給")
+local mx = Cost.xp(Cost.forCells("furniture", { ma, mc }, 1), player())
+check(mx.Woodwork == nil and mx.Electricity == 10,
+    "多格同一種材料在各片的技能不同（點自己技能高的那片拆，整組照它的機率退）：這種材料不給；電器費拆了不退，全給")
 local mixed = Cost.forCells("furniture", { sprite("fm_02_0", 914, { keys = { CanScrap = "", Material = "Curtain" } }), ma }, 1)
-check(next(Cost.xp(mixed)) == nil, "多格有一片拆掉一定全退：點那片拆整組都退，整組不給經驗")
+check(next(Cost.xp(mixed, player())) == nil, "多格有一片拆掉一定全退：點那片拆整組都退，整組不給經驗")
+do
+    -- 沒有拆解材質的家具、容器照搬運重量（PickUpWeight／10 公斤）分三級；牆這類照種類，不看重量
+    local function wt(kind, w)
+        local c = cost(kind, { keys = { PickUpWeight = w } })
+        return (c.items["Base.Plank"] or 0) .. "+" .. (c.items["Base.Nails"] or 0)
+    end
+    check(wt("furniture", "15") == "1+1" and wt("furniture", "20") == "1+1" and wt("container", "40") == "2+2"
+        and wt("furniture", "50") == "2+2" and wt("furniture", "51") == "4+4" and wt("container", "120") == "4+4"
+        and wt("furniture", nil) == "2+2" and wt("solid", "15") == "2+2",
+        "家具、容器照重量：≤2 公斤 1＋1、≤5 公斤 2＋2、其餘 4＋4、沒寫當 5 公斤；solid 不看重量")
+    -- 工具照第一個拆解材質的原版主工具；噴槍加面罩；認不得的工具、沒有拆解材質照 MaterialType
+    scrapDefs.MetalBars = { perk = perkObj("MetalWelding"), tools = { "Base.BlowTorch" }, tools2 = { "Base.WeldingMask" },
+        returnItems = { { returnItem = "Base.MetalBar", maxAmount = 2 } } }
+    scrapDefs.Sandbag.tools = {}
+    scrapDefs.ModTool = { perk = perkObj("Woodwork"), tools = { "Mod.Spanner" },
+        returnItems = { { returnItem = "Base.Plank", maxAmount = 1 } } }
+    local function tools(kind, keys) return table.concat(cost(kind, { keys = keys }).tools, ",") end
+    check(tools("furniture", { IsMoveAble = "", Material = "Electric", MaterialType = "Wood" }) == "SCREWDRIVER"
+        and tools("furniture", { IsMoveAble = "", Material = "MetalBars" }) == "BLOW_TORCH,WELDING_MASK"
+        and tools("furniture", { IsMoveAble = "", Material = "Wood", Material2 = "Electric" }) == "HAMMER"
+        and tools("solid", { CanScrap = "", Material = "Sandbag" }) == ""
+        and tools("furniture", { IsMoveAble = "", Material = "ModTool", MaterialType = "Metal_Large" }) == "BLOW_TORCH,WELDING_MASK"
+        and tools("furniture", { IsMoveAble = "", Material = "NoSuchMat", Material2 = "Electric", MaterialType = "Brick" })
+            == "MASONS_TROWEL",
+        "工具照第一個拆解材質：電器螺絲起子、金屬噴槍＋面罩、木頭鐵鎚、沙包不用；認不得的工具、第一個材質沒有定義照 MaterialType")
+    -- 經驗 ×(100 − 退料率)%，退料率＝10＋等級×10＋baseChance，夾在 0..100
+    scrapDefs.Electric.baseChance = 10
+    local elec = cost("furniture", { keys = { IsMoveAble = "", Material = "Electric" } })
+    local function ex(o) return Cost.xp({ elec }, o and player(o)).Electricity end
+    check(ex({}) == 21 and ex({ perks = { ["perk:Electricity"] = 3 } }) == 15
+        and ex({ perks = { ["perk:Electricity"] = 8 } }) == 5 and ex({ woodwork = 9 }) == 5
+        and ex({ movCheat = true }) == 5 and ex(nil) == 5,
+        "照機率退料的經驗 ×(100−退料率)%：電工 0 級 80%、3 級 50%、8 級全退不給；搬運作弊、不知道誰蓋的當全退；電器費 1 件照給 5")
+    scrapDefs.Neg = { perk = perkObj("Woodwork"), baseChance = -50, returnItems = { { returnItem = "Base.Sheet", maxAmount = 1 } } }
+    check(Cost.xp({ cost("furniture", { keys = { IsMoveAble = "", Material = "Neg" } }) }, player()).Woodwork == 5,
+        "退料率低於 0 當 0：照付的件數全給")
+    scrapDefs.Electric.baseChance = nil
+    -- 電器費：任一材質的拆解技能是電工就收 1 個電子零件，照倍率、不寫進退料；不是電器的沒有
+    local f2 = Cost.of("furniture", sprite("c_01_0", 900, { keys = { IsMoveAble = "", Material = "Electric" } }), 2)
+    local nf = cost("furniture", { keys = { IsMoveAble = "", Material = "Wood" } })
+    check(f2.items["Base.ElectronicsScrap"] == 4 and f2.fee["Base.ElectronicsScrap"] == 2
+        and nf.items["Base.ElectronicsScrap"] == nil and next(nf.fee) == nil
+        and cost("furniture", { keys = { IsMoveAble = "", Material = "Wood", Material2 = "Electric" } }).fee["Base.ElectronicsScrap"] == 1,
+        "電器費：倍率 2 時 (1+1)×2＝4、其中 2 個不退；不是電器的不收；第二個材質是電器也收")
+    local fe = Cost.forCells("furniture", { sprite("fe_01_0", 918, { keys = { IsMoveAble = "", Material = "Electric" } }),
+        sprite("fe_01_1", 919, { keys = { IsMoveAble = "", Material = "Wood" } }) }, 1)
+    check(fe[2].items["Base.ElectronicsScrap"] == 2 and fe[2].fee["Base.ElectronicsScrap"] == 1,
+        "多格只有一片是電器：每格照最大值收，電器費也照收（原版拆多格每一片各給一次經驗）")
+    scrapDefs.EmptyElec = { perk = perkObj("Electricity"), tools = { "Base.Screwdriver" }, returnItems = {} }
+    local ee = cost("furniture", { keys = { Material = "EmptyElec", PickUpWeight = "15" } }, 2)
+    check(ee.items["Base.Plank"] == 2 and ee.items["Base.ElectronicsScrap"] == nil and ee.fee["Base.ElectronicsScrap"] == nil,
+        "電工拆解定義沒有產出（MOD 可能這樣登記）：照基本價收、不收電器費、不出錯")
+end
 
 print("情境十一：建造請求（身分、限流、型別、單一待辦）")
 clockStep = 0
@@ -946,6 +1004,23 @@ give(S, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
 ok = build(S, 32, "sink_test_01_0", { 60, 60, 0 })
 check(ok and sinkSq.objects[1] and sinkSq.objects[1].md.canBeWaterPiped == true and w.md.canBeWaterPiped == nil,
     "接水管的物件：照原版標成要重新接水管，放好不會直接有水")
+do
+    -- 電器（第一個材質 Electric、不能搬、沒有 CanScrap）：照退料表退，退料表不含電器費；工具照拆 Electric 的螺絲起子
+    local elecS = sprite("elec_test_01_0", 953, { flags = { "solid" }, keys = { Material = "Electric" } })
+    world({ wallN, solidS, crateS, sinkS, elecS })
+    local eSq = square(62, 60, 0)
+    local E = player({ id = 33, x = 62.5, y = 61.5, here = square(62, 61, 0) })
+    E.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(E, { ["Base.ElectronicsScrap"] = 2, ["Base.ElectricWire"] = 3 })
+    local eok, _, ea = build(E, 34, "elec_test_01_0", { 62, 60, 0 })
+    check(not eok and ea.code == "NO_TOOL" and ea.tools[1] == "SCREWDRIVER", "拆電器要螺絲起子：只帶鐵鎚 NO_TOOL")
+    E.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    eok = build(E, 35, "elec_test_01_0", { 62, 60, 0 })
+    local o = eSq.objects[1]
+    check(eok and o and o.mats["Base.ElectronicsScrap"] == "1" and o.mats["Base.ElectricWire"] == "3"
+        and E.inv:count("Base.ElectronicsScrap") == 0,
+        "電器：收 2 個電子零件（拆解 1＋電器費 1），退料表只寫 1 個（電器費拆了不退）")
+end
 square(48, 53, 0, { noReach = true })
 ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 53, 0 })
 check(not ok and a.code == "UNREACHABLE", "走不到那一格（隔著牆、透明牆或關著的門）：UNREACHABLE")
