@@ -51,11 +51,11 @@ end
 -- （IsoWindow.java:99-121），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
 -- 20 張在窗與附著物之間換（E2E ui-mp 1027f／g），客戶端與伺服器也可能不同。圖塊定義剛載入、還沒載入任何
 -- chunk 時（OnLoadedTileDefinitions，IsoWorld.java:1977-1978，chunk 在 :2188 才載）照關著那張的偏移記下來。
--- 只從「關著那張」算：有窗旗標、有偏移、自己不是別張窗偏移指到的圖。被引擎改過的狀態圖也帶著關著那張的
--- 旗標與偏移，靠最後這條跳過，所以 chunk 載入後才補記也不會把「狀態圖＋偏移」（可能是下一扇窗）誤記。
--- 原版 276 張窗指到的圖不是沒有窗旗標，就是沒有自己偏移的窗（也是狀態圖）。本機 312 個 tiledef 檔（原版＋Workshop＋
--- Zomboid/mods）有 642 處指到帶自己偏移的窗（作者把關著那張的屬性複製到狀態圖，例 tikitown_windows_01_16 → _18），
--- 照這條也算狀態圖、它的偏移不用（2026-10-27 離線讀 tiledef）。
+-- 「關著那張」逐步確認：有窗旗標、有偏移，而且指到它的都已確定是狀態圖（一開始＝沒被任何一張指到）；
+-- 確認後它的偏移目標記成狀態圖，那些目標自己的偏移就不再算。被引擎改過的狀態圖、作者把關著那張的屬性
+-- 複製過去的狀態圖，都帶著關著那張的旗標與偏移，這樣算才不會讓它們的偏移影響下一扇窗（不誤記、不漏記），
+-- chunk 載入後才補記也得到同一份。本機 312 個 tiledef 檔（原版＋Workshop＋Zomboid/mods，2026-10-27 離線讀）：
+-- 照這個算 33,065 張狀態圖，沒有互相指到、確認不完的窗；原版 276 張窗都是一開始就確認。
 local STATE_KEYS = { "OpenTileOffset", "SmashedTileOffset", "GlassRemovedOffset" }
 -- 集合放在 Rules 表上：只重載這個檔案（不是整個 Lua 重設）時沿用圖塊剛載入時記的那份
 local WINDOW_STATE = Rules.windowStateSet or {}
@@ -63,7 +63,7 @@ Rules.windowStateSet = WINDOW_STATE
 -- Rules.windowStates：記了幾張；nil＝還沒記
 function Rules.recordWindowStates(sprites, late)
     local t0 = getTimestampMs()
-    local wins, targets, wn, pointed = {}, {}, 0, {}
+    local wins, targets, idx, indeg, wn = {}, {}, {}, {}, 0
     for i = 0, sprites:size() - 1 do
         local spr = sprites:get(i)
         local p = spr:getProperties()
@@ -77,37 +77,69 @@ function Rules.recordWindowStates(sprites, late)
                     local off = tonumber(p:get(STATE_KEYS[k]))
                     if off and off ~= 0 then
                         local target = tileset .. "_" .. (tonumber(num) + off)
-                        pointed[target] = true
+                        indeg[target] = (indeg[target] or 0) + 1
                         list = list or {}
                         list[#list + 1] = target
                     end
                 end
                 if list then
                     wn = wn + 1
-                    wins[wn], targets[wn] = name, list
+                    wins[wn], targets[wn], idx[name] = name, list, wn
                 end
             end
         end
     end
-    local n = 0
+    local stack, sn, gone, n = {}, 0, {}, 0 -- gone[j]：已確認是關著那張，或已確定是狀態圖
     for j = 1, wn do
-        if not pointed[wins[j]] then
+        if not indeg[wins[j]] then
+            sn = sn + 1
+            stack[sn] = j
+        end
+    end
+    local closed = 0
+    while sn > 0 do
+        local j = stack[sn]
+        stack[sn], sn = nil, sn - 1
+        if not gone[j] then
+            gone[j] = true
+            closed = closed + 1
             local list = targets[j]
             for k = 1, #list do
-                if not WINDOW_STATE[list[k]] then
-                    WINDOW_STATE[list[k]] = true
+                local t = list[k]
+                if not WINDOW_STATE[t] then
+                    WINDOW_STATE[t] = true
                     n = n + 1
+                end
+                local s = idx[t]
+                if s and not gone[s] then -- 狀態圖：它的偏移不算，指到的窗少一個來源
+                    gone[s] = true
+                    local sl = targets[s]
+                    for m = 1, #sl do
+                        local u = sl[m]
+                        indeg[u] = indeg[u] - 1
+                        local uj = idx[u]
+                        if indeg[u] == 0 and uj and not gone[uj] then
+                            sn = sn + 1
+                            stack[sn] = uj
+                        end
+                    end
                 end
             end
         end
     end
     Rules.windowStates = (Rules.windowStates or 0) + n
-    print("[MinidoracatBuilderFor42] window state sprites: " .. n .. " from " .. wn .. " windows, " .. sprites:size()
-        .. " sprites in " .. (getTimestampMs() - t0) .. " ms" .. (late and " (late)" or ""))
+    print("[MinidoracatBuilderFor42] window state sprites: " .. n .. " from " .. closed .. " closed of " .. wn
+        .. " windows, " .. sprites:size() .. " sprites in " .. (getTimestampMs() - t0) .. " ms" .. (late and " (late)" or ""))
 end
-Events.OnLoadedTileDefinitions.Add(function(manager)
-    MinidoracatBuilder.Rules.recordWindowStates(ArrayList.new(manager:getNamedMap():values()))
-end)
+
+-- 圖塊定義（重新）載入：屬性是新的、還沒被改過，照這份重記
+function Rules.onTileDefinitions(manager)
+    WINDOW_STATE = {}
+    Rules.windowStateSet = WINDOW_STATE
+    Rules.windowStates = nil
+    Rules.recordWindowStates(ArrayList.new(manager:getNamedMap():values()))
+end
+Events.OnLoadedTileDefinitions.Add(function(manager) MinidoracatBuilder.Rules.onTileDefinitions(manager) end)
 
 -- 沒趕上 OnLoadedTileDefinitions（整個 Lua 在世界載入後才重設）時，第一次分類前照現在的屬性補記
 function Rules.ensureWindowStates()

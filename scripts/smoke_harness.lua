@@ -426,14 +426,19 @@ check(kind({ flags = { "attachedN" } }, "win_01_4") == nil, "狀態圖還沒被�
 check(kind(WIN0, "win_01_2") == nil, "狀態圖被引擎改過（帶窗旗標與關著那張的偏移）：也不列")
 check(kind(WIN0, "win_01_0") == "window" and kind({ flags = { "windowN" }, keys = { WindowN = "" } }, "win_01_8") == "window",
     "關著的窗照列，偏移指不到的下一扇窗也照列")
--- 補記（Lua 在世界載入後才重設）：win_01_2 已被引擎改過，帶著 win_01_0 的旗標與偏移；2＋6＝8 是下一扇真的窗
-world({ sprite("win_01_0", 1, WIN0), sprite("win_01_2", 5, WIN0), sprite("win_01_8", 2, { flags = { "windowN" }, keys = { WindowN = "" } }) })
+-- 補記（整個 Lua 在世界載入後才重設，集合是空的）：兩扇窗 win_02_0、win_02_8 都帶 2／4／6，兩扇都載入過，
+-- 所以 win_02_2、win_02_10 已被引擎改過、帶著關著那張的旗標與偏移；win_02_2＋6＝8 是下一扇真的窗
+local W2 = { "win_02_0", "win_02_2", "win_02_8", "win_02_10" }
+world({ sprite(W2[1], 1, WIN0), sprite(W2[2], 5, WIN0), sprite(W2[3], 2, WIN0), sprite(W2[4], 6, WIN0) })
+for k in pairs(Rules.windowStateSet) do Rules.windowStateSet[k] = nil end
 Rules.windowStates = nil
-local stateEntry, stateCode = Entry.resolve("win_01_2")
-check(Rules.windowStates ~= nil and stateEntry == nil and stateCode == "UNKNOWN",
-    "沒趕上事件時第一次 Entry.resolve 先補記；伺服器入口對狀態圖回 UNKNOWN（" .. tostring(stateCode) .. "）")
-local nextWin = Entry.resolve("win_01_8")
-check(nextWin and nextWin.kind == "window", "補記時被改過的狀態圖不當關著那張：它的偏移指到的下一扇窗照列")
+local stateEntry, stateCode = Entry.resolve("win_02_10")
+check(Rules.windowStates == 6 and stateEntry == nil and stateCode == "UNKNOWN",
+    "沒趕上事件時第一次 Entry.resolve 先補記，兩扇窗各三張；伺服器入口對下一扇窗被改過的狀態圖回 UNKNOWN（"
+    .. tostring(Rules.windowStates) .. "、" .. tostring(stateCode) .. "）")
+local w0, w8, s2 = Entry.resolve("win_02_0"), Entry.resolve("win_02_8"), Entry.resolve("win_02_2")
+check(w0 and w0.kind == "window" and w8 and w8.kind == "window" and s2 == nil,
+    "補記時被改過的狀態圖不當關著那張：它的偏移指到的下一扇窗照列，自己不列")
 end
 
 print("情境三：樓梯湊組")
