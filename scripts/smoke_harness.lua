@@ -1243,22 +1243,48 @@ do
         W.addRecent("a_1")
         local r = W.st.recent
         check(r.n == 3 and r[1] == "a_1" and r[2] == "c_3" and r[3] == "b_2", "最近使用：新的在前，舊的照順序留著，不重複")
+        -- 假磁碟，照引擎語意：打不開回 nil、讀到一半出錯 readLine 回 nil（和讀完一樣）、寫入失敗不丟錯
         local realReader, realWriter = getFileReader, getFileWriter
-        local wrote
-        getFileWriter = function()
-            return { write = function(_, s) wrote = s end, close = function() end }
+        local disk, failOpen, failMid, dropWrites
+        getFileWriter = function(_, _, append)
+            local buf = append and (disk or "") or ""
+            return { write = function(_, s) buf = buf .. s end,
+                close = function() if not dropWrites then disk = buf end end }
         end
         getFileReader = function()
-            return { readLine = function() error("disk read failed") end, close = function() end }
+            if failOpen or disk == nil then return nil end
+            local lines, i = {}, 0
+            for l in disk:gmatch("[^\n]+") do lines[#lines + 1] = l end
+            return { readLine = function()
+                i = i + 1
+                if failMid and i > 1 then return nil end
+                return lines[i]
+            end, close = function() end }
         end
+        local function reset(content)
+            disk, failOpen, failMid, dropWrites = content, false, false, false
+            Fav.list, Fav.set = { n = 0 }, {}
+        end
+        reset("a_1\nb_2\n#end\n")
+        failMid = true
         Fav.load()
         local _, saved = Fav.toggle("x_1")
-        check(saved == false and wrote == nil, "最愛檔讀失敗：不寫檔（不拿空清單蓋掉檔裡的最愛），回報沒存到")
-        getFileReader = function() return nil end -- 檔案不存在
-        Fav.list, Fav.set = { n = 0 }, {}
+        check(saved == false and disk == "a_1\nb_2\n#end\n", "最愛檔讀到一半出錯：不寫檔（不拿殘缺的清單蓋掉），回報沒存到")
+        reset("a_1\n#end\n")
+        failOpen = true
         Fav.load()
         _, saved = Fav.toggle("x_1")
-        check(saved == true and wrote == "x_1\n", "最愛檔不存在：當空清單，加入後寫檔")
+        check(saved == false and disk == "a_1\n#end\n", "最愛檔在卻打不開：不寫檔，回報沒存到")
+        reset(nil)
+        Fav.load()
+        _, saved = Fav.toggle("x_1")
+        check(saved == true and disk == "x_1\n#end\n", "最愛檔不存在：當空清單，加入後寫檔")
+        reset("a_1\n#end\n")
+        Fav.load()
+        check(Fav.list.n == 1 and Fav.list[1] == "a_1", "最愛檔讀完整：載入檔裡的最愛")
+        dropWrites = true
+        _, saved = Fav.toggle("x_1")
+        check(saved == false, "寫入沒有真的進檔（引擎不丟錯）：讀回比對，回報沒存到")
         getFileReader, getFileWriter = realReader, realWriter
         Fav.list, Fav.set = { n = 0 }, {}
     end
@@ -1271,8 +1297,9 @@ do
     check(#opts == 3 and opts[1].id == "all" and opts[2].id == "vanilla" and opts[3].id == "UMCTP",
         "來源下拉：全部、原版、各 MOD")
     local list = Fav.parse(" a_1 \r\n\nb_2\na_1\n")
-    check(list.n == 2 and list[1] == "a_1" and list[2] == "b_2" and Fav.serialize(list) == "a_1\nb_2\n"
-        and Fav.serialize({ n = 0 }) == "", "最愛檔：去空白、空行、重複；寫回一行一個")
+    check(list.n == 2 and list[1] == "a_1" and list[2] == "b_2" and Fav.serialize(list) == "a_1\nb_2\n#end\n"
+        and Fav.serialize({ n = 0 }) == "#end\n" and Fav.parse("#end\n").n == 0,
+        "最愛檔：去空白、空行、重複；寫回一行一個，最後一行 #end（讀的時候略過）")
     Names.reset()
     check(Names.of("furniture_seat_01_0") == "Red Chair CH", "名稱：有原版移動物件翻譯就用")
     local composed = Names.of("furniture_seat_01_1")

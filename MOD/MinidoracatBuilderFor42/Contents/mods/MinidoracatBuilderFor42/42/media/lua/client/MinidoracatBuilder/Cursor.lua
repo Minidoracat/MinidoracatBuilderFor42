@@ -193,7 +193,8 @@ end
 -- 按住左鍵時每幀呼叫，x, y 是滑鼠目前那格；self.square 是按下那格（ISBuildingObject.lua:114-135）。
 -- 能拖的種類記下拉到哪裡畫一排；其他種類照原版往哪邊拖就轉向哪邊（:595-617），只轉到項目有的朝向。
 function Cursor:rotateMouse(x, y)
-    if self.joypad or not self.square then return end
+    -- 在介面上按住（拖建造視窗）不算：原版照樣每幀呼叫，不擋的話拖視窗會把朝向轉掉
+    if self.joypad or not self.square or self.pressUI then return end
     if self.canDrag then
         self.lineX, self.lineY = x, y
         return
@@ -230,10 +231,14 @@ end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:667-672）
 
 -- 滑鼠在任何介面上（原版 ISMoveableCursor.lua:301-323 同寫法；E2E 可換掉）。每幀一次 Java 迴圈，不配置。
-function Cursor.mouseOverUI()
+-- 游標自己的標籤面板與提示框不算：只顯示、不收滑鼠（引擎的 isMouseOver 只看範圍，不看 wantMouseEvents）。
+function Cursor.mouseOverUI(c)
+    local own1 = c and c.overlay and c.overlay.javaObject
+    local own2 = c and c.tooltip and c.tooltip.javaObject
     local uis = UIManager.getUI()
     for i = 0, uis:size() - 1 do
-        if uis:get(i):isMouseOver() then return true end
+        local ui = uis:get(i)
+        if ui ~= own1 and ui ~= own2 and ui:isMouseOver() then return true end
     end
     return false
 end
@@ -247,11 +252,11 @@ end
 function Cursor:isValid(square)
     if not self.joypad then
         if self.isLeftDown or self.build then
-            if self.pressUI == nil then self.pressUI = Cursor.mouseOverUI() end
+            if self.pressUI == nil then self.pressUI = Cursor.mouseOverUI(self) end
             self.overUI = self.pressUI
         else
             self.pressUI = nil
-            self.overUI = Cursor.mouseOverUI()
+            self.overUI = Cursor.mouseOverUI(self)
         end
         if self.overUI then return false end
     end

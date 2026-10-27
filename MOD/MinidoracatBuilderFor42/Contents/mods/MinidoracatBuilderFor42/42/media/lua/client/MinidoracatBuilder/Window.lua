@@ -1030,6 +1030,7 @@ end
 function W.setSource(id)
     if id == nil or id == W.st.source then return end
     W.st.source = id
+    if W.v then W.refreshCats(W.v) end -- 最愛、最近使用的數量照來源算
     W.refilter(false)
 end
 
@@ -1276,9 +1277,12 @@ function W.create(UI)
     -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3908-3934）
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
-    -- 寬度最多約半個畫面、靠右：角色在畫面中央，放置時視窗留著（滑鼠玩家），不能蓋住要蓋的地方。
-    -- 1080p 實機（E2E ui-mp）用 0.62 時視窗從中央左邊開始，虛影整個被蓋住。
-    local w = math.max(math.floor(360 * s), math.min(sw - 40, math.max(math.floor(760 * s), math.floor(sw * 0.47))))
+    -- 靠右、不越過畫面中央：角色在畫面中央，放置時視窗留著（滑鼠玩家），不能蓋住要蓋的地方
+    -- （1080p 實機用 0.62 時視窗從中央左邊開始，虛影整個被蓋住）。寬版要 760*s，半個畫面放不下就用中版。
+    local want = math.max(math.floor(760 * s), math.floor(sw * 0.47))
+    local half = math.floor(sw / 2) - 20
+    if want > half then want = math.max(half, math.floor(560 * s)) end
+    local w = math.max(math.floor(360 * s), math.min(sw - 40, want))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
         tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0, sumDirty = true }
@@ -1411,6 +1415,8 @@ function W.open(playerNum)
     local dg = Entry.digest()
     if v.digest ~= dg then
         if v.digest then
+            -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
+            v.S, v.dim, v.dimN, v.sumAt = nil, {}, 0, 0
             W.refreshCatalog(v)
             v.detailDirty = true
         end

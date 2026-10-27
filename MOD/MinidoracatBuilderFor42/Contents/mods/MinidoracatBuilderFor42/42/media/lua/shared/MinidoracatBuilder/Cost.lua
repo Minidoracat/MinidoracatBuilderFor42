@@ -1,7 +1,7 @@
 -- 成本（設計稿「材料」，已定）：有原版拆解材質的照拆解產出推算，取每一輪都中的上限，所以不低於拆掉或拿起來
 -- 再拆換到的；沒有的照種類給基本價（比照原版同類建造配方），再依 MaterialType 換材料。兩端共用：客戶端顯示，伺服器扣料。
--- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... }, perkOf = { [fullType] = 技能名或 false }, back }；
--- 多格每格各算一次。
+-- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... }, perkOf = { [fullType] = 技能名或 false }, back,
+-- scrap（true＝照原版拆解產出收；false＝照種類基本價） }；多格每格各算一次。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Cost = MinidoracatBuilder.Cost or {}
 MinidoracatBuilder.Cost = Cost
@@ -162,7 +162,7 @@ function Cost.of(kind, spr, multiplier)
     local tools = {}
     for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
     if back then perkOf = {} end
-    return { items = out, tools = tools, perkOf = perkOf, back = back }
+    return { items = out, tools = tools, perkOf = perkOf, back = back, scrap = scrapped }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集

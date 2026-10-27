@@ -121,12 +121,13 @@ function Materials.summary(player)
         rawset(t, name, v)
         return v
     end })
-    return { items = items, tools = tools, cheat = player:isBuildCheat() }
+    return { items = items, tools = tools, cheat = player:isBuildCheat(), player = player }
 end
 
 -- 兩份摘要對已經查過的東西一樣嗎：只比 a 查過的種類與工具（b 照樣懶查）。介面用它判斷要不要清掉缺料標示。
+-- 換了角色（死掉重生）不算一樣：懶查表綁著建它的那個角色。
 function Materials.same(a, b)
-    if not a or not b or a.cheat ~= b.cheat then return false end
+    if not a or not b or a.cheat ~= b.cheat or a.player ~= b.player then return false end
     for k, v in pairs(a.items) do
         if b.items[k] ~= v then return false end
     end
