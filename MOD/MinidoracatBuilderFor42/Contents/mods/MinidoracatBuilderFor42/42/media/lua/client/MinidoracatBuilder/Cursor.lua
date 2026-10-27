@@ -193,7 +193,7 @@ end
 -- 按住左鍵時每幀呼叫，x, y 是滑鼠目前那格；self.square 是按下那格（ISBuildingObject.lua:114-135）。
 -- 能拖的種類記下拉到哪裡畫一排；其他種類照原版往哪邊拖就轉向哪邊（:595-617），只轉到項目有的朝向。
 function Cursor:rotateMouse(x, y)
-    -- 在介面上按住（拖建造視窗）不算：原版照樣每幀呼叫，不擋的話拖視窗會把朝向轉掉
+    -- 在介面上按住不算（見 isValid 的 pressUI）：不擋的話拖過不吃滑鼠的介面會把朝向轉掉
     if self.joypad or not self.square or self.pressUI then return end
     if self.canDrag then
         self.lineX, self.lineY = x, y
@@ -246,9 +246,10 @@ end
 -- 每幀被引擎呼叫（DoTileBuilding 的 canBeBuild）。只在按下那格、拉到哪格、朝向、玩家站的格子變了，或每秒一次
 -- （材料摘要重算的同時；目標格被別人占走、讓開、權限變了，材料都不變）才重算；其餘幀只比數字，不配置。
 -- 至少一格能蓋就算可蓋。
--- 滑鼠玩家在介面上按下（點建造視窗、別的面板）不算建造：原版建造鍵只排除物品欄
--- （CharacterInputKeyBinding.isKeyDownInWorld、UIManager.isMouseOverInventory），點別的介面放開時會蓋在介面底下
--- 看不到的格子。從世界按下、拖過介面的照算（同 ISMoveableCursor）。沒按時滑鼠在介面上也不算可蓋，虛影與提示框收起。
+-- 滑鼠玩家在介面上按下不算建造。有 onMouseDown 的介面（建造視窗、大部分面板）吃掉按下時，引擎本來就不當建造鍵
+-- （UIManager.java:716-724 → Mouse.UIBlockButtonDown，GameKeyboard.isKeyDown 走 isButtonDownUICheck；E2E ui-mp
+-- realclick 實測）；不吃滑鼠的介面（提示框、標籤）照樣算按下，放開會蓋在介面底下看不到的格子，這裡補上。
+-- 從世界按下、拖過介面的照算（同 ISMoveableCursor）。沒按時滑鼠在介面上也不算可蓋，虛影與提示框收起。
 function Cursor:isValid(square)
     if not self.joypad then
         if self.isLeftDown or self.build then
