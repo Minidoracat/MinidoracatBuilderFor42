@@ -250,6 +250,18 @@ local function costLine(items)
     return table.concat(parts, ",")
 end
 
+-- 照付的材料給經驗（Cost.xp）。addXp 和原版建造一樣（ISBuildUtil.lua:107,232）套經驗倍率（沒有加成的技能 ×0.25 等，
+-- IsoGameCharacter.java:17457-17521）；伺服器上加在連線玩家自己身上，並更新防作弊的經驗基準，一次拖曳很多項也不會被當成
+-- 經驗漲太快（LuaManager.java:11845-11857、GameServer.java:1862-1869、AntiCheatXPUpdate.java）。
+local function giveXp(player, costs)
+    local parts = {}
+    for perk, xp in pairs(Cost.xp(costs)) do
+        addXp(player, Perks.FromString(perk), xp)
+        parts[#parts + 1] = perk .. "+" .. xp
+    end
+    return table.concat(parts, ",")
+end
+
 -- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
 -- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
 -- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
@@ -327,11 +339,15 @@ function Server.complete(player, n, i)
         print(LOG .. "build failed e=" .. it.e .. ": " .. tostring(err))
         return Server.refuse(player, n, i, "INTERNAL")
     end
-    if plan then Materials.consume(player, plan) end
+    local xp = ""
+    if plan then
+        Materials.consume(player, plan)
+        xp = giveXp(player, costs)
+    end
     Place.settle(cells)
     print(LOG .. "BUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. " kind=" .. entry.kind .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
-        .. " cost=" .. (plan and costLine(total.items) or "free"))
+        .. " cost=" .. (plan and costLine(total.items) or "free") .. " xp=" .. xp)
     it.done[i] = true
     it.left = it.left - 1
     it.exp = now() + INTENT_TTL_MS

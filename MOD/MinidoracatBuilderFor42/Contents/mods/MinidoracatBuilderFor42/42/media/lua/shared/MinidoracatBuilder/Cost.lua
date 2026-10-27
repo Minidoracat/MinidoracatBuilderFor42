@@ -1,6 +1,6 @@
 -- 成本（設計稿「材料」，已定）：有原版拆解材質的照拆解產出推算，取每一輪都中的上限，所以不低於拆掉或拿起來
 -- 再拆換到的；沒有的照種類給基本價（比照原版同類建造配方），再依 MaterialType 換材料。兩端共用：客戶端顯示，伺服器扣料。
--- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... } }；多格每格各算一次。
+-- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... }, perk = 技能名或 nil }；多格每格各算一次。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Cost = MinidoracatBuilder.Cost or {}
 MinidoracatBuilder.Cost = Cost
@@ -40,6 +40,12 @@ local METAL = {
 local GROUND = { Dirt = "Base.Dirtbag", Grass = "Base.Dirtbag", Gravel = "Base.Gravelbag", Sand = "Base.Sandbag" }
 local TOOLS = { wood = { "HAMMER" }, masonry = { "MASONS_TROWEL" }, metal = { "BLOW_TORCH", "WELDING_MASK" }, ground = {} }
 local MASONRY_TYPES = { Brick = true, Stone = true, Cinderblock = true, Concrete = true, Ceramic = true }
+-- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給）：技能跟工具同一套材質，土、碎石、沙地板照原版不給
+-- （entity_floor_dirt／gravel／sand 沒有 xpAward）。每付一件材料 5 點，和原版一級木地板一樣
+-- （WoodFloorLvl1：1 木板＋1 釘子給 Woodwork 10，scripts/generated/entities/walls/entity_wood_floorlvl1.txt）。
+-- 照付的件數算：倍率改了經驗跟著改，沒付材料（倍率 0、建造作弊）就沒有。
+local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding" }
+local XP_PER_ITEM = 5
 
 -- MaterialType（撞擊與腳步聲用的材質，iso/enums/MaterialType.java）→ wood／masonry／metal／ground
 local function family(kind, p)
@@ -120,7 +126,7 @@ function Cost.of(kind, spr, multiplier)
     end
     local tools = {}
     for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
-    return { items = out, tools = tools }
+    return { items = out, tools = tools, perk = PERK[fam] }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
@@ -155,9 +161,22 @@ function Cost.forCells(kind, sprites, multiplier)
     for i = 1, #each do
         local items = {}
         for ft, n in pairs(top) do items[ft] = n end
-        each[i] = { items = items, tools = tools }
+        each[i] = { items = items, tools = tools, perk = each[i].perk }
     end
     return each
+end
+
+-- 這次付的材料換成經驗：{ [技能名] = 點數 }（costs＝各格成本）
+function Cost.xp(costs)
+    local out = {}
+    for _, c in ipairs(costs) do
+        if c.perk then
+            local n = 0
+            for _, v in pairs(c.items) do n = n + v end
+            if n > 0 then out[c.perk] = (out[c.perk] or 0) + n * XP_PER_ITEM end
+        end
+    end
+    return out
 end
 
 return Cost

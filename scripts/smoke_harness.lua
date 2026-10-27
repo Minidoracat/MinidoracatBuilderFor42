@@ -153,7 +153,9 @@ Translator = { getMoveableDisplayNameOrNull = function(raw)
 end }
 
 -- 第二階段（建造請求）用到的全域
-Perks = { Woodwork = "Woodwork" }
+Perks = { Woodwork = "Woodwork", FromString = function(s) return "perk:" .. s end }
+local xpLog = {} -- addXp 的呼叫：{ p, perk, n }
+function addXp(p, perk, n) xpLog[#xpLog + 1] = { p = p, perk = perk, n = n } end
 GridSquareEdgeFacingDirection = { NORTH_SOUTH = { name = "NS" }, EAST_WEST = { name = "EW" } }
 SandboxVars = { MinidoracatBuilder = {} }
 function getWorld() return { isValidSquare = function(_, x, y, z) return z >= -32 and z <= 31 end } end
@@ -401,6 +403,12 @@ check(kind({ keys = { IsMoveAble = "", fuelAmount = "100" } }) == nil, "加油�
 check(kind({ keys = { IsMoveAble = "", IsoType = "IsoRadio" } }) == nil, "專用類別不列")
 check(kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }) == nil, "植物不列")
 check(kind({ keys = { IsMoveAble = "" } }, "eaves_01_0") == "furniture", "e 開頭但不是 e_：照常分類")
+check(kind({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }) == nil, "無限水的地板（天然水面 9999）不列")
+check(kind({ keys = { IsMoveAble = "", BlocksPlacement = "", waterAmount = "999999" } }) == nil, "無限水的井（能搬）不列")
+check(kind({ flags = { "attachedFloor" }, keys = { waterAmount = "9999" } }) == nil, "無限水的岸邊疊圖不列")
+check(kind({ type = T.stairsBN, keys = { waterAmount = "99999" } }) == nil, "無限水的樓梯不列")
+check(kind({ flags = { "solidfloor" }, keys = { waterAmount = "9998" } }) == "floor"
+    and kind({ keys = { IsMoveAble = "", waterAmount = "20" } }) == "furniture", "waterAmount 低於 9999（雨水桶等）：照常列")
 check(kind({}) == nil, "沒有任何分類屬性：不列")
 
 print("情境三：樓梯湊組")
@@ -644,6 +652,17 @@ fc[1].items["Base.Plank"] = 99
 local t1 = Cost.of("wall", wallN).tools
 t1[#t1 + 1] = "X"
 check(fc[2].items["Base.Plank"] == 2 and #Cost.of("wall", wallN).tools == 1, "各格成本與工具清單互不共用")
+check(cost("wall", { flags = { "WallN" } }).perk == "Woodwork" and cost("wall", { keys = { MaterialType = "Brick" } }).perk == "Masonry"
+    and cost("wall", { keys = { MaterialType = "Metal_Large" } }).perk == "MetalWelding"
+    and cost("door", { keys = { MaterialType = "Brick" } }).perk == "Woodwork"
+    and cost("floor", { keys = { MaterialType = "Gravel" } }).perk == nil,
+    "經驗的技能照材質（同工具）：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
+local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", { keys = { MaterialType = "Brick" } }),
+    cost("floor", { keys = { MaterialType = "Gravel" } }) })
+check(xp.Woodwork == 50 and xp.Masonry == 20,
+    "經驗：每付一件材料 5 點（木牆 10 件＝50、磚地板 4 件＝20），碎石地板沒有")
+check(next(Cost.xp({ cost("wall", { flags = { "WallN" } }, 0) })) == nil, "倍率 0：沒付材料、沒有經驗")
+check(Cost.forCells("furniture", { fa, fb }, 1)[2].perk == "Woodwork", "多格：每格保留自己的技能")
 
 print("情境十一：建造請求（身分、限流、型別、單一待辦）")
 clockStep = 0
@@ -763,12 +782,16 @@ Q2.inv:add(item("Base.Hammer", { HAMMER = true }))
 ok, cmd, a = build(Q2, 42, nil, { 51, 49, 0 })
 check(not ok and a.code == "NO_MATERIAL" and #deniedAt == 0, "Safehouse API 大版本不是 1：不呼叫 denies，照常往下判斷")
 MinidoracatSafehouse = nil
+xpLog = {}
 ok, cmd = build(Q, 5)
 local w = wallSq.objects[1]
 check(ok and cmd == "placed" and w and w.mats["Base.Plank"] == "4" and w.mats["Base.Nails"] == "6",
     "材料齊：放好、退料照這一格的成本寫進 buildMaterials")
 check(Q.inv:count("Base.Plank") == 0 and Q.inv:count("Base.Nails") == 0 and Q.inv:count("Base.Hammer") == 1,
     "放好才扣料：材料扣光、鐵鎚留著")
+check(#xpLog == 1 and xpLog[1].p == Q and xpLog[1].perk == "perk:Woodwork" and xpLog[1].n == 50,
+    "放好扣料後給經驗：木工 50（10 件材料）")
+xpLog = {}
 sent = {}
 check(Server.complete(Q, 5, 1) == false and #sent == 0 and #wallSq.objects == 1, "同一項重送：不再放、不回覆")
 local errSq = square(50, 51, 0)
@@ -776,11 +799,11 @@ give(Q, { ["Base.Plank"] = 4, ["Base.Nails"] = 6 })
 failAdd = true
 ok, cmd, a = build(Q, 6, nil, { 50, 51, 0 })
 failAdd = false
-check(not ok and a.code == "INTERNAL" and #errSq.objects == 0 and Q.inv:count("Base.Plank") == 4,
-    "加進格子後才出錯：INTERNAL、拆回、不扣料")
+check(not ok and a.code == "INTERNAL" and #errSq.objects == 0 and Q.inv:count("Base.Plank") == 4 and #xpLog == 0,
+    "加進格子後才出錯：INTERNAL、拆回、不扣料、不給經驗")
 local cheatSq = square(49, 50, 0)
 local C = player({ id = 21, x = 49.5, y = 51.5, cheat = true })
-check(build(C, 7, nil, { 49, 50, 0 }) and #cheatSq.objects == 1, "開建造作弊：背包空的也放")
+check(build(C, 7, nil, { 49, 50, 0 }) and #cheatSq.objects == 1 and #xpLog == 0, "開建造作弊：背包空的也放，不給經驗")
 Q.inv = inventory()
 Q.inv:add(hammer)
 give(Q, { ["Base.Plank"] = 4, ["Base.NailsBox"] = 1 })

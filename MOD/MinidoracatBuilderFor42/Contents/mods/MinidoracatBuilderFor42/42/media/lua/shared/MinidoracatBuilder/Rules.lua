@@ -92,6 +92,14 @@ local function plantOrObject(p, mt)
         or p:has("TV") or p:has("Microwave") or p:has("signal")
 end
 
+-- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定）：引擎只看這個值，不看停水與房間
+-- （IsoObject.java:2618-2623），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
+-- 只出現在樓梯、地板與非結構類，沒有門窗、門框、窗框、柵欄、牆，所以只在這三處查，每個牆、窗框省一次 Java 呼叫。
+local function infiniteWater(p)
+    local w = p:get("waterAmount")
+    return w ~= nil and (tonumber(w) or 0) >= 9999
+end
+
 -- 回傳種類字串；nil＝不列（排除或不屬於任何種類）
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
 function Rules.kindOf(name, p, t)
@@ -99,7 +107,10 @@ function Rules.kindOf(name, p, t)
     if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
     local tc = TYPE[t]
     if tc == "tree" then return nil end
-    if tc == "stairs" then return "stairs" end -- 目錄只收湊得成三格的（Rules.stairsSet）
+    if tc == "stairs" then -- 目錄只收湊得成三格的（Rules.stairsSet）
+        if infiniteWater(p) then return nil end
+        return "stairs"
+    end
     if p:has("GarageDoor") then return "garage" end
     if p:has(doorN) or p:has(doorW) then
         -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:789-796），單片放會開錯圖、MP 不同步；之後和車庫門一起做
@@ -118,9 +129,12 @@ function Rules.kindOf(name, p, t)
         or p:has("WallNWTrans") or p:has(WallSE) then
         return "wall"
     end
-    if p:has(solidfloor) then return "floor" end -- 平屋頂地板也在這
+    if p:has(solidfloor) then -- 平屋頂地板也在這
+        if infiniteWater(p) then return nil end
+        return "floor"
+    end
     local mt = p:get("MoveType")
-    if plantOrObject(p, mt) then return nil end
+    if plantOrObject(p, mt) or infiniteWater(p) then return nil end
     if p:has("container") then return "container" end -- 冰箱帶燈，容器優先
     if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）
