@@ -100,6 +100,8 @@ end
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：從二樓起，正下方不是樓梯（同原版地板的 HasStairsBelow）；
 -- 要有東西撐著：正下方那格有牆，或這格、四鄰有地板或屋頂（四鄰有地板＝connectedWithFloor，不含斜坡）。
 -- 照座標查、不要這格存在：客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
+-- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
+-- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
 local function supports(sq)
     if not sq then return false end
     if sq:has(F.solidfloor) then return true end
@@ -110,12 +112,17 @@ local function supports(sq)
     end
     return false
 end
-function Place.roofAt(x, y, z)
+function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
+function Place.roofAt(x, y, z, planned)
     if z < 1 then return false end
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
     if below and below:HasStairs() then return false end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
+    if planned and (planned[Place.key(x - 1, y, z)] or planned[Place.key(x + 1, y, z)]
+        or planned[Place.key(x, y - 1, z)] or planned[Place.key(x, y + 1, z)]) then
+        return true
+    end
     return supports(cell:getGridSquare(x, y, z)) or supports(cell:getGridSquare(x - 1, y, z))
         or supports(cell:getGridSquare(x + 1, y, z)) or supports(cell:getGridSquare(x, y - 1, z))
         or supports(cell:getGridSquare(x, y + 1, z))
@@ -154,8 +161,8 @@ end
 
 -- 能不能在 sq 放 spr（種類 kind）。回 ok 與桌面高度（放在桌上的物件要墊高，原版搬家具算的）。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
--- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。
-function Place.check(kind, spr, sq, player, role)
+-- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
+function Place.check(kind, spr, sq, player, role, planned)
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
     local p = spr:getProperties()
@@ -163,7 +170,7 @@ function Place.check(kind, spr, sq, player, role)
         -- 原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）
         return not sq:HasStairsBelow() and sq:connectedWithFloor()
     end
-    if kind == "roof" then return Place.roofAt(sq:getX(), sq:getY(), sq:getZ()) end
+    if kind == "roof" then return Place.roofAt(sq:getX(), sq:getY(), sq:getZ(), planned) end
     if kind == "curtain" then return curtainOk(spr, sq) end
     if Entry.EDGE[kind] then
         if sq:HasStairs() then return false end
@@ -176,6 +183,12 @@ function Place.check(kind, spr, sq, player, role)
         if kind == "window" then
             return (n and sq:has(F.WindowN) and sq:getWindow(NS) == nil)
                 or (w and sq:has(F.WindowW) and sq:getWindow(EW) == nil)
+        end
+        -- 不擋樓梯：底片前面、頂片上一層出口那條邊不能蓋（原版木牆、門框都查，ISWoodenWall.lua:129、
+        -- ISWoodenDoorFrame.lua:46、ISBuildUtil.lua:438-480）
+        if (n and buildUtil.stairIsBlockingPlacement(sq, true, true))
+            or (w and buildUtil.stairIsBlockingPlacement(sq, true, false)) then
+            return false
         end
         if not floorUnder(sq) and not sq:hasFloor(n) then return false end -- 樓上的牆要踩在地板上（ISWoodenWall:isValid）
         if not n and not w then return not sq:has(F.WallSE) end           -- 柱子
@@ -213,7 +226,8 @@ end
 -- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
--- 樓梯照 Wood_Stairs：health 150＋skillBaseHealth 50 × 要求等級 6（stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:38-48）
+-- 樓梯照 Wood_Stairs 剛好 6 級、沒有建造加成時的血量：health 150＋最高相關技能等級 6 × skillBaseHealth 50
+-- （stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:657-668，等級越高原版越耐打）
 local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450 }
 -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
 --   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
@@ -317,7 +331,8 @@ end
 -- 樓梯：照原版 BuildRecipeCode.stairs.OnCreate（buildRecipeCode.lua:219-336）。三片都是 IsoThumpable，buildMaterials 都寫
 -- 整組的（Cost.forCells 收在頂片那一格；原版拆哪一片都照那片退）；照原版清掉這格的草（地毯留著）。頂端上一層補平台
 -- 地板（addFloor 自己會同步，IsoGridSquare.java:4741-4789），記 ConnectedToStairs（同向的樓梯不能再蓋在平台上），
--- 平台與頂片正上方那格重算。
+-- 平台與頂片正上方那格重算。補地板前先照一般地板只拆這一格的舊東西：addFloor 自己拆用預設的 safelyRemove，
+-- 伺服器上多格的一組會整組拆（IsoGridSquare.java:4746-4763,5939-5966），動到沒驗證過的格子。
 local function placeStairs(cells, placed)
     local set, west, top, landing = cells[1].cost, false, nil, nil
     for _, c in ipairs(cells) do
@@ -342,7 +357,10 @@ local function placeStairs(cells, placed)
         end
     end
     local sq = landing.sq
-    if not sq:has(F.solidfloor) then placed[#placed + 1] = sq:addFloor(Entry.STAIR_FLOOR) end
+    if not sq:has(F.solidfloor) then
+        removeForFloor(sq)
+        placed[#placed + 1] = sq:addFloor(Entry.STAIR_FLOOR)
+    end
     sq:getModData()["ConnectedToStairs" .. tostring(not west)] = true
     sq:RecalcAllWithNeighbours(true)
     local above = Place.square(top.x, top.y, top.z + 1)

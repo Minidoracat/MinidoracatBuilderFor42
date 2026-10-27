@@ -98,10 +98,12 @@ end
 -- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
 -- （錨點離玩家水平各軸 ≤ INTENT_REACH、樓層差 ≤ 1），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查）。
+-- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂格（Place.roofAt），後面的格子可以靠它撐著。
 -- 伺服器（opts 為 nil）不查材料：Server.complete 自己 plan。
 function Check.item(player, name, d, anchor, opts)
     local preview = opts ~= nil and opts.preview == true
     local walk = preview and opts.walk == true
+    local planned = preview and opts.planned or nil
     local info = {}
     local entry, code = Entry.resolve(name) -- 設定可能在施工途中被改
     if not entry then return code, nil, info end
@@ -147,9 +149,21 @@ function Check.item(player, name, d, anchor, opts)
         local sh = safehouseCode(player, c, preview)
         if sh then return sh, { x = c.x, y = c.y, z = c.z }, info end
     end
+    -- 面向 N／W 的窗簾掛在南邊、東邊那格的窗框上（Place 的 curtainOk）：窗框那格也要能蓋
+    if entry.kind == "curtain" then
+        local f = spr:getProperties():get("Facing")
+        local dx, dy = f == "W" and 1 or 0, f == "N" and 1 or 0
+        if dx + dy > 0 then
+            local c = cells[1]
+            local fc = { x = c.x + dx, y = c.y + dy, z = c.z }
+            fc.sq = cell:getGridSquare(fc.x, fc.y, fc.z)
+            local sh = safehouseCode(player, fc, preview)
+            if sh then return sh, { x = fc.x, y = fc.y, z = fc.z }, info end
+        end
+    end
     for j, c in ipairs(cells) do
         if c.sq then
-            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role)
+            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned)
             if not ok then
                 print(LOG .. "check failed e=" .. name .. ": " .. tostring(fine))
                 return "INTERNAL", nil, info
@@ -162,7 +176,7 @@ function Check.item(player, name, d, anchor, opts)
                     return "BLOCKED", { x = o.x, y = o.y, z = o.z }, info
                 end
             end
-        elseif entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z) then
+        elseif entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned) then
             -- 預覽：上一層的格子常常還沒建，屋頂照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end

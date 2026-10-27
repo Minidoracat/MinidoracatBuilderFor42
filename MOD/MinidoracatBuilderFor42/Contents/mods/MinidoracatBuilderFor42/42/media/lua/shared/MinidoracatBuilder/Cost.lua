@@ -264,11 +264,14 @@ end
 -- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗；
 -- 同一種材料在各片的技能不同時，退料機率看點的那片，拿自己高的技能拆就能便宜練另一個，這種材料也不給。
 -- 樓梯例外：整組照配方收一次，放在第一格（頂片）；其他格（中片、底片、平台）不收，三片的 buildMaterials 都寫整組
--- （Place.build），原版拆哪一片都照那片的 buildMaterials 退。
+-- （Place.build），原版拆哪一片都照那片的 buildMaterials 退，所以三片任一片是 back 整組就不給經驗。
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
     if kind == "stairs" then
         local c = Cost.of(kind, sprites[1], multiplier)
+        for i = 2, math.min(3, #sprites) do -- 第 4 格是平台地板（不是樓梯片，原版拆不到它的退料）
+            if not c.back and Cost.of(kind, sprites[i], multiplier).back then c.back, c.perkOf = true, {} end
+        end
         each[1] = c
         for i = 2, #sprites do
             each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back }

@@ -217,7 +217,15 @@ square = function(x, y, z, o)
     function sq:hasModData() return sq.md ~= nil end
     function sq:getModData() sq.md = sq.md or {}; return sq.md end
     function sq:getRoomID() return -1 end
-    function sq:addFloor(name) -- 照引擎：地板物件加在格子上、格子帶 solidfloor
+    function sq:addFloor(name) -- 照引擎：先拆格上的地板、植物這類（預設 safelyRemove：多格的整組拆，IsoGridSquare.java:4746-4763），
+        for i = #sq.objects, 1, -1 do -- 再加地板物件、格子帶 solidfloor
+            local old = sq.objects[i]
+            local p = old.getProperties and old:getProperties()
+            if p and (p:has(IsoFlagType.vegitation) or p:has(IsoFlagType.solidfloor) or p:has(IsoFlagType.noStart)
+                or p:has(IsoFlagType.taintedWater)) then
+                sq:transmitRemoveItemFromSquare(old)
+            end
+        end
         local f = { name = name }
         function f:getSquare() return sq end
         flags.solidfloor = true
@@ -258,11 +266,11 @@ SafeHouse = {
     isSafehouseAllowLoot = function(sq, p) return not (sq.owner and sq.owner ~= p:getUsername()) end,
 }
 buildUtil = { setHaveConstruction = function() end, stairIsBlockingPlacement = function() return false end }
--- 舊的多格物件（例：跨兩格的植物）：group＝{ { sq, o }, ... }，可被換地板拆掉
-local function oldPiece(sq, group)
+-- 舊的多格物件（例：跨兩格的植物）：group＝{ { sq, o }, ... }，可被換地板拆掉；flag＝它帶的旗標（預設 canBeRemoved）
+local function oldPiece(sq, group, flag)
     local o = { group = group }
     function o:getProperties()
-        return { has = function(_, k) return type(k) == "table" and k.name == "canBeRemoved" end }
+        return { has = function(_, k) return type(k) == "table" and k.name == (flag or "canBeRemoved") end }
     end
     function o:getTextureName() return "vegetation_test_01_0" end
     function o:getType() return IsoObjectType.normal end
@@ -1284,6 +1292,11 @@ do
     local _, _, okInfo = Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV)
     check(okInfo.entry.kind == "wall" and okInfo.cells[1].sq ~= nil and okInfo.costs[1].items["Base.Plank"] == 4
         and okInfo.total.items["Base.Nails"] == 6 and okInfo.total.tools[1] == "HAMMER", "通過時 info 帶格子、各格成本與加總")
+    local realStair = buildUtil.stairIsBlockingPlacement
+    buildUtil.stairIsBlockingPlacement = function(sq, _, north) return north == true and sq:getX() == 56 and sq:getY() == 45 end
+    check(Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV) == "BLOCKED",
+        "北牆擋到樓梯（底片前面、頂片出口那條邊）：擋下（照原版木牆，朝向照牆的邊）")
+    buildUtil.stairIsBlockingPlacement = realStair
     holes["58,46,0"], holes["57,46,0"] = true, true
     local before = created
     local cMiss, _, iMiss = Check.item(K, "walls_test_01_4", 0, { 58, 46, 0 }, PV)
@@ -1625,7 +1638,12 @@ local function newKinds()
     end
     local roof = sprite("roof_01_0", 2130, { type = T.WestRoofB, keys = { RoofGroup = "1" } })
     local eave = sprite("roof_01_1", 2131, { type = T.WestRoofT, flags = { "isEave" }, keys = { RoofGroup = "1" } })
-    world({ stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave,
+    local stE = { sprite("ste_01_0", 2142, { type = T.stairsBW }), sprite("ste_01_1", 2143, { type = T.stairsMW, flags = { "EntityScript" } }),
+        sprite("ste_01_2", 2144, { type = T.stairsTW }) }
+    local stM = { sprite("stm_01_0", 2145, { type = T.stairsBW }), sprite("stm_01_1", 2146, { type = T.stairsMW, keys = { Material = "Wood" } }),
+        sprite("stm_01_2", 2147, { type = T.stairsTW }) }
+    world({ stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave, stE[1], stE[2], stE[3],
+        stM[1], stM[2], stM[3],
         curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
         curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
         curtain("curx_01_4", 2126, "E") })
@@ -1641,6 +1659,10 @@ local function newKinds()
     -- 樓梯：項目＝底片，原點＝頂片；W 型沿 +x、平台在 x−1、上一層
     check(select(2, Entry.resolve("stw_01_1")) == "UNKNOWN" and Entry.resolve("stw_01_0").kind == "stairs",
         "樓梯只收湊得成三格的底片：中片當項目 UNKNOWN")
+    check(select(2, Entry.resolve("ste_01_0")) == "UNKNOWN", "樓梯中片是實體（走原版建造）：整組不收")
+    local mixed = Cost.forCells("stairs", { stM[3], stM[2], stM[1], landing }, 1)
+    check(mixed[1].back == true and next(Cost.xp(mixed, player())) == nil,
+        "樓梯只有中片有拆解材質：拆中片照退料表可能全拿回，整組不給經驗")
     local cw, cn = Entry.cells(stW[1]), Entry.cells(stN[1])
     check(#cw == 4 and cw[1][4] == stW[3] and cw[1][5] == "top" and cw[2][1] == 1 and cw[3][1] == 2 and cw[3][4] == stW[1]
         and cw[4][1] == -1 and cw[4][3] == 1 and cw[4][4] == landing and cw[4][5] == "platform"
@@ -1674,6 +1696,30 @@ local function newKinds()
     check(at(plat, "carpentry_02_57") and plat.md and plat.md.ConnectedToStairsfalse == true
         and SP.inv:count("Base.Plank") == 0 and #xpLog == 1 and xpLog[1].n == 105,
         "平台：上一層補原版平台地板、記 ConnectedToStairs（同向樓梯不能再蓋在這），整組扣一次料、木工 105（21 件）")
+    -- 平台格上有跨到別格的植物（多格）：只拆平台這一片，另一片（沒驗證過的格子）留著
+    local pq, pn = square(40, 53, 1), square(39, 53, 1)
+    local grp = {}
+    local mine, theirs = oldPiece(pq, grp, "vegitation"), oldPiece(pn, grp, "vegitation")
+    local SP2 = who(2108, 44.5, 53.5)
+    give(SP2, { ["Base.Plank"] = 13, ["Base.Nails"] = 8 })
+    local pok = build(SP2, 1, "stw_01_0", { 41, 53, 0 })
+    local function has(sq, o)
+        for _, v in ipairs(sq.objects) do if v == o then return true end end
+        return false
+    end
+    check(pok and at(pq, "carpentry_02_57") and not has(pq, mine) and has(pn, theirs),
+        "補平台地板：平台格的舊植物只拆這一片，跨到旁邊那格的另一片不動")
+    -- N 型（往北爬）：頂片在原點、中片底片沿 +y，平台在頂片北邊一格的二樓，記 ConnectedToStairstrue；三片 north＝false
+    local npl = square(47, 40, 1)
+    local SN = who(2109, 48.5, 42.5)
+    give(SN, { ["Base.Plank"] = 13, ["Base.Nails"] = 8 })
+    local nok = build(SN, 1, "stn_01_2", { 47, 41, 0 })
+    local TN, BN = at(squares["47,41,0"], "stn_01_0"), at(squares["47,43,0"], "stn_01_2")
+    check(nok and TN and at(squares["47,42,0"], "stn_01_1") and BN and TN.north == false and TN.mats["Base.Plank"] == "13"
+        and at(npl, "carpentry_02_57") and npl.md and npl.md.ConnectedToStairstrue == true,
+        "N 型樓梯：三片沿 +y、north＝false，平台在北邊一格的二樓、記 ConnectedToStairstrue")
+    check(Check.item(who(2110, 46.5, 45.5), "stw_01_0", 0, { 50, 45, 0 }) == "TOO_FAR",
+        "樓梯的距離只看三片：離平台近（3 格）、離頂片 4 格，太遠")
     local cs = square(42, 55, 0)
     cs:getModData().ConnectedToStairsfalse = true
     square(42, 56, 0, { flags = { water = true } })
@@ -1732,10 +1778,10 @@ local function newKinds()
     ISMoveableSpriteProps = nil
 
     -- 窗簾：掛在窗框上；面向 E 的窗框在本格西邊，面向 W 的在東邊那格
-    local function framed(x, y, extra)
+    local function framed(x, y, extra, owner)
         local flags = { WindowW = true }
         for k, v in pairs(extra or {}) do flags[k] = v end
-        local sq = square(x, y, 0, { flags = flags })
+        local sq = square(x, y, 0, { flags = flags, owner = owner })
         local props = { has = function(_, k) return (type(k) == "table" and k.name or k) == "WindowW" end,
             get = function() return nil end }
         sq.objects[1] = { getProperties = function() return props end, getSprite = function() return nil end }
@@ -1754,6 +1800,8 @@ local function newKinds()
     check(cur("cur_01_4", 53, 58) == "BLOCKED" and cur("cur_01_4", 53, 59) == "BLOCKED" and cur("curx_01_4", 53, 57) == "BLOCKED"
         and cur("cur_01_5", 53, 57) == "BLOCKED",
         "窗簾擋下：室外（沒有房間、沒有屋頂）、沒有窗框、關著那張（−4 號）不存在、窗框在另一邊")
+    framed(57, 57, nil, "e2e_other")
+    check(cur("cur_01_5", 56, 57) == "SAFEHOUSE", "面向 W 的窗簾：東邊窗框那格是別人的安全屋，擋下（窗簾那格不是）")
     IsoCurtain = { new = function(_, sq, name, north)
         local o = { name = name, north = north, md = {} }
         function o:getModData() return self.md end
@@ -1813,6 +1861,13 @@ local function newKinds()
         "屋頂：IsoThumpable、殭屍不打、不擋整格、寫退料，伺服器重算下面幾層有沒有屋頂")
     check(build(RP, 2, "roof_01_0", { 57, 57, 1 }) and squares["57,57,1"].objects[1],
         "旁邊已經有屋頂：撐得住（照常蓋）")
+    -- 一排屋頂：只有第一格正下方有牆，後面的格子靠前一格（還沒蓋）撐著；從沒支撐的那頭拖，只有靠牆那格可蓋
+    square(56, 60, 0, { wallW = {} })
+    local row = { { 56, 60, 1 }, { 57, 60, 1 }, { 58, 60, 1 } }
+    local _, okF = MinidoracatBuilder.Cursor.preview(RP, "roof_01_0", 0, row, nil)
+    local resB, okB = MinidoracatBuilder.Cursor.preview(RP, "roof_01_0", 0, { row[3], row[2], row[1] }, nil)
+    check(okF == 3 and okB == 1 and resB[1].code == "BLOCKED" and resB[2].code == "BLOCKED" and resB[3].code == nil,
+        "一排屋頂：前面可蓋的格子撐得住後面的（從有牆那頭拖整排可蓋，反過來只有靠牆那格）")
 end
 newKinds()
 

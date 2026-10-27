@@ -84,7 +84,8 @@ end
 
 -- 一排各格的預覽：照順序每格 Check.item，可蓋的從摘要副本扣掉成本（Materials.take），所以前面的格子用掉的材料
 -- 後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；副本的 items 讀穿到 S（S 是懶查表，
--- 不能用 pairs 複製），扣料只寫進副本。walk：Client.build 會先走過去，所以距離只照 Server.intent 的範圍，
+-- 不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個順序一格一格蓋），所以從
+-- 有支撐的那一頭拖。walk：Client.build 會先走過去，所以距離只照 Server.intent 的範圍，
 -- 不看 MaxDistance、不查走不走得到（走不到由送出後的 Cursor.tick 提示）。回 { { a, code, extra }, ... }、可蓋格數、缺料格數。
 function Cursor.preview(player, name, d, anchors, S)
     local work
@@ -93,10 +94,10 @@ function Cursor.preview(player, name, d, anchors, S)
         for k, v in pairs(S) do work[k] = v end
         work.items = setmetatable({}, { __index = S.items })
     end
-    local out, ok, short = {}, 0, 0
+    local out, ok, short, planned = {}, 0, 0, {}
     for i, a in ipairs(anchors) do
         local fine, code, extra, info = pcall(Check.item, player, name, d, a,
-            { preview = true, walk = true, summary = work })
+            { preview = true, walk = true, summary = work, planned = planned })
         if not fine then
             print(LOG .. "preview failed e=" .. tostring(name) .. ": " .. tostring(code))
             code, extra, info = "INTERNAL", nil, nil
@@ -104,6 +105,9 @@ function Cursor.preview(player, name, d, anchors, S)
         if code == nil then
             ok = ok + 1
             if work and info and info.total then Materials.take(work, info.total) end
+            if info and info.entry and info.entry.kind == "roof" then
+                for _, c in ipairs(info.cells) do planned[B.Place.key(c.x, c.y, c.z)] = true end
+            end
         elseif SHORT[code] then
             short = short + 1
         end

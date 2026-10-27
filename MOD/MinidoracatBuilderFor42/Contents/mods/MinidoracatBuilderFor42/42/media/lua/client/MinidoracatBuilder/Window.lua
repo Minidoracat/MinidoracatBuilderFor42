@@ -714,14 +714,6 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             y = y + lh
         end
     end
-    -- 種類說明（樓梯、屋頂、燈、窗簾）：蓋之前要知道的限制
-    local note = getTextOrNull("IGUI_MBLD_Note_" .. e.kind)
-    if note then
-        for _, line in ipairs(Text.wrap(note, dw, v.font)) do
-            text(ops, line, 0, y, c.textMuted, v.font)
-            y = y + lh
-        end
-    end
     y = y + 4
     text(ops, getText("IGUI_MBLD_Detail_Materials"), 0, y, c.textMuted, v.font)
     y = y + lh
@@ -769,6 +761,22 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     for _, line in ipairs(Text.wrap(xp, dw, v.font)) do
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
+    end
+    -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：詳情不能捲動，矮的視窗先截掉它，材料與工具照樣看得到（擋得住的限制
+    -- 游標也會標）。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
+    -- hasRainBlockingTile），換一句
+    local key = e.kind
+    if key == "roof" then
+        local p = e.spr:getProperties()
+        if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
+    end
+    local note = getTextOrNull("IGUI_MBLD_Note_" .. key)
+    if note then
+        y = y + 4
+        for _, line in ipairs(Text.wrap(note, dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
     end
 end
 

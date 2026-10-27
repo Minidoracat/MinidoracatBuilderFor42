@@ -306,7 +306,8 @@ function Rules.classify(spr)
     return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType())
 end
 
--- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。
+-- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
+-- 是樓梯：實體腳本、無限水、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。
 function Rules.stairsSet(named, bName)
     local spr = named:get(bName)
@@ -322,7 +323,8 @@ function Rules.stairsSet(named, bName)
     for _, d in ipairs({ 1, -1 }) do
         local m = named:get(base .. "_" .. (n + d))
         local tp = named:get(base .. "_" .. (n + 2 * d))
-        if m and tp and m:getType() == mt and tp:getType() == tt then
+        if m and tp and m:getType() == mt and tp:getType() == tt
+            and Rules.classify(m) == "stairs" and Rules.classify(tp) == "stairs" then
             return { b = bName, m = m:getName(), t = tp:getName(), dir = north and "N" or "W" }
         end
     end
