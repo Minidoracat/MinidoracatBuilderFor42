@@ -257,14 +257,14 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {}, set = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setThumpDmg", "setBreakSound", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients" }) do
+        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients" }) do
         o[s] = function(self, v) self.set[s] = v end -- 記最後一次設的值
     end
     function o:getBuildMaterials() return self.mats end
     function o:getModData() return self.md end
     function o:getSquare() return sq end
     return o
-end, GetBreakFurnitureSound = function() return "BreakFurniture" end }
+end }
 -- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）
 ItemTag = { HAMMER = "HAMMER", MASONS_TROWEL = "MASONS_TROWEL", BLOW_TORCH = "BLOW_TORCH", WELDING_MASK = "WELDING_MASK",
     SCREWDRIVER = "SCREWDRIVER" }
@@ -431,6 +431,14 @@ do -- 主程式區域變數上限 200
     check(kind({ keys = { IsMoveAble = "" } }, "solarmod_tileset_01_9") == nil
         and kind({ keys = { container = "SolarBox" } }, "solarmod_tileset_01_36") == nil,
         "太陽能 MOD 靠名稱給功能的圖塊（面板、電池組）：不列")
+    local tank = { flags = { "solid" } }
+    local before = kind(tank, "location_shop_fossoil_01_80") == "solid" and kind(tank, "location_business_bank_01_64") == "solid"
+    modInfos[#modInfos + 1] = { id = "ArcadiaRefillablePropaneTanks_B42", name = "Arcadia" }
+    Rules.unlistModSprites()
+    table.remove(modInfos)
+    check(before and kind(tank, "location_shop_fossoil_01_80") == nil and kind(tank, "location_shop_gas2go_01_95") == nil
+        and kind(tank, "location_business_bank_01_64") == "solid",
+        "照原版圖塊名稱給功能的 MOD：沒裝時照常列；裝了丙烷 MOD 才不列它的補充站，沒裝的 Economy 的 ATM 照常列")
 end
 print("情境二之一：窗的狀態圖（開、破、拆玻璃）不列，不看這次載入過哪些窗")
 do -- 主程式區域變數上限 200
@@ -1038,40 +1046,38 @@ do
         "電器：收 2 個電子零件（拆解 1＋電器費 1），退料表只寫 1 個（電器費拆了不退）")
 end
 do
-    -- 會擋路的家具、容器、實心物件照原版搬家具放下：殭屍打得壞（一隻就能打）、整格擋住、血量＝搬運重量（沒寫 50）× 材質倍率
+    -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下：都打得壞、整格擋住。一般的一隻殭屍就能打、
+    -- 血量＝搬運重量（沒寫 50）× 材質倍率；地毯、掛牆物、放在桌上的照原版 movedThumpable：血量 100、thumpDmg 不改（8）
     local sink = sinkSq.objects[1]
     check(sink.set.setIsThumpable == true and sink.set.setMaxHealth == 50 and sink.set.setHealth == 50
-        and sink.set.setThumpDmg == 1 and sink.set.setBlockAllTheSquare == true and sink.set.setBreakSound == "BreakFurniture",
+        and sink.set.setThumpDmg == 1 and sink.set.setBlockAllTheSquare == true,
         "會擋路的物件：殭屍打得壞，血量 50（沒寫搬運重量、沒有材質倍率）、一隻就能打、整格擋住")
     check(w.set.setIsThumpable == true and w.set.setMaxHealth == 450 and w.set.setThumpDmg == nil
         and w.set.setBlockAllTheSquare == false, "牆照舊：450 血、打的門檻不變、不整格擋")
-    local woodS = sprite("wood_test_01_0", 954, { flags = { "solidtrans" }, keys = { Material = "Wood", PickUpWeight = "40" } })
-    local topS = sprite("top_test_01_0", 955, { flags = { "solid" }, keys = { IsTableTop = "" } })
-    local shelfS = sprite("shelf_test_01_0", 956, { flags = { "solid" }, keys = { MoveType = "WallObject", container = "shelves" } })
-    world({ wallN, solidS, crateS, sinkS, woodS, topS, shelfS })
-    local W = player({ id = 34, x = 64.5, y = 61.5, here = square(64, 61, 0) })
-    W.inv:add(item("Base.Hammer", { HAMMER = true }))
-    give(W, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
-    local woodSq, topSq = square(64, 60, 0), square(66, 60, 0)
-    local okW = build(W, 36, "wood_test_01_0", { 64, 60, 0 })
-    local wo = woodSq.objects[1]
-    check(okW and wo and wo.set.setIsThumpable == true and wo.set.setMaxHealth == 60,
-        "木頭材質、搬運重量 40：血量 40 × 1.5 = 60")
-    local W2 = player({ id = 35, x = 66.5, y = 61.5, here = square(66, 61, 0) })
-    W2.inv:add(item("Base.Hammer", { HAMMER = true }))
-    give(W2, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
-    local okT = build(W2, 37, "top_test_01_0", { 66, 60, 0 })
-    local to = topSq.objects[1]
-    check(okT and to and to.set.setIsThumpable == false and to.set.setThumpDmg == nil,
-        "放在桌上的東西（IsTableTop）照原版不給打")
-    local W3 = player({ id = 36, x = 68.5, y = 61.5, here = square(68, 61, 0) })
-    W3.inv:add(item("Base.Hammer", { HAMMER = true }))
-    give(W3, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
-    local shelfSq = square(68, 60, 0)
-    local okS = build(W3, 38, "shelf_test_01_0", { 68, 60, 0 })
-    local so = shelfSq.objects[1]
-    check(okS and so and so.set.setIsThumpable == false and so.set.setBlockAllTheSquare == false,
-        "掛牆的容器帶 solid：照原版不給打、不整格擋（2026-10-27 目錄有 19 件）")
+    world({ wallN, solidS, crateS, sinkS, sprite("fence_test_01_0", 958, { flags = { "HoppableW", "solid" } }),
+        sprite("wood_test_01_0", 954, { flags = { "solidtrans" }, keys = { Material = "Wood", PickUpWeight = "40" } }),
+        sprite("top_test_01_0", 955, { flags = { "solid" }, keys = { IsTableTop = "" } }),
+        sprite("shelf_test_01_0", 956, { flags = { "solid" }, keys = { MoveType = "WallObject", container = "shelves" } }),
+        sprite("rug_test_01_0", 957, { flags = { "solid" }, keys = { MoveType = "FloorRug", Material = "Wood", PickUpWeight = "40" } }) })
+    local function put(id, x, name)
+        local P = player({ id = id, x = x + 0.5, y = 61.5, here = square(x, 61, 0) })
+        P.inv:add(item("Base.Hammer", { HAMMER = true }))
+        give(P, { ["Base.Plank"] = 9, ["Base.Nails"] = 9 })
+        local sq = square(x, 60, 0)
+        return build(P, id, name, { x, 60, 0 }) and sq.objects[1] or nil
+    end
+    local wo = put(34, 64, "wood_test_01_0")
+    check(wo and wo.set.setIsThumpable == true and wo.set.setMaxHealth == 60 and wo.set.setThumpDmg == 1,
+        "木頭材質、搬運重量 40：血量 40 × 1.5 = 60、一隻就能打")
+    for _, t in ipairs({ { 35, 66, "top_test_01_0", "放在桌上的（IsTableTop）" }, { 36, 68, "shelf_test_01_0", "掛牆的容器" },
+        { 37, 70, "rug_test_01_0", "地毯（木頭、搬運重量 40）" } }) do
+        local o = put(t[1], t[2], t[3])
+        check(o and o.set.setIsThumpable == true and o.set.setMaxHealth == 100 and o.set.setThumpDmg == nil
+            and o.set.setBlockAllTheSquare == true, t[4] .. "帶 solid：照原版打得壞，血量 100、8 隻一起打才每下扣 1、整格擋住")
+    end
+    local fo = put(38, 72, "fence_test_01_0")
+    check(fo and fo.set.setIsThumpable == true and fo.set.setMaxHealth == 300 and fo.set.setThumpDmg == nil
+        and fo.set.setBlockAllTheSquare == false, "帶 solid 的柵欄（格邊種類）：照固定 300 血，不套家具、不整格擋")
 end
 square(48, 53, 0, { noReach = true })
 ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 53, 0 })

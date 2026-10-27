@@ -31,7 +31,8 @@ TYPE[T.lightswitch] = "light"
 --    玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。
 --    設計稿不包 MapObjects 的原版函式，改用清單；其他 MOD 可以 Rules.addLuaSprites 補。
 -- 2. 其他 MOD 照 sprite 名稱給功能的圖塊：MapObjects 的登記表是 Java 私有欄位（MapObjects.java:23-24），
---    名稱比對寫在各 MOD 自己的 Lua 裡，查不到，只能列。
+--    名稱比對寫在各 MOD 自己的 Lua 裡，查不到，只能列。MOD 自己的 tileset 一律列；原版圖塊只在有啟用那個 MOD 時列
+--    （沒裝時只是原版裝飾）。2026-10-27 用 audit_mods.py 掃正式服 147 個 MOD 找到的見下方。
 -- 3. 引擎內部用的圖塊。
 local UNLISTED = {}
 local function unlist(names)
@@ -53,6 +54,28 @@ addRange("constructedobjects_01", 16, 19)
 addRange("solarmod_tileset_01", 0, 39)
 -- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4834-4844）
 unlist({ "invisible_01_0", "underground_01_0", "underground_01_1" })
+-- 照原版圖塊名稱給功能的 MOD（Workshop 路徑 content/108600/<ID>）：{ tileset, 起, 迄, ... }
+local BY_MOD = {
+    -- 丙烷補充站：右鍵就能補丙烷，第一次用時照沙盒給初始量（3786849936 ArcadiaRefillablePropane_Shared.lua:55-194、
+    -- ArcadiaRefillablePropane_Server.lua:83-121）
+    ArcadiaRefillablePropaneTanks_B42 = { "location_shop_fossoil_01", 80, 111, "location_shop_gas2go_01", 64, 95 },
+    -- ATM：2 格內就開通交易（3801482125 ECCore.lua:91-127）
+    MinidoracatEconomyFor42 = { "location_business_bank_01", 64, 67 },
+    -- 電梯門與呼叫鈕：每層一片、有電就能在樓層間傳送（3780306632 ELV_Core.lua:32-46,70-79）
+    Elevators = { "fixtures_escalators_01", 48, 51, "fixtures_escalators_01", 56, 57 },
+    -- 液壓機（綠、藍各兩幀）：接電就有機器面板（3780027195 Registry.lua:262-285、HydraulicPress.lua:105）
+    Machinery = { "industry_03", 48, 63 },
+}
+function Rules.unlistModSprites()
+    local mods = getActivatedMods()
+    for i = 0, mods:size() - 1 do
+        local list = BY_MOD[mods:get(i)]
+        if list then
+            for k = 1, #list, 3 do addRange(list[k], list[k + 1], list[k + 2]) end
+        end
+    end
+end
+Rules.unlistModSprites()
 
 function Rules.unlistedByName(name)
     return UNLISTED[name] == true

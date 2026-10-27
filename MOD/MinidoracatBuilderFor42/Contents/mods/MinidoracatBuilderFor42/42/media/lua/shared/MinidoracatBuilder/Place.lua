@@ -135,40 +135,36 @@ end
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
 local HEALTH = { wall = 450, windowFrame = 450, fence = 300 }
--- 會擋路的家具、容器、實心物件照原版搬家具放下（ISMoveableSpriteProps.lua:2330,2379-2388）：殭屍打得壞，一隻就能打
--- （thumpDmg 1，IsoThumpable.java:1029-1041），而且整格擋住，不然會被 getSpecialWall 當成格邊的牆（IsoGridSquare.java:3804-3818）。
--- 原版特地讓放下的擋路物件都打得壞（ISMoveableSpriteProps.lua:2501-2504）。地毯、掛牆物、放在桌上的照原版不打。
-local function blocking(p)
-    if not (p:has(F.solid) or p:has(F.solidtrans)) or p:has("IsTableTop") then return false end
+-- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
+--   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
+--   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
+--   地毯、掛牆物、放在桌上的：原版做成一般物件再設 movedThumpable（ISMoveableSpriteProps.lua:2330,2501-2504），血量 100、
+--   8 隻殭屍一起打才每下扣 1（IsoObject.java:205,5747-5759）；IsoThumpable 的 thumpDmg 預設就是 8（IsoThumpable.java:101）。
+-- 回傳血量與 thumpDmg（nil＝不改預設）
+local function solidHealth(p)
     local mt = p:get("MoveType")
-    return mt ~= "FloorRug" and mt ~= "WallObject"
-end
--- 血量照原版：搬運重量（沒寫當 50）× 材質倍率（ISMoveableSpriteProps.lua:148,322-325；ISMoveableDefinitions.lua:688-690）
-local function furnitureHealth(p)
+    if mt == "FloorRug" or mt == "WallObject" or p:has("IsTableTop") then return 100, nil end
     local mat = p:get("Material")
     local m = mat and ISMoveableDefinitions:getInstance().getHealthDefinition(mat) or 1
-    return (tonumber(p:get("PickUpWeight")) or 50) * m
+    return (tonumber(p:get("PickUpWeight")) or 50) * m, 1
 end
 local function thumpable(c, kind, north)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
-    local furniture = not Entry.EDGE[kind] and blocking(p)
+    local solid = not Entry.EDGE[kind] and (p:has(F.solid) or p:has(F.solidtrans))
     -- 屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
     obj:setCanPassThrough(not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN) or p:has(F.WallNTrans)
         or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
-    obj:setBlockAllTheSquare(furniture or p:has("BlocksPlacement"))
+    obj:setBlockAllTheSquare(solid or p:has("BlocksPlacement"))
     obj:setIsHoppable(kind == "fence")
     obj:setIsDoorFrame(kind == "doorFrame")
     obj:setCanBarricade(kind == "windowFrame")
     obj:setIsFloor(kind == "floor")
-    local hp = HEALTH[kind]
-    if furniture then
-        hp = furnitureHealth(p)
-        obj:setThumpDmg(1)
-        obj:setBreakSound(IsoThumpable.GetBreakFurnitureSound(spr:getName()))
-    end
-    obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的家具照原版不打
+    local hp, dmg = HEALTH[kind], nil
+    if solid then hp, dmg = solidHealth(p) end
+    if dmg then obj:setThumpDmg(dmg) end
+    obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的東西照原版不打
     obj:setIsDismantable(true)
     hp = hp or 200
     obj:setMaxHealth(hp)
