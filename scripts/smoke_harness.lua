@@ -1185,7 +1185,8 @@ do
     local stool = sprite("furniture_seat_01_1", 21, { keys = { IsMoveAble = "" } })
     local modBox = sprite("umctp_boxes_01_0", mod + 5, { keys = { IsMoveAble = "" } })
     local offWall = sprite("walls_off_01_0", 30, { flags = { "WallN" }, keys = { WallN = "" } })
-    world({ fl0, fl1, chair, stool, modBox, offWall })
+    local crate = sprite("aaa_crates_01_0", 40, { keys = { IsMoveAble = "" } })
+    world({ fl0, fl1, chair, stool, modBox, offWall, crate })
     Sources.byFile = { [7001] = "UMCTP" }
     Index.reset()
     Index.add("floor", "floors_interior_01_0", "floors_interior_01", 0, 1)
@@ -1195,6 +1196,7 @@ do
     Index.add("furniture", "furniture_seat_01_1", "furniture_seat_01", 1, 1)
     Index.add("furniture", "umctp_boxes_01_0", "umctp_boxes_01", 0, 7001)
     Index.add("wall", "walls_off_01_0", "walls_off_01", 0, 1)
+    Index.add("furniture", "aaa_crates_01_0", "aaa_crates_01", 0, 1) -- 最後才加、顯示名排最前：驗排序
     Index.addNameKey(Index.groupList[1])
     for i = 1, Index.setName.n do
         Index.addSetKey(i, Index.setName[i] == "umctp_boxes_01" and "UMCTP Mod" or "")
@@ -1210,7 +1212,7 @@ do
         return false
     end
     local all = W.filter(st())
-    check(all.n == 5 and not has(all, "walls_off_01_0"), "全部頁、沒有搜尋字：5 項，管理員關掉的 tileset 不列")
+    check(all.n == 6 and not has(all, "walls_off_01_0"), "全部頁、沒有搜尋字：6 項，管理員關掉的 tileset 不列")
     local q = W.filter(st({ query = "red chair" }))
     check(q.n == 1 and q[1] == "furniture_seat_01_0", "搜尋名稱：只列名稱命中的那一項，不列整個 tileset")
     local m = W.filter(st({ query = "UMCTP mod" }))
@@ -1218,7 +1220,7 @@ do
     local f = W.filter(st({ tab = "floor" }))
     check(f.n == 2 and has(f, "floors_interior_01_1") and not has(f, "furniture_seat_01_0"), "地板頁：只列地板")
     local kv = W.filter(st({ cat = "k:furniture", source = "vanilla" }))
-    check(kv.n == 2 and not has(kv, "umctp_boxes_01_0"), "種類分類＋原版來源：只列原版的家具")
+    check(kv.n == 3 and not has(kv, "umctp_boxes_01_0"), "種類分類＋原版來源：只列原版的家具")
     local km = W.filter(st({ source = "UMCTP" }))
     check(km.n == 1 and km[1] == "umctp_boxes_01_0", "來源選 MOD：只列那個 MOD 的")
     local fam = W.filter(st({ cat = "f:furniture_seat" }))
@@ -1231,11 +1233,40 @@ do
     local favs = { n = 3, "furniture_seat_01_1", "gone_01_0", "floors_interior_01_0" }
     local fv = W.filter(st({ tab = "furniture", cat = "fav", fav = favs }))
     check(fv.n == 1 and fv[1] == "furniture_seat_01_1", "最愛：這個伺服器沒有的略過，照頁籤篩")
+    do
+        local favSrc = W.filter(st({ cat = "fav", query = "UMCTP mod", fav = { n = 2, "furniture_seat_01_0", "umctp_boxes_01_0" } }))
+        check(favSrc.n == 1 and favSrc[1] == "umctp_boxes_01_0", "最愛＋搜尋來源 MOD 名：和一般清單搜得到的一樣")
+        W.st.recent = { n = 0 }
+        W.addRecent("a_1")
+        W.addRecent("b_2")
+        W.addRecent("c_3")
+        W.addRecent("a_1")
+        local r = W.st.recent
+        check(r.n == 3 and r[1] == "a_1" and r[2] == "c_3" and r[3] == "b_2", "最近使用：新的在前，舊的照順序留著，不重複")
+        local realReader, realWriter = getFileReader, getFileWriter
+        local wrote
+        getFileWriter = function()
+            return { write = function(_, s) wrote = s end, close = function() end }
+        end
+        getFileReader = function()
+            return { readLine = function() error("disk read failed") end, close = function() end }
+        end
+        Fav.load()
+        local _, saved = Fav.toggle("x_1")
+        check(saved == false and wrote == nil, "最愛檔讀失敗：不寫檔（不拿空清單蓋掉檔裡的最愛），回報沒存到")
+        getFileReader = function() return nil end -- 檔案不存在
+        Fav.list, Fav.set = { n = 0 }, {}
+        Fav.load()
+        _, saved = Fav.toggle("x_1")
+        check(saved == true and wrote == "x_1\n", "最愛檔不存在：當空清單，加入後寫檔")
+        getFileReader, getFileWriter = realReader, realWriter
+        Fav.list, Fav.set = { n = 0 }, {}
+    end
     local groups = W.categories("all")
     local famIds = {}
     for i, it in ipairs(groups[3].items) do famIds[i] = it.id end
-    check(table.concat(famIds, ",") == "f:floors_interior,f:furniture_seat,f:umctp_boxes",
-        "分類的圖塊組：照顯示名排序，管理員關掉的不列")
+    check(table.concat(famIds, ",") == "f:aaa_crates,f:floors_interior,f:furniture_seat,f:umctp_boxes",
+        "分類的圖塊組：照顯示名排序（不是加入順序），管理員關掉的不列")
     local opts = W.sources()
     check(#opts == 3 and opts[1].id == "all" and opts[2].id == "vanilla" and opts[3].id == "UMCTP",
         "來源下拉：全部、原版、各 MOD")
@@ -1303,10 +1334,38 @@ do
         return k .. "(" .. table.concat(a, ",") .. ")"
     end
     local allKeyed = true
-    for code in pairs(Messages.CODES) do
-        if not Messages.refusal(code, {}):find("IGUI_MBLD_Refuse_" .. code, 1, true) then allKeyed = false end
+    -- 介面用到的鍵在 EN、CH 都要有：Lua 裡寫死的鍵（Family_ 用 getTextOrNull，可以沒有），加上拼出來的
+    -- 拒絕碼、種類、頁籤、拆除方式、朝向、工具。getText 換掉了，只能讀 json 檔本身
+    do
+        local W = MinidoracatBuilder.Window
+        local want = {}
+        for _, file in ipairs({ "Window", "Cursor", "Names", "Messages", "Favorites" }) do
+            local f = assert(io.open(MEDIA .. "/client/MinidoracatBuilder/" .. file .. ".lua", "rb"))
+            for k in f:read("*a"):gmatch('"(IGUI_MBLD_[%w_]+)"') do
+                if k:sub(-1) ~= "_" and k:sub(1, 17) ~= "IGUI_MBLD_Family_" then want[k] = true end
+            end
+            f:close()
+        end
+        for code in pairs(Messages.CODES) do want["IGUI_MBLD_Refuse_" .. code] = true end
+        for _, kinds in pairs(W.TAB_KINDS) do
+            for _, k in ipairs(kinds) do want["IGUI_MBLD_Kind_" .. k] = true end
+        end
+        for _, t in ipairs(W.TABS) do want["IGUI_MBLD_Tab_" .. t] = true end
+        for _, r in ipairs({ "pickup", "scrap", "materials", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
+        for d = 0, 4 do want["IGUI_MBLD_Face_" .. d] = true end
+        for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK" }) do want["IGUI_MBLD_Tool_" .. t] = true end
+        local missing = {}
+        for _, lang in ipairs({ "EN", "CH" }) do
+            local f = assert(io.open(MEDIA .. "/shared/Translate/" .. lang .. "/IG_UI.json", "rb"))
+            local have = {}
+            for k in f:read("*a"):gmatch('"(IGUI_MBLD_[%w_]+)"%s*:') do have[k] = true end
+            f:close()
+            for k in pairs(want) do
+                if not have[k] then missing[#missing + 1] = lang .. ":" .. k end
+            end
+        end
+        check(#missing == 0, "介面用到的翻譯鍵 EN、CH 都有 " .. table.concat(missing, " "))
     end
-    check(allKeyed, "每個拒絕碼都有自己的訊息鍵")
     for _, code in ipairs({ "OFF", "NOT_ALLOWED", "STATE", "STALE", "RATE_LIMITED", "BAD_REQUEST", "NO_INTENT", "UNKNOWN",
         "UNSUPPORTED", "DISABLED", "BAD_FACE", "TOO_FAR", "UNREACHABLE", "NOT_LOADED", "SAFEHOUSE", "PERM_DENIED",
         "OUTSIDE_SAFEHOUSE", "BLOCKED", "NO_MATERIAL", "NO_TOOL", "INTERNAL", "WALK" }) do

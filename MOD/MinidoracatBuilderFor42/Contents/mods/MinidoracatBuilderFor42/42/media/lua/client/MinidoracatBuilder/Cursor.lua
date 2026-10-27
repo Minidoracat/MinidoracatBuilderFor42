@@ -22,7 +22,7 @@ local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials,
 local Class, Overlay
 local LOG = "[MinidoracatBuilderFor42] "
 local DRAG = { floor = true, wall = true, fence = true } -- 能按住拖一排的種類（第三階段的決定）
-local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；內容沒變就不重算預覽
+local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算走不到（MP 的 placed 比客戶端動作結束晚到）
 local ICON, PAD, BOTTOM = 16, 6, 200
@@ -110,18 +110,6 @@ function Cursor.preview(player, name, d, anchors, S)
         out[i] = { a = a, code = code, extra = extra, cells = info and info.cells }
     end
     return out, ok, short
-end
-
--- 摘要內容一樣嗎：只比 a 查過的種類與工具（懶查表，查過才有），在 b 上照樣懶查
-local function sameSummary(a, b)
-    if not a or a.cheat ~= b.cheat then return false end
-    for k, v in pairs(a.items) do
-        if b.items[k] ~= v then return false end
-    end
-    for k, v in pairs(a.tools) do
-        if b.tools[k] ~= v then return false end
-    end
-    return true
 end
 
 -- ---------------------------------------------------------------- 游標物件
@@ -241,18 +229,16 @@ function Cursor:getRBPrompt()
 end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:667-672）
 
--- 每幀被引擎呼叫（DoTileBuilding 的 canBeBuild）。只在按下那格、拉到哪格、朝向、玩家站的格子或材料摘要變了才重算；
--- 沒變時只比數字，不配置。至少一格能蓋就算可蓋。
+-- 每幀被引擎呼叫（DoTileBuilding 的 canBeBuild）。只在按下那格、拉到哪格、朝向、玩家站的格子變了，或每秒一次
+-- （材料摘要重算的同時；目標格被別人占走、讓開、權限變了，材料都不變）才重算；其餘幀只比數字，不配置。
+-- 至少一格能蓋就算可蓋。
 function Cursor:isValid(square)
     if not self.isLeftDown and not self.build then self.lineX, self.lineY = nil, nil end
     local now = getTimestampMs()
     if now - self.sAt >= SUMMARY_MS then
         self.sAt = now
-        local S = Materials.summary(self.character)
-        if not sameSummary(self.S, S) then
-            self.S = S
-            self.sGen = self.sGen + 1
-        end
+        self.S = Materials.summary(self.character)
+        self.sGen = self.sGen + 1
     end
     local p = self.character
     local ax, ay, az = square:getX(), square:getY(), square:getZ()
@@ -533,6 +519,10 @@ function Cursor.onResult(cmd, args)
     if not w then return end
     local n = w.n or (Client.pending and Client.pending.n)
     if args.n ~= n then return end
+    if cmd ~= "accepted" then
+        local c = Cursor.get(w.player:getPlayerNum())
+        if c then c.kgen = nil end -- 剛蓋好或被拒：下一幀重算預覽，不等每秒那一次
+    end
     if cmd == "accepted" then
         w.accepted = true
     elseif cmd == "placed" then

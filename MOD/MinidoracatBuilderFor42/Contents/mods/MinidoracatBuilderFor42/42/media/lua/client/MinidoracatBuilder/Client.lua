@@ -17,21 +17,21 @@ Client.results = {}  -- 伺服器回覆（refused／placed），新的在後；�
 -- Client.onResult(cmd, args)：游標設定（Cursor.lua）；每則回覆（accepted／refused／placed）收進 results 之後呼叫
 local lastNonce = getTimestampMs() % 1000000
 
+-- 回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
 local function walkTo(player, kind, spr, c)
     local sq = getCell():getGridSquare(c[1], c[2], c[3])
-    if not sq then return end
+    if not sq then return nil end
     if Entry.EDGE[kind] then
         local north = Entry.north(kind, spr)
-        luautils.walkAdjWall(player, sq, north, true) -- 原版 ISBuildingObject:walkTo 的牆寫法
-    else
-        -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）
-        local cell, own = getCell(), {}
-        for _, d in ipairs(Entry.cells(spr)) do
-            local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
-            if o then own[#own + 1] = o end
-        end
-        luautils.walkAdj(player, sq, true, own)
+        return luautils.walkAdjWall(player, sq, north, true) -- 原版 ISBuildingObject:walkTo 的牆寫法
     end
+    -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）
+    local cell, own = getCell(), {}
+    for _, d in ipairs(Entry.cells(spr)) do
+        local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
+        if o then own[#own + 1] = o end
+    end
+    return luautils.walkAdj(player, sq, true, own)
 end
 
 -- 蓋 e（項目 ID）朝向 d（0＝項目本身那一面、1..4＝N、E、S、W），每個原點 cells[i] = { x, y, z } 一項。
@@ -63,10 +63,14 @@ function Client.build(player, e, d, cells)
 end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
+-- 走不到的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導；佇列空了以後 Cursor.tick 提示走不到
 local function queue(b)
     b.queued = true
     for i, c in ipairs(b.cells) do
-        walkTo(b.player, b.kind, b.spr, c)
+        if walkTo(b.player, b.kind, b.spr, c) == false then
+            print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
+            return
+        end
         ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(b.player, b.n, i))
     end
 end

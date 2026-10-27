@@ -34,8 +34,8 @@ end
 Favorites.list, Favorites.set = { n = 0 }, {}
 local loaded = false
 
+-- 讀成功（或檔案不存在）才算載入；讀到一半出錯時不載入，下次再讀，也不准寫（不然空清單會蓋掉檔裡的最愛）
 function Favorites.load()
-    loaded = true
     local ok, err = pcall(function()
         local reader = getFileReader(Favorites.FILE, false) -- 檔案不存在回 nil（createIfNull＝false）
         if not reader then return end
@@ -47,17 +47,24 @@ function Favorites.load()
         reader:close()
         Favorites.list, Favorites.set = Favorites.parse(table.concat(parts, "\n"))
     end)
+    loaded = ok
     if not ok then print(LOG .. "favorites load failed: " .. tostring(err)) end
 end
 
+-- 回 true＝寫進檔案了
 function Favorites.save()
+    if not loaded then
+        print(LOG .. "favorites not saved: the file could not be read")
+        return false
+    end
     local ok, err = pcall(function()
         local writer = getFileWriter(Favorites.FILE, true, false)
-        if not writer then return end
+        if not writer then error("no writer") end
         writer:write(Favorites.serialize(Favorites.list))
         writer:close()
     end)
     if not ok then print(LOG .. "favorites save failed: " .. tostring(err)) end
+    return ok
 end
 
 -- 第一次用到才讀檔（不在載入 Lua 時碰硬碟）
@@ -69,7 +76,7 @@ function Favorites.has(name)
     return Favorites.set[name] == true
 end
 
--- 加入或移除，馬上寫檔；回新的狀態（true＝現在是最愛）
+-- 加入或移除，馬上寫檔；回新的狀態（true＝現在是最愛）, 有沒有寫進檔案
 function Favorites.toggle(name)
     Favorites.ensure()
     local list = Favorites.list
@@ -88,8 +95,7 @@ function Favorites.toggle(name)
         list.n = list.n + 1
         list[list.n] = name
     end
-    Favorites.save()
-    return Favorites.set[name] == true
+    return Favorites.set[name] == true, Favorites.save()
 end
 
 return Favorites

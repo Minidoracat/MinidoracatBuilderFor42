@@ -124,6 +124,18 @@ function Materials.summary(player)
     return { items = items, tools = tools, cheat = player:isBuildCheat() }
 end
 
+-- 兩份摘要對已經查過的東西一樣嗎：只比 a 查過的種類與工具（b 照樣懶查）。介面用它判斷要不要清掉缺料標示。
+function Materials.same(a, b)
+    if not a or not b or a.cheat ~= b.cheat then return false end
+    for k, v in pairs(a.items) do
+        if b.items[k] ~= v then return false end
+    end
+    for k, v in pairs(a.tools) do
+        if b.tools[k] ~= v then return false end
+    end
+    return true
+end
+
 -- 摘要夠不夠付 cost（Cost.sum 的結果）。回 missing（fullType → 還差幾個）或 nil、tools（缺的 ItemTag 欄位名）或 nil；
 -- 同一個玩家狀態下，和 plan 的 missing、tools 相同（plan 成功時兩個都是 nil）。不看建造作弊。
 function Materials.short(S, cost)

@@ -33,8 +33,8 @@ local CATALOG_MS = 500  -- 整理中每 0.5 秒才重設方格（bt-perf §9.2�
 local SUMMARY_MS = 1000 -- 材料摘要每秒最多重算一次
 local BUDGET_MS = 2     -- 每幀補格子、缺料檢查的時間預算
 local RECENT_MAX = 30
-local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的不到百格）
-local DIM_MAX = 256     -- 缺料快取（契約：最多 256 項）
+local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的最多約 300 格）
+local DIM_MAX = 1024    -- 缺料快取：滿了整張清掉，要比一個畫面看得到的格子多很多（4K 大視窗約 300 格）
 
 -- 頁籤與種類（主代理已定；只列 Entry.BUILDABLE，第四階段再加樓梯、屋頂、燈、窗簾）
 W.TABS = { "all", "floor", "wall", "doorWindow", "furniture", "decor" }
@@ -215,21 +215,63 @@ local function exactBucket(q)
     return nil
 end
 
--- 最愛、最近使用：幾十項，逐項解析（這個伺服器沒有、被關掉的 resolve 回 nil，就不列；DD:133）
+-- 搜尋字命中的 tileset（命中＝整桶）與有名稱的項目。一般清單和最愛／最近使用共用，搜得到的範圍一樣。
+-- 回 setHit（tileset → true）、nameHit（種類 → tileset → { n, 名稱… }，照名稱表順序）、named（名稱 → true）。
+local function queryHits(ql)
+    local setHit, nameHit, named = {}, {}, {}
+    local keys, sets = Index.setKey, Index.setName
+    for i = 1, keys.n do
+        if string.find(keys[i], ql, 1, true) then setHit[sets[i]] = true end
+    end
+    keys = Index.nameKey
+    local nk, ns, ni = Index.nameKind, Index.nameSet, Index.nameItem
+    for i = 1, keys.n do
+        if string.find(keys[i], ql, 1, true) then
+            local byKind = nameHit[nk[i]]
+            if not byKind then
+                byKind = {}
+                nameHit[nk[i]] = byKind
+            end
+            local arr = byKind[ns[i]]
+            if not arr then
+                arr = { n = 0 }
+                byKind[ns[i]] = arr
+            end
+            arr.n = arr.n + 1
+            arr[arr.n] = ni[i]
+            named[ni[i]] = true
+        end
+    end
+    return setHit, nameHit, named
+end
+
+-- 最愛、最近使用：幾十項，逐項解析（這個伺服器沒有、被關掉的 resolve 回 nil，就不列；DD:133）。
+-- 搜尋除了一般清單的命中（來源、圖塊組、英文原名），清單短，另外逐項比顯示名與完整圖塊名。
 local function filterList(st, list, ql, kinds)
     local want = {}
     for _, k in ipairs(kinds) do want[k] = true end
+    local setHit, named = EMPTY, EMPTY
+    if ql ~= "" then
+        local _
+        setHit, _, named = queryHits(ql)
+    end
     local out = { n = 0 }
     for i = 1, list.n do
         local name = list[i]
         local e = Entry.resolve(name)
         if e and want[e.kind] and (st.source == "all" or W.sourceOf(e.tileset) == st.source)
-            and (ql == "" or string.find(string.lower(Names.of(name, e.kind) .. "|" .. name), ql, 1, true)) then
+            and (ql == "" or setHit[e.tileset] or named[name]
+                or string.find(string.lower(Names.of(name, e.kind) .. "|" .. name), ql, 1, true)) then
             out.n = out.n + 1
             out[out.n] = name
         end
     end
     return out
+end
+
+-- 分類標籤上的數量：這個頁籤、來源下列得出來的筆數
+function W.mineCount(list, kinds)
+    return filterList({ source = W.st.source }, list, "", kinds).n
 end
 
 -- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"f:圖塊組"）, source（"all"／"vanilla"／MOD ID）,
@@ -261,31 +303,7 @@ function W.filter(st)
         fam = cat:sub(3)
     end
     local setHit, nameHit
-    if ql ~= "" then
-        setHit, nameHit = {}, {}
-        local keys, sets = Index.setKey, Index.setName
-        for i = 1, keys.n do
-            if string.find(keys[i], ql, 1, true) then setHit[sets[i]] = true end
-        end
-        keys = Index.nameKey
-        local nk, ns, ni = Index.nameKind, Index.nameSet, Index.nameItem
-        for i = 1, keys.n do
-            if string.find(keys[i], ql, 1, true) then
-                local byKind = nameHit[nk[i]]
-                if not byKind then
-                    byKind = {}
-                    nameHit[nk[i]] = byKind
-                end
-                local arr = byKind[ns[i]]
-                if not arr then
-                    arr = { n = 0 }
-                    byKind[ns[i]] = arr
-                end
-                arr.n = arr.n + 1
-                arr[arr.n] = ni[i]
-            end
-        end
-    end
+    if ql ~= "" then setHit, nameHit = queryHits(ql) end
     local out = { n = 0 }
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
     for _, k in ipairs(kinds) do
@@ -329,8 +347,9 @@ function W.categories(tab)
             end
         end
     end
-    local mine = { { id = "fav", label = counted(getText("IGUI_MBLD_Cat_Fav"), Favorites.list.n), icon = "markerStar" },
-        { id = "recent", label = counted(getText("IGUI_MBLD_Cat_Recent"), W.st.recent.n), icon = "clock" } }
+    -- 最愛、最近使用的數量＝這個頁籤、來源下列得出來的（檔裡有、這個伺服器沒有的不算）
+    local mine = { { id = "fav", label = counted(getText("IGUI_MBLD_Cat_Fav"), W.mineCount(Favorites.list, kinds)), icon = "markerStar" },
+        { id = "recent", label = counted(getText("IGUI_MBLD_Cat_Recent"), W.mineCount(W.st.recent, kinds)), icon = "clock" } }
     local kindItems = { { id = "all", label = counted(getText("IGUI_MBLD_Cat_All"), total) } }
     for _, k in ipairs(kinds) do
         if kindN[k] then kindItems[#kindItems + 1] = { id = "k:" .. k, label = counted(Names.kind(k), kindN[k]) } end
@@ -415,10 +434,20 @@ local function itemTexOf(ft)
 end
 
 -- 缺料或缺工具：true；項目解析不了（Check.affordable 回 total nil）也算不能蓋
+-- 每幀替看得到的格子補，所以包 pcall：哪個圖塊的屬性讓成本計算丟錯，標成缺料（不能蓋）並只記一次 log，
+-- 不要每幀重丟、整個狀態列停住
+local shortErrLogged = false
 local function isShort(S, name)
     local C = B.Check
     if not (C and C.affordable) then return false end
-    local missing, tools, total = C.affordable(S, name)
+    local ok, missing, tools, total = pcall(C.affordable, S, name)
+    if not ok then
+        if not shortErrLogged then
+            shortErrLogged = true
+            print(LOG .. "cost check failed for " .. tostring(name) .. ": " .. tostring(missing))
+        end
+        return true
+    end
     return total == nil or missing ~= nil or tools ~= nil
 end
 W.isShort = isShort
@@ -663,7 +692,20 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     y = y + lh
     text(ops, Text.fit(getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), dw, v.font),
         0, y, c.textMuted, v.font)
-    y = y + lh + 4
+    y = y + lh
+    -- 拆除方式放在材料前面：詳情不能捲動，矮的視窗畫不下最後幾行；只能砸、不退料的照樣能蓋，
+    -- 蓋之前一定要看得到（設計稿 DD:596-606）
+    local refund = Cost.refund and Cost.refund(e.kind, e.spr)
+    if refund then
+        local none = refund == "none"
+        local x = none and 20 or 0
+        if none then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw - x, v.font)) do
+            text(ops, line, x, y, none and c.warning or c.textMuted, v.font)
+            y = y + lh
+        end
+    end
+    y = y + 4
     text(ops, getText("IGUI_MBLD_Detail_Materials"), 0, y, c.textMuted, v.font)
     y = y + lh
     local any = false
@@ -709,16 +751,6 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    local refund = Cost.refund and Cost.refund(e.kind, e.spr)
-    if refund then
-        local none = refund == "none" -- 只能砸、不退料：照樣能蓋，蓋之前先讓玩家知道（設計稿 DD:596-606）
-        local x = none and 20 or 0
-        if none then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
-        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw - x, v.font)) do
-            text(ops, line, x, y, none and c.warning or c.textMuted, v.font)
-            y = y + lh
-        end
-    end
 end
 
 -- 窄版選取列：縮圖、名稱、「1×1 · 木板 2、釘子 4」（缺的整行用警告色＋警告圖示）
@@ -731,7 +763,14 @@ local function detailRow(v, ops, e, total, missing, tools)
     local x = thumb + GAP
     local Text = v.UI.Text
     local y = math.floor((dh - 2 * fh - 4) / 2)
-    text(ops, Text.fit(Names.of(e.name, e.kind), dw - x, v.font), x, y, c.text, v.font)
+    -- 只能砸、不退料的在名稱那行右邊標出來（窄版沒有完整詳情）
+    local nameW = dw - x
+    if Cost.refund and Cost.refund(e.kind, e.spr) == "none" then
+        local s = getText("IGUI_MBLD_RefundShort_none")
+        add(ops, { t = "textR", s = s, x = dw, y = y, c = c.warning, f = v.font })
+        nameW = nameW - getTextManager():MeasureStringX(v.font, s) - GAP
+    end
+    text(ops, Text.fit(Names.of(e.name, e.kind), nameW, v.font), x, y, c.text, v.font)
     local fw, fd = footprint(e.spr)
     local parts = {}
     for ft, need in pairs(total.items) do
@@ -816,12 +855,16 @@ function W.pump(panel)
     end
     if v.sumDirty and p and now - v.sumAt >= SUMMARY_MS then
         local M = B.Materials
-        v.S = M and M.summary and M.summary(p) or nil
+        local S = M and M.summary and M.summary(p) or nil
         v.sumAt, v.sumDirty = now, false
-        v.dim, v.dimN = {}, 0
-        v.detailDirty = true
-        if W.st.only then
-            if v.aff then v.affStale = true else W.refilter(true) end
+        -- 走路換格時大多沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
+        if not (S and M.same(v.S, S)) then
+            v.S = S
+            v.dim, v.dimN = {}, 0
+            v.detailDirty = true
+            if W.st.only then
+                if v.aff then v.affStale = true else W.refilter(true) end
+            end
         end
     end
     if v.detailDirty then
@@ -1009,12 +1052,12 @@ function W.clearSearch()
     W.refilter(false)
 end
 
-local function addRecent(name)
+function W.addRecent(name)
     local old, list = W.st.recent, { n = 1, name }
     for i = 1, old.n do
         if old[i] ~= name and list.n < RECENT_MAX then
             list.n = list.n + 1
-            list[list.n] = name
+            list[list.n] = old[i]
         end
     end
     W.st.recent = list
@@ -1024,7 +1067,8 @@ function W.toggleFavorite()
     local v = W.v
     local name = v and v.selName
     if not name then return end
-    Favorites.toggle(name)
+    local _, saved = Favorites.toggle(name)
+    if not saved then notify(getText("IGUI_MBLD_Fav_NotSaved")) end
     v.detailDirty = true
     W.refreshCats(v)
     if W.st.cat == "fav" then W.refilter(true) end
@@ -1041,7 +1085,7 @@ function W.build()
         print(LOG .. "Cursor is missing, cannot start building")
         return
     end
-    addRecent(name)
+    W.addRecent(name)
     W.st.picked = nil
     C.onEnd = W.onCursorEnd
     local hide = W.usingPad()
@@ -1232,7 +1276,9 @@ function W.create(UI)
     -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3908-3934）
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
-    local w = math.max(math.floor(360 * s), math.min(sw - 40, math.max(math.floor(760 * s), math.floor(sw * 0.62))))
+    -- 寬度最多約半個畫面、靠右：角色在畫面中央，放置時視窗留著（滑鼠玩家），不能蓋住要蓋的地方。
+    -- 1080p 實機（E2E ui-mp）用 0.62 時視窗從中央左邊開始，虛影整個被蓋住。
+    local w = math.max(math.floor(360 * s), math.min(sw - 40, math.max(math.floor(760 * s), math.floor(sw * 0.47))))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
         tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0, sumDirty = true }
@@ -1361,6 +1407,15 @@ function W.open(playerNum)
     end
     v.hiddenForBuild = false
     v.sumDirty = true
+    -- 管理員改了沙盒（關掉或打開來源、圖塊組、成本倍率）：重開視窗時重排來源、分類與清單
+    local dg = Entry.digest()
+    if v.digest ~= dg then
+        if v.digest then
+            W.refreshCatalog(v)
+            v.detailDirty = true
+        end
+        v.digest = dg
+    end
     v.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）
     v.win:bringToTop()
     return true
