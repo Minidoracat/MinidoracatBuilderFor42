@@ -229,10 +229,32 @@ function Cursor:getRBPrompt()
 end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:667-672）
 
+-- 滑鼠在任何介面上（原版 ISMoveableCursor.lua:301-323 同寫法；E2E 可換掉）。每幀一次 Java 迴圈，不配置。
+function Cursor.mouseOverUI()
+    local uis = UIManager.getUI()
+    for i = 0, uis:size() - 1 do
+        if uis:get(i):isMouseOver() then return true end
+    end
+    return false
+end
+
 -- 每幀被引擎呼叫（DoTileBuilding 的 canBeBuild）。只在按下那格、拉到哪格、朝向、玩家站的格子變了，或每秒一次
 -- （材料摘要重算的同時；目標格被別人占走、讓開、權限變了，材料都不變）才重算；其餘幀只比數字，不配置。
 -- 至少一格能蓋就算可蓋。
+-- 滑鼠玩家在介面上按下（點建造視窗、別的面板）不算建造：原版建造鍵只排除物品欄
+-- （CharacterInputKeyBinding.isKeyDownInWorld、UIManager.isMouseOverInventory），點別的介面放開時會蓋在介面底下
+-- 看不到的格子。從世界按下、拖過介面的照算（同 ISMoveableCursor）。沒按時滑鼠在介面上也不算可蓋，虛影與提示框收起。
 function Cursor:isValid(square)
+    if not self.joypad then
+        if self.isLeftDown or self.build then
+            if self.pressUI == nil then self.pressUI = Cursor.mouseOverUI() end
+            self.overUI = self.pressUI
+        else
+            self.pressUI = nil
+            self.overUI = Cursor.mouseOverUI()
+        end
+        if self.overUI then return false end
+    end
     if not self.isLeftDown and not self.build then self.lineX, self.lineY = nil, nil end
     local now = getTimestampMs()
     if now - self.sAt >= SUMMARY_MS then
@@ -349,7 +371,7 @@ local function overlayRender(self)
     if getCell():getDrag(c.player) ~= c then return end -- 已關掉的游標，removeFromUIManager 排隊中這一幀還會畫
     local p, ox, oy, warn, UI = c.player, self:getAbsoluteX(), self:getAbsoluteY(), c.warn, self.UI
     local gx, gy, gz, gbad = c.gx, c.gy, c.gz, c.gbad
-    for i = 1, c.gn do
+    for i = 1, c.overUI and 0 or c.gn do -- 滑鼠在介面上時虛影收起，警告三角也不畫
         if gbad[i] then
             local sx = isoToScreenX(p, gx[i] + 0.5, gy[i] + 0.5, gz[i]) - ox - ICON / 2
             local sy = isoToScreenY(p, gx[i] + 0.5, gy[i] + 0.5, gz[i]) - oy - ICON / 2
@@ -425,7 +447,7 @@ function Cursor:layout()
     o:setY(getPlayerScreenTop(self.player) + getPlayerScreenHeight(self.player) - o.height - BOTTOM)
     local t = self.tooltip
     t.description = self.tip or ""
-    t:setVisible(self.tip ~= nil)
+    t:setVisible(self.tip ~= nil and not self.overUI)
 end
 
 function Cursor:hideUI()
@@ -447,6 +469,10 @@ end
 -- 已經關掉的游標可能被別的 MOD 再 render 一次，這時收掉自己的 UI 就走。
 function Cursor:render(x, y, z, square)
     if getCell():getDrag(self.player) ~= self then return self:hideUI() end
+    self:showUI()
+    local t, show = self.tooltip, self.tip ~= nil and not self.overUI
+    if t:getIsVisible() ~= show then t:setVisible(show) end
+    if self.overUI then return end
     local floor = self:getFloorCursorSprite()
     local gx, gy, gz, gspr, gbad, gred, gyoff = self.gx, self.gy, self.gz, self.gspr, self.gbad, self.gred, self.gyoff
     for i = 1, self.gn do
@@ -461,7 +487,6 @@ function Cursor:render(x, y, z, square)
             floor:RenderGhostTileColor(gx[i], gy[i], gz[i], self.goodR, self.goodG, self.goodB, 0.8)
         end
     end
-    self:showUI()
 end
 
 -- 放開左鍵／手把 A，而且至少一格可蓋（DoTileBuilding:167-170）。只送可蓋的格子；缺料、擋住的跳過。
