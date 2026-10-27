@@ -40,7 +40,10 @@ local METAL = {
 local GROUND = { Dirt = "Base.Dirtbag", Grass = "Base.Dirtbag", Gravel = "Base.Gravelbag", Sand = "Base.Sandbag" }
 local TOOLS = { wood = { "HAMMER" }, masonry = { "MASONS_TROWEL" }, metal = { "BLOW_TORCH", "WELDING_MASK" }, ground = {} }
 local MASONRY_TYPES = { Brick = true, Stone = true, Cinderblock = true, Concrete = true, Ceramic = true }
--- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給）：技能跟工具同一套材質，土、碎石、沙地板照原版不給
+-- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給）：有拆解材質的照原版拆第一個 Material 的技能（使用者
+-- 2026-10-27 選 B；原版拆解經驗與退料機率都看這個技能，ISMoveableSpriteProps.lua:3812-3830,3834-3838），
+-- 例：Electric 電工、Brick 砌磚、Stone 力量、金屬類焊接，其餘木工。跟著 MaterialType 給的話，木工高的人能用
+-- 「材質是木頭、MaterialType 是金屬」的東西便宜練焊接。沒有拆解材質的照工具那套材質；土、碎石、沙地板照原版不給
 -- （entity_floor_dirt／gravel／sand 沒有 xpAward）。每付一件材料 5 點，和原版一級木地板一樣
 -- （WoodFloorLvl1：1 木板＋1 釘子給 Woodwork 10，scripts/generated/entities/walls/entity_wood_floorlvl1.txt）。
 -- 照付的件數算：倍率改了經驗跟著改，沒付材料（建造作弊；倍率 0 時不照拆解價收的）就沒有。
@@ -61,7 +64,8 @@ end
 -- 原版拆解產出的上限（ISMoveableSpriteProps:getScrapItemsList、addScrapItemToList，shared/Moveables）：
 -- 每個 Material 取 returnItemsStatic（有的話）否則 returnItems；每項 maxAmount 輪，可拆（CanScrap）時 Small 減半
 -- （至少 1）、Large 加倍；沙包固定 3。原版每輪有機率，這裡取每輪都中，所以不低於拆掉換到的。
--- 回 any（有產出）, back（拆掉可能把付的料全拿回）。back 有兩種：
+-- 回 any（有產出）, back（拆掉可能把付的料全拿回）, perk（第一個 Material 的拆解技能名；Perks.MAX＝原版不給，回 false）。
+-- back 有兩種：
 -- ① 沒有 CanScrap、不能搬、第一個 Material 有產出的 IsoThumpable：原版改走 ISThumpableSpriteProps，照 buildMaterials
 --    每項退 1..v 件（v＝付的數量，1 件的一定全退；ISMoveableSpriteProps.lua:41-44,104-122,4232,4323-4340）。
 --    門窗不是 IsoThumpable，不走這條。
@@ -69,13 +73,17 @@ end
 local NOT_THUMPABLE = { door = true, window = true }
 local function scrapInto(kind, p, out)
     local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
-    if not defs then return false, false end
+    if not defs then return false, false, nil end
     local size = p:has("CanScrap") and (p:get("ScrapSize") or "Medium") or nil
-    local any, back = false, false
+    local any, back, perk = false, false, nil
     for i, key in ipairs({ "Material", "Material2", "Material3" }) do
         local mat = p:get(key)
         local def = mat and mat ~= "Undefined" and defs.getScrapDefinition(mat)
         if def then
+            if i == 1 and def.perk then -- Perk 的 toString 是技能 ID（PerkFactory.java:320-322）
+                perk = tostring(def.perk)
+                if perk == "MAX" then perk = false end
+            end
             local list = def.returnItemsStatic
             if not list or #list < 1 then list = def.returnItems end
             if i == 1 and list and #list > 0 and not size and not NOT_THUMPABLE[kind] and not p:has("IsMoveAble") then
@@ -98,7 +106,7 @@ local function scrapInto(kind, p, out)
             end
         end
     end
-    return any, back
+    return any, back, perk
 end
 
 local function copyInto(src, out)
@@ -111,12 +119,14 @@ function Cost.of(kind, spr, multiplier)
     local fam = family(kind, p)
     local items = {}
     local m = multiplier or 1
-    local scrapped, back = scrapInto(kind, p, items)
+    local scrapped, back, scrapPerk = scrapInto(kind, p, items)
+    local perk = PERK[fam]
     if scrapped then
         -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
         -- back ① 那類照 buildMaterials 退 1..v 件。兩種都不會退得比這裡收的多。
         -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
         if m < 1 then m = 1 end
+        if scrapPerk ~= nil then perk = scrapPerk end
     else
         local base
         if fam == "ground" then
@@ -128,6 +138,7 @@ function Cost.of(kind, spr, multiplier)
         end
         if not base then -- 這個材質沒有對應的配方（例：磚造家具）：照木頭
             fam = "wood"
+            perk = PERK.wood
             base = WOOD[kind] or SMALL
         end
         copyInto(base, items)
@@ -139,7 +150,7 @@ function Cost.of(kind, spr, multiplier)
     end
     local tools = {}
     for i, t in ipairs(TOOLS[fam]) do tools[i] = t end
-    return { items = out, tools = tools, perk = not back and PERK[fam] or nil, back = back }
+    return { items = out, tools = tools, perk = not back and perk or nil, back = back }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
@@ -159,7 +170,8 @@ end
 
 -- 一個項目各格的成本（sprites＝各格 sprite，依 Entry.cells 的順序）。原版拆多格物件時每一片都照被點的那片材質給
 -- （ISMoveableSpriteProps.lua:3481-3495），各片材質不一定相同（原版有 4 組，例：病床椅），所以多格的每一格都收
--- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗。
+-- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗；
+-- 各片的經驗技能不同時，退料機率看點的那片，拿自己高的技能拆就能便宜練另一個，也整組不給。
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
     for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
@@ -171,12 +183,15 @@ function Cost.forCells(kind, sprites, multiplier)
         end
     end
     local tools = Cost.sum(each).tools
-    local back = false
-    for _, c in ipairs(each) do back = back or c.back end
+    local back, same = false, true
+    for _, c in ipairs(each) do
+        back = back or c.back
+        same = same and c.perk == each[1].perk
+    end
     for i = 1, #each do
         local items = {}
         for ft, n in pairs(top) do items[ft] = n end
-        each[i] = { items = items, tools = tools, perk = not back and each[i].perk or nil, back = back }
+        each[i] = { items = items, tools = tools, perk = same and not back and each[i].perk or nil, back = back }
     end
     return each
 end

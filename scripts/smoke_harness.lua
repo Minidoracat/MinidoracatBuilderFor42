@@ -616,10 +616,10 @@ c = cost("floor", { keys = { MaterialType = "Gravel" } })
 check(c.items["Base.Gravelbag"] == 1 and #c.tools == 0, "碎石地板：一袋碎石、不用工具")
 c = cost("door", { keys = { MaterialType = "Brick" } })
 check(c.items["Base.Hinge"] == 2 and c.tools[1] == "HAMMER", "磚造門沒有對應配方：照木門")
-scrapDefs.Wood = { returnItemsStatic = { { returnItem = "Base.Plank", maxAmount = 2 } } }
-scrapDefs.Electric = { returnItems = { { returnItem = "Base.ElectronicsScrap", maxAmount = 1 },
+scrapDefs.Wood = { perk = "Woodwork", returnItemsStatic = { { returnItem = "Base.Plank", maxAmount = 2 } } }
+scrapDefs.Electric = { perk = "Electricity", returnItems = { { returnItem = "Base.ElectronicsScrap", maxAmount = 1 },
     { returnItem = "Base.ElectricWire", maxAmount = 3 } } }
-scrapDefs.Fabric = { returnItems = {} }
+scrapDefs.Fabric = { perk = "Woodwork", returnItems = {} }
 local scrapKeys = { Material = "Wood", Material2 = "Electric", Material3 = "Undefined" }
 c = cost("furniture", { keys = scrapKeys })
 check(c.items["Base.Plank"] == 2 and c.items["Base.ElectronicsScrap"] == 1 and c.items["Base.ElectricWire"] == 3
@@ -656,7 +656,7 @@ check(cost("wall", { flags = { "WallN" } }).perk == "Woodwork" and cost("wall", 
     and cost("wall", { keys = { MaterialType = "Metal_Large" } }).perk == "MetalWelding"
     and cost("door", { keys = { MaterialType = "Brick" } }).perk == "Woodwork"
     and cost("floor", { keys = { MaterialType = "Gravel" } }).perk == nil,
-    "經驗的技能照材質（同工具）：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
+    "沒有拆解材質的經驗照工具那套材質：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
 local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", {}), cost("floor", { keys = { MaterialType = "Brick" } }),
     cost("floor", { keys = { MaterialType = "Gravel" } }) })
 check(xp.Woodwork == 60 and xp.Masonry == 20,
@@ -669,15 +669,25 @@ check(cost("furniture", { keys = { Material = "Wood", IsMoveAble = "" } }).perk 
     and cost("door", { keys = { Material = "Wood" } }).perk == "Woodwork"
     and cost("furniture", { keys = { Material = "Fabric", Material2 = "Wood" } }).perk == "Woodwork",
     "能搬、CanScrap（照機率退）、門、第一個材質沒有產出（拆不了）：照常給經驗")
-scrapDefs.Sandbag = { returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3 } } }
-scrapDefs.Curtain = { returnItemsStatic = { { returnItem = "Base.Sheet", maxAmount = 1, chancePerRoll = 10000 } } }
+scrapDefs.Sandbag = { perk = "Woodwork", returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3 } } }
+scrapDefs.Curtain = { perk = "MAX", returnItemsStatic = { { returnItem = "Base.Sheet", maxAmount = 1, chancePerRoll = 10000 } } }
+scrapDefs.Glass = { perk = "MAX", returnItems = { { returnItem = "Base.Sheet", maxAmount = 1 } } }
 check(cost("solid", { keys = { Material = "Sandbag", CanScrap = "" } }).perk == nil, "沙包牆：拆掉固定退 3 個，不給經驗")
 check(cost("furniture", { keys = { Material = "Curtain", CanScrap = "" } }).perk == nil,
     "每輪機率 ≥ 100 的產出（窗簾）：技能夠就全退，不給經驗")
+c = cost("furniture", { keys = { IsMoveAble = "", Material = "Wood", MaterialType = "Metal_Large" } })
+check(c.perk == "Woodwork" and c.tools[1] == "BLOW_TORCH",
+    "有拆解材質的經驗照第一個材質的拆解技能（退料機率看它），不照 MaterialType；工具仍照 MaterialType")
+check(cost("furniture", { keys = { IsMoveAble = "", Material = "Electric", Material2 = "Wood" } }).perk == "Electricity"
+    and cost("furniture", { keys = { IsMoveAble = "", Material = "Glass", Material2 = "Wood" } }).perk == nil,
+    "第一個材質是電器給電工；拆解技能是 Perks.MAX（原版拆了不給經驗）的不給")
 local ma = sprite("fm_01_0", 912, { keys = { IsMoveAble = "", Material = "Wood" } })
 local mb = sprite("fm_01_1", 913, { keys = { IsMoveAble = "", Material = "Electric", MaterialType = "Metal_Large" } })
 local fm = Cost.forCells("furniture", { ma, mb }, 1)
-check(fm[1].perk == "Woodwork" and fm[2].perk == "MetalWelding", "多格：每格保留自己的技能")
+check(fm[1].perk == nil and fm[2].perk == nil and fm[1].items["Base.Plank"] == 2,
+    "多格各片技能不同（點自己技能高的那片拆，整組照它的機率退）：整組不給經驗，材料照收")
+local same = Cost.forCells("furniture", { ma, sprite("fm_03_1", 915, { keys = { IsMoveAble = "", Material = "Wood" } }) }, 1)
+check(same[1].perk == "Woodwork" and same[2].perk == "Woodwork", "多格各片技能相同：照常給經驗")
 local mixed = Cost.forCells("furniture", { sprite("fm_02_0", 914, { keys = { CanScrap = "", Material = "Curtain" } }), ma }, 1)
 check(next(Cost.xp(mixed)) == nil, "多格有一片拆掉一定全退：點那片拆整組都退，整組不給經驗")
 
