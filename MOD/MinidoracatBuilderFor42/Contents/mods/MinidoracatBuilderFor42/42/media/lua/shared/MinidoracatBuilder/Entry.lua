@@ -109,8 +109,11 @@ function Entry.face(entry, d)
     elseif p:get("Facing") == dir then
         spr = entry.spr
     end
-    if spr and Rules.classify(spr) == entry.kind then return spr end -- 另一面也要是同一種類（排除條件一起重算）
-    return nil
+    if not spr or Rules.classify(spr) ~= entry.kind then return nil end -- 另一面也要是同一種類（排除條件一起重算）
+    -- 樓梯的另一面是另一組，也要湊得成三格（Entry.resolve 只驗項目自己那組）
+    if entry.kind == "stairs" and spr ~= entry.spr
+        and not Rules.stairsSet(IsoSpriteManager.instance:getNamedMap(), spr:getName()) then return nil end
+    return spr
 end
 
 -- 佔地：{ { dx, dy, dz, sprite[, 角色] }, ... }，相對原點那一格。單格就是自己。

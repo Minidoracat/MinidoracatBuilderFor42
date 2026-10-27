@@ -1267,7 +1267,7 @@ end
 
 print("情境十五：Check.item 預覽與伺服器同一份判斷；預覽不補格子、不寫東西")
 do
-    world({ wallN, solidS, crateS, floorS })
+    world({ wallN, sprite("walls_test_01_5", 5005, { flags = { "WallW" }, keys = { WallW = "" } }), solidS, crateS, floorS })
     local kHere = square(56, 44, 0)
     local K = player({ id = 60, x = 56.5, y = 44.5, here = kHere })
     square(57, 44, 0, { moving = { {} } })   -- 格上有人：實心的東西 BLOCKED
@@ -1292,11 +1292,20 @@ do
     local _, _, okInfo = Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV)
     check(okInfo.entry.kind == "wall" and okInfo.cells[1].sq ~= nil and okInfo.costs[1].items["Base.Plank"] == 4
         and okInfo.total.items["Base.Nails"] == 6 and okInfo.total.tools[1] == "HAMMER", "通過時 info 帶格子、各格成本與加總")
-    local realStair = buildUtil.stairIsBlockingPlacement
-    buildUtil.stairIsBlockingPlacement = function(sq, _, north) return north == true and sq:getX() == 56 and sq:getY() == 45 end
-    check(Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV) == "BLOCKED",
-        "北牆擋到樓梯（底片前面、頂片出口那條邊）：擋下（照原版木牆，朝向照牆的邊）")
-    buildUtil.stairIsBlockingPlacement = realStair
+    do -- 區域變數包起來：主程式最多 200 個
+        local realStair = buildUtil.stairIsBlockingPlacement
+        local function edgeCodes(blockNorth) -- 只擋 (56,45) 的某一條邊；回北牆、西牆的結果
+            buildUtil.stairIsBlockingPlacement = function(sq, _, north)
+                return north == blockNorth and sq:getX() == 56 and sq:getY() == 45
+            end
+            return Check.item(K, "walls_test_01_4", 0, { 56, 45, 0 }, PV), Check.item(K, "walls_test_01_5", 0, { 56, 45, 0 }, PV)
+        end
+        local nOnN, wOnN = edgeCodes(true)
+        local nOnW, wOnW = edgeCodes(false)
+        buildUtil.stairIsBlockingPlacement = realStair
+        check(nOnN == "BLOCKED" and wOnN == nil and nOnW == nil and wOnW == "BLOCKED",
+            "牆擋到樓梯（底片前面、頂片出口那條邊）：擋下；照牆佔的邊查（北牆 north＝true、西牆 north＝false，照原版木牆）")
+    end
     holes["58,46,0"], holes["57,46,0"] = true, true
     local before = created
     local cMiss, _, iMiss = Check.item(K, "walls_test_01_4", 0, { 58, 46, 0 }, PV)
@@ -1642,11 +1651,28 @@ local function newKinds()
         sprite("ste_01_2", 2144, { type = T.stairsTW }) }
     local stM = { sprite("stm_01_0", 2145, { type = T.stairsBW }), sprite("stm_01_1", 2146, { type = T.stairsMW, keys = { Material = "Wood" } }),
         sprite("stm_01_2", 2147, { type = T.stairsTW }) }
-    world({ stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave, stE[1], stE[2], stE[3],
-        stM[1], stM[2], stM[3],
+    -- 另一面（Noffset 指到的另一組 N 型）：stg 三片都合法，stf 的中片是實體
+    local function faced(base, id, midFlags)
+        return { sprite(base .. "_0", id, { type = T.stairsBW, keys = { Noffset = "5" } }), sprite(base .. "_1", id + 1, { type = T.stairsMW }),
+            sprite(base .. "_2", id + 2, { type = T.stairsTW }), sprite(base .. "_3", id + 3, { type = T.stairsTN }),
+            sprite(base .. "_4", id + 4, { type = T.stairsMN, flags = midFlags }), sprite(base .. "_5", id + 5, { type = T.stairsBN }) }
+    end
+    local stF, stG = faced("stf_01", 2160, { "EntityScript" }), faced("stg_01", 2166)
+    -- 頂片能拆成零件、底片能搬：原版只拆那一片
+    local stS = { sprite("sts_01_0", 2172, { type = T.stairsBW }), sprite("sts_01_1", 2173, { type = T.stairsMW }),
+        sprite("sts_01_2", 2174, { type = T.stairsTW, keys = { CanScrap = "" } }) }
+    local stI = { sprite("sti_01_0", 2175, { type = T.stairsBW, keys = { IsMoveAble = "" } }), sprite("sti_01_1", 2176, { type = T.stairsMW }),
+        sprite("sti_01_2", 2177, { type = T.stairsTW }) }
+    local list = { stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave, stE[1], stE[2], stE[3],
+        stM[1], stM[2], stM[3], stS[1], stS[2], stS[3], stI[1], stI[2], stI[3],
         curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
         curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
-        curtain("curx_01_4", 2126, "E") })
+        curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N") }
+    for i = 1, 6 do
+        list[#list + 1] = stF[i]
+        list[#list + 1] = stG[i]
+    end
+    world(list)
     local function who(id, x, y)
         local p = player({ id = id, x = x, y = y })
         p.inv:add(item("Base.Hammer", { HAMMER = true }))
@@ -1660,6 +1686,16 @@ local function newKinds()
     check(select(2, Entry.resolve("stw_01_1")) == "UNKNOWN" and Entry.resolve("stw_01_0").kind == "stairs",
         "樓梯只收湊得成三格的底片：中片當項目 UNKNOWN")
     check(select(2, Entry.resolve("ste_01_0")) == "UNKNOWN", "樓梯中片是實體（走原版建造）：整組不收")
+    check(select(2, Entry.resolve("sts_01_0")) == "UNKNOWN" and select(2, Entry.resolve("sti_01_0")) == "UNKNOWN",
+        "樓梯片能拆成零件（頂片 CanScrap）或能搬（底片 IsMoveAble）：原版只拆那一片，整組不收")
+    local FP = who(2160, 41.5, 49.5)
+    local fe = Entry.resolve("stf_01_0")
+    sent = {}
+    Server.intent(FP, { n = 1, e = "stf_01_0", d = 1, c = { 41, 49, 0 }, v = Entry.digest() })
+    check(fe and Entry.face(fe, 1) == nil and Entry.face(Entry.resolve("stg_01_0"), 1) == stG[6]
+        and Check.item(FP, "stf_01_0", 1, { 41, 49, 0 }) == "BAD_FACE"
+        and sent[1] and sent[1].cmd == "refused" and sent[1].args.code == "BAD_FACE",
+        "樓梯另一面的那組中片是實體：那一面不能選（預覽、伺服器都 BAD_FACE），三片都合法的那一面照常可選")
     local mixed = Cost.forCells("stairs", { stM[3], stM[2], stM[1], landing }, 1)
     check(mixed[1].back == true and next(Cost.xp(mixed, player())) == nil,
         "樓梯只有中片有拆解材質：拆中片照退料表可能全拿回，整組不給經驗")
@@ -1802,6 +1838,9 @@ local function newKinds()
         "窗簾擋下：室外（沒有房間、沒有屋頂）、沒有窗框、關著那張（−4 號）不存在、窗框在另一邊")
     framed(57, 57, nil, "e2e_other")
     check(cur("cur_01_5", 56, 57) == "SAFEHOUSE", "面向 W 的窗簾：東邊窗框那格是別人的安全屋，擋下（窗簾那格不是）")
+    square(54, 55, 0)
+    square(54, 56, 0, { owner = "e2e_other" })
+    check(cur("cur_01_6", 54, 55) == "SAFEHOUSE", "面向 N 的窗簾：南邊窗框那格是別人的安全屋，擋下（窗簾那格不是）")
     IsoCurtain = { new = function(_, sq, name, north)
         local o = { name = name, north = north, md = {} }
         function o:getModData() return self.md end

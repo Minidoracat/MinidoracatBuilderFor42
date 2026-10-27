@@ -255,6 +255,9 @@ function Rules.kindOf(name, p, t)
     if tc == "tree" then return nil end
     if tc == "stairs" then -- 目錄只收湊得成三格的（Rules.stairsSet）
         if infiniteWater(p) then return nil end
+        -- 能搬或能拆成零件的樓梯片，原版拆解照一般搬動只拆那一片（ISMoveableSpriteProps.lua:41-44），不整組拆，
+        -- 和三片都寫整組退料表的做法不合（Place.placeStairs）
+        if p:has("CanScrap") or p:has("IsMoveAble") then return nil end
         return "stairs"
     end
     if p:has("GarageDoor") then return "garage" end
@@ -307,7 +310,7 @@ function Rules.classify(spr)
 end
 
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
--- 是樓梯：實體腳本、無限水、不列清單只寫在某一片時整組不收（目錄只分類底片）。
+-- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。
 function Rules.stairsSet(named, bName)
     local spr = named:get(bName)
