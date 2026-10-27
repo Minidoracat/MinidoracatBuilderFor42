@@ -1935,24 +1935,23 @@ do
         function t:get(i) return self.items[i + 1] end
         return t
     end }
-    -- o：on（預設開著）、room（伺服器那格的房間）、mod（能改裝）、mine（本 MOD 蓋的）、lit（sprite 有 lightR，預設有）、
-    -- bulb（預設有）、battery、power（伺服器算有電）、grid（多格的每一片，含自己）
+    -- o：on（預設開著）、room（伺服器那格的房間）、mod（能改裝＝能搬）、mine（帶本 MOD 的建造記號）、bulb（預設有）、
+    -- battery、power（伺服器算有電）、pre（停電前，預設是）、grid（多格的每一片，含自己）
     local function lamp(o)
-        local l = { isLight = true, on = o.on ~= false, room = o.room, mod = o.mod == true, lit = o.lit ~= false,
-            bulb = o.bulb ~= false, battery = o.battery == true, power = o.power == true,
+        local l = { isLight = true, on = o.on ~= false, room = o.room, mod = o.mod == true, bulb = o.bulb ~= false,
+            battery = o.battery == true, power = o.power == true, pre = o.pre ~= false,
             md = o.mine and { builderEntry = "lamp_01_0" } or {}, sync = {} }
-        local props = { has = function(_, k) return k == "lightR" and l.lit end }
         local sq = { getRoom = function() return l.room end }
         function l:isActivated() return self.on end
         function l:setActivated(v) self.on = v end
         function l:getObjectIndex() return 0 end
         function l:getSquare() return sq end
+        function l:hasGridPower() return self.pre end
         function l:getUseBattery() return self.battery end
         function l:hasLightBulb() return self.bulb end
         function l:getCanBeModified() return self.mod end
         function l:hasModData() return next(self.md) ~= nil end
         function l:getModData() return self.md end
-        function l:getSprite() return { getProperties = function() return props end } end
         function l:getSpriteGridObjectsIncludingSelf(list)
             for _, p in ipairs(self.grid or { self }) do list:add(p) end
             return list
@@ -1968,6 +1967,12 @@ do
         end
         return l
     end
+    local function untouched(list)
+        for _, l in ipairs(list) do
+            if l.on ~= l.was or #l.sync > 0 then return false end
+        end
+        return true
+    end
     local A = { complete = function(self) self.object:toggle() return true end }
     Server.wrapToggleLight(A)
     local function press(l) return A.complete({ object = l }) end
@@ -1977,24 +1982,36 @@ do
     press(S3)
     check(off == false and s1 == 0 and S3.on == true and S3.sync[2] == 1 and S3.switched == true,
         "能搬的燈在伺服器沒有房間、算沒電的格子：原版沒切，補切並同步（關、再開）")
-    local mineN, mapN = lamp({ mine = true }), lamp({})
-    local inRoom, battery = lamp({ mod = true, room = {} }), lamp({ mod = true, battery = true })
-    local noBulb, switch = lamp({ mod = true, on = false, bulb = false }), lamp({ mine = true, lit = false })
-    for _, l in ipairs({ mineN, mapN, inRoom, battery, noBulb, switch }) do press(l) end
-    check(mineN.on == false and mapN.on == true and #mapN.sync == 0 and inRoom.on == true and battery.on == true
-        and noBulb.on == false and #noBulb.sync == 0 and switch.on == true,
-        "補切只給玩家放、有光源的燈：本 MOD 蓋的不能搬的燈也切；地圖的燈、伺服器有房間的、用電池的、沒燈泡要開的、牆上開關不補")
-    local B = { complete = function() return false end } -- 被拒（例：Safehouse 的權限包裝在內層）
+    local negatives = { lamp({ mine = true }), lamp({}), lamp({ mod = true, room = {} }), lamp({ mod = true, battery = true }),
+        lamp({ mod = true, on = false, bulb = false }), lamp({ mod = true, pre = false }) }
+    for _, l in ipairs(negatives) do
+        l.was = l.on
+        press(l)
+    end
+    check(untouched(negatives),
+        "只接能搬的燈：帶本 MOD 記號但不能搬的、地圖不能搬的、伺服器有房間的、用電池的、沒燈泡要開的、停電後的都照原版不切")
+    local B = { complete = function() return false end } -- 內層包裝回 false（被拒）
+    local C = { complete = function() end } -- 回 nil：引擎也當成被拒
     Server.wrapToggleLight(B)
-    local denied, powered = lamp({ mod = true }), lamp({ mod = true, power = true })
+    Server.wrapToggleLight(C)
+    local denied, deniedNil, powered = lamp({ mod = true }), lamp({ mod = true }), lamp({ mod = true, power = true })
+    for _, l in ipairs({ denied, deniedNil, powered }) do l.was = l.on end
     B.complete({ object = denied })
+    C.complete({ object = deniedNil })
     press(powered)
-    local a, b = lamp({ mod = true }), lamp({ lit = false })
+    check(untouched({ denied, deniedNil }) and powered.on == false and #powered.sync == 0,
+        "內層回 false 或 nil（被拒）不補；原版已經切了不再切")
+    local a, b = lamp({ mod = true }), lamp({})
     a.grid, b.grid = { a, b }, { a, b }
     press(b)
-    check(denied.on == true and #denied.sync == 0 and powered.on == false and #powered.sync == 0
-        and a.on == false and b.on == false and a.sync[1] == 0 and b.sync[1] == 0,
-        "原版回 false（被拒）不補；原版已經切了不再切；多格從沒光源的那片按，每一片都切、都同步")
+    local c, d = lamp({ mod = true }), lamp({ mod = true, battery = true })
+    local e, f = lamp({ mod = true }), lamp({ mod = true, room = {} })
+    c.grid, d.grid, e.grid, f.grid = { c, d }, { c, d }, { e, f }, { e, f }
+    for _, l in ipairs({ c, d, e, f }) do l.was = l.on end
+    press(c)
+    press(e)
+    check(a.on == false and b.on == false and a.sync[1] == 0 and b.sync[1] == 0 and untouched({ c, d, e, f }),
+        "多格從不能搬的那片按，每一片都切、都同步；有一片用電池或在伺服器的房間裡，整組照原版")
     instanceof, ArrayList = realInst, realList
 end
 

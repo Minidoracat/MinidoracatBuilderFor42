@@ -251,31 +251,32 @@ function Server.complete(player, n, i)
     return true
 end
 
--- 開關燈（設計稿：伺服器只包開關燈動作）。原版 ISToggleLightAction 照伺服器的房間與電力切（IsoLightSwitch.java:490-511）：
--- 自建房屋的房間只在客戶端建（IsoRegions.java:212-214），停電前客戶端算有電、選單有「開燈／關燈」，伺服器沒有房間、
--- 算沒電，按了不切；不能搬的燈那格沒有房間時直接不切（:497-498）。原版跑完、狀態沒變時補切：那格在伺服器沒有房間，
--- 燈是玩家放的（能改裝＝能搬的燈，或本 MOD 蓋的）、有自己的光源（lightR）、不用電池。亮不亮照原版由各客戶端自己判斷
--- 有沒有電（LightingJNI.java:281-294），這裡只切狀態。多格的每一片都切：switchLight 連動別片用的 setActive 會被同樣的
--- 檢查擋下（:542-556）。
+-- 開關燈（設計稿：伺服器只包開關燈動作）。原版 ISToggleLightAction 照伺服器的房間與電力切（IsoLightSwitch.java:490-511）。
+-- 停電前有沒有電看格子在不在房間裡（:425-463），自建房屋的房間只在客戶端建（IsoRegions.java:212-214）：客戶端算有電、
+-- 選單有「開燈／關燈」，伺服器算沒電，按了不切。停電後兩端都看發電機範圍，判斷一致。所以只在停電前、原版沒切、每一片
+-- 所在的格子在伺服器都沒有房間時補切。只接能搬的燈（canBeModified：sprite 帶 lightR 與 IsMoveAble，不論誰放的）；
+-- 不能搬的燈照原版（地圖的燈不接走；本 MOD 蓋的要等伺服器端的建造紀錄），用電池的也照原版。亮不亮照原版由各客戶端
+-- 自己判斷有沒有電（LightingJNI.java:281-294），這裡只切狀態。多格的每一片都切：switchLight 連動別片用的 setActive
+-- 會被同樣的檢查擋下（:542-556）。
 function Server.lightFallback(light, was)
-    if not instanceof(light, "IsoLightSwitch") or light:getObjectIndex() == -1 or light:isActivated() ~= was then
+    if not instanceof(light, "IsoLightSwitch") or light:getObjectIndex() == -1 or light:isActivated() ~= was
+        or not light:hasGridPower() then
         return false
     end
-    local sq = light:getSquare()
-    if not sq or sq:getRoom() or light:getUseBattery() then return false end
     local on = not was
     if on and not light:hasLightBulb() then return false end -- 沒燈泡開不了（:491-493）
     local pieces = ArrayList.new()
     light:getSpriteGridObjectsIncludingSelf(pieces)
-    local mine, lit = false, false
+    local movable = false
     for i = 0, pieces:size() - 1 do
         local o = pieces:get(i)
         if instanceof(o, "IsoLightSwitch") then
-            mine = mine or o:getCanBeModified() or (o:hasModData() and o:getModData().builderEntry ~= nil)
-            lit = lit or (o:getSprite() ~= nil and o:getSprite():getProperties():has("lightR"))
+            local sq = o:getSquare()
+            if not sq or sq:getRoom() or o:getUseBattery() then return false end
+            movable = movable or o:getCanBeModified()
         end
     end
-    if not (mine and lit) then return false end
+    if not movable then return false end
     for i = 0, pieces:size() - 1 do -- 先設好每一片，之後的 switchLight 才不會再對別片走 setActive
         local o = pieces:get(i)
         if instanceof(o, "IsoLightSwitch") then o:setActivated(on and o:hasLightBulb()) end
@@ -291,8 +292,8 @@ function Server.lightFallback(light, was)
     return true
 end
 
--- 在類別上換 complete 就生效（伺服器以 rawget 取，取不到往 metatable 找）。原版先跑；回 false（被拒，例：Safehouse 的
--- 權限包裝）就不補。Safehouse 包在外層或內層都一樣：拒絕時不會呼叫內層，也不會回非 false。
+-- 在類別上換 complete 就生效（伺服器以 rawget 取，取不到往 metatable 找）。原版先跑；回的不是 true 就不補：引擎只把
+-- true 當成功，nil 也算被拒（NetTimedAction.java:131-139）。Safehouse 的權限包裝在開服時才裝、在外層，拒絕時不呼叫內層。
 function Server.wrapToggleLight(A)
     if type(A) ~= "table" or type(A.complete) ~= "function" then
         print(LOG .. "ISToggleLightAction.complete missing, light toggle not wrapped")
@@ -303,7 +304,7 @@ function Server.wrapToggleLight(A)
         local light, was = self.object, nil
         if instanceof(light, "IsoLightSwitch") then was = light:isActivated() end
         local ret = orig(self)
-        if ret ~= false and was ~= nil then
+        if ret == true and was ~= nil then
             local ok, err = pcall(Server.lightFallback, light, was)
             if not ok then print(LOG .. "light toggle fallback failed: " .. tostring(err)) end
         end
