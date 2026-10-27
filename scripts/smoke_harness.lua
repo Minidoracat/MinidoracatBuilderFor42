@@ -1924,6 +1924,80 @@ local function newKinds()
 end
 newKinds()
 
+print("情境二十一：開關燈補切（原版 S3：自建房屋在伺服器沒有房間，停電前切不動）")
+do
+    local realInst, realList = instanceof, ArrayList
+    instanceof = function(o, c) return c == "IsoLightSwitch" and type(o) == "table" and o.isLight == true end
+    ArrayList = { new = function()
+        local t = { items = {} }
+        function t:add(x) self.items[#self.items + 1] = x end
+        function t:size() return #self.items end
+        function t:get(i) return self.items[i + 1] end
+        return t
+    end }
+    -- o：on（預設開著）、room（伺服器那格的房間）、mod（能改裝）、mine（本 MOD 蓋的）、lit（sprite 有 lightR，預設有）、
+    -- bulb（預設有）、battery、power（伺服器算有電）、grid（多格的每一片，含自己）
+    local function lamp(o)
+        local l = { isLight = true, on = o.on ~= false, room = o.room, mod = o.mod == true, lit = o.lit ~= false,
+            bulb = o.bulb ~= false, battery = o.battery == true, power = o.power == true,
+            md = o.mine and { builderEntry = "lamp_01_0" } or {}, sync = {} }
+        local props = { has = function(_, k) return k == "lightR" and l.lit end }
+        local sq = { getRoom = function() return l.room end }
+        function l:isActivated() return self.on end
+        function l:setActivated(v) self.on = v end
+        function l:getObjectIndex() return 0 end
+        function l:getSquare() return sq end
+        function l:getUseBattery() return self.battery end
+        function l:hasLightBulb() return self.bulb end
+        function l:getCanBeModified() return self.mod end
+        function l:hasModData() return next(self.md) ~= nil end
+        function l:getModData() return self.md end
+        function l:getSprite() return { getProperties = function() return props end } end
+        function l:getSpriteGridObjectsIncludingSelf(list)
+            for _, p in ipairs(self.grid or { self }) do list:add(p) end
+            return list
+        end
+        function l:switchLight(v) self.switched = v end
+        function l:syncIsoObject(_, v) self.sync[#self.sync + 1] = v end
+        -- 原版伺服器的 toggle（IsoLightSwitch.java:490-511）：沒燈泡當成要關；沒房間又不能改裝不切；沒電不切
+        function l:toggle()
+            local active = not self.on
+            if not self.bulb then active = false end
+            if active == self.on or (self.room == nil and not self.mod) or not self.power then return end
+            self.on = active
+        end
+        return l
+    end
+    local A = { complete = function(self) self.object:toggle() return true end }
+    Server.wrapToggleLight(A)
+    local function press(l) return A.complete({ object = l }) end
+    local S3 = lamp({ mod = true })
+    press(S3)
+    local off, s1 = S3.on, S3.sync[1]
+    press(S3)
+    check(off == false and s1 == 0 and S3.on == true and S3.sync[2] == 1 and S3.switched == true,
+        "能搬的燈在伺服器沒有房間、算沒電的格子：原版沒切，補切並同步（關、再開）")
+    local mineN, mapN = lamp({ mine = true }), lamp({})
+    local inRoom, battery = lamp({ mod = true, room = {} }), lamp({ mod = true, battery = true })
+    local noBulb, switch = lamp({ mod = true, on = false, bulb = false }), lamp({ mine = true, lit = false })
+    for _, l in ipairs({ mineN, mapN, inRoom, battery, noBulb, switch }) do press(l) end
+    check(mineN.on == false and mapN.on == true and #mapN.sync == 0 and inRoom.on == true and battery.on == true
+        and noBulb.on == false and #noBulb.sync == 0 and switch.on == true,
+        "補切只給玩家放、有光源的燈：本 MOD 蓋的不能搬的燈也切；地圖的燈、伺服器有房間的、用電池的、沒燈泡要開的、牆上開關不補")
+    local B = { complete = function() return false end } -- 被拒（例：Safehouse 的權限包裝在內層）
+    Server.wrapToggleLight(B)
+    local denied, powered = lamp({ mod = true }), lamp({ mod = true, power = true })
+    B.complete({ object = denied })
+    press(powered)
+    local a, b = lamp({ mod = true }), lamp({ lit = false })
+    a.grid, b.grid = { a, b }, { a, b }
+    press(b)
+    check(denied.on == true and #denied.sync == 0 and powered.on == false and #powered.sync == 0
+        and a.on == false and b.on == false and a.sync[1] == 0 and b.sync[1] == 0,
+        "原版回 false（被拒）不補；原版已經切了不再切；多格從沒光源的那片按，每一片都切、都同步")
+    instanceof, ArrayList = realInst, realList
+end
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")
