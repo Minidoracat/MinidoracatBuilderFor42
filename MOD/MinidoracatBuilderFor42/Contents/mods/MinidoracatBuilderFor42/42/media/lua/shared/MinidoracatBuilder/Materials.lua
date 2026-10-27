@@ -72,7 +72,8 @@ end
 
 -- 帶著沒壞的這種工具（ItemTag 欄位名；這個版本沒有的標籤當沒帶）。plan 與 summary 共用，兩邊才不會判斷不同。
 -- 噴槍另外照型別找：42.21 的 item BlowTorch 沒有 Tags（scripts/generated/items/drainable.txt），沒有物品帶這個標籤，
--- 原版自己也照型別找（ISMoveableSpriteProps.lua:4-6、ISVehicleMenu.lua:878）。
+-- 原版自己也照型別找（ISMoveableSpriteProps.lua:4-6、ISVehicleMenu.lua:878）。原版拆解還要燃料（uses ≥ 1）；
+-- 這裡工具不消耗（可耗用材料不收，使用者 2026-10-27 決定），所以不看燃料，空的噴槍也算。
 local BY_TYPE = { BLOW_TORCH = "BlowTorch" }
 local function hasTool(inv, name)
     local tag = ItemTag[name]
