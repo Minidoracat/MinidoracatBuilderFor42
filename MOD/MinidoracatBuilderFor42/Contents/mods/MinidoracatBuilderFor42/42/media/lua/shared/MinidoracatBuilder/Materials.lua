@@ -47,6 +47,29 @@ local function groundItems(player, want)
     return out
 end
 
+-- 同一套找法（走得到、別人的安全屋不拿、裝著東西的袋子不算），每種幾個。summary 用：地上掃一次，
+-- 不是每種材料各掃一次（視窗每秒重算，查過的材料常有 25 種）。
+local function groundCounts(player)
+    local out = {}
+    local here = player:getCurrentSquare()
+    if not here then return out end
+    local cell, x, y, z = getCell(), here:getX(), here:getY(), here:getZ()
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local sq = cell:getGridSquare(x + dx, y + dy, z)
+            if sq and here:canReachTo(sq) and SafeHouse.isSafehouseAllowLoot(sq, player) then
+                local list = sq:getWorldObjects()
+                for i = 0, list:size() - 1 do
+                    local item = list:get(i):getItem()
+                    local ft = item and item:getFullType()
+                    if ft and usable(item) then out[ft] = (out[ft] or 0) + 1 end
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- 帶著沒壞的這種工具（ItemTag 欄位名；這個版本沒有的標籤當沒帶）。plan 與 summary 共用，兩邊才不會判斷不同。
 local function hasTool(inv, name)
     local tag = ItemTag[name]
@@ -108,10 +131,10 @@ end
 -- （ItemContainer.java:1267-1300,1316-1343,1357-1360,1435-1438）。
 function Materials.summary(player)
     local inv = player:getInventory()
+    local ground
     local items = setmetatable({}, { __index = function(t, ft)
-        local n = inv:getCountTypeEvalRecurse(ft, usable)
-        local list = groundItems(player, { [ft] = math.huge })[ft]
-        if list then n = n + #list end
+        ground = ground or groundCounts(player)
+        local n = inv:getCountTypeEvalRecurse(ft, usable) + (ground[ft] or 0)
         if ft == NAILS then n = n + inv:getCountTypeEvalRecurse(NAILS_BOX, usable) * PER_BOX end
         rawset(t, ft, n)
         return n
