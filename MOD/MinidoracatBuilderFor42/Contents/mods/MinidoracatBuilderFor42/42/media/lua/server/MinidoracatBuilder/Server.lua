@@ -251,68 +251,6 @@ function Server.complete(player, n, i)
     return true
 end
 
--- 開關燈（設計稿：伺服器只包開關燈動作）。原版 ISToggleLightAction 照伺服器的房間與電力切（IsoLightSwitch.java:490-511）。
--- 停電前有沒有電看格子在不在房間裡（:425-463），自建房屋的房間只在客戶端建（IsoRegions.java:212-214）：客戶端算有電、
--- 選單有「開燈／關燈」，伺服器算沒電，按了不切。停電後兩端都看發電機範圍，判斷一致。所以只在停電前、原版沒切、每一片
--- 所在的格子在伺服器都沒有房間時補切。只接能搬的燈（canBeModified：sprite 帶 lightR 與 IsMoveAble，不論誰放的）；
--- 不能搬的燈照原版（地圖的燈不接走；本 MOD 蓋的要等伺服器端的建造紀錄），用電池的也照原版。亮不亮照原版由各客戶端
--- 自己判斷有沒有電（LightingJNI.java:281-294），這裡只切狀態。多格的每一片都切：switchLight 連動別片用的 setActive
--- 會被同樣的檢查擋下（:542-556）。
-function Server.lightFallback(light, was)
-    if not instanceof(light, "IsoLightSwitch") or light:getObjectIndex() == -1 or light:isActivated() ~= was
-        or not light:hasGridPower() then
-        return false
-    end
-    local on = not was
-    if on and not light:hasLightBulb() then return false end -- 沒燈泡開不了（:491-493）
-    local pieces = ArrayList.new()
-    light:getSpriteGridObjectsIncludingSelf(pieces)
-    local movable = false
-    for i = 0, pieces:size() - 1 do
-        local o = pieces:get(i)
-        if instanceof(o, "IsoLightSwitch") then
-            local sq = o:getSquare()
-            if not sq or sq:getRoom() or o:getUseBattery() then return false end
-            movable = movable or o:getCanBeModified()
-        end
-    end
-    if not movable then return false end
-    for i = 0, pieces:size() - 1 do -- 先設好每一片，之後的 switchLight 才不會再對別片走 setActive
-        local o = pieces:get(i)
-        if instanceof(o, "IsoLightSwitch") then o:setActivated(on and o:hasLightBulb()) end
-    end
-    for i = 0, pieces:size() - 1 do
-        local o = pieces:get(i)
-        if instanceof(o, "IsoLightSwitch") then
-            local v = o:isActivated()
-            o:switchLight(v)
-            o:syncIsoObject(false, v and 1 or 0, nil, nil) -- 原版 ISLockDoor.lua:56 的寫法
-        end
-    end
-    return true
-end
-
--- 在類別上換 complete 就生效（伺服器以 rawget 取，取不到往 metatable 找）。原版先跑；回的不是 true 就不補：引擎只把
--- true 當成功，nil 也算被拒（NetTimedAction.java:131-139）。Safehouse 的權限包裝在開服時才裝、在外層，拒絕時不呼叫內層。
-function Server.wrapToggleLight(A)
-    if type(A) ~= "table" or type(A.complete) ~= "function" then
-        print(LOG .. "ISToggleLightAction.complete missing, light toggle not wrapped")
-        return
-    end
-    local orig = A.complete
-    A.complete = function(self)
-        local light, was = self.object, nil
-        if instanceof(light, "IsoLightSwitch") then was = light:isActivated() end
-        local ret = orig(self)
-        if ret == true and was ~= nil then
-            local ok, err = pcall(Server.lightFallback, light, was)
-            if not ok then print(LOG .. "light toggle fallback failed: " .. tostring(err)) end
-        end
-        return ret
-    end
-end
-Server.wrapToggleLight(ISToggleLightAction)
-
 Events.OnClientCommand.Add(function(module, command, player, args)
     if module == MODULE and command == "intent" and player then Server.intent(player, args) end
 end)
