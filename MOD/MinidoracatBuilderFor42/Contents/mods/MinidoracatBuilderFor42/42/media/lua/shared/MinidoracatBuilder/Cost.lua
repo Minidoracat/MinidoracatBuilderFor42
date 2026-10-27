@@ -21,7 +21,7 @@ local WOOD = {
 }
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
--- ≤2 公斤 1＋1、≤5 公斤 2＋2、其餘 4＋4。杯子、書這類小東西不跟衣櫃同價。金屬家具、容器照 METAL 不分級。
+-- ≤2 公斤 1＋1、≤5 公斤 2＋2、其餘 4＋4。杯子、書這類小東西不跟衣櫃同價。金屬家具、容器照 METAL 不分級（使用者 2026-10-27 確認）。
 local LIGHT, MEDIUM, HEAVY = { [PLANK] = 1, [NAILS] = 1 }, { [PLANK] = 2, [NAILS] = 2 }, { [PLANK] = 4, [NAILS] = 4 }
 local function byWeight(p)
     local kg = (tonumber(p:get("PickUpWeight")) or 50) / 10
@@ -65,7 +65,8 @@ local function scrapTools(def)
     end
     return nil
 end
--- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退（使用者 2026-10-27 選；原因見 AGENTS.md 踩坑錄）。
+-- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退；多格的每一格各收（使用者 2026-10-27 選並確認；
+-- 原因見 AGENTS.md 踩坑錄）。
 local ESCRAP = "Base.ElectronicsScrap"
 -- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給；技能選 B）：每付一件材料 5 點，給「拆掉時決定這件退不退」的
 -- 技能。有拆解材質的，原版每個 Material 照自己拆解定義的技能擲退料機率（ISMoveableSpriteProps.lua:3318-3324、
