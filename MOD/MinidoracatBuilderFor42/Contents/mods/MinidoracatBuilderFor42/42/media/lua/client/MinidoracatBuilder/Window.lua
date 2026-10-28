@@ -329,9 +329,11 @@ function W.filter(st)
     return out, nil
 end
 
--- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／圖塊組，數量不含管理員關掉的
+-- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／圖塊組。數量照目前的頁籤與來源算，不含管理員關掉的；
+-- 圖塊組只列這個來源有的（列別的來源的組，點下去是空清單）
 function W.categories(tab)
     local kinds = tabKinds(tab)
+    local src = W.st.source
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
     local kindN, famN, famList, total = {}, {}, {}, 0
     for _, k in ipairs(kinds) do
@@ -339,7 +341,7 @@ function W.categories(tab)
         if sets then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if not W.blocked(ts) then
+                if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then
                     local n = bucket[k][ts].n
                     kindN[k] = (kindN[k] or 0) + n
                     total = total + n
@@ -1053,7 +1055,7 @@ end
 function W.setSource(id)
     if id == nil or id == W.st.source then return end
     W.st.source = id
-    if W.v then W.refreshCats(W.v) end -- 最愛、最近使用的數量照來源算
+    if W.v then W.refreshCats(W.v) end -- 分類的數量與圖塊組照來源算；選著的組這個來源沒有就回「全部」
     W.refilter(false)
 end
 

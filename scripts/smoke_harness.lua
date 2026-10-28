@@ -1549,6 +1549,40 @@ do
     for i, it in ipairs(groups[3].items) do famIds[i] = it.id end
     check(table.concat(famIds, ",") == "f:aaa_crates,f:floors_interior,f:furniture_seat,f:umctp_boxes",
         "分類的圖塊組：照顯示名排序（不是加入順序），管理員關掉的不列")
+    -- 選了來源：種類的數量與圖塊組照那個來源算（之前照全部來源算，選 MOD 後點到別的來源的組是空清單）。
+    -- 包在函式裡：主程式的 local 已經接近 Lua 的 200 個上限
+    local function sourceCats()
+        local function cats(src)
+            W.st.source = src
+            local g = W.categories("all")
+            local kinds, fams = {}, {}
+            for _, it in ipairs(g[2].items) do kinds[it.id] = it.label end
+            for i, it in ipairs(g[3].items) do fams[i] = it.id end
+            return kinds, table.concat(fams, ",")
+        end
+        local umKinds, umFams = cats("UMCTP")
+        check(umKinds.all == "IGUI_MBLD_Count(IGUI_MBLD_Cat_All,1)"
+            and umKinds["k:furniture"] == "IGUI_MBLD_Count(IGUI_MBLD_Kind_furniture,1)" and umKinds["k:floor"] == nil
+            and umFams == "f:umctp_boxes",
+            "來源選 MOD：種類只算那個 MOD 的、沒有的種類不列，圖塊組只列它的")
+        local vaKinds, vaFams = cats("vanilla")
+        check(vaKinds.all == "IGUI_MBLD_Count(IGUI_MBLD_Cat_All,5)"
+            and vaKinds["k:furniture"] == "IGUI_MBLD_Count(IGUI_MBLD_Kind_furniture,3)"
+            and vaKinds["k:floor"] == "IGUI_MBLD_Count(IGUI_MBLD_Kind_floor,2)"
+            and vaFams == "f:aaa_crates,f:floors_interior,f:furniture_seat",
+            "來源選原版：MOD 的項目不算進數量，MOD 的圖塊組不列")
+        -- 選著的圖塊組在新來源沒有：分類回「全部」（refreshCats 找不到就重設；W.setSource 換來源時呼叫）
+        local fakeV = { nav = { setGroups = function() end, setSelected = function() end },
+            cat = { setOptions = function() end, setSelected = function() end } }
+        W.st.source, W.st.cat = "all", "f:furniture_seat"
+        W.refreshCats(fakeV)
+        local kept = W.st.cat
+        W.st.source = "UMCTP"
+        W.refreshCats(fakeV)
+        check(kept == "f:furniture_seat" and W.st.cat == "all", "換到沒有這個圖塊組的來源：分類回「全部」，不留空清單")
+        W.st.source, W.st.cat = "all", "all"
+    end
+    sourceCats()
     local opts = W.sources()
     check(#opts == 3 and opts[1].id == "all" and opts[2].id == "vanilla" and opts[3].id == "UMCTP",
         "來源下拉：全部、原版、各 MOD")
