@@ -16,7 +16,7 @@ local WallSE, solidfloor, WallOverlay, FloorOverlay = F.WallSE, F.solidfloor, F.
 local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.cutW, F.solid, F.solidtrans
 local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
 local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
-local invincible = F.makeWindowInvincible
+local invincible, doorOpen = F.makeWindowInvincible, F.open
 
 -- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
 local TYPE = {}
@@ -264,6 +264,8 @@ function Rules.kindOf(name, p, t)
     if p:has(doorN) or p:has(doorW) then
         -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:789-796），單片放會開錯圖、MP 不同步；之後和車庫門一起做
         if p:has("DoubleDoor") then return nil end
+        -- 開著的門：關著那張 +2，載入圖塊時引擎替它補上門旗標與 open（IsoWorld.java:1477-1505），和關著那張是同一扇門
+        if p:has(doorOpen) then return nil end
         return "door"
     end
     -- 打不破的窗不列：窗自己帶 makeWindowInvincible，或同一格同方向帶 cutN/W 的物件帶它，窗就打不破、爬不過，

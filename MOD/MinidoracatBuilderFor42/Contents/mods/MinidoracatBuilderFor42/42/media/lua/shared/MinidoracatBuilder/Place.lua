@@ -63,11 +63,10 @@ local function splitsGrid(sq, n, w)
     return false
 end
 
--- IsoDoor 會把同一張表 +2 號當開門的圖（開著的那張則 −2，IsoDoor.java:856-868）；那一號不存在時引擎會建一個空 sprite
+-- IsoDoor 會把同一張表 +2 號當開門的圖（IsoDoor.java:856-868；開著的那張 Rules 不列）；那一號不存在時引擎會建一個空 sprite
 local function doorPairExists(spr)
     local tileset, num = spr:getName():match("^(.*)_(%d+)$")
-    local d = spr:getProperties():has(F.open) and -2 or 2
-    return tileset ~= nil and Entry.sprite(tileset .. "_" .. (tonumber(num) + d)) ~= nil
+    return tileset ~= nil and Entry.sprite(tileset .. "_" .. (tonumber(num) + 2)) ~= nil
 end
 
 local function floorUnder(sq)

@@ -462,6 +462,7 @@ check(kind({ keys = { WindowW = "" } }) == "windowFrame", "只有 WindowW：窗�
 check(kind({ flags = { "HoppableW" }, keys = { WallWTrans = "" } }) == "fence", "低柵欄帶牆鍵：歸柵欄")
 check(kind({ flags = { "doorW" }, keys = { WallW = "", GarageDoor = "" } }) == "garage", "車庫門帶門旗標與牆鍵：歸車庫門")
 check(kind({ flags = { "doorW" }, keys = { DoubleDoor = "3" } }) == nil, "雙開門的單片：不列（要四片一組）")
+check(kind({ flags = { "doorW", "open" } }) == nil, "開著的門（關著那張 +2，引擎補了門旗標與 open）：不列")
 check(kind({ keys = { container = "", LightRadius = "5", lightR = "1" } }) == "container", "冰箱帶燈：歸容器")
 check(kind({ keys = { LightRadius = "5" } }) == nil, "有 LightRadius、沒有 lightR 的不會亮：不列")
 check(kind({ type = T.lightswitch }) == "light", "沒有 lightR 的牆面開關：歸燈")
@@ -571,8 +572,11 @@ check(Sources.describe(byFile) == "401=A 3763=B 7001=C", "依檔號排序印出"
 
 print("情境五：目錄整理（過濾、群組、多格、樓梯、搜尋鍵）")
 local function grid(anchor) return { getAnchorSprite = function() return anchor end } end
-local chairA = sprite("furniture_01_4", 104, { keys = { IsMoveAble = "", GroupName = "Furniture", CustomName = "Red Chair" } })
-local chairB = sprite("furniture_01_2", 102, { keys = { IsMoveAble = "", GroupName = "Furniture", CustomName = "Red Chair" } })
+-- 兩面椅子：引擎替合法的同名組每一面寫其他面原點的偏移，自己那面不寫（IsoWorld.java:1283-1326）
+local chairA = sprite("furniture_01_4", 104, { keys = { IsMoveAble = "", GroupName = "Furniture", CustomName = "Red Chair",
+    Facing = "E", Soffset = "-2" } })
+local chairB = sprite("furniture_01_2", 102, { keys = { IsMoveAble = "", GroupName = "Furniture", CustomName = "Red Chair",
+    Facing = "S", Eoffset = "2" } })
 local bedA = sprite("beds_01_0", 200, { keys = { IsMoveAble = "", GroupName = "Big", CustomName = "Bed" } })
 local bedB = sprite("beds_01_1", 201, { keys = { IsMoveAble = "", GroupName = "Big", CustomName = "Bed" } })
 bedA.grid, bedB.grid = grid(bedA), grid(bedA)
@@ -582,6 +586,14 @@ local list = {
     sprite("walls_01_1", 301, { keys = { WallN = "" } }),
     -- 椅子兩面中間夾著床（另一個 tileset）：群組代表換到後面那張時，要寫回椅子自己的桶
     chairA, bedA, bedB, chairB,
+    -- 共用名稱的不同物件（沒有偏移；原版 trash_01 的 Trash 同一個朝向有好幾張）：各列一項
+    sprite("trash_01_1", 111, { keys = { IsMoveAble = "", CustomName = "Trash", Facing = "E" } }),
+    sprite("trash_01_0", 110, { keys = { IsMoveAble = "", CustomName = "Trash", Facing = "E" } }),
+    -- 同一件的兩面種類不同（一面有容器）：照種類分成兩項
+    sprite("desk_01_1", 121, { keys = { IsMoveAble = "", GroupName = "Office", CustomName = "Desk", Facing = "E",
+        Soffset = "-1" } }),
+    sprite("desk_01_0", 120, { keys = { IsMoveAble = "", GroupName = "Office", CustomName = "Desk", Facing = "S",
+        Eoffset = "1", container = "desk" } }),
     sprite("st_01_0", 1, { type = T.stairsBW }), sprite("st_01_1", 2, { type = T.stairsMW }),
     sprite("st_01_2", 3, { type = T.stairsTW }),
     sprite("tk_01_3", MOD_ID_BASE + 3, { flags = { "solidfloor" } }),
@@ -598,7 +610,7 @@ check(Catalog.state == "ready", "整理完成")
 check(count("OnTickEvenPaused") == 0, "做完自己摘掉 tick 事件")
 local wall, furn, floor = Index.names("wall"), Index.names("furniture"), Index.names("floor")
 check(wall.n == 1 and wall[1] == "walls_01_1", "沒有貼圖、id −1、非 tile 都濾掉")
-check(furn.n == 2, "兩面椅子算一項、兩格床只收原點")
+check(furn.n == 5, "兩面椅子算一項、兩格床只收原點；同名的不同物件、同一件不同種類的面各一項")
 local hasChairB, hasBedB = false, false
 for i = 1, furn.n do
     if furn[i] == "furniture_01_2" then hasChairB = true end
@@ -609,7 +621,7 @@ check(not hasBedB, "多格的非原點不列")
 local stairs = Index.names("stairs")
 check(stairs.n == 1 and stairs[1] == "st_01_0", "樓梯只收 B 片")
 check(floor.n == 2002, "地板 2002 項")
-check(Index.items == 2006, "總項目數（牆 1＋家具 2＋樓梯 1＋地板 2002）")
+check(Index.items == 2010, "總項目數（牆 1＋家具 5＋容器 1＋樓梯 1＋地板 2002）")
 local fb = Index.bucket.furniture
 check(fb.furniture_01.n == 1 and fb.furniture_01[1] == "furniture_01_2" and fb.beds_01.n == 1
     and fb.beds_01[1] == "beds_01_0", "分桶：群組代表換到後面那張時寫回自己的 tileset 桶，不蓋到別的桶")
@@ -617,8 +629,8 @@ local fs = Index.kindSets.floor
 check(fs.n == 3 and fs[1] == "tk_01" and fs[2] == "fancy_tiles" and fs[3] == "filler_01"
     and floor[1] == "tk_01_3" and floor[2] == "fancy_tiles_7" and floor[3] == "filler_01_1",
     "種類裡的 tileset 照第一次出現的順序；Index.names 照這個順序攤平")
-check(Index.kindCount.wall == 1 and Index.kindCount.furniture == 2 and Index.kindCount.stairs == 1
-    and Index.kindCount.floor == 2002, "每個種類的項目數（群組只算一項）")
+check(Index.kindCount.wall == 1 and Index.kindCount.furniture == 5 and Index.kindCount.container == 1
+    and Index.kindCount.stairs == 1 and Index.kindCount.floor == 2002, "每個種類的項目數（同一件的各面只算一項）")
 wall[1] = "changed"
 check(Index.names("wall")[1] == "walls_01_1" and Index.names("nope").n == 0, "Index.names 回新陣列；沒有的種類回空陣列")
 check(Index.family.filler_01 == "filler" and Index.family.tk_01 == "tk" and Index.family.fancy_tiles == "fancy_tiles"
@@ -628,15 +640,52 @@ for i = 1, Index.nameKey.n do kindOf[Index.nameItem[i]], setOf[Index.nameItem[i]
 check(kindOf.furniture_01_2 == "furniture" and setOf.furniture_01_2 == "furniture_01" and setOf.beds_01_0 == "beds_01"
     and Index.nameKind.n == Index.nameKey.n and Index.nameSet.n == Index.nameKey.n,
     "名稱鍵的每一項都記種類與 tileset（和 nameItem 同一項）")
-check(Index.nameKey.n == 2, "有名稱的項目建兩個搜尋鍵")
+check(Index.nameKey.n == 6, "有名稱的項目都建搜尋鍵（椅子一組、床、兩個垃圾、桌子兩種）")
 local keyed = {}
 for i = 1, Index.nameKey.n do keyed[Index.nameItem[i]] = Index.nameKey[i] end
 check(keyed["furniture_01_2"] == "red chair ch|furniture red chair", "名稱鍵＝小寫「翻譯|原名」並指向群組代表")
+do
+    local trash = 0
+    for i = 1, furn.n do if furn[i]:find("^trash_01_") then trash = trash + 1 end end
+    check(trash == 2 and keyed.trash_01_0 == "|trash" and keyed.trash_01_1 == "|trash",
+        "同名但沒有朝向偏移（不是同一件）：各列一項、各有搜尋鍵")
+    local c = Index.names("container")
+    check(c.n == 1 and c[1] == "desk_01_0" and kindOf.desk_01_0 == "container" and kindOf.desk_01_1 == "furniture",
+        "同一件的面種類不同：照種類分開，各自列在自己的種類")
+    local bad = {}
+    for k, sets in pairs(Index.bucket) do
+        for _, arr in pairs(sets) do
+            for j = 1, arr.n do
+                if Rules.classify(spriteMap[arr[j]]) ~= k then bad[#bad + 1] = arr[j] .. ":" .. k end
+            end
+        end
+    end
+    check(#bad == 0, "每項列在的種類＝重算的種類（Entry.resolve 同一套）" .. table.concat(bad, ","))
+end
 local setKey
 for i = 1, Index.setName.n do if Index.setName[i] == "tk_01" then setKey = Index.setKey[i] end end
 check(setKey == "tk 01|tk_01|unofficial mappers community tile pack", "tileset 鍵帶來源 MOD 名")
 check(Index.setKey.n == Index.setName.n, "每個 tileset 都有搜尋鍵")
 check(Index.groups == nil, "群組暫存表已丟掉")
+do -- namedMap 的順序每次開遊戲都不同：反過來整理一次，每項的種類與代表都要一樣
+    local function snap()
+        local out = {}
+        for k, sets in pairs(Index.bucket) do
+            for _, arr in pairs(sets) do
+                for j = 1, arr.n do out[#out + 1] = k .. ":" .. arr[j] end
+            end
+        end
+        table.sort(out)
+        return table.concat(out, ",")
+    end
+    local before, rev = snap(), {}
+    for i = #list, 1, -1 do rev[#rev + 1] = list[i] end
+    world(rev)
+    Catalog.state = "idle"
+    Catalog.start()
+    for _ = 1, 50 do fire("OnTickEvenPaused") end
+    check(Catalog.state == "ready" and snap() == before, "整理順序反過來：每項的種類與代表都一樣")
+end
 
 print("情境六：時間預算、每 tick 上限、時鐘往回調")
 local function pass(step)

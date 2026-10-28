@@ -15,7 +15,7 @@ function Index.reset()
     Index.setName = { n = 0 } -- 出現過的 tileset，依第一次出現的順序
     Index.family = {}    -- tileset → 圖塊組（去掉結尾 _數字；第二段建）
     Index.items = 0
-    Index.groups = {}    -- 整理期間用：多面、多格家具的群組鍵 → { kind, tileset, arr, slot, num, raw }；完成後丟掉
+    Index.groups = {}    -- 整理期間用：群組鍵 → { kind, tileset, arr, slot, num, raw }（有名稱的項目都有，建搜尋鍵用）；完成後丟掉
     Index.groupList = { n = 0 }
     -- 搜尋鍵（第二段）：nameKey[i] 對 nameItem[i]（名稱）、nameKind[i]、nameSet[i]；setKey[i] 對 setName[i]
     Index.nameKey, Index.nameItem = { n = 0 }, { n = 0 }
@@ -24,8 +24,8 @@ function Index.reset()
 end
 Index.reset()
 
--- 加一個項目。key＝「tileset|GroupName|CustomName」（沒有 CustomName 時 nil＝自己一項）。
--- 同一群組（各面、各格）只留一項：取編號最小的那張當代表，兩端與每次整理都相同。
+-- 加一個項目。key＝群組鍵（Catalog.scanSprite 建）：同一件的各面共用一個鍵、只留一項，取編號最小的那張當代表，
+-- 整理順序不影響結果；共用名稱的不同物件各用自己的鍵；沒有 CustomName 時 nil。
 -- 每次整理約跑 5.7 萬次：只做表操作，不呼叫 Java（AGENTS.md 踩坑「目錄整理的成本幾乎只看 Java 呼叫次數」）。
 function Index.add(kind, name, tileset, num, file, key, raw)
     local g = key and Index.groups[key]
