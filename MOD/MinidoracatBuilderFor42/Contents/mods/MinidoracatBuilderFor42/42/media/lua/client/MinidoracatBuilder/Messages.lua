@@ -51,11 +51,26 @@ function Messages.refusal(code, extra)
     return getText(key)
 end
 
--- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。
-function Messages.toast(player, text)
+-- 拆除的拒絕碼（Server.dismantleIntent／Server.dismantle、Dismantle.check）＋WALK（走不到）：翻譯鍵 IGUI_MBLD_UnbuildRefuse_<碼>。
+-- 和建造分開：同一個碼的補救不同（「再蓋一次」對拆除是錯的）。
+Messages.UNBUILD_CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, BAD_REQUEST = true, NO_INTENT = true,
+    TOO_FAR = true, UNREACHABLE = true, NOT_LOADED = true, GONE = true, NOT_OURS = true, SAFEHOUSE = true,
+    PERM_DENIED = true, NOT_EMPTY = true, ATTACHED = true, FLOOR_IN_USE = true, STAIRS_TOP = true, NO_TOOL = true,
+    INTERNAL = true, WALK = true }
+
+function Messages.unbuildRefusal(code, extra)
+    if not Messages.UNBUILD_CODES[code] then return getText("IGUI_MBLD_UnbuildRefuse_Other", tostring(code)) end
+    local key = "IGUI_MBLD_UnbuildRefuse_" .. code
+    if code == "NO_TOOL" then return getText(key, Messages.tools(extra and extra.tools)) end
+    if code == "TOO_FAR" then return getText(key, tostring(Entry.settings().MaxDistance or 3)) end
+    return getText(key)
+end
+
+-- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「沒有蓋好」。
+function Messages.toast(player, text, title)
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
-        UI.Toast.show({ title = getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = 4 })
+        UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = 4 })
     elseif player then
         HaloTextHelper.addBadText(player, text)
     end

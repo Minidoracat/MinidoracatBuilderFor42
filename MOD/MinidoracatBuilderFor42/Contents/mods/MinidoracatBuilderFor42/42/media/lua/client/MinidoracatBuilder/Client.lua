@@ -1,43 +1,54 @@
--- 客戶端：送建造請求並排動作。第三階段的游標與視窗呼叫 Client.build；這裡只做請求、排隊、收結果。
--- 客戶端的判斷只給畫面用；能不能蓋、扣什麼料都由伺服器重算（Server.intent／Server.complete）。
+-- 客戶端：送建造、拆除請求並排動作。第三階段的游標與視窗呼叫 Client.build，右鍵選單（Menu.lua）呼叫 Client.dismantle；
+-- 這裡只做請求、排隊、收結果。客戶端的判斷只給畫面用；能不能蓋、扣什麼料、能不能拆、退什麼料都由伺服器重算
+-- （Server.intent／Server.complete、Server.dismantleIntent／Server.dismantle）。
 require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Messages"
 require "TimedActions/MinidoracatBuilderPlaceAction"
+require "TimedActions/MinidoracatBuilderDismantleAction"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
 MinidoracatBuilder.Client = Client
-local Entry = MinidoracatBuilder.Entry
+local Entry, Messages = MinidoracatBuilder.Entry, MinidoracatBuilder.Messages
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
 local KEEP = 32 -- Client.results 只留最近幾筆
 
 Client.pending = nil -- 最近送出的請求：{ n, e, d, kind, cells = { { x, y, z }, ... } }
-Client.results = {}  -- 伺服器回覆（refused／placed），新的在後；介面與 E2E 讀
--- Client.onResult(cmd, args)：游標設定（Cursor.lua）；每則回覆（accepted／refused／placed）收進 results 之後呼叫
+Client.pendingUnbuild = nil -- 最近送出的拆除請求：{ n, x, y, z, e, kind, north, own, player }
+Client.results = {}  -- 伺服器回覆（refused／placed／dismantle*），新的在後；介面與 E2E 讀
+-- Client.onResult(cmd, args)：游標設定（Cursor.lua）；每則建造回覆（accepted／refused／placed）收進 results 之後呼叫
 local lastNonce = getTimestampMs() % 1000000
 
--- 回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
-local function walkTo(player, kind, spr, c)
+-- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；其他不站在 own（同一件的其他格）上，
+-- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
+-- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
+local function walkNear(player, kind, north, x, y, z, own)
     local cell = getCell()
     if Entry.EDGE[kind] then
-        local sq = cell:getGridSquare(c[1], c[2], c[3])
+        local sq = cell:getGridSquare(x, y, z)
         if not sq then return nil end
-        local north = Entry.north(kind, spr)
-        return luautils.walkAdjWall(player, sq, north, true) -- 原版 ISBuildingObject:walkTo 的牆寫法
-    end
-    -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
-    -- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）；蓋在上一層的（屋頂）走到正下方那格旁邊。
-    local own, x, y, z = {}, c[1], c[2], c[3]
-    for _, d in ipairs(Entry.cells(spr)) do
-        local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
-        if o then own[#own + 1] = o end
-        if d[5] == "bottom" then x, y = c[1] + d[1], c[2] + d[2] end
+        return luautils.walkAdjWall(player, sq, north, true)
     end
     if z > math.floor(player:getZ()) then z = z - 1 end
     local sq = cell:getGridSquare(x, y, z)
     if not sq then return nil end
     return luautils.walkAdj(player, sq, true, own)
+end
+
+-- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
+-- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。
+local function walkTo(player, kind, spr, c)
+    if Entry.EDGE[kind] then return walkNear(player, kind, Entry.north(kind, spr), c[1], c[2], c[3]) end
+    local cell = getCell()
+    local own, x, y = {}, c[1], c[2]
+    for _, d in ipairs(Entry.cells(spr)) do
+        local o = cell:getGridSquare(c[1] + d[1], c[2] + d[2], c[3] + d[3])
+        if o then own[#own + 1] = o end
+        if d[5] == "bottom" then x, y = c[1] + d[1], c[2] + d[2] end
+    end
+    return walkNear(player, kind, nil, x, y, c[3], own)
 end
 
 -- 蓋 e（項目 ID）朝向 d（0＝項目本身那一面、1..4＝N、E、S、W），每個原點 cells[i] = { x, y, z } 一項。
@@ -58,6 +69,7 @@ function Client.build(player, e, d, cells)
     end
     local args = { n = n, e = e, d = d, c = flat, v = Entry.digest() }
     Client.pending = { n = n, e = e, d = d, kind = entry.kind, spr = spr, cells = cells, player = player }
+    Client.pendingUnbuild = nil -- 每人只留一個請求：還沒收下的拆除，收到回覆也不再排
     ISTimedActionQueue.clear(player)
     if isClient() then
         sendClientCommand(player, MODULE, "intent", args)
@@ -81,17 +93,68 @@ local function queue(b)
     end
 end
 
--- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
--- placed：{ n, i }
--- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
-function Client.onServerCommand(cmd, args)
-    if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
-    local b = Client.pending
-    if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end
+local function remember(cmd, args)
     args.cmd = cmd
     local list = Client.results
     list[#list + 1] = args
     if #list > KEEP then table.remove(list, 1) end
+end
+
+-- 拆 obj（本 MOD 蓋的那件，Dismantle.kindOf 是 kind；own＝同一件各片所在的格子，走路時不站上去）。先送請求，伺服器收下
+-- 才走過去、排動作（同 Client.build）。會清掉玩家目前排著的動作。回 nonce。
+function Client.dismantle(player, obj, kind, own)
+    local sq, spr = obj:getSquare(), obj:getSprite()
+    lastNonce = lastNonce % 2000000000 + 1
+    local n = lastNonce
+    local args = { n = n, x = sq:getX(), y = sq:getY(), z = sq:getZ(), e = spr:getName() }
+    Client.pendingUnbuild = { n = n, x = args.x, y = args.y, z = args.z, e = args.e, kind = kind,
+        north = Entry.north(kind, spr), own = own or {}, player = player }
+    Client.pending = nil -- 同上：還沒收下的建造請求作廢
+    ISTimedActionQueue.clear(player)
+    if isClient() then
+        sendClientCommand(player, MODULE, "dismantle", args)
+    else
+        MinidoracatBuilder.Server.dismantleIntent(player, args) -- 單機：當場回覆（Server.send 直接呼叫 onServerCommand）
+    end
+    return n
+end
+
+local function queueUnbuild(b)
+    b.queued = true
+    if walkNear(b.player, b.kind, b.north, b.x, b.y, b.z, b.own) == false then
+        print(LOG .. "no free square next to " .. b.x .. "," .. b.y .. "," .. b.z .. "; dismantle not queued")
+        Messages.toast(b.player, Messages.unbuildRefusal("WALK"), getText("IGUI_MBLD_NotRemoved"))
+        return
+    end
+    ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n))
+end
+
+-- dismantleAccepted：{ n }；dismantleRefused：{ n, code, x, y, z, tools }；dismantled：{ n, x, y, z, e }
+local UNBUILD = { dismantleAccepted = true, dismantleRefused = true, dismantled = true }
+local function onUnbuild(cmd, args)
+    local b = Client.pendingUnbuild
+    remember(cmd, args)
+    if cmd == "dismantleAccepted" then
+        if b and b.n == args.n and not b.queued then queueUnbuild(b) end
+    elseif cmd == "dismantleRefused" then
+        print(LOG .. "dismantle refused n=" .. tostring(args.n) .. " code=" .. tostring(args.code))
+        if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
+        if args.code ~= "PERM_DENIED" then -- Safehouse 拒絕時自己推了通知（同 Cursor 的 tell）
+            Messages.toast(b and b.player or getSpecificPlayer(0), Messages.unbuildRefusal(args.code, args),
+                getText("IGUI_MBLD_NotRemoved"))
+        end
+    end
+end
+
+-- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
+-- placed：{ n, i }
+-- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
+function Client.onServerCommand(cmd, args)
+    if UNBUILD[cmd] then return onUnbuild(cmd, args) end
+    if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
+    local b = Client.pending
+    if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end
+    remember(cmd, args)
     if cmd == "refused" then
         print(LOG .. "refused n=" .. tostring(args.n) .. " i=" .. tostring(args.i) .. " code=" .. tostring(args.code))
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end

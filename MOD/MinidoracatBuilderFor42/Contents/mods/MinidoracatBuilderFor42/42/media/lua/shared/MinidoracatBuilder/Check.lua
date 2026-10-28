@@ -15,8 +15,12 @@ local Place, Materials = MinidoracatBuilder.Place, MinidoracatBuilder.Materials
 
 local LOG = "[MinidoracatBuilderFor42] "
 -- Safehouse 的 denies 選項：伺服器照常寫稽核、推通知；預覽只判定（docs/public-api.md「opts 的欄位」）
-local DENY_SERVER = { label = "MinidoracatBuilder:build" }
-local DENY_PREVIEW = { label = "MinidoracatBuilder:build", preview = true }
+local DENY = {
+    build = { [false] = { label = "MinidoracatBuilder:build" },
+        [true] = { label = "MinidoracatBuilder:build", preview = true } },
+    dismantle = { [false] = { label = "MinidoracatBuilder:dismantle" },
+        [true] = { label = "MinidoracatBuilder:dismantle", preview = true } },
+}
 -- 請求的錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）。Server.intent 與游標預覽共用
 Check.INTENT_REACH = 100
 
@@ -74,21 +78,40 @@ local function reachable(player, c)
     end
     return false
 end
-
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，伺服器拒絕時它自己推通知）。
 -- 預覽時格子可能不存在：要格子的原版查詢略過（交給伺服器），denies 照座標查（格子不必存在）。
 -- checkPermissions 只在伺服器回 true（LuaManager.java:3054-3057），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
-local function safehouseCode(player, c, preview)
+-- why＝"build"（預設）或 "dismantle"：拆除一樣要 BUILD 權限（原版大錘、ISDismantleAction 也是），但不看 WhereCanBuild。
+function Check.safehouse(player, c, preview, why)
+    why = why or "build"
     if c.sq and not (isServer() and checkPermissions(player, Capability.CanGoInsideSafehouses) == true)
         and SafeHouse.isSafeHouse(c.sq, player:getUsername(), true) ~= nil then
         return "SAFEHOUSE"
     end
     local api = MinidoracatSafehouse and MinidoracatSafehouse.v1
     if api and api.API_MAJOR == 1 and type(api.CAPABILITIES) == "table" and api.CAPABILITIES.denies == true
-        and api.denies(player, c.x, c.y, c.z, api.BITS.BUILD, preview and DENY_PREVIEW or DENY_SERVER) then
+        and api.denies(player, c.x, c.y, c.z, api.BITS.BUILD, DENY[why][preview == true]) then
         return "PERM_DENIED"
     end
-    if c.sq and setting("WhereCanBuild", 1) == 2 and SafeHouse.getSafeHouse(c.sq) == nil then return "OUTSIDE_SAFEHOUSE" end
+    if why == "build" and c.sq and setting("WhereCanBuild", 1) == 2 and SafeHouse.getSafeHouse(c.sq) == nil then
+        return "OUTSIDE_SAFEHOUSE"
+    end
+    return nil
+end
+local safehouseCode = Check.safehouse
+
+-- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝格邊種類，
+-- 從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
+function Check.near(player, cells, edge, preview)
+    local dist, dz, nearest = reach(player, cells)
+    if not nearest or dist > setting("MaxDistance", 3) or dz > 1 then
+        local c = nearest or cells[1]
+        return "TOO_FAR", { x = c.x, y = c.y, z = c.z }
+    end
+    if not edge and not (preview and not getCell():getGridSquare(nearest.x, nearest.y, nearest.z))
+        and not reachable(player, nearest) then
+        return "UNREACHABLE", { x = nearest.x, y = nearest.y, z = nearest.z }
+    end
     return nil
 end
 
@@ -125,16 +148,9 @@ function Check.item(player, name, d, anchor, opts)
             return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
         end
     else
-        local dist, dz, nearest = reach(player, cells)
-        if dist > setting("MaxDistance", 3) or dz > 1 then
-            return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
-        end
-        -- 預覽：最近那一格還沒有格子時不判斷（伺服器會補格子再查）
-        if not Entry.EDGE[entry.kind]
-            and not (preview and not getCell():getGridSquare(nearest.x, nearest.y, nearest.z))
-            and not reachable(player, nearest) then
-            return "UNREACHABLE", { x = nearest.x, y = nearest.y, z = nearest.z }, info
-        end
+        local why, extra = Check.near(player, cells, Entry.EDGE[entry.kind], preview)
+        if why == "TOO_FAR" then extra = { x = anchor[1], y = anchor[2], z = anchor[3] } end
+        if why then return why, extra, info end
     end
     local cell = getCell()
     for _, c in ipairs(cells) do

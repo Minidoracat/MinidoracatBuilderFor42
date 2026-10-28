@@ -91,7 +91,8 @@ local ESCRAP = "Base.ElectronicsScrap"
 -- （建造作弊；倍率 0 時不照拆解價收的）就沒有。拆掉可能把付的料全拿回的不給（back），不然蓋了拆、拆了蓋，
 -- 不花料就能一直練。照機率退料的再乘上「拆掉時這件退不回來的機率」（使用者 2026-10-27 選）：原版退料率＝10＋技能等級×10
 -- ＋baseChance（getChanceByDef，ISMoveableSpriteProps.lua:3834-3849）。等級看蓋的人蓋的當下（Cost.xp 的 player）。
--- 電器費那幾件拆了不退，不打折。
+-- 本工具拆除的（Cost.refund 的 "builder"）每項退 1..v 件、不看技能，經驗照平均拿不回的 (v − 1) / 2 件給（uniform，
+-- 使用者 2026-10-28 選；付 1 件的一定全退，不給）。電器費那幾件拆了不退，不打折。
 local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding", electric = "Electricity" }
 local XP_PER_ITEM = 5
 
@@ -119,13 +120,10 @@ end
 -- 每個 Material 取 returnItemsStatic（有的話）否則 returnItems；每項 maxAmount 輪，可拆（CanScrap）時 Small 減半
 -- （至少 1）、Large 加倍；沙包固定 3。原版每輪有機率，這裡取每輪都中，所以不低於拆掉換到的。
 -- 每種材料的技能記進 perkOf、baseChance 記進 chanceOf（同一種材料多個定義取大的：退得多、給得少）。
--- 回 any（有產出）, back（拆掉可能把付的料全拿回）, 第一個 Material 的定義, elec（有電工的拆解定義）。
--- back 有兩種：
--- ① 沒有 CanScrap、不能搬、第一個 Material 有產出的 IsoThumpable：原版改走 ISThumpableSpriteProps，照 buildMaterials
---    每項退 1..v 件（v＝付的數量，1 件的一定全退；ISMoveableSpriteProps.lua:41-44,104-122,4232,4323-4340）。
---    門窗、燈（IsoLightSwitch）、窗簾（IsoCurtain）不是 IsoThumpable，不走這條。
--- ② 一定會退的產出：沙包固定 3 個（:3368-3378），每輪機率 ≥ 100 的（窗簾）技能夠就每輪都中。
-local NOT_THUMPABLE = { door = true, window = true, light = true, curtain = true }
+-- 回 any（有產出）, back（拆掉可能把付的料全拿回：一定會退的產出，沙包固定 3 個（:3368-3378），每輪機率 ≥ 100 的
+-- （窗簾）技能夠就每輪都中）, 第一個 Material 的定義, elec（有電工的拆解定義）。
+-- 本工具拆除的種類（不能搬、不照材質拆）照退料表退 1..v 件，不看這裡的 back（Cost.of 的 builder）。
+local NOT_BUILDER = { door = true, window = true, curtain = true }
 local function scrapInto(kind, p, out, perkOf, chanceOf)
     local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
     if not defs then return false, false end
@@ -143,9 +141,6 @@ local function scrapInto(kind, p, out, perkOf, chanceOf)
             local base = def.baseChance or 0
             local list = def.returnItemsStatic
             if not list or #list < 1 then list = def.returnItems end
-            if i == 1 and list and #list > 0 and not size and not NOT_THUMPABLE[kind] and not p:has("IsMoveAble") then
-                back = true
-            end
             for _, r in ipairs(list or {}) do
                 local n = r.maxAmount or 0
                 if size == "Small" then
@@ -179,15 +174,17 @@ function Cost.of(kind, spr, multiplier)
     local items, perkOf, chanceOf = {}, {}, {}
     local m = multiplier or 1
     local scrapped, back, first, elec = scrapInto(kind, p, items, perkOf, chanceOf)
+    -- 本工具拆除的（Cost.refund 的 "builder"）照退料表退 1..v 件、經驗照 uniform 給（Cost.xp）
+    local builder = Cost.refund(kind, spr) == "builder"
+    if builder then back = false end
     if kind == "stairs" then
-        -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）。有拆解材質的（例：原版 fixtures_stairs_01）原版拆時
-        -- 照 buildMaterials 每項退 1..v 件，back 照算
+        -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）
         items, perkOf, chanceOf, scrapped, elec = {}, {}, {}, false, false
     end
     local toolSet
     if scrapped then
         -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
-        -- back ① 那類照 buildMaterials 退 1..v 件。兩種都不會退得比這裡收的多。
+        -- 不能搬、沒有 CanScrap 的（builder）照退料表退 1..v 件。兩種都不會退得比這裡收的多。
         -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
         if m < 1 then m = 1 end
         toolSet = scrapTools(first)
@@ -241,7 +238,8 @@ function Cost.of(kind, spr, multiplier)
     local tools = {}
     for i, t in ipairs(toolSet or TOOLS[fam]) do tools[i] = t end
     if back then perkOf = {} end
-    return { items = out, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back, scrap = scrapped }
+    return { items = out, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back, scrap = scrapped,
+        uniform = builder }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
@@ -263,26 +261,27 @@ end
 -- （ISMoveableSpriteProps.lua:3481-3495），各片材質不一定相同（原版有 4 組，例：病床椅），所以多格的每一格都收
 -- 各格的最大值，拆哪一片都不會比付的多。同理，有一片是 back，點那片拆就整組都可能全拿回，整組不給經驗；
 -- 同一種材料在各片的技能不同時，退料機率看點的那片，拿自己高的技能拆就能便宜練另一個，這種材料也不給。
+-- 每片都是本工具拆除的（uniform）才照 1..v 給：本工具拆一組時每片照自己的退料表退（Server.dismantle）。
 -- 樓梯例外：整組照配方收一次，放在第一格（頂片）；其他格（中片、底片、平台）不收，三片的 buildMaterials 都寫整組
--- （Place.build），原版拆哪一片都照那片的 buildMaterials 退，所以三片任一片是 back 整組就不給經驗。
+-- （Place.build），拆哪一片都照那片的 buildMaterials 退一次、整組移除。能蓋的樓梯三片都不能搬、沒有 CanScrap
+-- （Rules.classify、Rules.stairsSet），所以三片的拆除方式都和頂片一樣。
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
     if kind == "stairs" then
         local c = Cost.of(kind, sprites[1], multiplier)
-        for i = 2, math.min(3, #sprites) do -- 第 4 格是平台地板（不是樓梯片，原版拆不到它的退料）
-            if not c.back and Cost.of(kind, sprites[i], multiplier).back then c.back, c.perkOf = true, {} end
-        end
         each[1] = c
         for i = 2, #sprites do
-            each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back }
+            each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back,
+                uniform = c.uniform }
         end
         return each
     end
     for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
     if #each < 2 then return each end
-    local top, perkOf, chanceOf, fee, back = {}, {}, {}, {}, false
+    local top, perkOf, chanceOf, fee, back, uniform = {}, {}, {}, {}, false, true
     for _, c in ipairs(each) do
         back = back or c.back
+        uniform = uniform and c.uniform
         for ft, n in pairs(c.items) do
             if n > (top[ft] or 0) then top[ft] = n end
             mark(perkOf, ft, c.perkOf[ft] or false)
@@ -299,7 +298,8 @@ function Cost.forCells(kind, sprites, multiplier)
     for i = 1, #each do
         local items = {}
         for ft, n in pairs(top) do items[ft] = n end
-        each[i] = { items = items, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back }
+        each[i] = { items = items, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back,
+            uniform = uniform }
     end
     return each
 end
@@ -314,7 +314,8 @@ local function returnChance(player, pid, base)
 end
 
 -- 這次付的材料換成經驗：{ [技能名] = 點數 }（costs＝各格成本，player＝蓋的人）。照機率退料的材料乘上
--- （100 − 退料率）%，點數可能有小數；全退的（技能夠高）那種材料不給。電器費（fee）拆了不退，照件數全給。
+-- （100 − 退料率）%，點數可能有小數；全退的（技能夠高）那種材料不給。本工具拆除的（uniform）每項退 1..r 件
+-- （r＝付的扣掉電器費），平均拿不回 (r − 1) / 2 件。電器費（fee）拆了不退，照件數全給。
 function Cost.xp(costs, player)
     local out = {}
     for _, c in ipairs(costs) do
@@ -323,8 +324,11 @@ function Cost.xp(costs, player)
             if pid and n > 0 then
                 local pts = n * XP_PER_ITEM
                 local base = c.chanceOf and c.chanceOf[ft]
-                if base then
-                    local f = c.fee and c.fee[ft] or 0
+                local f = c.fee and c.fee[ft] or 0
+                if c.uniform then
+                    local r = n - f
+                    pts = (f + (r > 1 and (r - 1) / 2 or 0)) * XP_PER_ITEM
+                elseif base then
                     pts = ((n - f) * (100 - returnChance(player, pid, base)) / 100 + f) * XP_PER_ITEM
                 end
                 if pts > 0 then out[pid] = (out[pid] or 0) + pts end
@@ -337,27 +341,19 @@ end
 -- 蓋好之後拆掉退什麼（介面的「拆除方式」）。原版拆解怎麼分流（ISMoveableSpriteProps.fromObject，:33-47）：
 --   "pickup"：能搬（IsMoveAble），拿起來帶走。
 --   "scrap"：CanScrap 且 Material 有定義（:104-123）、有拆解產出：照圖塊材質重查產出（getScrapItemsList，:3304-3348）。
---   "materials"：第二階段放的 IsoThumpable（門、窗以外）不能搬、不能照材質拆，第一個 Material 有拆解定義時改走
---     ISThumpableSpriteProps，照 buildMaterials 每項退 1..v（:4232 isScrapDefinitionValid、:4320-4340、canScrapObject :4369-4378；
---     判斷照 ISMoveableDefinitions.lua:172-180）。
+--   "builder"：其他不能搬的 IsoThumpable 與燈：本工具拆除（Server.dismantle），每項退 1..v（v＝退料表）。第一個
+--     Material 有拆解定義的，原版搬動工具也能拆（ISThumpableSpriteProps，:4320-4340），同樣 1..v。
 --   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
---   "none"：其他（例：沒有拆解產出的門、窗，它們不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
--- 只看 sprite 屬性與拆解定義，不碰世界；伺服器沒有 ISMoveableDefinitions 時當 "none"。
+--   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
+-- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
     local p = spr:getProperties()
     if p:has("IsMoveAble") then return "pickup" end
     if kind == "curtain" then return "sheet" end
     local mat = p:get("Material")
-    if p:has("CanScrap") and mat and mat ~= "Undefined" then
-        return scrapInto(kind, p, {}, {}) and "scrap" or "none"
-    end
-    if NOT_THUMPABLE[kind] then return "none" end
-    local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
-    local def = defs and mat and defs.getScrapDefinition(mat)
-    if def and ((def.returnItems and #def.returnItems > 0) or (def.returnItemsStatic and #def.returnItemsStatic > 0)) then
-        return "materials"
-    end
-    return "none"
+    if p:has("CanScrap") and mat and mat ~= "Undefined" and scrapInto(kind, p, {}, {}) then return "scrap" end
+    if NOT_BUILDER[kind] then return "none" end
+    return "builder"
 end
 
 return Cost

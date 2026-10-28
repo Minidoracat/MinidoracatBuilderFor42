@@ -64,6 +64,10 @@ local function javaList(items)
     return {
         size = function() return #items end,
         get = function(_, i) return items[i + 1] end,
+        contains = function(_, x)
+            for _, v in ipairs(items) do if v == x then return true end end
+            return false
+        end,
         _raw = items,
     }
 end
@@ -196,8 +200,14 @@ square = function(x, y, z, o)
         if type(k) == "table" then return flags[k.name] == true end
         return flags[k] == true
     end
-    function sq:getDoor() return nil end
-    function sq:getWindow() return nil end
+    -- 照引擎：只有邊方向列舉的版本（IsoGridSquare.java:3634-3680），傳 boolean 會丟錯
+    local function edgeArg(dir)
+        if dir ~= GridSquareEdgeFacingDirection.NORTH_SOUTH and dir ~= GridSquareEdgeFacingDirection.EAST_WEST then
+            error("getDoor/getWindow take GridSquareEdgeFacingDirection, got " .. tostring(dir))
+        end
+    end
+    function sq:getDoor(dir) edgeArg(dir) return (o.doors or {})[dir] end
+    function sq:getWindow(dir) edgeArg(dir) return (o.windows or {})[dir] end
     function sq:getFloor() return o.floor end
     function sq:hasFloor() return o.floor ~= nil end
     function sq:isSomethingTo() return false end
@@ -228,6 +238,7 @@ square = function(x, y, z, o)
         end
         local f = { name = name }
         function f:getSquare() return sq end
+        function f:getSprite() return { getName = function() return name end } end
         flags.solidfloor = true
         sq.objects[#sq.objects + 1] = f
         return f
@@ -296,6 +307,30 @@ end }
 ItemTag = { HAMMER = "HAMMER", MASONS_TROWEL = "MASONS_TROWEL", BLOW_TORCH = "BLOW_TORCH", WELDING_MASK = "WELDING_MASK",
     SCREWDRIVER = "SCREWDRIVER" }
 function instanceof() return false end
+-- 拆除退料的亂數：ZombRand(n) 回 0..n−1；HARNESS_ROLL＝"max"（全退）／"min"（只退 1）切換（拆除情境用）。
+-- 主程式的區域變數快到 200 個上限，這幾個用全域
+HARNESS_ROLL = "max"
+function ZombRand(n) if HARNESS_ROLL == "min" then return 0 end return n - 1 end
+function ZombRandFloat(a) return a end
+-- 假 GOS（原版 server/Map/SGlobalObjectSystem.lua 用到的部分）：系統的 modData 就是系統表本身；存檔只存 setModDataKeys
+-- 白名單裡的鍵（HARNESS_GOS_KEYS 記下來給情境驗）。RegisterSystemClass 當場建 instance（原版在 OnSGlobalObjectSystemInit）。
+HARNESS_GOS_KEYS = {}
+SGlobalObjectSystem = {}
+SGlobalObjectSystem.__index = SGlobalObjectSystem
+function SGlobalObjectSystem:derive(t)
+    local cls = setmetatable({ Type = t }, { __index = self })
+    cls.__index = cls
+    return cls
+end
+function SGlobalObjectSystem.new(cls, name)
+    local o = setmetatable({}, cls)
+    o.system = { setModDataKeys = function(_, keys) HARNESS_GOS_KEYS[name] = keys end,
+        setObjectModDataKeys = function() end, setObjectSyncKeys = function() end }
+    o:initSystem()
+    return o
+end
+function SGlobalObjectSystem:initSystem() end
+function SGlobalObjectSystem.RegisterSystemClass(cls) cls:new() end
 function sendRemoveItemFromContainer() end
 function sendAddItemsToContainer() end
 local function item(ft, tags)
@@ -387,7 +422,7 @@ local function player(o)
 end
 
 -- ===== 載入受測程式碼 =====
-local loaded = {}
+local loaded = { ["Map/SGlobalObjectSystem"] = true } -- 原版檔，上面有假的
 function require(name)
     if loaded[name] then return true end
     loaded[name] = true
@@ -787,16 +822,19 @@ check(perks(cost("wall", { flags = { "WallN" } })) == "Woodwork" and perks(cost(
     "沒有拆解材質的經驗照工具那套材質：木工、砌磚、焊接；照木頭收的磚造門給木工；碎石地板不給")
 local xp = Cost.xp({ cost("wall", { flags = { "WallN" } }), cost("floor", {}), cost("floor", { keys = { MaterialType = "Brick" } }),
     cost("floor", { keys = { MaterialType = "Gravel" } }) }, player({ woodwork = 9 }))
-check(xp.Woodwork == 60 and xp.Masonry == 20,
-    "經驗：每付一件材料 5 點、同技能跨格累加（木牆 10 件＋木地板 2 件＝60、磚地板 4 件＝20），碎石地板沒有；照基本價收的不看技能等級")
+check(xp.Woodwork == 20 and xp.Masonry == 7.5,
+    "經驗（本工具拆除每項退 1..v）：照平均拿不回的 (v−1)/2 件、每件 5 點（木牆 4 木板＋6 釘子＝20、木地板各 1 件＝0、"
+    .. "磚地板 4 片＝7.5），碎石地板沒有；不看技能等級")
 check(next(Cost.xp({ cost("wall", { flags = { "WallN" } }, 0) }, player())) == nil, "倍率 0：沒付材料、沒有經驗")
-check(perks(cost("furniture", { keys = { Material = "Wood" } })) == "" and perks(cost("floor", { keys = { Material = "Wood" } })) == "",
-    "不能搬、沒有 CanScrap、第一個材質有產出：原版照退料表退 1..v 件、可能全拿回，不給經驗")
+local bw = Cost.xp({ cost("furniture", { keys = { Material = "Wood" } }), cost("floor", { keys = { Material = "Wood" } }) }, player())
+check(bw.Woodwork == 5 and perks(cost("floor", {})) == "",
+    "不能搬、沒有 CanScrap、第一個材質有產出（本工具與原版搬動工具都照退料表退 1..v）：技能照材質、照平均拿不回的給"
+    .. "（木板 2 片各 2.5）；付 1 件的一定全退，不給")
 check(perks(cost("furniture", { keys = { Material = "Wood", IsMoveAble = "" } })) == "Woodwork"
     and perks(cost("furniture", { keys = { Material = "Wood", CanScrap = "" } })) == "Woodwork"
     and perks(cost("door", { keys = { Material = "Wood" } })) == "Woodwork"
     and perks(cost("furniture", { keys = { Material = "Fabric", Material2 = "Wood" } })) == "Woodwork",
-    "能搬、CanScrap（照機率退）、門、第一個材質沒有產出（拆不了）：照常給經驗")
+    "能搬、CanScrap（照機率退）、門（只能砸）、第一個材質沒有產出（本工具拆）：照常給經驗")
 scrapDefs.Sandbag = { perk = perkObj("Woodwork"), returnItemsStatic = { { returnItem = "Base.Sandbag", maxAmount = 3 } } }
 scrapDefs.Curtain = { perk = perkObj("MAX"),
     returnItemsStatic = { { returnItem = "Base.Sheet", maxAmount = 1, chancePerRoll = 10000 } } }
@@ -1014,8 +1052,8 @@ check(ok and cmd == "placed" and w and w.mats["Base.Plank"] == "4" and w.mats["B
     "材料齊：放好、退料照這一格的成本寫進 buildMaterials")
 check(Q.inv:count("Base.Plank") == 0 and Q.inv:count("Base.Nails") == 0 and Q.inv:count("Base.Hammer") == 1,
     "放好才扣料：材料扣光、鐵鎚留著")
-check(#xpLog == 1 and xpLog[1].p == Q and xpLog[1].perk == "perk:Woodwork" and xpLog[1].n == 50,
-    "放好扣料後給經驗：木工 50（10 件材料）")
+check(#xpLog == 1 and xpLog[1].p == Q and xpLog[1].perk == "perk:Woodwork" and xpLog[1].n == 20,
+    "放好扣料後給經驗：木工 20（木板 4、釘子 6，本工具拆時平均拿不回 1.5＋2.5 件）")
 xpLog = {}
 sent = {}
 check(Server.complete(Q, 5, 1) == false and #sent == 0 and #wallSq.objects == 1, "同一項重送：不再放、不回覆")
@@ -1028,7 +1066,8 @@ check(not ok and a.code == "INTERNAL" and #errSq.objects == 0 and Q.inv:count("B
     "加進格子後才出錯：INTERNAL、拆回、不扣料、不給經驗")
 local cheatSq = square(49, 50, 0)
 local C = player({ id = 21, x = 49.5, y = 51.5, cheat = true })
-check(build(C, 7, nil, { 49, 50, 0 }) and #cheatSq.objects == 1 and #xpLog == 0, "開建造作弊：背包空的也放，不給經驗")
+check(build(C, 7, nil, { 49, 50, 0 }) and #cheatSq.objects == 1 and #xpLog == 0
+    and next(cheatSq.objects[1]:getBuildMaterials()) == nil, "開建造作弊：背包空的也放，不給經驗、不寫退料表（拆了不退）")
 Q.inv = inventory()
 Q.inv:add(hammer)
 give(Q, { ["Base.Plank"] = 4, ["Base.NailsBox"] = 1 })
@@ -1150,7 +1189,7 @@ Server.intent(I, { n = 15, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = 
 check(regionPokes == before + 1, "同一帶第二次請求：不再喚醒")
 local X = player({ id = 24, x = 96.5, y = 97.5 })
 Server.intent(X, { n = 16, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
-nowMs = nowMs + 61000
+nowMs = nowMs + 181000
 Server.intent(I, { n = 17, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
 check(Server.intents[24] == nil and Server.intents[23].n == 17, "過期的請求：下一次有人送請求時清掉（不留住玩家物件）")
 
@@ -1369,12 +1408,12 @@ do
         and refund("door", { IsMoveAble = "" }) == "pickup", "能搬：拿起來（也能拆的照樣是拿起來）")
     check(refund("furniture", { CanScrap = "", Material = "Wood" }) == "scrap"
         and refund("door", { CanScrap = "", Material = "Wood" }) == "scrap", "CanScrap 且材質有產出：照材質拆（門也一樣）")
-    check(refund("furniture", { CanScrap = "", Material = "Fabric" }) == "none", "CanScrap 但材質沒有產出：拆了沒東西")
-    check(refund("wall", { Material = "Wood" }) == "materials" and refund("furniture", { Material = "Wood" }) == "materials"
-        and refund("wall", { CanScrap = "", Material = "Undefined", Material2 = "Wood" }) == "none",
-        "IsoThumpable 不能搬、不能照材質拆：第一個材質有拆解定義才照 buildMaterials 退（Undefined 不算）")
-    check(refund("wall", {}) == "none" and refund("wall", { Material = "Fabric", Material2 = "Wood" }) == "none",
-        "IsoThumpable 第一個材質沒有拆解產出（第二個有也一樣）：只能砸")
+    check(refund("furniture", { CanScrap = "", Material = "Fabric" }) == "builder",
+        "CanScrap 但材質沒有產出（原版拆了沒東西）：本工具拆、照退料表退")
+    check(refund("wall", { Material = "Wood" }) == "builder" and refund("furniture", { Material = "Wood" }) == "builder"
+        and refund("wall", { CanScrap = "", Material = "Undefined", Material2 = "Wood" }) == "builder"
+        and refund("wall", {}) == "builder" and refund("light", {}) == "builder" and refund("stairs", {}) == "builder",
+        "不能搬、原版不照材質拆的 IsoThumpable 與燈：本工具拆，每項退 1..v（第一個材質 Undefined 不算能照材質拆）")
     check(refund("door", { Material = "Wood" }) == "none" and refund("window", { Material = "Wood" }) == "none",
         "門窗不是 IsoThumpable、不能搬、不能拆：只能砸，不退料")
 end
@@ -1595,7 +1634,9 @@ do
             for _, k in ipairs(kinds) do want["IGUI_MBLD_Kind_" .. k] = true end
         end
         for _, t in ipairs(W.TABS) do want["IGUI_MBLD_Tab_" .. t] = true end
-        for _, r in ipairs({ "pickup", "scrap", "materials", "sheet", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
+        for _, r in ipairs({ "pickup", "scrap", "builder", "sheet", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
+        for code in pairs(Messages.UNBUILD_CODES) do want["IGUI_MBLD_UnbuildRefuse_" .. code] = true end
+        want["IGUI_MBLD_Menu_Dismantle"], want["IGUI_MBLD_NotRemoved"] = true, true
         for d = 0, 4 do want["IGUI_MBLD_Face_" .. d] = true end
         for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER" }) do
             want["IGUI_MBLD_Tool_" .. t] = true
@@ -1628,7 +1669,7 @@ end
 print("情境二十：第四階段新種類（樓梯、燈、窗簾、屋頂）")
 -- 包成函式：區域變數多，放在主區塊的 do…end 會超過主程式 200 個的上限
 local function newKinds()
-    nowMs = nowMs + 60000 -- 前面的請求、限流都過期
+    nowMs = nowMs + 180000 -- 前面的請求、限流都過期
     local BP = { BlocksPlacement = "" }
     local stW = { sprite("stw_01_0", 2101, { type = T.stairsBW, keys = BP }), sprite("stw_01_1", 2102, { type = T.stairsMW, keys = BP }),
         sprite("stw_01_2", 2103, { type = T.stairsTW, keys = BP }) }
@@ -1697,8 +1738,8 @@ local function newKinds()
         and sent[1] and sent[1].cmd == "refused" and sent[1].args.code == "BAD_FACE",
         "樓梯另一面的那組中片是實體：那一面不能選（預覽、伺服器都 BAD_FACE），三片都合法的那一面照常可選")
     local mixed = Cost.forCells("stairs", { stM[3], stM[2], stM[1], landing }, 1)
-    check(mixed[1].back == true and next(Cost.xp(mixed, player())) == nil,
-        "樓梯只有中片有拆解材質：拆中片照退料表可能全拿回，整組不給經驗")
+    check(mixed[1].uniform == true and mixed[1].back == false and Cost.xp(mixed, player()).Woodwork == 47.5,
+        "樓梯只有中片有拆解材質（不能搬、不 CanScrap）：三片都本工具拆、整組退一次 1..v，木板 13、釘子 8 平均拿不回 6＋3.5 件")
     local cw, cn = Entry.cells(stW[1]), Entry.cells(stN[1])
     check(#cw == 4 and cw[1][4] == stW[3] and cw[1][5] == "top" and cw[2][1] == 1 and cw[3][1] == 2 and cw[3][4] == stW[1]
         and cw[4][1] == -1 and cw[4][3] == 1 and cw[4][4] == landing and cw[4][5] == "platform"
@@ -1712,8 +1753,8 @@ local function newKinds()
     local ms = Cost.of("stairs", sprite("ms_01_0", 2140, { type = T.stairsBW, keys = { MaterialType = "Metal_Solid" } }))
     local ws = Cost.of("stairs", sprite("ws_01_0", 2141, { type = T.stairsBW, keys = { Material = "Wood" } }))
     check(ms.items["Base.MetalBar"] == 4 and ms.items["Base.SmallSheetMetal"] == 6 and #ms.tools == 2
-        and ws.items["Base.Plank"] == 13 and ws.back == true and next(Cost.xp({ ws }, player())) == nil,
-        "金屬樓梯照 Metal_Stairs；有拆解材質的不照拆解產出收，原版拆時照退料表可能全拿回，不給經驗")
+        and ws.items["Base.Plank"] == 13 and ws.uniform == true and Cost.xp({ ws }, player()).Woodwork == 47.5,
+        "金屬樓梯照 Metal_Stairs；有拆解材質的不照拆解產出收，照退料表退 1..v 給經驗")
     for _, q in ipairs({ { 40, 57, 1 }, { 41, 57, 1 }, { 40, 58, 1 }, { 40, 59, 1 }, { 40, 56, 1 }, { 40, 55, 1 } }) do
         square(q[1], q[2], q[3])
     end
@@ -1730,8 +1771,9 @@ local function newKinds()
         and T0.set.setCanPassThrough == true,
         "樓梯三片：IsoThumpable、標成樓梯、450 血、照原版整格擋（BlocksPlacement）、走得過，三片都寫整組的退料")
     check(at(plat, "carpentry_02_57") and plat.md and plat.md.ConnectedToStairsfalse == true
-        and SP.inv:count("Base.Plank") == 0 and #xpLog == 1 and xpLog[1].n == 105,
-        "平台：上一層補原版平台地板、記 ConnectedToStairs（同向樓梯不能再蓋在這），整組扣一次料、木工 105（21 件）")
+        and SP.inv:count("Base.Plank") == 0 and #xpLog == 1 and xpLog[1].n == 47.5
+        and MinidoracatBuilder.Ledger.get(at(plat, "carpentry_02_57")) ~= nil,
+        "平台：上一層補原版平台地板（記進帳本：拆樓梯時只拆本 MOD 補的）、記 ConnectedToStairs（同向樓梯不能再蓋在這），整組扣一次料、木工 47.5")
     -- 原版拆一片會整組移除：每片移除前觸發 OnObjectAboutToBeRemoved，本 MOD 的片清掉退料表，別人的照舊
     do
         local realInst = instanceof
@@ -1800,6 +1842,7 @@ local function newKinds()
         function o:setExplored() end
         function o:transmitCompleteItemToClients() self.sent = true end
         function o:getSquare() return sq end
+        function o:getSprite() return spr end
         made[#made + 1] = o
         return o
     end }
@@ -1823,8 +1866,10 @@ local function newKinds()
     local SW = player({ id = 2104, x = 51.5, y = 58.5 })
     SW.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
     give(SW, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
-    check(build(SW, 1, "switch_01_0", { 50, 58, 0 }) and made[2] and made[2].lights == 0 and made[2].moved == nil,
-        "牆面開關（沒有 lightR）：照樣是 IsoLightSwitch、不掛光源、不收燈泡")
+    xpLog = {}
+    check(build(SW, 1, "switch_01_0", { 50, 58, 0 }) and made[2] and made[2].lights == 0 and made[2].moved == nil
+        and #xpLog == 0 and MinidoracatBuilder.Ledger.get(made[2])["Base.ElectricWire"] == 1,
+        "牆面開關（沒有 lightR、不能搬）：照樣是 IsoLightSwitch、不掛光源、不收燈泡；記進帳本，本工具拆時各 1 件一定全退，不給經驗")
     ISMoveableSpriteProps = nil
 
     -- 窗簾：掛在窗框上；面向 E 的窗框在本格西邊，面向 W 的在東邊那格
@@ -1923,6 +1968,333 @@ local function newKinds()
         "一排屋頂：前面可蓋的格子撐得住後面的（從有牆那頭拖整排可蓋，反過來只有靠牆那格）")
 end
 newKinds()
+
+print("情境二十一：第五階段拆除與帳本（本工具拆、退 1..v、帳本、身分、拒絕條件）")
+local function dismantleScenario()
+    nowMs = nowMs + 180000
+    local Dismantle, Ledger = MinidoracatBuilder.Dismantle, MinidoracatBuilder.Ledger
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    -- 一塊 70..77 × 70..77 的空地（BFS 找路要鄰格），移除時照引擎先觸發 OnObjectAboutToBeRemoved
+    local function engineSq(x, y, z, o)
+        local sq = square(x, y, z, o)
+        local orig = sq.transmitRemoveItemFromSquare
+        sq.dropped = {}
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        return sq
+    end
+    for x = 70, 77 do for y = 70, 77 do engineSq(x, y, 0) end end
+    local function at(x, y, z) return squares[x .. "," .. y .. "," .. z] end
+    -- 本 MOD 蓋的物件（modData 有 builderEntry）；mats＝退料表（字串，照 Java 欄位）。多格：group＝同一組（同一個原點），
+    -- cands＝引擎 getSpriteGridObjectsIncludingSelf 收到的（同一張 sprite grid、不看原點，可能混到別組）
+    local function ours(sq, spr, mats, class)
+        local o = { class = class or "IsoThumpable", mats = mats or {}, md = { builderEntry = spr:getName() } }
+        function o:getSprite() return spr end
+        function o:getSquare() return sq end
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:isDismantable() return true end
+        function o:getBuildMaterials() return self.mats end
+        function o:isObjectNoContainerOrEmpty() return not self.full end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList(self.cands or self.group or { self }) end
+        function o:isConnectedSpriteGridObject(x) return x == self or (self.group ~= nil and self.group == x.group) end
+        function o:isStairsObject() return Rules.typeCode(spr:getType()) == "stairs" end
+        function o:hasFluid() return self.fluid == true end
+        function o:isBarricaded() return self.barricaded == true end
+        function o:getProperties() return spr:getProperties() end
+        function o:getTextureName() return spr:getName() end
+        function o:getType() return spr:getType() end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    local function has(sq, o) for _, v in ipairs(sq.objects) do if v == o then return true end end return false end
+    local function hammerer(id, x, y, here, extra)
+        extra = extra or {}
+        extra.id, extra.x, extra.y, extra.here = id, x, y, here
+        local p = player(extra)
+        p.inv:add(item("Base.Hammer", { HAMMER = true }))
+        return p
+    end
+    local function lastSent() return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {} end
+    local function unbuild(p, n, x, y, z, e)
+        sent = {}
+        Server.dismantleIntent(p, { n = n, x = x, y = y, z = z, e = e })
+        return lastSent()
+    end
+    local wallS = sprite("dw_01_0", 2201, { keys = { WallN = "" } })
+    local floorS = sprite("df_01_0", 2202, { flags = { "solidfloor" } })
+    local boxS = sprite("db_01_0", 2203, { keys = { container = "" } })
+    local chairS = sprite("dc_01_0", 2204, { keys = { IsMoveAble = "" } })
+    local switchS = sprite("dl_01_0", 2205, { type = T.lightswitch })
+    local stS = { sprite("ds_01_0", 2206, { type = T.stairsBW }), sprite("ds_01_1", 2207, { type = T.stairsMW }),
+        sprite("ds_01_2", 2208, { type = T.stairsTW }) }
+    local landS = sprite(Entry.STAIR_FLOOR, 2209, { flags = { "solidfloor" } })
+    local roofS = sprite("dr_01_0", 2210, { type = T.WestRoofB, keys = { RoofGroup = "1" } })
+    local here = at(71, 71, 0)
+    local P = hammerer(2201, 71.5, 71.5, here)
+
+    -- 牆：身分照請求、退料先讀再移除、每項 1..v、同一筆不拆兩次
+    local W = ours(at(72, 71, 0), wallS, { ["Base.Plank"] = "4", ["Base.Nails"] = "6" })
+    check(Dismantle.kindOf(W) == "wall" and (unbuild(P, 1, 72, 71, 0, "dw_01_0")) == "dismantleAccepted",
+        "本 MOD 蓋的牆：認得出來，拆除請求收下")
+    local O = hammerer(2202, 71.5, 72.5, here)
+    sent = {}
+    check(Server.dismantle(O, 1) == false and has(at(72, 71, 0), W) and #sent == 0,
+        "別的玩家拿同一個 nonce：沒有請求，不拆、MP 不回覆")
+    HARNESS_ROLL = "max"
+    check(Server.dismantle(P, 1) == true and not has(at(72, 71, 0), W) and here.dropped["Base.Plank"] == 4
+        and here.dropped["Base.Nails"] == 6 and next(W.mats) == nil and (lastSent()) == "dismantled",
+        "拆牆：移除、照退料表退到玩家腳下（最多全部）；移除前退料表已清空（先讀再移除）")
+    sent = {}
+    check(Server.dismantle(P, 1) == false and here.dropped["Base.Plank"] == 4,
+        "同一筆請求再送一次：不再拆、不再退")
+    HARNESS_ROLL = "min"
+    here.dropped = {}
+    local W2 = ours(at(72, 72, 0), wallS, { ["Base.Plank"] = "4", ["Base.Nails"] = "6" })
+    unbuild(P, 2, 72, 72, 0, "dw_01_0")
+    check(Server.dismantle(P, 2) and here.dropped["Base.Plank"] == 1 and here.dropped["Base.Nails"] == 1 and not has(at(72, 72, 0), W2),
+        "每項至少退 1 件")
+    HARNESS_ROLL = "max"
+
+    -- 拒絕：不在範圍內的照樣留著
+    local far = hammerer(2203, 76.5, 76.5, at(76, 76, 0))
+    local W3 = ours(at(72, 73, 0), wallS, { ["Base.Plank"] = "4" })
+    unbuild(far, 3, 72, 73, 0, "dw_01_0")
+    Server.dismantle(far, 3)
+    local c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "TOO_FAR" and has(at(72, 73, 0), W3), "太遠：TOO_FAR、不拆")
+    check(Dismantle.check(far, "wall", Dismantle.plan(W3, "wall"), true) == nil, "右鍵選單預覽不查距離（選了會先走過去）")
+    local bare = player({ id = 2204, x = 71.5, y = 73.5, here = here })
+    unbuild(bare, 4, 72, 73, 0, "dw_01_0")
+    Server.dismantle(bare, 4)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NO_TOOL" and a.tools[1] == "HAMMER" and has(at(72, 73, 0), W3),
+        "沒帶工具（和蓋的時候一樣）：NO_TOOL、列出缺的工具")
+    local cheat = player({ id = 2205, x = 71.5, y = 73.5, here = here, cheat = true })
+    check(Dismantle.check(cheat, "wall", Dismantle.plan(W3, "wall")) == nil, "建造作弊：不查工具")
+    local owned = engineSq(70, 75, 0, { owner = "someone" })
+    local W4 = ours(owned, wallS, { ["Base.Plank"] = "4" })
+    local SP = hammerer(2206, 70.5, 74.5, at(70, 74, 0))
+    unbuild(SP, 5, 70, 75, 0, "dw_01_0")
+    Server.dismantle(SP, 5)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "SAFEHOUSE" and has(owned, W4), "別人的安全屋：SAFEHOUSE、不拆")
+    local B = ours(at(73, 71, 0), boxS, { ["Base.Plank"] = "2" })
+    B.full = true
+    unbuild(P, 6, 73, 71, 0, "db_01_0")
+    Server.dismantle(P, 6)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NOT_EMPTY" and has(at(73, 71, 0), B), "容器裡還有東西：NOT_EMPTY、不拆（不讓內容物消失）")
+    local ch = ours(at(73, 72, 0), chairS, { ["Base.Plank"] = "2" })
+    unbuild(P, 7, 73, 72, 0, "dc_01_0")
+    Server.dismantle(P, 7)
+    c, a = lastSent()
+    check(Dismantle.kindOf(ch) == nil and c == "dismantleRefused" and a.code == "GONE" and has(at(73, 72, 0), ch),
+        "能搬的（照原版拿起）不歸本工具拆：找不到可拆的那件（GONE）")
+
+    -- 燈只認帳本：帳本沒記的不拆；帳本裡的照帳本退，移出世界時帳本清掉
+    check(type(HARNESS_GOS_KEYS.MinidoracatBuilder) == "table" and HARNESS_GOS_KEYS.MinidoracatBuilder[1] == "built",
+        "帳本存檔白名單有 built（漏了重開後帳本消失）")
+    local fake = ours(at(74, 71, 0), switchS, nil, "IsoLightSwitch")
+    local LP = hammerer(2209, 73.5, 71.5, at(73, 71, 0))
+    LP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    unbuild(LP, 8, 74, 71, 0, "dl_01_0")
+    Server.dismantle(LP, 8)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(74, 71, 0), fake),
+        "燈的 modData 有 builderEntry、帳本沒記：NOT_OURS、不拆不退")
+    local L = ours(at(74, 72, 0), switchS, nil, "IsoLightSwitch")
+    Ledger.put(L, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
+    unbuild(LP, 9, 74, 72, 0, "dl_01_0")
+    check(Server.dismantle(LP, 9) and at(73, 71, 0).dropped["Base.ElectricWire"] == 1 and not has(at(74, 72, 0), L)
+        and Ledger.get(L) == nil, "帳本裡的燈：照帳本退、移除時帳本清掉")
+
+    -- 樓梯：三片加本 MOD 補的平台（帳本有記）一起拆，只照被點的那片退一次；清掉平台格的 ConnectedToStairs
+    local function landingAt(sq)
+        local l = {}
+        function l:getSprite() return landS end
+        function l:getSquare() return sq end
+        function l:isStairsObject() return false end
+        sq.objects[#sq.objects + 1] = l
+        return l
+    end
+    local plat = engineSq(73, 73, 1)
+    plat:getModData().ConnectedToStairsfalse = true
+    local T0 = ours(at(74, 73, 0), stS[3], { ["Base.Plank"] = "13", ["Base.Nails"] = "8" })
+    local M0 = ours(at(75, 73, 0), stS[2], { ["Base.Plank"] = "13", ["Base.Nails"] = "8" })
+    local B0 = ours(at(76, 73, 0), stS[1], { ["Base.Plank"] = "13", ["Base.Nails"] = "8" })
+    local landing = landingAt(plat)
+    Ledger.put(landing, {})
+    local realStairs = buildUtil.getStairObjects
+    buildUtil.getStairObjects = function() return { T0, M0, B0, landing } end -- 原版收三片＋旁邊沒地板的平台
+    local SP2 = hammerer(2207, 75.5, 72.5, at(75, 72, 0))
+    unbuild(SP2, 10, 75, 73, 0, "ds_01_1")
+    check(Server.dismantle(SP2, 10) and not has(at(74, 73, 0), T0) and not has(at(75, 73, 0), M0)
+        and not has(at(76, 73, 0), B0) and not has(plat, landing) and plat.md.ConnectedToStairsfalse == nil
+        and at(75, 72, 0).dropped["Base.Plank"] == 13 and at(75, 72, 0).dropped["Base.Nails"] == 8 and Ledger.get(landing) == nil,
+        "樓梯：點中片，三片與平台一起拆、只退一組、平台格的 ConnectedToStairs 清掉、帳本的平台清掉")
+
+    -- 樓梯有一片沒有記號：整組不拆、不退（三片要一起拆、只退一組）
+    local SP3 = hammerer(2210, 75.5, 75.5, at(75, 75, 0))
+    local plat1 = engineSq(73, 76, 1)
+    local T1 = ours(at(74, 76, 0), stS[3], { ["Base.Plank"] = "13" })
+    local M1 = ours(at(75, 76, 0), stS[2], { ["Base.Plank"] = "13" })
+    local B1 = ours(at(76, 76, 0), stS[1], { ["Base.Plank"] = "13" })
+    local land1 = landingAt(plat1)
+    Ledger.put(land1, {})
+    ours(plat1, wallS, {}) -- 平台上蓋了牆
+    M1.md.builderEntry = false -- 記號要有值（和 Place.onAboutToBeRemoved 同一個判斷），false 不算
+    buildUtil.getStairObjects = function() return { T1, M1, B1, land1 } end
+    unbuild(SP3, 14, 74, 76, 0, "ds_01_2")
+    Server.dismantle(SP3, 14)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(74, 76, 0), T1) and has(at(75, 76, 0), M1)
+        and has(at(76, 76, 0), B1) and next(at(75, 75, 0).dropped) == nil, "樓梯有一片的記號是 false：整組不拆、不退")
+    M1.md.builderEntry = "ds_01_1"
+    unbuild(SP3, 15, 74, 76, 0, "ds_01_2")
+    check(Server.dismantle(SP3, 15) and not has(at(75, 76, 0), M1) and has(plat1, land1) and Ledger.get(land1) ~= nil,
+        "平台上還有別的東西（牆）：拆樓梯、平台留著")
+    -- 別方向的樓梯片不算這一組；平台不在帳本（蓋樓梯時那格原本就有地板）
+    local plat2 = engineSq(73, 77, 1)
+    local T2 = ours(at(74, 77, 0), stS[3], { ["Base.Plank"] = "13" })
+    local M2 = ours(at(75, 77, 0), stS[2], { ["Base.Plank"] = "13" })
+    local B2 = ours(at(76, 77, 0), stS[1], { ["Base.Plank"] = "13" })
+    local NM = ours(at(75, 77, 0), sprite("dsn_01_1", 2211, { type = T.stairsMN }), { ["Base.Plank"] = "13" })
+    local land2 = landingAt(plat2)
+    local platN = engineSq(75, 76, 1) -- 別方向那組的平台（也是本 MOD 補的），不是這一組的
+    local landN = landingAt(platN)
+    Ledger.put(landN, {})
+    buildUtil.getStairObjects = function() return { T2, M2, NM, B2, land2, landN } end
+    unbuild(SP3, 16, 74, 77, 0, "ds_01_2")
+    check(Server.dismantle(SP3, 16) and not has(at(74, 77, 0), T2) and not has(at(75, 77, 0), M2)
+        and not has(at(76, 77, 0), B2) and has(at(75, 77, 0), NM) and has(plat2, land2)
+        and has(platN, landN) and Ledger.get(landN) ~= nil,
+        "別方向的樓梯片與它的平台不算這一組（不拆）；這一組的平台不在帳本（原本就有的地板）：留著")
+    -- 平台在別人的安全屋
+    local plat3 = engineSq(73, 76, 1, { owner = "someone" })
+    local T3 = ours(at(74, 76, 0), stS[3], { ["Base.Plank"] = "13" })
+    local M3 = ours(at(75, 76, 0), stS[2], { ["Base.Plank"] = "13" })
+    local B3 = ours(at(76, 76, 0), stS[1], { ["Base.Plank"] = "13" })
+    local land3 = landingAt(plat3)
+    Ledger.put(land3, {})
+    buildUtil.getStairObjects = function() return { T3, M3, B3, land3 } end
+    unbuild(SP3, 17, 74, 76, 0, "ds_01_2")
+    check(Server.dismantle(SP3, 17) and not has(at(75, 76, 0), M3) and has(plat3, land3), "平台在別人的安全屋：拆樓梯、平台留著")
+    buildUtil.getStairObjects = realStairs
+
+    -- 多格：同一組（同一個原點）整組拆、每片照自己的退料表退；引擎一起收到的別組那片（同一張 grid、原點不同）不拆
+    local GA = ours(at(71, 75, 0), boxS, { ["Base.Plank"] = "2" })
+    local GB = ours(at(72, 75, 0), boxS, { ["Base.Plank"] = "2" })
+    local GX = ours(at(72, 75, 0), boxS, { ["Base.Plank"] = "2" })
+    local g = { GA, GB }
+    GA.group, GB.group, GX.group = g, g, { GX }
+    GA.cands = { GA, GB, GX }
+    local GP = hammerer(2208, 71.5, 74.5, at(71, 74, 0))
+    unbuild(GP, 11, 71, 75, 0, "db_01_0")
+    check(Server.dismantle(GP, 11) and not has(at(71, 75, 0), GA) and not has(at(72, 75, 0), GB) and has(at(72, 75, 0), GX)
+        and at(71, 74, 0).dropped["Base.Plank"] == 4, "多格：同一組整組拆、每片照自己的退料表退（2＋2）；原點不同的別組那片不拆")
+    -- 同一組有一片沒有記號：整組不拆、不退
+    local GC = ours(at(73, 74, 0), boxS, { ["Base.Plank"] = "2" })
+    local GD = ours(at(74, 74, 0), boxS, { ["Base.Plank"] = "2" })
+    GD.md.builderEntry = nil
+    local g2 = { GC, GD }
+    GC.group, GD.group, GC.cands = g2, g2, { GC, GD }
+    unbuild(GP, 22, 73, 74, 0, "db_01_0")
+    Server.dismantle(GP, 22)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(73, 74, 0), GC) and has(at(74, 74, 0), GD)
+        and at(71, 74, 0).dropped["Base.Plank"] == 4, "多格：同一組有一片沒有本 MOD 的記號：整組不拆、不退")
+
+    -- 原版拆解擋的：集水的裡面有水、門框裝著門、窗框釘著木板、樓梯頂端接著的地板；移除沒生效不退料
+    local WP = hammerer(2211, 75.5, 70.5, at(75, 70, 0))
+    local WC = ours(at(77, 72, 0), sprite("dwc_01_0", 2212, { keys = { container = "", IsWaterCollector = "" } }),
+        { ["Base.Plank"] = "2" })
+    WC.fluid = true
+    unbuild(WP, 18, 77, 72, 0, "dwc_01_0")
+    Server.dismantle(WP, 18)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "NOT_EMPTY" and has(at(77, 72, 0), WC), "集水的裡面有水：NOT_EMPTY、不拆")
+    local DF = ours(at(74, 72, 0), sprite("ddf_01_0", 2213, { flags = { "DoorWallN" }, keys = { DoorWallN = "" } }),
+        { ["Base.Plank"] = "4" })
+    at(74, 72, 0).getDoor = function(_, dir)
+        assert(dir == GridSquareEdgeFacingDirection.NORTH_SOUTH or dir == GridSquareEdgeFacingDirection.EAST_WEST,
+            "getDoor takes GridSquareEdgeFacingDirection")
+        return dir == GridSquareEdgeFacingDirection.NORTH_SOUTH and {} or nil
+    end
+    local WF = ours(at(74, 70, 0), sprite("dwf_01_0", 2214, { flags = { "WindowN" }, keys = { WindowN = "" } }),
+        { ["Base.Plank"] = "4" })
+    WF.barricaded = true
+    engineSq(77, 71, 0, { flags = { stairsTW = true } }) -- 往西爬的樓梯頂片：在二樓那格東邊的下一層
+    local UF = ours(engineSq(76, 71, 1), floorS, { ["Base.Plank"] = "1" })
+    local codes = {}
+    for i, t in ipairs({ { DF, "doorFrame" }, { WF, "windowFrame" }, { UF, "floor" } }) do
+        codes[i] = tostring((Dismantle.check(WP, t[2], Dismantle.plan(t[1], t[2]))))
+    end
+    check(codes[1] == "ATTACHED" and codes[2] == "ATTACHED" and codes[3] == "STAIRS_TOP",
+        "門框裝著門、窗框釘著木板：ATTACHED；樓梯頂端接著的二樓地板：STAIRS_TOP（" .. table.concat(codes, ",") .. "）")
+    -- 窗框裝著窗（getWindow 照邊方向查）：ATTACHED；空的窗框照常能拆（preview：不看距離）
+    local wfS = sprite("dwf_01_0", 2214, { flags = { "WindowN" }, keys = { WindowN = "" } })
+    local WW = ours(engineSq(75, 69, 0, { windows = { [GridSquareEdgeFacingDirection.NORTH_SOUTH] = {} } }), wfS,
+        { ["Base.Plank"] = "4" })
+    local WB = ours(engineSq(76, 69, 0), wfS, { ["Base.Plank"] = "4" })
+    local cw = tostring((Dismantle.check(WP, "windowFrame", Dismantle.plan(WW, "windowFrame"), true)))
+    local cb = tostring((Dismantle.check(WP, "windowFrame", Dismantle.plan(WB, "windowFrame"), true)))
+    check(cw == "ATTACHED" and cb == "nil", "窗框裝著窗：ATTACHED；空的窗框能拆（" .. cw .. "," .. cb .. "）")
+    local stuck = engineSq(76, 72, 0)
+    function stuck:transmitRemoveItemFromSquare() return -1 end -- 引擎沒移掉（錯誤被 Kahlua 吞掉，pcall 看不到）
+    local WS = ours(stuck, wallS, { ["Base.Plank"] = "4" })
+    unbuild(WP, 19, 76, 72, 0, "dw_01_0")
+    Server.dismantle(WP, 19)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "INTERNAL" and has(stuck, WS) and next(at(75, 70, 0).dropped) == nil,
+        "移除沒生效：INTERNAL、不退料")
+    sb.WhereCanBuild = 2
+    local WW = ours(at(74, 71, 0), wallS, { ["Base.Plank"] = "4" })
+    unbuild(WP, 20, 74, 71, 0, "dw_01_0")
+    check(Server.dismantle(WP, 20) and not has(at(74, 71, 0), WW), "只能在安全屋內蓋（WhereCanBuild=2）：拆除不看，安全屋外照樣能拆")
+    sb.WhereCanBuild = nil
+    local WE = ours(at(77, 70, 0), wallS, { ["Base.Plank"] = "4" })
+    unbuild(WP, 21, 77, 70, 0, "dw_01_0")
+    nowMs = nowMs + 181000
+    check(Server.dismantle(WP, 21) == false and has(at(77, 70, 0), WE), "請求過期（走太久）：不拆")
+
+    -- 地板：一樓拆了換泥土；二樓以上格上還有東西不拆
+    local F0 = ours(at(73, 75, 0), floorS, { ["Base.Plank"] = "1" })
+    unbuild(GP, 12, 73, 75, 0, "df_01_0")
+    local dirt
+    if Server.dismantle(GP, 12) then
+        for _, o in ipairs(at(73, 75, 0).objects) do if o.name == "blends_natural_01_64" then dirt = o end end
+    end
+    check(dirt and not has(at(73, 75, 0), F0), "一樓的地板拆了換泥土（照原版）")
+    local up = engineSq(72, 76, 1)
+    local F1 = ours(up, floorS, { ["Base.Plank"] = "1" })
+    ours(up, wallS, {})
+    unbuild(GP, 13, 72, 76, 1, "df_01_0")
+    Server.dismantle(GP, 13)
+    c, a = lastSent()
+    check(c == "dismantleRefused" and a.code == "FLOOR_IN_USE" and has(up, F1), "二樓的地板上還有牆：FLOOR_IN_USE、不拆")
+
+    -- 右鍵選單：點地板也列出正上方那格的屋頂；樓梯三片只列一次
+    local Menu = (function() require "MinidoracatBuilder/Menu" return MinidoracatBuilder.Menu end)()
+    local roofSq = engineSq(76, 70, 1)
+    local R = ours(roofSq, roofS, { ["Base.Plank"] = "1" })
+    local floorObj = { getSquare = function() return at(76, 70, 0) end }
+    local tg = Menu.targets({ floorObj })
+    local S1 = ours(at(74, 74, 0), stS[3], {})
+    local S2 = ours(at(75, 74, 0), stS[2], {})
+    buildUtil.getStairObjects = function() return { S1, S2 } end
+    local ts = Menu.targets({ { getSquare = function() return at(74, 74, 0) end },
+        { getSquare = function() return at(75, 74, 0) end } })
+    buildUtil.getStairObjects = realStairs
+    check(#tg == 1 and tg[1].obj == R and tg[1].kind == "roof" and #ts == 1,
+        "右鍵選單：點地板列出正上方的屋頂（從底下點不到）；樓梯兩片只列一項")
+    instanceof = realInst
+end
+dismantleScenario()
 
 print()
 if failures > 0 then

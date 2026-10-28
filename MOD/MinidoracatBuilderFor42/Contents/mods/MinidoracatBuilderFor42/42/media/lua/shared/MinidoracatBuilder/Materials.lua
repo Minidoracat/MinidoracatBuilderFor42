@@ -82,16 +82,22 @@ local function hasTool(inv, name)
     return ty ~= nil and inv:getFirstTypeEvalRecurse(ty, notBroken) ~= nil
 end
 
+-- 缺的工具（ItemTag 欄位名陣列）；都帶著回 nil。拆除也用（和蓋的時候一樣的工具，使用者 2026-10-28 選）
+function Materials.missingTools(player, tools)
+    local inv, out = player:getInventory(), nil
+    for _, name in ipairs(tools) do
+        if not hasTool(inv, name) then
+            out = out or {}
+            out[#out + 1] = name
+        end
+    end
+    return out
+end
+
 -- cost＝Cost.sum 的結果。回 plan，或 nil, missing（fullType → 還差幾個）, tools（缺的 ItemTag 欄位名）
 function Materials.plan(player, cost)
     local inv = player:getInventory()
-    local missingTools
-    for _, name in ipairs(cost.tools) do
-        if not hasTool(inv, name) then
-            missingTools = missingTools or {}
-            missingTools[#missingTools + 1] = name
-        end
-    end
+    local missingTools = Materials.missingTools(player, cost.tools)
     local take, short, anyShort = {}, {}, false
     for ft, n in pairs(cost.items) do
         local got = inv:getSomeTypeEvalRecurse(ft, usable, n)

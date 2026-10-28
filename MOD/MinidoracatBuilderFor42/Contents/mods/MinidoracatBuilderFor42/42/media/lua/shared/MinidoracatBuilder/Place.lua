@@ -223,6 +223,16 @@ local function finish(sq, obj, index)
     obj:transmitCompleteItemToClients()
 end
 
+-- 拆了退什麼＝付的扣掉電器費（電器費拆了不退，Cost.of）
+local function refundable(cost)
+    local out, fee = {}, cost.fee or {}
+    for ft, n in pairs(cost.items) do
+        local v = n - (fee[ft] or 0)
+        if v > 0 then out[ft] = v end
+    end
+    return out
+end
+
 -- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
@@ -266,11 +276,8 @@ local function thumpable(c, kind, north)
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
-    local mats, fee = obj:getBuildMaterials(), c.cost.fee or {}
-    for ft, n in pairs(c.cost.items) do
-        local v = n - (fee[ft] or 0) -- 電器費拆了不退（Cost.of）
-        if v > 0 then mats[ft] = tostring(v) end
-    end
+    local mats = obj:getBuildMaterials()
+    for ft, v in pairs(refundable(c.cost)) do mats[ft] = tostring(v) end
     obj:getModData().builderEntry = spr:getName()
     -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
     if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end
@@ -280,7 +287,7 @@ end
 -- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
 -- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
 -- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。
-local function removeForFloor(sq)
+function Place.clearFloor(sq)
     local objects, rug = sq:getObjects(), nil
     for i = objects:size() - 1, 0, -1 do
         local o = objects:get(i)
@@ -297,7 +304,7 @@ local function removeForFloor(sq)
 end
 
 local function placeFloor(sq, obj)
-    local index = removeForFloor(sq)
+    local index = Place.clearFloor(sq)
     finish(sq, obj, index)
     sq:EnsureSurroundNotNull()
     sq:RecalcProperties()
@@ -358,8 +365,11 @@ local function placeStairs(cells, placed)
     end
     local sq = landing.sq
     if not sq:has(F.solidfloor) then
-        removeForFloor(sq)
-        placed[#placed + 1] = sq:addFloor(Entry.STAIR_FLOOR)
+        Place.clearFloor(sq)
+        local floor = sq:addFloor(Entry.STAIR_FLOOR)
+        placed[#placed + 1] = floor
+        -- 拆樓梯時只拆本 MOD 補的平台（Server.dismantle）：一般 IsoObject、和原版補的同一張圖，只能記在伺服器帳本
+        if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
     end
     sq:getModData()["ConnectedToStairs" .. tostring(not west)] = true
     sq:RecalcAllWithNeighbours(true)
@@ -370,6 +380,7 @@ end
 -- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
 -- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，只控制地圖房間的燈（IsoLightSwitch.java:73-99）。
 -- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）。
+-- IsoLightSwitch 沒有 buildMaterials：拆了退什麼記在伺服器帳本（server/MinidoracatBuilder/Ledger.lua）。
 local function newLight(c)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
@@ -403,6 +414,7 @@ function Place.build(kind, cells, placed)
             obj = newLight(c)
             placed[#placed + 1] = obj
             finish(sq, obj)
+            if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(obj, refundable(c.cost)) end
         elseif kind == "curtain" then
             -- 照原版搬動放窗上物件（ISMoveableSpriteProps.lua:2195-2210）：north＝面向 N 或 S
             local facing = spr:getProperties():get("Facing")
