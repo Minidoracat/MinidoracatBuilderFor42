@@ -227,6 +227,7 @@ square = function(x, y, z, o)
     function sq:hasModData() return sq.md ~= nil end
     function sq:getModData() sq.md = sq.md or {}; return sq.md end
     function sq:getRoomID() return -1 end
+    function sq:getRoom() return nil end -- 伺服器上自建房屋沒有房間（IsoRegions.java:212-214）；線路情境另設
     function sq:addFloor(name) -- 照引擎：先拆格上的地板、植物這類（預設 safelyRemove：多格的整組拆，IsoGridSquare.java:4746-4763），
         for i = #sq.objects, 1, -1 do -- 再加地板物件、格子帶 solidfloor
             local old = sq.objects[i]
@@ -2584,14 +2585,41 @@ local function circuitScenario()
     sent = {}
     Circuits.placed(P, { O.L8 })
     check(last().auto == "lamp" and nL(last()) == 1 and nS(last()) == 1, "房間裡只有一個開關：放燈時建線路接上")
-    -- 招牌（引擎也建成 IsoLightSwitch：lightswitch 型別、沒有 lightR、帶 streetlight）不是開關：放進有線路的房間不接線、不回覆
-    O.SIGN = light(112, 102, sprite("cn_01_0", 2305, { type = T.lightswitch, keys = { streetlight = "" } }), "ours")
-    sent = {}
-    Circuits.placed(P, { O.SIGN })
-    local signReplies = #sent
-    r = ask(P, O.SW3)
-    check(signReplies == 0 and nS(r) == 1 and nL(r) == 1, "招牌（帶 streetlight、沒有 lightR）不算開關：放進有線路的房間不接線（"
-        .. signReplies .. " 則回覆）")
+    -- 招牌（引擎也建成 IsoLightSwitch：lightswitch 型別、沒有 lightR）不是開關：帶 streetlight 的招牌、能搬的菜單板放進有線路的
+    -- 房間都不接線、不回覆
+    for i, keys in ipairs({ { streetlight = "" }, { IsMoveAble = "" } }) do
+        local sign = light(112, 102, sprite("cn_01_" .. i, 2304 + i, { type = T.lightswitch, keys = keys }), "ours")
+        sent = {}
+        Circuits.placed(P, { sign })
+        local replies = #sent
+        r = ask(P, O.SW3)
+        check(replies == 0 and nS(r) == 1 and nL(r) == 1, "招牌（沒有 lightR、帶 " .. next(keys) .. "）不算開關：放進有線路的房間不接線（"
+            .. replies .. " 則回覆）")
+    end
+    -- 客戶端收到伺服器新放的物件（OnObjectAdded，Client.lua 的 onAdded）照 load 補：自建房間的開關補 switchLight、房間裡其他
+    -- 物件的 activated 同一幀還原；地圖房屋不補；不能改裝的燈照 sprite 補顏色
+    do
+        local sq = at(85, 100)
+        local sw = light(85, 100, swS, "mark")
+        local offLamp, offSw = light(85, 100, lampS, "mark"), light(85, 100, swS, "mark")
+        offLamp.on, offSw.on = false, false
+        sq.room, sq.userRoom = { getLightSwitches = function() return javaList({ offLamp, offSw }) end }, true
+        HARNESS_CASCADE = { offLamp, offSw }
+        fire("OnObjectAdded", sw)
+        local userOk = sw.lit == true and not offLamp.on and not offSw.on
+        sw.lit, sq.userRoom = nil, false
+        fire("OnObjectAdded", sw)
+        local mapOk = sw.lit == nil
+        HARNESS_CASCADE = nil
+        local lamp = light(85, 100, lampS, "mark")
+        function lamp:setPrimaryR(v) self.r = v end
+        function lamp:setPrimaryG(v) self.g = v end
+        function lamp:setPrimaryB(v) self.b = v end
+        fire("OnObjectAdded", lamp)
+        sq.room, sq.objects = nil, {}
+        check(userOk and mapOk and lamp.r == 200 / 255 and lamp.g == 180 / 255 and lamp.b == 150 / 255,
+            "客戶端收到新放的物件：自建房間的開關補切房間燈、房裡其他燈與開關的狀態還原；地圖房屋不補；不能改裝的燈補 sprite 顏色")
+    end
 
     -- 房間 10：兩個都沒有燈的開關配成一條沒有燈的線路（狀態對齊；按的時候照原版）
     local P10 = player({ id = 2310, x = 126.5, y = 101.5 })

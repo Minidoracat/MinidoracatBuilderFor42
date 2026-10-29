@@ -386,7 +386,9 @@ local function newLight(c)
     local p = spr:getProperties()
     local obj = IsoLightSwitch.new(getCell(), sq, spr, sq:getRoomID())
     obj:addLightSourceFromSprite()
-    obj:setActivated(true)
+    -- 燈蓋好就開（同原版搬燈，ISMoveableSpriteProps.lua:2329）。地圖房屋裡的開關（沒有 lightR）沿用建構子照房間設的狀態
+    -- （IsoLightSwitch.java:89-95）：強制開的話房間燈關著時開關顯示開、房間暗，第一次按看起來沒反應
+    if p:has("lightR") or not sq:getRoom() then obj:setActivated(true) end
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
     if p:has(F.solid) or p:has(F.solidtrans) then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = spr:getName()

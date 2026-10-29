@@ -4,9 +4,9 @@
 --   一條線路最多 MAX_S 個開關、MAX_L 片燈（多格燈每片各算一片、整組一起進出）；一個開關、一片燈只屬於一條線路。
 --   沒有開關的線路刪掉（燈停在當時的狀態）；沒有燈的線路（兩個開關先接成雙切、燈之後才放）按開關時照原版。
 --   反查表 byKey 不存，第一次用到時從 c 重建（只有一份真相）。
--- 開關＝帳本裡（本工具蓋的）、sprite 沒有 lightR 的 IsoLightSwitch。燈＝sprite 有 lightR 的 IsoLightSwitch，本工具蓋的或
---   sprite 能搬（IsMoveAble；建構子照它設 canBeModified，IsoLightSwitch.java:76-79）。只認伺服器帳本與 sprite 屬性，不看物件
---   modData 與客戶端改得到的欄位（細節見知識庫 circuits.md）。
+-- 開關＝帳本裡（本工具蓋的）、sprite 過 Rules.switchProps（沒有 lightR、沒有 streetlight、不能搬）的 IsoLightSwitch。
+--   燈＝sprite 有 lightR 的 IsoLightSwitch，本工具蓋的或 sprite 能搬（IsMoveAble；建構子照它設 canBeModified，
+--   IsoLightSwitch.java:76-79）。只認伺服器帳本與 sprite 屬性，不看物件 modData 與客戶端改得到的欄位（細節見知識庫 circuits.md）。
 -- 按：包原版 ISToggleLightAction 的 complete（點擊、右鍵、手把都走它）。線路裡的開關切整條線路；本工具蓋的燈切自己（不能搬
 --   的燈在地圖房屋外原版切不了，IsoLightSwitch.java:497-498）；其他照原版。不要求有電：燈亮不亮由客戶端每片照電力判斷
 --   （LightingJNI.java:281-294），伺服器對自建屋一律算沒電（bt-switch §8）。原版開關切房間燈時線路上的燈不跟著動（設計稿）。
