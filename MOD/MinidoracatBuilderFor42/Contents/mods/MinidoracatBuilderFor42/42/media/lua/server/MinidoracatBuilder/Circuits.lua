@@ -123,7 +123,7 @@ end
 function Circuits.isSwitch(o)
     if not instanceof(o, "IsoLightSwitch") then return false end
     local p = props(o)
-    return p ~= nil and not p:has("lightR") and Ledger.get(o) ~= nil
+    return p ~= nil and B.Rules.switchProps(p) and Ledger.get(o) ~= nil
 end
 
 function Circuits.isLamp(o)

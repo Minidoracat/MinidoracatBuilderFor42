@@ -31,6 +31,13 @@ function Rules.westStairs(t)
     return WEST_STAIRS[t] == true
 end
 
+-- 線路認的開關（p＝light 種類 sprite 的屬性）：沒有 lightR 的 IsoLightSwitch 引擎都當開關，但帶 streetlight 的是招牌、外牆字
+-- （有亮圖的只在夜裡有市電時疊上，IsoLightSwitch.java:873-885），能搬的是菜單板、霓虹招牌，都不是開關。
+-- 原版＋正式服 13 個 tiledef MOD 的 507 個裡只剩 lighting_indoor_01_0..7（E2E builder-rooms-1029e）。兩端共用
+function Rules.switchProps(p)
+    return not p:has("lightR") and not p:has("streetlight") and not p:has("IsMoveAble")
+end
+
 -- 依名稱不列的圖塊（kindOf 第一行查，一次表查詢）：
 -- 1. 原版每次載入 chunk 都會跑 Lua 改寫的圖塊（MapObjects.OnLoadWithSprite，server/Map/MapObjects/*.lua）。
 --    玩家放的同名物件下次載入會被改掉，所以不列。只收 OnLoad：OnNew 只處理地圖原本的物件。

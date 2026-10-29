@@ -2584,6 +2584,14 @@ local function circuitScenario()
     sent = {}
     Circuits.placed(P, { O.L8 })
     check(last().auto == "lamp" and nL(last()) == 1 and nS(last()) == 1, "房間裡只有一個開關：放燈時建線路接上")
+    -- 招牌（引擎也建成 IsoLightSwitch：lightswitch 型別、沒有 lightR、帶 streetlight）不是開關：放進有線路的房間不接線、不回覆
+    O.SIGN = light(112, 102, sprite("cn_01_0", 2305, { type = T.lightswitch, keys = { streetlight = "" } }), "ours")
+    sent = {}
+    Circuits.placed(P, { O.SIGN })
+    local signReplies = #sent
+    r = ask(P, O.SW3)
+    check(signReplies == 0 and nS(r) == 1 and nL(r) == 1, "招牌（帶 streetlight、沒有 lightR）不算開關：放進有線路的房間不接線（"
+        .. signReplies .. " 則回覆）")
 
     -- 房間 10：兩個都沒有燈的開關配成一條沒有燈的線路（狀態對齊；按的時候照原版）
     local P10 = player({ id = 2310, x = 126.5, y = 101.5 })

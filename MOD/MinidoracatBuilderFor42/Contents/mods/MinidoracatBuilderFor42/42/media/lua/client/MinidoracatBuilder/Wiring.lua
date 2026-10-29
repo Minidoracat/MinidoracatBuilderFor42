@@ -527,12 +527,12 @@ local function lightR(o)
     return p ~= nil and p:has("lightR"), p
 end
 
--- 本工具的開關、或接得上的燈（本工具蓋的、能搬的）
+-- 本工具的開關、或接得上的燈（本工具蓋的、能搬的）；招牌不算開關（Rules.switchProps）
 local function kindOf(o)
     if not instanceof(o, "IsoLightSwitch") then return nil end
     local lit, p = lightR(o)
     if not p then return nil end
-    if not lit then return ours(o) and "s" or nil end
+    if not lit then return ours(o) and B.Rules.switchProps(p) and "s" or nil end
     if ours(o) or p:has("IsMoveAble") then return "l" end
     return nil
 end
