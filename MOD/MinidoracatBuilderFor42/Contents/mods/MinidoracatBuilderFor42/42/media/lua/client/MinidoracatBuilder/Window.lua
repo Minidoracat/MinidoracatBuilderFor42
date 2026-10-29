@@ -898,7 +898,11 @@ local function prepareDetail(v)
     v.focusName = name
     v.focusText = name and W.tipOf(v, name, short) or nil
     v.favBtn:setEnabled(name ~= nil)
+    -- 沒給寬度建的框架按鈕 setTitle 時會照標題重算寬度（Controls.lua:260-269），排版給的寬度要設回去：
+    -- 不然「移除最愛」撐寬後壓到「建造」（E2E ui-mp builder-uilang-1030en3）
+    local fw = v.favBtn.width
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
+    v.favBtn:setWidth(fw)
     v.buildBtn:setEnabled(e ~= nil)
 end
 
@@ -1378,7 +1382,8 @@ function W.layout()
         v.detail:setY(y)
         v.detail:setWidth(dw)
         v.detail:setHeight(bodyH - btnH - GAP)
-        local bw = math.floor((dw - GAP) / 2)
+        -- 最愛按鈕至少放得下較長的標題（v.favW），建造按鈕拿剩下的，不小於自己的標題寬
+        local bw = math.min(dw - GAP - v.buildW, math.max(math.floor((dw - GAP) / 2), v.favW))
         v.favBtn:setX(dx)
         v.favBtn:setY(y + bodyH - btnH)
         v.favBtn:setWidth(bw)
@@ -1524,6 +1529,12 @@ function W.create(UI)
     win:addToUIManager()
     if ISLayoutManager and ISLayoutManager.RegisterWindow then -- addToUIManager 之後（QU/Window.lua:240-243）
         pcall(ISLayoutManager.RegisterWindow, "MinidoracatBuilderWindow", UI.Window, win)
+    end
+    -- 開窗的寬度也要放得下頁籤：minWidth 只擋玩家拉窄，算出來的寬度（或上次存的）可能更窄（1366 寬時 EN 頁籤要 750 px）
+    if win.width < win.minWidth then
+        local nw = math.min(sw - 40, win.minWidth)
+        win:setX(math.max(sx, sx + sw - nw - 20))
+        win:setWidth(nw)
     end
     W.layout()
     v.catState = B.Catalog and B.Catalog.state or "ready"
