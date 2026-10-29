@@ -168,4 +168,23 @@ Events.OnServerCommand.Add(function(module, command, args)
     if module == MODULE then Client.onServerCommand(command, args or {}) end
 end)
 
+-- 伺服器剛放的不能改裝的燈：客戶端收到時引擎先 load 才設格子（IsoObject.java:4432,4448），load 照 sprite 設顏色那段
+-- 要有格子、被跳過（IsoLightSwitch.java:350-379），光源用預設的白色建（AddItemToMapPacket.java:62-64）；重新載入區塊才是
+-- sprite 的顏色（E2E builder-rooms-1029d）。照 load 的算法補上，LightingJNI 下次更新看到顏色變了就送（LightingJNI.java:334-343）。
+-- 能改裝的燈顏色在封包裡，不動。
+local function fixLampColor(obj)
+    if not instanceof(obj, "IsoLightSwitch") or obj:getCanBeModified() or not obj:hasModData()
+        or not obj:getModData().builderEntry then return end
+    local spr = obj:getSprite()
+    local p = spr and spr:getProperties()
+    if not p then return end
+    local r, g, b = tonumber(p:get("lightR")), tonumber(p:get("lightG")), tonumber(p:get("lightB"))
+    if not (r and g and b) then return end
+    obj:setPrimaryR(r / 255)
+    obj:setPrimaryG(g / 255)
+    obj:setPrimaryB(b / 255)
+end
+
+Events.OnObjectAdded.Add(fixLampColor)
+
 return Client
