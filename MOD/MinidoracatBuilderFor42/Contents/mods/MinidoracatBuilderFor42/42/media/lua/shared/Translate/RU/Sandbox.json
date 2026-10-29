@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Включить строительство",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Если выключено, сервер отклоняет все запросы на строительство от этого мода. Уже построенное остаётся.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Кто может строить",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Все: строить может каждый игрок.\nТолько админы: строить могут только игроки, которым разрешён «Режим строительства».",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Все",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Только админы",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Где можно строить",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Как в ванилле: ничейная земля и убежища, где игроку разрешено строить.\nТолько свои убежища: только внутри убежищ, где игроку разрешено строить.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Как в ванилле",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Только свои убежища",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Макс. дальность строительства (клетки)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "От 2 до 8 клеток от игрока до ближайшей клетки объекта. Объект может быть не больше чем на один этаж выше или ниже.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Макс. объектов за одно протягивание",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "От 1 до 64. Сколько объектов может поставить один запрос на строительство, например когда вы протягиваете ряд стен.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Множитель стоимости материалов",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "От 0 до 10. Умножает количество каждого материала с округлением вверх. 0 — без материалов; инструменты всё равно нужны. У объектов, которые разбираются на материалы по своему типу материала (большая часть мебели), стоимость не опускается ниже 1, чтобы разборка не давала больше, чем было потрачено. Администраторы с включённым «Режимом строительства» никогда не платят.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Отключённые источники (ID модов)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID модов через точку с запятой. Тайлы из этих модов нельзя строить. По умолчанию отключены моды семейства Minidoracat и моды, чьи тайлы входят в их собственные меню строительства.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Отключённые тайлсеты",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Названия тайлсетов через точку с запятой, например walls_exterior_house_01. Тайлы из этих тайлсетов нельзя строить."
+}

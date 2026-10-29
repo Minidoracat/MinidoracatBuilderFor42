@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Bauen aktivieren",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Wenn aus, lehnt der Server jede Bauanfrage dieses Mods ab. Bereits Gebautes bleibt.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Wer darf bauen",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Alle: Jeder Spieler kann bauen.\nNur Admins: Nur Spieler, die den Cheat-Modus Bauen nutzen dürfen, können bauen.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Alle",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Nur Admins",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Wo Spieler bauen dürfen",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Wie Vanilla: freies Land und Safehouses, in denen der Spieler bauen darf.\nEigene Safehouses: nur in Safehouses, in denen der Spieler bauen darf.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Wie Vanilla",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Eigene Safehouses",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Maximale Baudistanz (Kacheln)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "2 bis 8 Kacheln vom Spieler bis zur nächsten Kachel des Objekts. Das Objekt darf höchstens eine Etage darüber oder darunter liegen.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Max. Objekte pro Ziehen",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 bis 64. Wie viele Objekte eine Bauanfrage platzieren kann, z. B. beim Ziehen einer Wandreihe.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Materialkosten-Multiplikator",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 bis 10. Multipliziert jede Materialmenge, aufgerundet. 0 heißt kein Material; Werkzeuge sind trotzdem nötig. Objekte, die nach ihrem eigenen Materialtyp in Material zerfallen (die meisten Möbel), gehen nie unter 1, damit Auseinandernehmen nie mehr zurückgibt, als bezahlt wurde. Admins mit aktivem Cheat-Modus Bauen zahlen nie.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Deaktivierte Quellen (Mod-IDs)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "Mod-IDs, durch Semikolons getrennt. Kacheln aus diesen Mods können nicht gebaut werden. Standardmäßig sind die Minidoracat-Familienmods und Mods, deren Kacheln in ihr eigenes Baumenü gehören, aus.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Deaktivierte Tilesets",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Tileset-Namen, durch Semikolons getrennt, z. B. walls_exterior_house_01. Kacheln aus diesen Tilesets können nicht gebaut werden."
+}

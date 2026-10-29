@@ -1,0 +1,7 @@
+{
+  "UI_MinidoracatBuilder_Options": "Build Anything",
+  "UI_MinidoracatBuilder_ShowDock": "Pokaż przycisk na pasku narzędzi",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "Przycisk Build Anything na wspólnym pasku narzędzi modów Minidoracat. Gdy jest wyłączony, otwieraj okno klawiszem ustawionym w Przypisanie klawiszy > [MinidoracatBuilder].",
+  "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
+  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Otwórz lub zamknij okno budowania"
+}

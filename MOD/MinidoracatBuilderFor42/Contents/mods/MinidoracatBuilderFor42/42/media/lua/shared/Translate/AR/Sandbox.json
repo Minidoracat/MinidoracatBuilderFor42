@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Activar construcción",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Si está desactivado, el servidor rechaza todas las solicitudes de construcción de este mod. Lo ya construido se queda.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Quién puede construir",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Todos: cualquier jugador puede construir.\nSolo admins: solo construyen los jugadores que pueden usar el modo trucos de construcción.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Todos",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Solo admins",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Dónde se puede construir",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Como el original: terreno sin reclamar y refugios donde el jugador puede construir.\nSolo refugios propios: solo dentro de refugios donde el jugador puede construir.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Como el original",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Solo refugios propios",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Distancia máxima de construcción (casillas)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 a 8 casillas desde el jugador hasta la casilla más cercana del objeto. El objeto puede estar como máximo un nivel por encima o por debajo.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Máximo de objetos por arrastre",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Cuántos objetos puede colocar una solicitud de construcción, por ejemplo al arrastrar una fila de paredes.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicador de materiales",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 a 10. Multiplica cada cantidad de material, redondeando hacia arriba. 0 significa sin materiales; las herramientas siguen siendo necesarias. Los objetos que se desarman en materiales según su propio tipo de material (casi todo el mobiliario) nunca bajan de 1, así que desarmar nunca devuelve más de lo pagado. Los admins con el modo trucos de construcción activado nunca pagan.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Orígenes desactivados (ID de mods)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID de mods separados por punto y coma. Los tiles de estos mods no se pueden construir. Por defecto están desactivados los mods de la familia Minidoracat y los mods cuyos tiles pertenecen a sus propios menús de construcción.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Tilesets desactivados",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Nombres de tilesets separados por punto y coma, por ejemplo walls_exterior_house_01. Los tiles de estos tilesets no se pueden construir."
+}

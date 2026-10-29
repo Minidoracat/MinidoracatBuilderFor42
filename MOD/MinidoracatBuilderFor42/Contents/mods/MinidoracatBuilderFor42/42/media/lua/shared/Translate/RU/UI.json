@@ -1,0 +1,7 @@
+{
+  "UI_MinidoracatBuilder_Options": "Build Anything",
+  "UI_MinidoracatBuilder_ShowDock": "Показывать кнопку на панели",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "Кнопка Build Anything на панели модов Minidoracat. Если она выключена, открывайте окно клавишей из «Назначение клавиш > [MinidoracatBuilder]».",
+  "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
+  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Открыть или закрыть окно строительства"
+}

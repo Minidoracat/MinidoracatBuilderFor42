@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat 자유 건축",
+    "Sandbox_MinidoracatBuilder_Enabled": "건축 활성화",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "끄면 서버가 이 모드의 모든 건축 요청을 거부합니다. 이미 지은 것은 그대로 남습니다.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "건축 가능 대상",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "모두: 모든 플레이어가 건축할 수 있습니다.\n관리자만: 건축 치트를 쓸 수 있는 플레이어만 건축할 수 있습니다.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "모두",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "관리자만",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "건축 가능 장소",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "바닐라와 동일: 주인 없는 땅, 그리고 건축이 허용된 은신처.\n자기 은신처만: 건축이 허용된 은신처 안에서만.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "바닐라와 동일",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "자기 은신처만",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "최대 건축 거리 (칸)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "플레이어에서 항목의 가장 가까운 칸까지 2~8칸. 항목은 최대 한 층 위나 아래에 있을 수 있습니다.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "드래그당 최대 항목 수",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1~64. 벽을 한 줄로 드래그할 때처럼, 건축 요청 한 번에 놓을 수 있는 항목 수입니다.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "재료 비용 배율",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0~10. 모든 재료 수량에 곱하고 올림합니다. 0이면 재료가 필요 없지만 도구는 여전히 필요합니다. 자체 재질에 따라 재료로 해체되는 물체(대부분의 가구)는 1 아래로 내려가지 않으므로, 해체해서 낸 것보다 많이 돌려받는 일은 없습니다. 건축 치트를 켠 관리자는 비용을 내지 않습니다.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "비활성화한 출처 (모드 ID)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "세미콜론으로 구분한 모드 ID입니다. 이 모드들의 타일은 건축할 수 없습니다. 기본값으로 Minidoracat 패밀리 모드와, 타일이 자체 건축 메뉴에 속한 모드가 꺼져 있습니다.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "비활성화한 타일셋",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "세미콜론으로 구분한 타일셋 이름입니다(예: walls_exterior_house_01). 이 타일셋의 타일은 건축할 수 없습니다."
+}

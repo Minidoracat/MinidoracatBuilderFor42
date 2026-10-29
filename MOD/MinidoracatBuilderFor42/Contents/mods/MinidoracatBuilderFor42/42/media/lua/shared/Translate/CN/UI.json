@@ -1,0 +1,7 @@
+{
+  "UI_MinidoracatBuilder_Options": "自由建造",
+  "UI_MinidoracatBuilder_ShowDock": "显示工具栏按钮",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具栏上的「建造工坊」按钮。关闭后仍可用「按键设置 > [MinidoracatBuilder]」里绑定的键打开。",
+  "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat 自由建造",
+  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "打开或关闭建造工坊"
+}

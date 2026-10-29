@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Ativar construção",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Quando desativado, o servidor recusa todo pedido de construção deste mod. O que já foi construído permanece.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Quem pode construir",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Todos: todo jogador pode construir.\nSó administradores: só jogadores que podem usar o Modo de Trapaça de Construção podem construir.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Todos",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Só administradores",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Onde os jogadores podem construir",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Como no vanilla: terreno sem dono e bases onde o jogador pode construir.\nSó nas próprias bases: apenas dentro de bases onde o jogador pode construir.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Como no vanilla",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Só nas próprias bases",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Distância máxima de construção (quadrados)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 a 8 quadrados do jogador até o quadrado mais próximo do item. O item pode estar no máximo um andar acima ou abaixo.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Máximo de itens por arraste",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Quantos itens um pedido de construção pode colocar, por exemplo ao arrastar uma linha de paredes.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicador de custo de materiais",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 a 10. Multiplica cada quantidade de material, arredondando para cima. 0 significa sem materiais; as ferramentas continuam necessárias. Objetos que se desmontam em materiais conforme o próprio tipo de material (a maioria dos móveis) nunca ficam abaixo de 1, então desmontar nunca devolve mais do que foi pago. Administradores com o Modo de Trapaça de Construção ativo nunca pagam.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Origens desativadas (IDs de mod)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "IDs de mod separados por ponto e vírgula. Tiles desses mods não podem ser construídos. Por padrão, ficam desativados os mods da família Minidoracat e os mods cujos tiles pertencem aos próprios menus de construção.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Tilesets desativados",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Nomes de tilesets separados por ponto e vírgula, por exemplo walls_exterior_house_01. Tiles desses tilesets não podem ser construídos."
+}

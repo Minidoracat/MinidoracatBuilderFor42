@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Activer la construction",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Désactivé, le serveur refuse toutes les demandes de construction de ce mod. Ce qui est déjà construit reste en place.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Qui peut construire",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Tout le monde : tous les joueurs peuvent construire.\nAdmins uniquement : seuls les joueurs autorisés à utiliser le cheat de construction peuvent construire.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Tout le monde",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Admins uniquement",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Où les joueurs peuvent construire",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Comme en vanilla : terrains non revendiqués et abris où le joueur peut construire.\nSes abris uniquement : seulement dans les abris où le joueur peut construire.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Comme en vanilla",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Ses abris uniquement",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Distance de construction max. (cases)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 à 8 cases entre le joueur et la case la plus proche de l'objet. L'objet peut être au plus un étage au-dessus ou en dessous.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Objets max. par glissement",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 à 64. Nombre d'objets qu'une demande de construction peut placer, par exemple en traçant une rangée de murs.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicateur du coût en matériaux",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 à 10. Multiplie chaque quantité de matériau, arrondie à l'unité supérieure. 0 = aucun matériau ; les outils restent nécessaires. Les objets qui se démontent en matériaux selon leur propre matière (la plupart des meubles) ne descendent jamais sous 1 : le démontage ne rend donc jamais plus que le prix payé. Les admins avec le cheat de construction activé ne paient jamais.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Sources désactivées (ID de mods)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID de mods séparés par des points-virgules. Les tiles de ces mods ne peuvent pas être construites. Par défaut, les mods de la famille Minidoracat et les mods dont les tiles ont leur propre menu de construction sont désactivés.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Tilesets désactivés",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Noms de tilesets séparés par des points-virgules, par exemple walls_exterior_house_01. Les tiles de ces tilesets ne peuvent pas être construites."
+}

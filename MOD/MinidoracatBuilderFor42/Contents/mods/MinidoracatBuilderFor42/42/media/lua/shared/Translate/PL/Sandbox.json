@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "Włącz budowanie",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Gdy wyłączone, serwer odrzuca każde żądanie budowy z tego moda. To, co już zbudowano, zostaje.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Kto może budować",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Wszyscy: każdy gracz może budować.\nTylko administratorzy: budować mogą tylko gracze, którym wolno używać cheatów budowania.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Wszyscy",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Tylko administratorzy",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Gdzie gracze mogą budować",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Jak w grze bazowej: wolny teren i schronienia, w których gracz może budować.\nTylko własne schronienia: tylko w schronieniach, w których gracz może budować.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Jak w grze bazowej",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Tylko własne schronienia",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "Maks. odległość budowania (pola)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "Od 2 do 8 pól od gracza do najbliższego pola elementu. Element może być najwyżej jeden poziom wyżej lub niżej.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Maks. elementów na przeciągnięcie",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "Od 1 do 64. Ile elementów może postawić jedno żądanie budowy, np. przy przeciąganiu linii ścian.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Mnożnik kosztu materiałów",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "Od 0 do 10. Mnoży każdą ilość materiału, z zaokrągleniem w górę. 0 oznacza brak materiałów; narzędzia są nadal potrzebne. Obiekty, które rozmontowują się na materiały według własnego typu materiału (większość mebli), nigdy nie schodzą poniżej 1, więc rozmontowanie nigdy nie zwraca więcej, niż zapłacono. Administratorzy z włączonymi cheatami budowania nigdy nie płacą.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Wyłączone źródła (ID modów)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID modów rozdzielone średnikami. Kafelków z tych modów nie można budować. Domyślnie wyłączone są mody rodziny Minidoracat oraz mody, których kafelki należą do ich własnych menu budowania.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Wyłączone zestawy kafelków",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Nazwy zestawów kafelków rozdzielone średnikami, np. walls_exterior_house_01. Kafelków z tych zestawów nie można budować."
+}

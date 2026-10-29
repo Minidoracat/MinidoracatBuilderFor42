@@ -1,0 +1,23 @@
+{
+    "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
+    "Sandbox_MinidoracatBuilder_Enabled": "İnşaya izin ver",
+    "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Kapalıyken sunucu bu modun tüm inşa isteklerini reddeder. Önceden inşa edilmiş şeyler yerinde kalır.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse": "Kim inşa edebilir",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_tooltip": "Herkes: her oyuncu inşa edebilir.\nYalnızca yöneticiler: yalnızca Hileli İnşa Modu'nu kullanabilen oyuncular inşa edebilir.",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option1": "Herkes",
+    "Sandbox_MinidoracatBuilder_WhoCanUse_option2": "Yalnızca yöneticiler",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild": "Oyuncular nerede inşa edebilir",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_tooltip": "Vanilla gibi: sahipsiz araziler ve oyuncunun inşa edebildiği sığınaklar.\nSadece kendi sığınağı: yalnızca oyuncunun inşa edebildiği sığınakların içi.",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option1": "Vanilla gibi",
+    "Sandbox_MinidoracatBuilder_WhereCanBuild_option2": "Sadece kendi sığınağı",
+    "Sandbox_MinidoracatBuilder_MaxDistance": "En fazla inşa mesafesi (kare)",
+    "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "Oyuncudan öğenin en yakın karesine 2 ila 8 kare. Öğe en fazla bir kat yukarıda veya aşağıda olabilir.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Sürükleme başına en fazla öğe",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 ila 64. Tek bir inşa isteğinin kaç öğe yerleştirebileceği; örneğin bir sıra duvar sürüklerken.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier": "Malzeme maliyeti çarpanı",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 ila 10. Her malzeme miktarını çarpar, yukarı yuvarlanır. 0, malzeme gerekmez demektir; aletler yine gerekir. Kendi malzeme türüne göre malzemeye sökülen nesneler (çoğu mobilya) hiçbir zaman 1'in altına inmez; böylece sökmek ödenenden fazlasını geri vermez. Hileli İnşa Modu açık olan yöneticiler hiç ödemez.",
+    "Sandbox_MinidoracatBuilder_DisabledSources": "Kapalı kaynaklar (mod ID)",
+    "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "Noktalı virgülle ayrılmış mod ID'leri. Bu modların tile'ları inşa edilemez. Varsayılan olarak Minidoracat aile modları ve tile'ları kendi inşa menülerine ait modlar kapalıdır.",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets": "Kapalı tile setleri",
+    "Sandbox_MinidoracatBuilder_DisabledTilesets_tooltip": "Noktalı virgülle ayrılmış tile seti adları, örneğin walls_exterior_house_01. Bu tile setlerinin tile'ları inşa edilemez."
+}
