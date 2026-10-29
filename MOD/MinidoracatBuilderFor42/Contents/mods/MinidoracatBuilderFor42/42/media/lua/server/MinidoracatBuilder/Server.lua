@@ -10,6 +10,7 @@ require "MinidoracatBuilder/Materials"
 require "MinidoracatBuilder/Check"
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Ledger"
+require "MinidoracatBuilder/Circuits"
 
 local Sources, Entry, Cost = MinidoracatBuilder.Sources, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
 local Place, Materials, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Materials, MinidoracatBuilder.Check
@@ -250,6 +251,10 @@ function Server.complete(player, n, i)
         xp = giveXp(player, costs)
     end
     Place.settle(cells)
+    if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
+        local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)
+        if not cok then print(LOG .. "circuit auto-wire failed: " .. tostring(cerr)) end
+    end
     print(LOG .. "BUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. " kind=" .. entry.kind .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
         .. " cost=" .. (plan and costLine(total.items) or "free") .. " xp=" .. xp)
@@ -422,6 +427,8 @@ Events.OnClientCommand.Add(function(module, command, player, args)
         Server.intent(player, args)
     elseif command == "dismantle" then
         Server.dismantleIntent(player, args)
+    elseif command == "circuit" or command == "wire" then
+        MinidoracatBuilder.Circuits.command(player, command, args)
     end
 end)
 
@@ -438,5 +445,8 @@ Events.OnServerStarted.Add(function()
     print(LOG .. "tiledef sources: " .. n .. " files in " .. (getTimestampMs() - t0) .. " ms: "
         .. Sources.describe(byFile))
 end)
+
+-- Circuits.lua 用的（同一份身分、權限與參數檢查）
+Server.keyOf, Server.who, Server.notAllowed, Server.int = keyOf, who, notAllowed, int
 
 return Server

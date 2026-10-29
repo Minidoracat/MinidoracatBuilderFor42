@@ -433,6 +433,10 @@ function require(name)
     error("require 找不到: " .. name)
 end
 
+-- 原版開關燈動作（Circuits 載入時包它的 complete）：原版的 complete 記次數、回 "orig"
+HARNESS_TOGGLES = 0
+ISToggleLightAction = { complete = function() HARNESS_TOGGLES = HARNESS_TOGGLES + 1 return "orig" end }
+
 require "MinidoracatBuilder/Rules"
 require "MinidoracatBuilder/Sources"
 require "MinidoracatBuilder/Catalog"
@@ -2378,6 +2382,235 @@ local function dismantleScenario()
     instanceof = realInst
 end
 dismantleScenario()
+
+print("情境二十二：第六階段線路（自動接線、按開關切整條、接線指令、權限與範圍、帳本清理）")
+local function circuitScenario()
+    nowMs = nowMs + 180000
+    local Circuits, Ledger = MinidoracatBuilder.Circuits, MinidoracatBuilder.Ledger
+    local realInst, realRegions = instanceof, IsoRegions.getIsoWorldRegion
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    -- 區域：rooms["x,y,z"] = 編號；7＝封閉的 3×3 房間、8＝另一間封閉房間，其他是室外的一大片
+    local rooms = {}
+    IsoRegions.getIsoWorldRegion = function(x, y, z)
+        local id = rooms[x .. "," .. y .. "," .. z] or 1
+        return { getID = function() return id end, isEnclosed = function() return id ~= 1 end,
+            getSquareSize = function() return id == 1 and 5000 or 9 end }
+    end
+    for x = 100, 130 do for y = 100, 110 do
+        local sq = square(x, y, 0)
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+    end end
+    for x = 100, 102 do for y = 100, 102 do rooms[x .. "," .. y .. ",0"] = 7 end end
+    for x = 110, 112 do for y = 100, 102 do rooms[x .. "," .. y .. ",0"] = 8 end end
+    local function at(x, y, z) return squares[x .. "," .. y .. "," .. (z or 0)] end
+    local LAMP_KEYS = { lightR = "200", lightG = "180", lightB = "150" }
+    local lampS = sprite("cl_01_0", 2301, { type = T.lightswitch, keys = LAMP_KEYS })
+    local lampS2 = sprite("cl_01_1", 2302, { type = T.lightswitch, keys = LAMP_KEYS })
+    local movS = sprite("cm_01_0", 2303, { type = T.lightswitch,
+        keys = { lightR = "200", lightG = "180", lightB = "150", IsMoveAble = "" } })
+    local swS = sprite("cs_01_0", 2304, { type = T.lightswitch })
+    -- IsoLightSwitch：ours＝本 MOD 蓋的（modData 記號＋帳本），mark＝只有 modData 記號（偽造）
+    local function light(x, y, spr, how)
+        local sq = at(x, y)
+        local o = { class = "IsoLightSwitch", md = {}, on = true, synced = 0, sq = sq }
+        function o:getSprite() return spr end
+        function o:getSquare() return sq end
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:isActivated() return self.on end
+        function o:setActivated(v) self.on = v end
+        function o:hasLightBulb() return true end
+        function o:switchLight(v) self.lit = v end
+        function o:syncIsoObject(_, v) self.synced = self.synced + 1; self.sent = v end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList(self.group or { self }) end
+        function o:isConnectedSpriteGridObject(x2) return self.group ~= nil and x2.group == self.group end
+        if how == "ours" or how == "mark" then o.md.builderEntry = spr:getName() end
+        if how == "ours" then Ledger.put(o, {}) end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    local function last() return sent[#sent] and sent[#sent].args or {} end
+    local function act(p, o) return ISToggleLightAction.complete({ character = p, object = o }) end
+    local P = player({ id = 2301, x = 101.5, y = 101.5 })
+    local q = 0
+    local function cmd(p, c, args)
+        nowMs = nowMs + 300
+        q = q + 1
+        args.q = q
+        sent = {}
+        Circuits.command(p, c, args)
+        return last()
+    end
+    local function wire(p, op, sw, t, extra)
+        local a = { op = op, x = sw.sq:getX(), y = sw.sq:getY(), z = 0, e = sw:getSprite():getName() }
+        if t then a.tx, a.ty, a.tz, a.te = t.sq:getX(), t.sq:getY(), 0, t:getSprite():getName() end
+        for k, v in pairs(extra or {}) do a[k] = v end
+        return cmd(p, "wire", a)
+    end
+    local function nL(r) return #(r.l or {}) end
+
+    check(type(HARNESS_GOS_KEYS.MinidoracatBuilder) == "table" and HARNESS_GOS_KEYS.MinidoracatBuilder[2] == "circuits",
+        "帳本存檔白名單有 circuits（漏了重開後線路消失）")
+    -- 房間 7：兩盞本 MOD 蓋的燈（一盞兩片）、一盞能搬的原版燈、一盞地圖燈（不能搬、不在帳本）、一盞偽造記號的燈
+    local L1 = light(100, 100, lampS, "ours")
+    local L2a, L2b = light(101, 100, lampS, "ours"), light(102, 100, lampS2, "ours")
+    L2a.group, L2b.group = { L2a, L2b }, { L2a, L2b }
+    local MV = light(100, 102, movS)
+    local MAP = light(102, 102, lampS)
+    local FAKE = light(101, 102, lampS2, "mark")
+    local OUT = light(105, 101, lampS, "ours") -- 室外，不同區域
+    local SW1 = light(100, 101, swS, "ours")
+    sent = {}
+    Circuits.placed(P, { SW1 })
+    local r = last()
+    check(r.auto == "switch" and r.n == 4 and nL(r) == 4 and #r.s == 1,
+        "放開關：同一個封閉房間裡本 MOD 的燈（兩片那盞整組）與能搬的燈自動接上，共 4 片（" .. tostring(r.n) .. "）")
+    local id1 = r.id
+
+    -- 按開關：走原版 ISToggleLightAction，伺服器切整條線路；地圖燈、偽造記號、室外那盞不動，不呼叫原版
+    HARNESS_TOGGLES = 0
+    check(act(P, SW1) == true and not SW1.on and not L1.on and not L2a.on and not L2b.on and not MV.on
+        and L1.synced == 1 and L2b.synced == 1 and L1.lit == false and MAP.on and FAKE.on and OUT.on and HARNESS_TOGGLES == 0,
+        "按開關：開關與線路上每片燈都關、各同步一次；不在線路上的不動，不呼叫原版")
+    check(MAP.synced == 1 and MAP.sent == 1 and FAKE.synced == 1 and OUT.synced == 0,
+        "同一間不在線路上的燈照伺服器狀態再同步一次（客戶端的自建房間會跟著開關切，builder-circuits-1029b），室外的不送")
+    check(act(P, SW1) == false and not L1.on, "0.5 秒內再按：冷卻，不切")
+    nowMs = nowMs + 600
+    check(act(P, SW1) == true and L1.on and SW1.on, "冷卻過了再按：整條線路打開")
+    nowMs = nowMs + 600
+    local FAR = player({ id = 2302, x = 104.5, y = 101.5 })
+    check(act(FAR, SW1) == false and L1.on, "離開關超過 2 格：不切")
+    MinidoracatSafehouse = { v1 = { API_MAJOR = 1, CAPABILITIES = { denies = true }, BITS = { BUILD = 4, USE = 1 },
+        denies = function(_, _, _, _, bit) return bit == 1 end } }
+    check(act(P, SW1) == false and L1.on, "Safehouse 不給 USE：不切")
+    MinidoracatSafehouse = nil
+    Circuits.PRESS_REACH = 100 -- 植入違規：不查距離
+    local planted = act(FAR, SW1) == true
+    Circuits.PRESS_REACH = 2
+    nowMs = nowMs + 600
+    check(planted, "植入違規（不查距離）時，遠處的人按得動：上面「超過 2 格」那條會抓到")
+    check(act(P, MAP) == "orig" and act(P, FAKE) == "orig" and HARNESS_TOGGLES == 2,
+        "地圖燈與只有 modData 記號的燈：照原版（不信 modData）")
+    local OUT_ON = OUT.on
+    check(act(FAR, OUT) == true and OUT.on ~= OUT_ON and OUT.synced == 1 and HARNESS_TOGGLES == 2,
+        "本 MOD 蓋的燈不在線路上、不在房屋裡：伺服器切它自己（原版切不了）")
+
+    -- 第二個開關在同一間：接成雙切；按它也切整條
+    local SW2 = light(102, 101, swS, "ours")
+    sent = {}
+    Circuits.placed(P, { SW2 })
+    r = last()
+    check(r.auto == "switch" and r.jx == 100 and r.jy == 101 and #r.s == 2 and nL(r) == 4 and r.id == id1
+        and SW1.on == false and SW2.on == false and SW2.synced == 1,
+        "同一間放第二個開關：併進原本的線路（雙切），狀態對齊線路上原有的開關（關）")
+    nowMs = nowMs + 600
+    check(act(P, SW2) == true and L1.on and SW1.on and SW2.on, "按第二個開關：整條線路一起切（雙切，第一次按就動）")
+    -- 室外放的開關：不自動接
+    local SW9 = light(106, 104, swS, "ours")
+    sent = {}
+    Circuits.placed(P, { SW9 })
+    check(last().auto == "switch" and last().code == "NOT_ENCLOSED", "室外放開關：NOT_ENCLOSED，不自動接")
+    -- 放燈：房間裡只有一條線路就接進去
+    local L3 = light(101, 101, lampS, "ours")
+    sent = {}
+    Circuits.placed(P, { L3 })
+    check(last().auto == "lamp" and nL(last()) == 5, "放燈：房間裡只有一條線路，自動接上")
+
+    -- 接線指令：手動加室外那盞、範圍、權限、上限
+    r = wire(P, "add", SW1, OUT)
+    check(r.code == nil and nL(r) == 6 and r.op == "add", "接線模式加燈：室外那盞接上")
+    sent = {}
+    Circuits.command(P, "wire", { q = 99, op = "remove", x = 100, y = 101, z = 0, e = "cs_01_0", tx = 105, ty = 101, tz = 0,
+        te = "cl_01_0" })
+    check(last().code == "RATE_LIMITED", "0.25 秒內第二個接線指令：RATE_LIMITED")
+    check(wire(P, "add", SW1, MAP).code == "NOT_WIRABLE" and wire(P, "add", SW1, FAKE).code == "NOT_WIRABLE",
+        "地圖燈、只有 modData 記號的燈：NOT_WIRABLE")
+    local realGet = Ledger.get
+    Ledger.get = function(o) return o.md.builderEntry and {} or nil end -- 植入違規：照 modData 認
+    planted = wire(P, "add", SW1, FAKE).code == nil
+    Ledger.get = realGet
+    wire(P, "remove", SW1, FAKE)
+    check(planted, "植入違規（照 modData 認燈）時，偽造的燈接得上：上面那條會抓到")
+    local FAR2 = light(125, 101, lampS, "ours")
+    check(wire(P, "add", SW1, FAR2).code == "OUT_OF_RANGE", "離開關超過 16 格的燈：OUT_OF_RANGE")
+    local owned = square(103, 108, 0, { owner = "someone" })
+    local SH = light(103, 108, lampS, "ours")
+    check(owned and wire(P, "add", SW1, SH).code == "SAFEHOUSE" and nL(cmd(P, "circuit", { x = 100, y = 101, z = 0,
+        e = "cs_01_0" })) == 6, "燈在別人的安全屋：SAFEHOUSE，沒接上")
+    local FARP = player({ id = 2303, x = 120.5, y = 101.5 })
+    check(wire(FARP, "add", SW1, L1).code == "TOO_FAR", "接線的人離開關超過 16 格：TOO_FAR")
+    local OWNED_SW = light(104, 108, swS, "ours")
+    owned.owner = nil
+    at(104, 108).owner = "someone"
+    check(wire(P, "clear", OWNED_SW).code == "SAFEHOUSE", "開關在別人的安全屋：SAFEHOUSE")
+    at(104, 108).owner = nil
+    sb.Enabled = false
+    check(wire(P, "add", SW1, L1).code == "OFF", "管理員關掉建造工坊：OFF")
+    sb.Enabled = nil
+    Circuits.MAX_L = 6
+    local L4 = light(103, 103, lampS, "ours")
+    check(wire(P, "add", SW1, L4).code == "FULL", "線路滿了：FULL")
+    Circuits.MAX_L = 16
+
+    -- 房間 8 的開關與燈：搶燈、併線、拔線、clear
+    local SW3 = light(110, 101, swS, "ours")
+    local L8 = light(111, 100, lampS, "ours")
+    sent = {}
+    Circuits.placed(P, { SW3 })
+    local id3 = last().id
+    check(id3 and id3 ~= id1 and nL(last()) == 1, "另一間房的開關：自己一條線路")
+    r = wire(P, "add", SW1, L8)
+    check(r.code == nil and r.moved == true and nL(r) == 7 and nL(cmd(P, "circuit", { x = 110, y = 101, z = 0, e = "cs_01_0" })) == 0,
+        "別條線路的燈：點了移過來（moved），原線路少一盞")
+    r = wire(P, "join", SW1, SW3, { cand = true })
+    check(r.code == nil and #r.s == 3 and r.cand and #r.cand > 0, "點另一個開關：併成一條（3 個開關），附近可接的一起回")
+    local sawFree, sawSw = false, false
+    for _, c in ipairs(r.cand) do
+        if c.e == "cl_01_0" and c.x == 103 and c.y == 103 then sawFree = c.c == nil and c.k == "l" end
+        if c.e == "cs_01_0" and c.x == 110 then sawSw = c.k == "s" and c.c == r.id end
+    end
+    check(sawFree and sawSw, "可接清單：沒接的燈 c=nil、線路上的開關 k=s 而且是這條")
+    r = wire(P, "join", SW1, SW3)
+    check(r.code == nil and #r.s == 2, "再點同一個開關：從線路拿掉")
+    r = cmd(P, "wire", { op = "unplug", x = 111, y = 100, z = 0, e = "cl_01_0" })
+    check(r.code == nil and nL(r) == 6 and nL(cmd(P, "circuit", { x = 100, y = 101, z = 0, e = "cs_01_0" })) == 6,
+        "右鍵燈拔線：從線路拿掉")
+    check(cmd(P, "wire", { op = "unplug", x = 111, y = 100, z = 0, e = "cl_01_0" }).code == "NOT_WIRED", "沒接線的燈拔線：NOT_WIRED")
+    r = cmd(P, "circuit", { x = 100, y = 100, z = 0, e = "cl_01_0" })
+    check(r.code == nil and #r.s == 2 and r.cand == nil, "查燈：回控制它的開關（2 個），不回可接清單")
+
+    -- 帳本清理：移除事件、找不到的物件在按的時候剔除、開關都沒了整條刪掉
+    at(105, 101):transmitRemoveItemFromSquare(OUT)
+    check(nL(cmd(P, "circuit", { x = 100, y = 101, z = 0, e = "cs_01_0" })) == 5, "燈移出世界：從線路移除")
+    for k, o in ipairs(at(100, 102).objects) do if o == MV then table.remove(at(100, 102).objects, k) end end
+    nowMs = nowMs + 600
+    act(P, SW1)
+    check(nL(cmd(P, "circuit", { x = 100, y = 101, z = 0, e = "cs_01_0" })) == 4, "格子載入了卻找不到的燈：按開關時剔除")
+    -- 重開服：反查表從存檔重建
+    local d = Ledger.instance.circuits
+    local copy = { next = d.next, c = {} }
+    for cid, c in pairs(d.c) do
+        copy.c[cid] = { s = {}, l = {} }
+        for k in pairs(c.s) do copy.c[cid].s[k] = true end
+        for k in pairs(c.l) do copy.c[cid].l[k] = true end
+    end
+    Ledger.instance.circuits = copy
+    nowMs = nowMs + 600
+    local before = L1.on
+    check(act(P, SW1) == true and L1.on ~= before, "帳本換成讀回來的那份：反查表重建，按開關照樣切")
+    at(100, 101):transmitRemoveItemFromSquare(SW1)
+    at(102, 101):transmitRemoveItemFromSquare(SW2)
+    local left = 0
+    for _ in pairs(Ledger.instance.circuits.c) do left = left + 1 end
+    check(left == 0 and Ledger.get(SW1) == nil,
+        "兩個開關都拿走：整條線路刪掉（房間 8 那條併進來時已刪），帳本也清掉")
+    instanceof, IsoRegions.getIsoWorldRegion = realInst, realRegions
+end
+circuitScenario()
 
 print()
 if failures > 0 then
