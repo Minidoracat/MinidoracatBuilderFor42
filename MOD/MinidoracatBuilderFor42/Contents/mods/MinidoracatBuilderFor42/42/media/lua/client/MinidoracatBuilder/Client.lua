@@ -81,12 +81,14 @@ function Client.build(player, e, d, cells)
 end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
--- 走不到的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導；佇列空了以後 Cursor.tick 提示走不到
+-- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
+-- 佇列空了以後 Cursor.tick 照它提示
 local function queue(b)
     b.queued = true
     for i, c in ipairs(b.cells) do
         if walkTo(b.player, b.kind, b.spr, c) == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
+            b.noRoom = i
             return
         end
         ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(b.player, b.n, i))
@@ -123,7 +125,7 @@ local function queueUnbuild(b)
     b.queued = true
     if walkNear(b.player, b.kind, b.north, b.x, b.y, b.z, b.own) == false then
         print(LOG .. "no free square next to " .. b.x .. "," .. b.y .. "," .. b.z .. "; dismantle not queued")
-        Messages.toast(b.player, Messages.unbuildRefusal("WALK"), getText("IGUI_MBLD_NotRemoved"))
+        Messages.toast(b.player, Messages.unbuildRefusal("NO_ROOM"), getText("IGUI_MBLD_NotRemoved"))
         return
     end
     ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n))

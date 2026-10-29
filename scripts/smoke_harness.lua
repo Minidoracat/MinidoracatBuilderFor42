@@ -1650,6 +1650,37 @@ do
         and composed:find("furniture seat 01", 1, true) and composed:find(",1)", 1, true),
         "名稱：沒有翻譯就組「種類 · 圖塊組 · 編號」")
     check(Names.of("gone_01_0") == "gone_01_0", "名稱：不存在的圖塊回 sprite 名稱本身")
+    -- 包在函式裡：主程式的 local 已經接近 Lua 的 200 個上限
+    local function gridNames()
+        check(Names.short("furniture_seat_01_0") == Names.of("furniture_seat_01_0"), "短名：有原版翻譯時和完整名一樣")
+        local s = Names.short("furniture_seat_01_1")
+        check(s:find("furniture seat 01\nIGUI_MBLD_Name_Num", 1, true) and not s:find("IGUI_MBLD_Kind_", 1, true),
+            "短名：沒有翻譯時是「圖塊組」換行「編號」，不帶種類")
+        -- 一個字一行的假 Text：斷不完時最後一行接上原文剩下的部分再截短
+        local T = { wrap = function(str)
+            local out = {}
+            for w in str:gmatch("%S+") do out[#out + 1] = w end
+            return out
+        end, fit = function(str, w) return #str <= w and str or str:sub(1, w - 3) .. "..." end }
+        local two = W.wrapMax(T, "misc ddd 01 16", 8, nil, 2)
+        local one = W.wrapMax(T, "misc ddd", 8, nil, 2)
+        check(#two == 2 and two[1] == "misc" and two[2] == "ddd 0..." and #one == 2 and one[2] == "ddd",
+            "最多兩行：放得下照斷，放不下第二行接上剩下的字、截掉處有省略號")
+        local tl = W.tileLines(T, "fixtures bathroom 01\n#64", 8, nil)
+        check(#tl == 2 and tl[1] == "fixtu..." and tl[2] == "#64", "方格名稱：圖塊組太長只截第一行，編號照樣在第二行")
+        local realReader = getFileReader
+        local function perRow(content)
+            getFileReader = function()
+                if content == nil then return nil end
+                return { readLine = function() return content end, close = function() end }
+            end
+            return W.loadPerRow()
+        end
+        check(perRow("7") == 7 and perRow(" 3 ") == 3 and perRow(nil) == 5 and perRow("11") == 5 and perRow("1") == 5
+            and perRow("4.5") == 5 and perRow("abc") == 5, "一排幾格：讀檔裡的 2–10 整數，讀不到或不合法用 5")
+        getFileReader = realReader
+    end
+    gridNames()
     sb.DisabledTilesets = ""
     getText = realGetText
     Names.reset()
@@ -1743,7 +1774,7 @@ do
     end
     for _, code in ipairs({ "OFF", "NOT_ALLOWED", "STATE", "STALE", "RATE_LIMITED", "BAD_REQUEST", "NO_INTENT", "UNKNOWN",
         "UNSUPPORTED", "DISABLED", "BAD_FACE", "TOO_FAR", "UNREACHABLE", "NOT_LOADED", "SAFEHOUSE", "PERM_DENIED",
-        "OUTSIDE_SAFEHOUSE", "BLOCKED", "NO_MATERIAL", "NO_TOOL", "INTERNAL", "WALK" }) do
+        "OUTSIDE_SAFEHOUSE", "BLOCKED", "NO_MATERIAL", "NO_TOOL", "INTERNAL", "WALK", "NO_ROOM" }) do
         if not Messages.CODES[code] then allKeyed = false end
     end
     check(allKeyed, "伺服器的拒絕碼與走不到都在訊息表裡")
@@ -1752,6 +1783,46 @@ do
     check(Messages.refusal("WHAT", {}):find("IGUI_MBLD_Refuse_Other(WHAT)", 1, true), "不認得的碼：通用訊息附上碼")
     getText = realGetText
 end
+
+print("情境十九之二：送出後停下的通知（被打斷不說走不到，旁邊沒空位另說）")
+local function stopNotices()
+    local B = MinidoracatBuilder
+    local Cursor, Messages, C = B.Cursor, B.Messages, B.Client
+    local realBuild, realToast, realGet, realQ, realGetText = C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local told, nonce = nil, 900
+    Messages.toast = function(_, text, title) told = tostring(title) .. "|" .. text end
+    Cursor.get = function() return nil end
+    ISTimedActionQueue = { isPlayerDoingAction = function() return false end }
+    C.build = function(p, _, _, cells)
+        nonce = nonce + 1
+        C.pending = { n = nonce, cells = cells, player = p }
+        return nonce
+    end
+    local function run(count, placed, noRoom)
+        told = nil
+        local cells = {}
+        for i = 1, count do cells[i] = { i, 0, 0 } end
+        local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", 0, cells, nil)
+        C.pending.noRoom = noRoom
+        Cursor.onResult("accepted", { n = n })
+        for i = 1, placed do Cursor.onResult("placed", { n = n, i = i }) end
+        Cursor.tick()
+        nowMs = nowMs + 2000
+        Cursor.tick()
+        return told
+    end
+    check(run(8, 3) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(3,8)", "蓋了 3 格後停下：報蓋好 3／8，不報走不到")
+    check(run(8, 0) == "nil|IGUI_MBLD_Refuse_WALK", "一格都沒蓋就停下：照舊用 WALK，標題留給 toast 預設")
+    check(run(8, 4, 5) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Refuse_NO_ROOM(5)", "第 5 格旁邊沒空位：前 4 格蓋好後報第 5 格")
+    check(run(8, 1, 5) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,8)", "還沒走到沒空位那格就停下：照實報蓋好幾格")
+    check(run(8, 8) == nil and Cursor.queued() == nil, "全部蓋好：不通知")
+    C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText = realBuild, realToast, realGet, realQ, realGetText
+end
+stopNotices()
 
 print("情境二十：第四階段新種類（樓梯、燈、窗簾、屋頂）")
 -- 包成函式：區域變數多，放在主區塊的 do…end 會超過主程式 200 個的上限

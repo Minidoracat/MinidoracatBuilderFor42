@@ -19,14 +19,15 @@ local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials,
 
 -- 方法寫在 Cursor，類別第一次用到才 derive：ISBuildingObject 在 server 資料夾，MP 客戶端比 client 晚載入
 -- （PackThrow ThrowCursor.lua 同做法）。
-local Class, Overlay
+local Class, Marks, Panel
 local LOG = "[MinidoracatBuilderFor42] "
 local DRAG = { floor = true, wall = true, fence = true, roof = true } -- 能按住拖一排的種類（第三、四階段的決定）
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
-local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算走不到（MP 的 placed 比客戶端動作結束晚到）
+local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算停下（MP 的 placed 比客戶端動作結束晚到）
 local QR, QG, QB = 0.45, 0.75, 1 -- 已送出、還沒蓋好的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
-local ICON, PAD, BOTTOM = 16, 6, 200
+local NR, NG, NB = 0.6, 0.6, 0.6 -- 多格物件被擋時，沒出問題的那幾格地框（中性灰）：只有出問題的格子是紅框
+local ICON, PAD = 16, 6
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true }
@@ -87,7 +88,7 @@ end
 -- 後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；副本的 items 讀穿到 S（S 是懶查表，
 -- 不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個順序一格一格蓋），所以從
 -- 有支撐的那一頭拖。walk：Client.build 會先走過去，所以距離只照 Server.intent 的範圍，
--- 不看 MaxDistance、不查走不走得到（走不到由送出後的 Cursor.tick 提示）。回 { { a, code, extra }, ... }、可蓋格數、缺料格數。
+-- 不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。回 { { a, code, extra }, ... }、可蓋格數、缺料格數。
 function Cursor.preview(player, name, d, anchors, S)
     local work
     if S then
@@ -144,7 +145,8 @@ function Cursor.new(player, entry, d)
     o.rotateName = key and key > 0 and getKeyName(key) or nil
     o.sAt, o.sGen = 0, 0
     o.res, o.okN, o.shortN, o.gn = {}, 0, 0, 0
-    o.warn = { r = 1, g = 0.55, b = 0.2, a = 1 } -- 框架 warning 色（深色 #FF8C33），警告三角用
+    -- 框架深色色票（V1.lua:603-622；warning 是 rev 18 token）。游標只從建造視窗開，視窗要 rev ≥ 22（Window.ui），框架一定在
+    o.colors = MinidoracatUI.v1.Theme.create({ variant = "dark" }).colors
     return o
 end
 
@@ -254,7 +256,8 @@ end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:667-672）
 
 -- 滑鼠在任何介面上（原版 ISMoveableCursor.lua:301-323 同寫法；E2E 可換掉）。每幀一次 Java 迴圈，不配置。
--- 游標自己的標籤面板與提示框不算：只顯示、不收滑鼠（引擎的 isMouseOver 只看範圍，不看 wantMouseEvents）。
+-- 游標自己的兩個元件不算（overlay＝警告三角層、tooltip＝跟著滑鼠的標籤框）：只顯示、不收滑鼠（引擎的 isMouseOver
+-- 只看範圍，不看 wantMouseEvents）。
 function Cursor.mouseOverUI(c)
     local own1 = c and c.overlay and c.overlay.javaObject
     local own2 = c and c.tooltip and c.tooltip.javaObject
@@ -293,12 +296,13 @@ function Cursor:isValid(square)
     end
     local p = self.character
     local ax, ay, az = square:getX(), square:getY(), square:getZ()
-    local ex, ey = self.lineX or ax, self.lineY or ay
+    local ex, ey, drag = self.lineX or ax, self.lineY or ay, self.lineX ~= nil
     local px, py, pz = math.floor(p:getX()), math.floor(p:getY()), math.floor(p:getZ())
     if ax ~= self.kx or ay ~= self.ky or az ~= self.kz or ex ~= self.kex or ey ~= self.key or self.d ~= self.kd
-        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or self.up ~= self.kup then
+        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or self.up ~= self.kup
+        or drag ~= self.kdrag then -- 開始拖：按鍵說明換成「放開 蓋 N 格」
         self.kx, self.ky, self.kz, self.kex, self.key, self.kd = ax, ay, az, ex, ey, self.d
-        self.kpx, self.kpy, self.kpz, self.kgen, self.kup = px, py, pz, self.sGen, self.up
+        self.kpx, self.kpy, self.kpz, self.kgen, self.kup, self.kdrag = px, py, pz, self.sGen, self.up, drag
         -- 上一層：畫面上同一個位置，上一層是 (x+3, y+3)（IsoUtils.XToIso／YToIso 每層加 3 格）
         local u = self.up and 3 or 0
         self:refresh(ax + u, ay + u, az + (self.up and 1 or 0), ex + u, ey + u)
@@ -335,7 +339,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     self:texts()
 end
 
--- 標籤（名稱 · 朝向；拖曳時多一行格數）、按鍵說明、提示框的原因。字串只在這裡組。
+-- 標籤（名稱 · 朝向；拖曳時多一行格數）、排隊提示、原因、按鍵說明。字串只在這裡組，全部畫在跟著滑鼠的標籤框。
 function Cursor:texts()
     local Names = B.Names
     local name = Names and Names.of(self.name) or self.name
@@ -343,13 +347,20 @@ function Cursor:texts()
         name = name .. getText("IGUI_MBLD_Sep") .. (Names and Names.face(self.d) or tostring(self.d)) -- 鍵由 Window 定義
     end
     self.label = name
-    local res, n = self.res, #self.res
-    self.label2 = n > 1 and getText("IGUI_MBLD_DragSummary", tostring(n), tostring(self.okN), tostring(self.shortN))
-        or nil
+    local res, n, ok = self.res, #self.res, self.okN
+    -- 跳過＝被擋＋缺料，三個數字加得起來（審查 #10）
+    self.label2 = n > 1 and (ok == n and getText("IGUI_MBLD_DragAll", tostring(n))
+        or getText("IGUI_MBLD_DragSummary", tostring(n), tostring(ok), tostring(n - ok))) or nil
+    -- 前一筆還有格子在排隊：再放一次，Client.build 會清掉角色的動作佇列（redrag＝replace，使用者 2026-10-29），放開前先說
+    local left, q = 0, ok > 0 and Cursor.queued()
+    if q then
+        for _ in pairs(q) do left = left + 1 end
+    end
+    self.label3 = left > 0 and getText(left == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(left)) or nil
     local tip
     if n == 1 then
         tip = res[1].code and Messages.refusal(res[1].code, res[1].extra)
-    elseif n > 1 and self.okN < n then
+    elseif n > 1 and ok < n then
         -- 缺料的格子各自的缺額（照剩下的材料算）加起來＝整排還差多少
         local need, tools, toolSeen, other = {}, {}, {}, nil
         for _, r in ipairs(res) do
@@ -369,16 +380,18 @@ function Cursor:texts()
         local lines = {}
         if other then lines[#lines + 1] = Messages.refusal(other.code, other.extra) end
         if self.shortN > 0 then
-            lines[#lines + 1] = getText("IGUI_MBLD_DragShort", tostring(self.shortN), Messages.missing(need, tools))
+            lines[#lines + 1] = getText(self.shortN == 1 and "IGUI_MBLD_DragShortOne" or "IGUI_MBLD_DragShort",
+                tostring(self.shortN), Messages.missing(need, tools))
         end
-        lines[#lines + 1] = getText("IGUI_MBLD_DragSkip", tostring(n - self.okN))
-        tip = table.concat(lines, " <LINE> ")
+        tip = table.concat(lines, "\n")
     end
     self.tip = tip
     local hint
     if not self.joypad then -- 手把用原版按鈕提示（getAPrompt 等）
         local parts = {}
-        if self.okN > 0 then
+        if ok > 0 and self.canDrag and self.lineX then -- 已經在拖：說放開會蓋幾格，不再教拖
+            parts[#parts + 1] = getText(ok == 1 and "IGUI_MBLD_HintReleaseOne" or "IGUI_MBLD_HintRelease", tostring(ok))
+        elseif ok > 0 then
             parts[#parts + 1] = getText("IGUI_MBLD_HintBuild")
             if self.canDrag then parts[#parts + 1] = getText("IGUI_MBLD_HintDrag") end
         end
@@ -396,116 +409,131 @@ function Cursor:texts()
 end
 
 -- ---------------------------------------------------------------- 畫面
-
--- 標籤面板（玩家畫面左下）：畫標籤、按鍵說明，並在每個壞格子上畫警告三角（不只靠顏色）。
--- 只顯示、不收滑鼠：wantMouseEvents=false 讓左鍵與移動穿過（ISUIElement.lua:1004），右鍵要明確回 false
+-- 兩個元件都只顯示、不收滑鼠：wantMouseEvents=false 讓左鍵與移動穿過（ISUIElement.lua:1004），右鍵要明確回 false
 -- （UIElement.java:1513-1515；框架 Toast 同做法）。元件不裁切，畫在自己範圍外照樣看得到。
-local function overlayRender(self)
+-- 開頭先比 getDrag：已關掉的游標，removeFromUIManager 排隊中這一幀還會畫。
+
+-- 警告三角層：每個壞格子上一個三角（不只靠顏色），下面墊 surface 底，在紅色虛影上也看得清楚（審查 #11）。
+-- backMost：UIManager 每次 update 把它移到最底層（UIManager.java:563-567），不畫在聊天框、建造視窗等介面上面。
+local function marksRender(self)
     local c = self.cursor
-    if getCell():getDrag(c.player) ~= c then return end -- 已關掉的游標，removeFromUIManager 排隊中這一幀還會畫
-    local p, ox, oy, warn, UI = c.player, self:getAbsoluteX(), self:getAbsoluteY(), c.warn, self.UI
-    local gx, gy, gz, gbad = c.gx, c.gy, c.gz, c.gbad
-    for i = 1, c.overUI and 0 or c.gn do -- 滑鼠在介面上時虛影收起，警告三角也不畫
+    if getCell():getDrag(c.player) ~= c or c.overUI then return end -- 滑鼠在介面上時虛影收起，三角也不畫
+    local p, ox, oy, col, UI = c.player, self:getAbsoluteX(), self:getAbsoluteY(), c.colors, self.UI
+    local gx, gy, gz, gbad, warn = c.gx, c.gy, c.gz, c.gbad, c.colors.warning
+    for i = 1, c.gn do
         if gbad[i] then
             local sx = isoToScreenX(p, gx[i] + 0.5, gy[i] + 0.5, gz[i]) - ox - ICON / 2
             local sy = isoToScreenY(p, gx[i] + 0.5, gy[i] + 0.5, gz[i]) - oy - ICON / 2
-            if not (UI and UI.Icons and UI.Icons.draw(self, "warning", sx, sy, ICON, warn, 1)) then
+            UI.Skin.fill(self, sx - 2, sy - 2, ICON + 4, ICON + 4, col.surface, nil, 1)
+            if not UI.Icons.draw(self, "warning", sx, sy, ICON, warn, 1) then
                 self:drawText("!", sx + 5, sy, warn.r, warn.g, warn.b, 1, UIFont.Medium)
             end
         end
     end
-    self:drawRect(0, 0, self.width, self.height, 0.65, 0, 0, 0)
-    local y, fh, font = PAD, self.fh, self.font
-    self:drawText(c.label, PAD, y, 1, 1, 1, 1, font)
-    if c.label2 then
-        y = y + fh
-        if c.okN < #c.res then
-            self:drawText(c.label2, PAD, y, warn.r, warn.g, warn.b, 1, font)
-        else
-            self:drawText(c.label2, PAD, y, 1, 1, 1, 1, font)
-        end
+end
+
+-- 標籤框：名稱、拖曳摘要、排隊提示、原因、按鍵說明，跟著滑鼠（手把：游標那一格）。行在 layout 排好，這裡只畫。
+-- 位置照原版提示框（滑鼠右下 32, 10，ISToolTip.lua:67-79）；超出玩家畫面就翻到滑鼠另一邊，不蓋住滑鼠。
+local function panelRender(self)
+    local c = self.cursor
+    if getCell():getDrag(c.player) ~= c or not c.lines then return end
+    local p, w, h = c.player, self.width, self.height
+    local mx, my
+    if c.joypad then
+        if not c.kx then return end
+        mx, my = isoToScreenX(p, c.kx, c.ky, c.kz), isoToScreenY(p, c.kx, c.ky, c.kz)
+    else
+        mx, my = getMouseX(), getMouseY()
     end
-    if c.hint then self:drawText(c.hint, PAD, y + fh, 0.8, 0.8, 0.8, 1, font) end
+    local left, top = getPlayerScreenLeft(p), getPlayerScreenTop(p)
+    local x, y = mx + 32, my + 10
+    if x + w > left + getPlayerScreenWidth(p) then x = mx - 16 - w end
+    if y + h > top + getPlayerScreenHeight(p) then y = my - 10 - h end
+    self:setX(math.max(left, x))
+    self:setY(math.max(top, y))
+    local col, UI, lines, fh, font = c.colors, self.UI, c.lines, self.fh, self.font
+    UI.Skin.fill(self, 0, 0, w, h, col.surface, nil, 1)
+    UI.Skin.border(self, 0, 0, w, h, col.border, nil, 1)
+    for i = 1, lines.n do
+        local l = lines[i]
+        self:drawText(l.t, PAD, PAD + (i - 1) * fh, l.c.r, l.c.g, l.c.b, 1, font)
+    end
 end
 
 local function noClick() return false end
 
--- 第一次 render 才建標籤面板與提示框（之後每幀只更新手把提示框的位置）
-function Cursor:showUI()
-    if not self.overlay then
-        if not Overlay then
-            Overlay = ISUIElement:derive("MinidoracatBuilderCursorOverlay")
-            Overlay.render = overlayRender
-            Overlay.onRightMouseDown = noClick
-            Overlay.onRightMouseUp = noClick
-        end
-        local o = Overlay:new(0, 0, 1, 1)
-        o.wantMouseEvents = false
-        o.cursor = self
-        o.UI = MinidoracatUI and MinidoracatUI.v1
-        o.font = UIFont.Small
-        o:initialise()
-        o:addToUIManager()
-        self.overlay = o
-        local t = ISToolTip:new() -- 自己的一份，不借 ISWorldObjectContextMenu 的池（別的選單會收回去重用）
-        t:initialise()
-        t.followMouse = not self.joypad
-        t.maxLineWidth = 600
-        t:addToUIManager()
-        self.tooltip = t
-        self:layout()
-    end
-    if self.joypad and self.tip then
-        self.tooltip:setDesiredPosition(isoToScreenX(self.player, self.kx, self.ky, self.kz),
-            isoToScreenY(self.player, self.kx, self.ky, self.kz))
-    end
+local function newElement(cls, cursor)
+    local o = cls:new(0, 0, 1, 1)
+    o.wantMouseEvents = false
+    o.cursor = cursor
+    o.UI = MinidoracatUI.v1
+    o.font = UIFont.Small
+    o:initialise()
+    o:addToUIManager()
+    return o
 end
 
--- 文字變了才排：面板寬高與位置、提示框內容與顯示
+-- 第一次 render 才建三角層與標籤框
+function Cursor:showUI()
+    if self.overlay then return end
+    if not Marks then
+        Marks = ISUIElement:derive("MinidoracatBuilderCursorMarks")
+        Marks.render, Marks.onRightMouseDown, Marks.onRightMouseUp = marksRender, noClick, noClick
+        Panel = ISUIElement:derive("MinidoracatBuilderCursorPanel")
+        Panel.render, Panel.onRightMouseDown, Panel.onRightMouseUp = panelRender, noClick, noClick
+    end
+    self.overlay = newElement(Marks, self)
+    self.overlay:backMost()
+    self.tooltip = newElement(Panel, self)
+    self:layout()
+end
+
+-- 文字變了才排：每段照框架斷行（Text.wrap，rev 16；視窗要 rev 22 才開）拆成行、配好色，量出標籤框寬高
 function Cursor:layout()
-    local o = self.overlay
+    local o = self.tooltip
     if not o then return end
-    local tm = getTextManager()
-    local w, n = 0, 0
-    local lines = { self.label, self.label2, self.hint }
-    for i = 1, 3 do
-        if lines[i] then
-            w = math.max(w, tm:MeasureStringX(o.font, lines[i]))
-            n = n + 1
+    local col, font, tm = self.colors, o.font, getTextManager()
+    local fh = tm:getFontHeight(font)
+    local maxW = fh * 32
+    local src = { self.label, col.text, self.label2, self.okN < #self.res and col.warning or col.text,
+        self.label3, col.warning, self.tip, col.text, self.hint, col.textMuted }
+    local lines, w = { n = 0 }, 0
+    for i = 1, 9, 2 do
+        if src[i] then
+            for _, line in ipairs(o.UI.Text.wrap(src[i], maxW, font)) do
+                lines.n = lines.n + 1
+                lines[lines.n] = { t = line, c = src[i + 1] }
+                w = math.max(w, tm:MeasureStringX(font, line))
+            end
         end
     end
-    o.fh = tm:getFontHeight(o.font)
+    self.lines = lines
+    o.fh = fh
     o:setWidth(w + PAD * 2)
-    o:setHeight(n * o.fh + PAD * 2)
-    o:setX(getPlayerScreenLeft(self.player) + 16)
-    o:setY(getPlayerScreenTop(self.player) + getPlayerScreenHeight(self.player) - o.height - BOTTOM)
-    local t = self.tooltip
-    t.description = self.tip or ""
-    t:setVisible(self.tip ~= nil and not self.overUI)
+    o:setHeight(lines.n * fh + PAD * 2)
+    o:setVisible(not self.overUI)
 end
 
 function Cursor:hideUI()
-    if self.tooltip then
-        self.tooltip:setVisible(false)
-        self.tooltip:removeFromUIManager()
-        self.tooltip = nil
-    end
-    if self.overlay then
-        self.overlay:setVisible(false)
-        self.overlay:removeFromUIManager()
-        self.overlay = nil
+    for _, k in ipairs({ "tooltip", "overlay" }) do
+        local o = self[k]
+        if o then
+            o:setVisible(false)
+            o:removeFromUIManager()
+            self[k] = nil
+        end
     end
 end
 
 -- 每幀畫虛影：每格各自的 sprite，可蓋白色、不能蓋照原版紅（ISBuildingObject.lua:572-576、IsoSprite.java:507-516）；
--- 地面格照玩家設定的好／壞色（ISBuildIsoEntity.lua:46-68）。不配置 table／字串。
+-- 地面格照玩家設定的好／壞色（ISBuildIsoEntity.lua:46-68），多格物件被擋時沒出問題的格子用中性灰。不配置 table／字串。
 -- 開頭先比 getDrag：同一幀每個 OnDoTileBuilding2 處理器拿到同一個拖曳物件（IsoCell.java:2612），
 -- 已經關掉的游標可能被別的 MOD 再 render 一次，這時收掉自己的 UI 就走。
 function Cursor:render(x, y, z, square)
     if getCell():getDrag(self.player) ~= self then return self:hideUI() end
     self:showUI()
-    local t, show = self.tooltip, self.tip ~= nil and not self.overUI
-    if t:getIsVisible() ~= show then t:setVisible(show) end
+    local t = self.tooltip
+    if t:getIsVisible() == self.overUI then t:setVisible(not self.overUI) end
     if self.overUI then return end
     local floor = self:getFloorCursorSprite()
     local gx, gy, gz, gspr, gbad, gred, gyoff = self.gx, self.gy, self.gz, self.gspr, self.gbad, self.gred, self.gyoff
@@ -517,6 +545,8 @@ function Cursor:render(x, y, z, square)
         end
         if gbad[i] then
             floor:RenderGhostTileColor(gx[i], gy[i], gz[i], self.badR, self.badG, self.badB, 0.8)
+        elseif gred[i] then
+            floor:RenderGhostTileColor(gx[i], gy[i], gz[i], NR, NG, NB, 0.8)
         else
             floor:RenderGhostTileColor(gx[i], gy[i], gz[i], self.goodR, self.goodG, self.goodB, 0.8)
         end
@@ -544,7 +574,10 @@ function Cursor:tryBuild(x, y, z)
         end
     end
     self.lineX, self.lineY = nil, nil
-    if #anchors > 0 then Cursor.send(self.character, self.name, self.d, anchors, parts) end
+    if #anchors > 0 then
+        Cursor.send(self.character, self.name, self.d, anchors, parts)
+        self.kgen = nil -- 下一幀重算：標籤馬上寫出「再放一次會取消剛送出的 N 格」
+    end
 end
 
 -- 引擎 setDrag 換掉或清掉這個游標時呼叫（IsoCell.java:2563-2567）。
@@ -556,15 +589,16 @@ function Cursor:deactivate()
     end
 end
 
--- ---------------------------------------------------------------- 送出後：被拒與走不到的通知
+-- ---------------------------------------------------------------- 送出後：被拒與停下的通知
 
 -- 目前等結果的請求：{ player, n, count, placed, accepted, at, idleAt, parts }。每人只留一個請求（Client.build 會清佇列），
--- 所以只追最近一筆。游標關掉後照樣追，通知照發。watch 清掉（蓋完、被拒、走不到或被打斷、換了別的請求）時排隊虛影一起收。
+-- 所以只追最近一筆。游標關掉後照樣追，通知照發。watch 清掉（蓋完、被拒、停下、換了別的請求）時排隊虛影一起收。
 local watch
 
-local function tell(player, code, extra)
+-- title 省略＝「無法建造」（Messages.toast）
+local function tell(player, code, extra, title)
     if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知，不再疊一則
-    Messages.toast(player, Messages.refusal(code, extra))
+    Messages.toast(player, Messages.refusal(code, extra), title)
 end
 
 -- 送一次建造（游標放開時）。anchors＝{ { x, y, z }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，
@@ -612,7 +646,10 @@ function Cursor.onResult(cmd, args)
 end
 Client.onResult = Cursor.onResult
 
--- 每 tick：沒有在等的請求就直接回。收下後佇列空了一陣子還沒蓋完＝走不到（或被打斷），提示一次。
+-- 每 tick：沒有在等的請求就直接回。收下後佇列空了一陣子還沒蓋完＝停下了，提示一次。佇列空了分不出是玩家自己走開、
+-- 按 ESC，還是路徑走不通（動作停下一律 resetQueue，不留原因：ISBaseTimedAction.lua:63-64），所以只有排隊時就知道的
+-- 「旁邊沒空位」（Client.lua 的 queue 記在 noRoom）另外說；其他照實說蓋好幾格。材料是一格一格在 Server.complete 扣的
+-- （Place.build 成功後才 Materials.consume，Server.lua:241-251），停下時沒蓋的格子沒有扣。
 function Cursor.tick()
     local w = watch
     if not w or not w.n then return end
@@ -635,7 +672,15 @@ function Cursor.tick()
     w.idleAt = w.idleAt or now
     if now - w.idleAt < IDLE_MS then return end
     watch = nil
-    if w.placed < w.count then tell(w.player, "WALK") end
+    if w.placed >= w.count then return end
+    local stuck, title = Client.pending.noRoom, w.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
+    if stuck and w.placed + 1 >= stuck then -- 前面的都蓋好了，停在旁邊沒空位的那一格
+        tell(w.player, "NO_ROOM", { i = stuck, n = w.count }, title)
+    elseif w.placed > 0 then
+        Messages.toast(w.player, getText("IGUI_MBLD_Stopped", tostring(w.placed), tostring(w.count)), title)
+    else
+        tell(w.player, "WALK")
+    end
 end
 Events.OnTick.Add(Cursor.tick)
 

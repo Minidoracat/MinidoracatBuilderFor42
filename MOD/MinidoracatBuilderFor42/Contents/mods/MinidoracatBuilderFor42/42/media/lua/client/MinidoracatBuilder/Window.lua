@@ -25,7 +25,8 @@ local Names, Favorites = B.Names, B.Favorites
 
 local LOG = "[MinidoracatBuilderFor42] "
 W.MIN_REV = 22
-W.CAPS = { "window", "controls", "dropdown", "focus", "tileGrid", "virtualList", "textWrap", "navList", "scrollPanel" }
+W.CAPS = { "window", "controls", "sliderRow", "dropdown", "focus", "tileGrid", "virtualList", "textWrap", "navList",
+    "scrollPanel" }
 W.DEBOUNCE_MS = 120     -- 同框架 ItemPicker（Widgets/ItemPicker.lua:73,584-588；設計稿 DD:130）
 W.BIND = "MinidoracatBuilder_Toggle"
 local PAD, GAP = 8, 6
@@ -35,6 +36,9 @@ local BUDGET_MS = 2     -- 每幀補格子、缺料檢查的時間預算
 local RECENT_MAX = 30
 local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的最多約 300 格）
 local DIM_MAX = 1024    -- 缺料快取：滿了整張清掉，要比一個畫面看得到的格子多很多（4K 大視窗約 300 格）
+-- 一排幾格（使用者 2026-10-29：視窗裡的滑桿 2–10、預設 5，存在本機）。檔案一行一個數字。
+W.PER_ROW_FILE = "MinidoracatBuilder/window.txt"
+W.PER_ROW_MIN, W.PER_ROW_MAX, W.PER_ROW_DEFAULT = 2, 10, 5
 
 -- 頁籤與種類（設計稿的九個頁籤；只列 Entry.BUILDABLE）
 W.TABS = { "all", "floor", "wall", "doorWindow", "roof", "stairs", "furniture", "light", "decor" }
@@ -64,6 +68,37 @@ local EMPTY = { n = 0 }
 
 local function trim(s)
     return (s or ""):match("^%s*(.-)%s*$")
+end
+
+-- 一排幾格的設定檔：讀不到、不是 2–10 的整數就用預設 5。getFileReader／getFileWriter 的路徑相對 Zomboid/Lua，
+-- 寫入時自動建資料夾（LuaManager.java:5936-5963,6727-6759；同 Favorites.lua）
+local function readPerRow()
+    local r = getFileReader(W.PER_ROW_FILE, false)
+    if not r then return nil end
+    local line = r:readLine()
+    r:close()
+    return tonumber(trim(line))
+end
+
+function W.loadPerRow()
+    local ok, n = pcall(readPerRow)
+    if ok and n and n == math.floor(n) and n >= W.PER_ROW_MIN and n <= W.PER_ROW_MAX then return n end
+    return W.PER_ROW_DEFAULT
+end
+
+local function writePerRow(n)
+    local w = getFileWriter(W.PER_ROW_FILE, true, false)
+    w:write(tostring(n) .. "\n")
+    w:close()
+end
+
+-- 滑桿的 onChange（拖動中每換一格就呼叫）：記下、存檔、立刻重排
+function W.setPerRow(n)
+    n = math.floor((tonumber(n) or W.PER_ROW_DEFAULT) + 0.5)
+    if n == W.st.perRow then return end
+    W.st.perRow = n
+    if not pcall(writePerRow, n) then print(LOG .. "row size not saved to " .. W.PER_ROW_FILE) end
+    if W.v then W.layout() end
 end
 
 -- 框架探測（UI AGENTS 契約 2；QU/Draw.lua:21-30）：缺一項就回 nil，不帶半套狀態
@@ -463,7 +498,30 @@ local function setDim(v, name, d)
     v.dimN = v.dimN + 1
 end
 
--- 看得到的格子：補貼圖、截好的名稱、缺料標記（有時間預算；沒做完的下一幀繼續）
+-- s 斷成最多 max 行（框架 Text.wrap，rev 16）；斷不完時最後一行接上原文剩下的部分再 Text.fit，截掉的地方有省略號
+function W.wrapMax(Text, s, w, font, max)
+    local lines = Text.wrap(s, w, font)
+    if #lines <= max then return lines end
+    local out, pos = {}, 1
+    for i = 1, max - 1 do
+        out[i] = lines[i]
+        local _, e = s:find(lines[i], pos, true)
+        pos = (e or pos) + 1
+    end
+    out[max] = Text.fit(trim(s:sub(pos)), w, font)
+    return out
+end
+local wrapMax = W.wrapMax
+
+-- 方格名稱兩行：短名有換行（圖塊組／編號，Names.short）就各佔一行、各自截短，編號一定看得到；
+-- 沒有（原版譯名）就斷成最多兩行
+function W.tileLines(Text, s, w, font)
+    local a, b = s:match("^(.-)\n(.*)$")
+    if a then return { Text.fit(a, w, font), Text.fit(b, w, font) } end
+    return wrapMax(Text, s, w, font, 2)
+end
+
+-- 看得到的格子：補貼圖、斷好的短名（最多兩行）、缺料標記（有時間預算；沒做完的下一幀繼續）
 local function prepareVisible(v)
     local grid = v.grid
     local items = grid:getItems()
@@ -480,7 +538,7 @@ local function prepareVisible(v)
         texOf(v, name)
         if v.text[name] == nil then
             if v.textN >= CACHE_MAX then v.text, v.textN = {}, 0 end
-            v.text[name] = v.UI.Text.fit(Names.of(name), tw - 12, v.font)
+            v.text[name] = W.tileLines(v.UI.Text, Names.short(name), tw - 12, v.font)
             v.textN = v.textN + 1
         end
         if v.S and v.dim[name] == nil then setDim(v, name, isShort(v.S, name)) end
@@ -540,7 +598,7 @@ function W.setStatus(v)
     local C = B.Catalog
     local cs = C and C.state
     if cs == "failed" then
-        v.statusText = getText("IGUI_MBLD_Catalog_Failed")
+        v.statusText = v.UI.Text.fit(getText("IGUI_MBLD_Catalog_Failed"), v.status.width, v.font)
     elseif cs ~= "ready" then
         v.statusText = getText("IGUI_MBLD_Catalog_Running", tostring(v.catPct or 0))
     elseif v.aff then
@@ -636,6 +694,15 @@ local function text(ops, s, x, y, c, font)
     add(ops, { t = "text", s = s, x = x, y = y, c = c, f = font })
 end
 
+-- 一段字最多 max 行（預設兩行；詳情不能捲動，放不下就截字加省略號）；回下一行的 y
+local function para(v, ops, s, x, y, w, col, max)
+    for _, line in ipairs(wrapMax(v.UI.Text, s, w, v.font, max or 2)) do
+        text(ops, line, x, y, col, v.font)
+        y = y + v.fh + 4
+    end
+    return y
+end
+
 local function costInfo(v, e)
     local sprites, cells = {}, Entry.cells(e.spr)
     for i, c in ipairs(cells) do sprites[i] = c[4] end
@@ -692,18 +759,14 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
     local y = boxH + GAP
     local fhM = getTextManager():getFontHeight(UIFont.Medium)
-    local lines = Text.wrap(Names.of(e.name, e.kind), dw, UIFont.Medium)
-    for i = 1, math.min(3, #lines) do
-        text(ops, lines[i], 0, y, c.text, UIFont.Medium)
+    -- 名稱最多三行，第三行接上剩下的字截短（完整 tileset ID 是搜尋要用的字，截掉處要看得出來）
+    for _, line in ipairs(wrapMax(Text, Names.of(e.name, e.kind), dw, UIFont.Medium, 3)) do
+        text(ops, line, 0, y, c.text, UIFont.Medium)
         y = y + fhM + 2
     end
     y = y + 2
-    text(ops, Text.fit(getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), dw, v.font),
-        0, y, c.textMuted, v.font)
-    y = y + lh
-    text(ops, Text.fit(getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), dw, v.font),
-        0, y, c.textMuted, v.font)
-    y = y + lh
+    y = para(v, ops, getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), 0, y, dw, c.textMuted)
+    y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
     -- 拆除方式放在材料前面：詳情不能捲動，矮的視窗畫不下最後幾行；只能砸、不退料的照樣能蓋，
     -- 蓋之前一定要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
@@ -729,10 +792,9 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         local itex = itemTexOf(ft)
         if itex then add(ops, { t = "tex", tex = itex, x = 0, y = y + math.floor((fh - 16) / 2), w = 16, h = 16 }) end
         local nameW = dw - 20 - qtyW - (short and 22 or 4)
-        text(ops, Text.fit(getItemName(ft) or ft, nameW, v.font), 20, y, col, v.font)
         add(ops, { t = "textR", s = qty, x = dw, y = y, c = col, f = v.font })
         if short then add(ops, { t = "icon", key = "warning", x = dw - qtyW - 20, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
-        y = y + lh
+        y = para(v, ops, getItemName(ft) or ft, 20, y, nameW, col)
     end
     if not any then
         text(ops, getText("IGUI_MBLD_Detail_NoMaterials"), 0, y, c.text, v.font)
@@ -747,8 +809,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         for _, t in ipairs(total.tools) do
             local col = lacking[t] and c.warning or c.text
             if lacking[t] then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
-            text(ops, Text.fit(toolName(t), dw - 20, v.font), 20, y, col, v.font)
-            y = y + lh
+            y = para(v, ops, toolName(t), 20, y, dw - 20, col)
         end
     end
     y = y + 4
@@ -829,8 +890,9 @@ local function prepareDetail(v)
         end
     elseif name then
         -- 目錄裡有、現在解析不了：管理員剛關掉來源，或規則改了
-        text(ops, v.UI.Text.fit(Names.of(name), v.detail.width, v.font), 0, 0, v.colors.text, v.font)
-        text(ops, v.UI.Text.fit(getText("IGUI_MBLD_Detail_Gone"), v.detail.width, v.font), 0, v.fh + 4, v.colors.warning, v.font)
+        -- 名稱（窄版一行）＋為什麼不能蓋，兩行；「建造」不能按的原因只寫在這裡，不能截掉
+        local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
+        para(v, ops, getText("IGUI_MBLD_Detail_Gone"), 0, y, v.detail.width, v.colors.warning)
     end
     v.ops = ops
     v.focusName = name
@@ -946,24 +1008,31 @@ function W.drawTile(v, el, name, x, y, w, h, state)
     local c = v.colors
     local dim = v.dim[name] == true
     local tex = v.tex[name]
-    if tex then el:drawTextureScaledAspect(tex, x + 4, y + 4, w - 8, v.iconH, dim and 0.45 or 1, 1, 1, 1) end
-    local s = v.text[name]
-    if s then
-        local col = dim and c.textDisabled or c.text
-        el:drawTextCentre(s, x + math.floor(w / 2), y + h - v.fh - 4, col.r, col.g, col.b, col.a or 1, v.font)
+    -- 缺料的格子照樣能選、能按建造，不是停用：縮圖只淡一點、名稱用次要字色（審查 1029 #6：原本 0.45 與
+    -- textDisabled 量到 1.83:1、3.45:1）。缺料靠右上的警告圖示標（設計稿 DD:131）
+    if tex then el:drawTextureScaledAspect(tex, x + 4, y + 4, w - 8, v.iconH, dim and 0.8 or 1, 1, 1, 1) end
+    local lines = v.text[name]
+    if lines then
+        local col = dim and c.textMuted or c.text
+        local cx, ty = x + math.floor(w / 2), y + v.iconH + 6
+        for i = 1, #lines do
+            el:drawTextCentre(lines[i], cx, ty, col.r, col.g, col.b, col.a or 1, v.font)
+            ty = ty + v.fh + 2
+        end
     end
     if dim then
-        -- 缺料不只靠顏色：右上角警告圖示（設計稿 DD:131）
         local wc = c.warning
         if not v.UI.Icons.draw(el, "warning", x + w - 18, y + 2, 16, wc, 1) then
             el:drawText("!", x + w - 10, y + 2, wc.r, wc.g, wc.b, 1, v.font)
         end
     end
     if name == v.padPicked then
-        -- 手把：已選取（再按一次 A 就建造）畫黃框，和焦點白框分開（設計稿 DD:364-379）
-        local wc = c.warning
-        el:drawRectBorder(x, y, w, h, 1, wc.r, wc.g, wc.b)
-        el:drawRectBorder(x + 1, y + 1, w - 2, h - 2, 1, wc.r, wc.g, wc.b)
+        -- 手把：已選取（再按一次 A 就建造）畫 accent 雙框＋左上的勾，和焦點框分開（設計稿 DD:364-379）。
+        -- 不用 warning：這個視窗的 warning 是缺料（審查 1029 #7）
+        local ac = c.accent
+        el:drawRectBorder(x, y, w, h, 1, ac.r, ac.g, ac.b)
+        el:drawRectBorder(x + 1, y + 1, w - 2, h - 2, 1, ac.r, ac.g, ac.b)
+        v.UI.Icons.draw(el, "check", x + 3, y + 3, 16, ac, 1)
     end
 end
 
@@ -1161,6 +1230,52 @@ end
 
 -- ===== 建窗與版面 =====
 
+-- 方格：一排 W.st.perRow 格，格寬＝方格寬扣掉框架一律預留的 12px 捲軸後平分（TileGrid.lua:58,71-77）。框架只在 new
+-- 收 tileW、沒有改格寬的 API（TileGrid.lua:338-366；ARCH §3.22），所以格寬變了（拖滑桿、拉視窗）就換一個新方格：
+-- 清單、選取、第一列的第一格與焦點搬過去；缺料、最愛、貼圖存在 v 上照用。拉視窗時每次 onResize 都可能換，不等大小
+-- 穩定：多的只是一個元件，名稱照新格寬重新斷行本來就每次發生（prepareVisible 有時間預算），等穩定反而會先閃一下
+-- 舊格寬算出的格數再跳回來。
+local function gridTileW(w)
+    return math.max(1, math.floor((w - 12) / W.st.perRow))
+end
+
+function W.placeGrid(v, x, y, w, h)
+    local old, tw = v.grid, gridTileW(w)
+    if old and tw == v.gridTW then
+        if old.width ~= w or old.height ~= h then old:resize(w, h) end
+        old:setX(x)
+        old:setY(y)
+        return
+    end
+    local UI, win = v.UI, v.win
+    local g = UI.TileGrid.new({ x = x, y = y, width = w, height = h, tileW = tw, tileH = v.tileH, theme = v.theme,
+        target = v, label = getText("IGUI_MBLD_Grid"), drawTile = W.drawTile,
+        onPick = function(target, name) MinidoracatBuilder.Window.onPick(target, name) end,
+        focusLabel = function(target, name) return MinidoracatBuilder.Window.focusLabel(target, name) end,
+        tooltip = function(target, name) return MinidoracatBuilder.Window.tileTip(target, name) end })
+    g.render = W.gridRender
+    v.grid, v.gridTW = g, tw
+    win:addChild(g)
+    -- 清除搜尋鈕畫在方格上：方格換新的以後要再排到它後面，不然被方格蓋住、點不到
+    win:removeChild(v.clearBtn)
+    win:addChild(v.clearBtn)
+    if not old then return end
+    local F = UI.Focus
+    local focused = F and F.focused and F.focused() == old
+    local ring = focused and F.isKeyboardFocused and F.isKeyboardFocused(old)
+    local idx = old:getSelectedIndex()
+    local before = math.floor(old.scrollOffset / old.rowHeight) * old:perRow() -- 第一列第一格前面有幾格
+    old:setVisible(false) -- 滑鼠停在舊方格時的提示框：owner 看不見就自己收掉（ISToolTip.lua:57-61）
+    win:removeChild(old)
+    g:setItems(old:getItems())
+    g:setSelectedIndex(idx)
+    g:setScrollOffset(math.floor(before / g:perRow()) * g.rowHeight)
+    if focused then
+        F.focusControl(g, ring)
+        if idx then g:scrollToIndex(idx) end
+    end
+end
+
 function W.layout()
     local v = W.v
     if not v then return end
@@ -1191,7 +1306,19 @@ function W.layout()
         v.only:setY(y + math.floor((rowH - v.only.height) / 2))
     end
     y = y + rowH + GAP
-    -- 第二列：種類頁籤（＋中窄版的分類下拉）
+    -- 第二列：一排幾格（使用者 2026-10-29：搜尋列下方）；「只看能蓋的」放不進第一列、放得進這一列時排在滑桿右邊
+    local pr = v.rowSlider
+    local cbRowS = not cbRow1 and inner - pr.width - GAP >= cbW
+    local hS = cbRowS and math.max(pr.height, v.only.height) or pr.height
+    pr:setX(PAD)
+    pr:setY(y + math.floor((hS - pr.height) / 2))
+    if cbRowS then
+        v.only:setX(PAD + pr.width + GAP)
+        v.only:setY(y + math.floor((hS - v.only.height) / 2))
+    end
+    y = y + hS + GAP
+    local cbPlaced = cbRow1 or cbRowS
+    -- 第三列：種類頁籤（＋中窄版的分類下拉）
     v.tabs:setX(PAD)
     v.tabs:setY(y)
     local h2 = v.tabs.height
@@ -1205,18 +1332,18 @@ function W.layout()
         h2 = math.max(h2, v.cat.height)
     end
     y = y + h2 + GAP
-    -- 第三列：放不下的分類下拉與勾選
+    -- 第四列：放不下的分類下拉與勾選
     local catRow3 = mode ~= "wide" and not catRow2
-    if catRow3 or not cbRow1 then
+    if catRow3 or not cbPlaced then
         local x, h3 = PAD, 0
         if catRow3 then
-            local w3 = cbRow1 and inner or (inner - cbW - GAP)
+            local w3 = cbPlaced and inner or (inner - cbW - GAP)
             v.cat:setX(x)
             v.cat:setY(y)
             v.cat:setWidth(w3)
             x, h3 = x + w3 + GAP, v.cat.height
         end
-        if not cbRow1 then
+        if not cbPlaced then
             v.only:setX(x)
             v.only:setY(y)
             h3 = math.max(h3, v.only.height)
@@ -1275,9 +1402,15 @@ function W.layout()
         v.detail:setWidth(math.max(40, bx - 2 * GAP - v.favW - PAD))
         v.detail:setHeight(rowHt)
     end
-    if v.grid.width ~= gw or v.grid.height ~= gh then v.grid:resize(gw, gh) end
-    v.grid:setX(gx)
-    v.grid:setY(y)
+    -- 最小尺寸也要放得下一整排格子：多了滑桿那一列、格子多一行名稱以後，窄版在 320×縮放的最小高度只剩 68 px
+    -- （E2E ui-mp `builder-ui-1029c` minSize，一格 104）。差多少就把最小高度加多少，視窗比它矮就拉高再排一次；
+    -- 拉不高（框架照畫面夾住）就照現在的排，不再遞迴
+    if gh < v.tileH then
+        win.minHeight = math.max(win.minHeight, wh + v.tileH - gh)
+        win:setHeight(win.minHeight)
+        if win.height ~= wh then return W.layout() end
+    end
+    W.placeGrid(v, gx, y, gw, gh)
     v.detailDirty = true
     prepareEmpty(v)
     local F = v.UI.Focus
@@ -1312,6 +1445,8 @@ function W.create(UI)
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
         tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0 }
     v.iconH = math.floor(56 * s)
+    v.tileH = 4 + v.iconH + 4 + 2 * fh + 2 + 6 -- 縮圖＋兩行名稱（W.drawTile）
+    st.perRow = st.perRow or W.loadPerRow() -- 第一次開窗才讀檔
     local opts = { x = math.max(sx, sx + sw - w - 20), y = sy + 60, width = w, height = h,
         title = getText("IGUI_MBLD_Title"), icon = "house", theme = theme, resizable = true,
         minWidth = math.floor(360 * s), minHeight = math.floor(320 * s),
@@ -1346,6 +1481,12 @@ function W.create(UI)
     v.only = UI.Checkbox.new({ x = 0, y = 0, label = getText("IGUI_MBLD_OnlyAffordable"), checked = st.only, theme = theme,
         tooltip = getText("IGUI_MBLD_OnlyAffordable_Tip"), onChange = function(_, c) MinidoracatBuilder.Window.setOnly(c) end })
     win:addChild(v.only)
+    -- 一排幾格：拖動時每換一格就重排（W.setPerRow）；整列是一個焦點目標，左右鍵與手把十字鍵調整（Controls.lua:1313-1316）
+    v.rowSlider = UI.SliderRow.new({ x = PAD, y = 0, width = math.floor(200 * s), label = getText("IGUI_MBLD_PerRow"),
+        min = W.PER_ROW_MIN, max = W.PER_ROW_MAX, step = 1, value = st.perRow, theme = theme,
+        format = function(n) return getText("IGUI_MBLD_PerRow_Value", tostring(math.floor(n + 0.5))) end,
+        onChange = function(_, n) MinidoracatBuilder.Window.setPerRow(n) end })
+    win:addChild(v.rowSlider)
     local tabItems = {}
     for i, id in ipairs(W.TABS) do tabItems[i] = { id = id, label = getText("IGUI_MBLD_Tab_" .. id) } end
     -- 視窗裡第一個 Tabs：手把 LB／RB 切它（Widgets/Window.lua:315-325）
@@ -1362,14 +1503,6 @@ function W.create(UI)
     v.nav = UI.NavList.new({ x = 0, y = 0, width = v.navBox:contentWidth(), groups = {}, theme = theme, target = v,
         onSelect = function(_, id) MinidoracatBuilder.Window.setCat(id) end })
     v.navBox:addChild(v.nav)
-    v.grid = UI.TileGrid.new({ x = PAD, y = 0, width = 300, height = 200, tileW = math.floor(76 * s),
-        tileH = 4 + v.iconH + 4 + fh + 6, theme = theme, target = v, label = getText("IGUI_MBLD_Grid"),
-        drawTile = W.drawTile,
-        onPick = function(target, name) MinidoracatBuilder.Window.onPick(target, name) end,
-        focusLabel = function(target, name) return MinidoracatBuilder.Window.focusLabel(target, name) end,
-        tooltip = function(target, name) return MinidoracatBuilder.Window.tileTip(target, name) end })
-    v.grid.render = W.gridRender
-    win:addChild(v.grid)
     v.clearBtn = button(v, getText("IGUI_MBLD_ClearSearch"), nil, function() MinidoracatBuilder.Window.clearSearch() end)
     v.clearBtn:setVisible(false)
     local detail = ISPanel:new(0, 0, 100, 100)

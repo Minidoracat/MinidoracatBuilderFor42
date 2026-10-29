@@ -2,6 +2,8 @@
 --   1. 原版移動物件翻譯：「GroupName CustomName」先去掉 "."（Translator.getMoveableDisplayName 的 replace
 --      不吃 regex，名稱有點就查不到；Translator.java:681-689，bt-catalog §4.1），用 getMoveableDisplayNameOrNull。
 --   2. 沒有就組「種類名 · tileset 顯示名 · 編號」；tileset 顯示名先查 IGUI_MBLD_Family_<組>，沒有就把底線換空白。
+--      方格用的短名（Names.short）不帶種類（頁籤已經寫了種類；使用者 2026-10-29），分兩段「tileset 顯示名」換行「編號」：
+--      方格第一行放圖塊組、第二行放編號，各自截短，編號一定看得到（照字斷行時，窄格子會把編號截掉：builder-ui-1029c ui-door）。
 --   3. 多格項目接「（n 格）」。4. 都不行就用 sprite 名稱。不顯示 Tooltip_ 鍵（BC 痛點 P1）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Rules"
@@ -11,9 +13,9 @@ local Names = MinidoracatBuilder.Names or {}
 MinidoracatBuilder.Names = Names
 local Entry, Rules = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules
 
--- 最近 256 項（設計稿 DD:720-726）。ponytail：滿了整張清掉，不做 LRU；捲動時看得到的不到百格，清掉只多組一輪。
+-- 最近 256 項（設計稿 DD:720-726），完整名與短名共用。ponytail：滿了整張清掉，不做 LRU；捲動時看得到的不到百格，清掉只多組一輪。
 local MAX = 256
-local cache, count = {}, 0
+local cache, shortCache, count = {}, {}, 0
 
 function Names.kind(kind)
     return getText("IGUI_MBLD_Kind_" .. tostring(kind))
@@ -37,7 +39,7 @@ function Names.tileset(ts)
     return (ts:gsub("_", " "))
 end
 
-local function compose(name, kind)
+local function compose(name, kind, short)
     local spr = Entry.sprite(name)
     if not spr then return name end
     local p = spr:getProperties()
@@ -51,7 +53,11 @@ local function compose(name, kind)
         kind = kind or Rules.classify(spr)
         local ts, num = name:match("^(.*)_(%d+)$")
         if not (kind and ts) then return name end
-        shown = getText("IGUI_MBLD_Name_Composed", Names.kind(kind), Names.tileset(ts), num)
+        if short then
+            shown = Names.tileset(ts) .. "\n" .. getText("IGUI_MBLD_Name_Num", num)
+        else
+            shown = getText("IGUI_MBLD_Name_Composed", Names.kind(kind), Names.tileset(ts), num)
+        end
     end
     if spr:getSpriteGrid() then
         local n = #Entry.cells(spr)
@@ -64,22 +70,33 @@ local function compose(name, kind)
     return shown
 end
 
--- name＝項目 ID（sprite 名稱）；kind 選填（呼叫端已經知道就傳，省一次分類）
-function Names.of(name, kind)
-    local s = cache[name]
+local function lookup(short, name, kind)
+    local t = short and shortCache or cache
+    local s = t[name]
     if s then return s end
-    s = compose(name, kind)
+    s = compose(name, kind, short)
     if count >= MAX then
-        cache, count = {}, 0
+        cache, shortCache, count = {}, {}, 0
+        t = short and shortCache or cache
     end
-    cache[name] = s
+    t[name] = s
     count = count + 1
     return s
 end
 
+-- name＝項目 ID（sprite 名稱）；kind 選填（呼叫端已經知道就傳，省一次分類）
+function Names.of(name, kind)
+    return lookup(false, name, kind)
+end
+
+-- 方格用的短名：有原版翻譯時同 Names.of；沒有時「tileset 顯示名」換行「編號」，不帶種類
+function Names.short(name)
+    return lookup(true, name)
+end
+
 -- 語言或沙盒設定換了時清掉（測試也用）
 function Names.reset()
-    cache, count = {}, 0
+    cache, shortCache, count = {}, {}, 0
 end
 
 return Names
