@@ -168,23 +168,47 @@ Events.OnServerCommand.Add(function(module, command, args)
     if module == MODULE then Client.onServerCommand(command, args or {}) end
 end)
 
--- 伺服器剛放的不能改裝的燈：客戶端收到時引擎先 load 才設格子（IsoObject.java:4432,4448），load 照 sprite 設顏色那段
--- 要有格子、被跳過（IsoLightSwitch.java:350-379），光源用預設的白色建（AddItemToMapPacket.java:62-64）；重新載入區塊才是
--- sprite 的顏色（E2E builder-rooms-1029d）。照 load 的算法補上，LightingJNI 下次更新看到顏色變了就送（LightingJNI.java:334-343）。
--- 能改裝的燈顏色在封包裡，不動。
-local function fixLampColor(obj)
-    if not instanceof(obj, "IsoLightSwitch") or obj:getCanBeModified() or not obj:hasModData()
-        or not obj:getModData().builderEntry then return end
+-- 伺服器剛放的物件，客戶端收到時引擎先 load 才設格子（IsoObject.java:4432,4448），IsoLightSwitch.load 要有格子的兩段都被跳過
+-- （IsoLightSwitch.java:350-379）。本 MOD 蓋的照 load 補上：
+--   不能改裝的燈：照 sprite 設顏色。processClient 用預設的白色建光源（AddItemToMapPacket.java:62-64），重新載入區塊才是 sprite
+--     的顏色（E2E builder-rooms-1029d）；LightingJNI 下次更新看到顏色變了就送（LightingJNI.java:334-343）。能改裝的燈顏色在封包裡。
+--   開關：switchLight(activated)（:351-352）。沒補的話自建房間的房間燈停在房間原本的狀態：開關顯示開著、房間卻暗，第一次按
+--     看起來沒反應（builder-rooms-1029g）。switchLight 會把房間裡其他燈與開關的 activated 一起改掉（:517-523），同一幀照原值
+--     還原（同伺服器 Circuits 的 apply）。招牌不算開關（Rules.switchProps），不補。
+local function onAdded(obj)
+    if not instanceof(obj, "IsoLightSwitch") or not obj:hasModData() or not obj:getModData().builderEntry then return end
     local spr = obj:getSprite()
     local p = spr and spr:getProperties()
     if not p then return end
-    local r, g, b = tonumber(p:get("lightR")), tonumber(p:get("lightG")), tonumber(p:get("lightB"))
-    if not (r and g and b) then return end
-    obj:setPrimaryR(r / 255)
-    obj:setPrimaryG(g / 255)
-    obj:setPrimaryB(b / 255)
+    if p:has("lightR") then
+        if obj:getCanBeModified() then return end
+        local r, g, b = tonumber(p:get("lightR")), tonumber(p:get("lightG")), tonumber(p:get("lightB"))
+        if not (r and g and b) then return end
+        obj:setPrimaryR(r / 255)
+        obj:setPrimaryG(g / 255)
+        obj:setPrimaryB(b / 255)
+        return
+    end
+    if not MinidoracatBuilder.Rules.switchProps(p) then return end
+    local sq = obj:getSquare()
+    local room = sq and sq:getRoom()
+    local others, was = {}, {}
+    if room then
+        local list = room:getLightSwitches()
+        for i = 0, list:size() - 1 do
+            local o = list:get(i)
+            if o ~= obj then
+                others[#others + 1] = o
+                was[#others] = o:isActivated()
+            end
+        end
+    end
+    obj:switchLight(obj:isActivated())
+    for i, o in ipairs(others) do
+        if o:isActivated() ~= was[i] then o:setActivated(was[i]) end
+    end
 end
 
-Events.OnObjectAdded.Add(fixLampColor)
+Events.OnObjectAdded.Add(onAdded)
 
 return Client
