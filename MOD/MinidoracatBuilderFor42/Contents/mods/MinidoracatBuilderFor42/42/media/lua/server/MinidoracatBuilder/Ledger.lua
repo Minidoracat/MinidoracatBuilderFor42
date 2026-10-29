@@ -3,7 +3,7 @@
 -- 自己的 modData（gos_MinidoracatBuilder.bin，跟世界一起存檔、一起回溯）；不建全域物件、不送客戶端。
 -- 寫法照家族 VehicleManager 的帳本分片（MinidoracatVehicleManager_OwnershipSystem.lua:231-253）。
 -- built[鍵] = { [fullType] = 退料數 }（平台是空表：不退料，只記是本 MOD 補的），鍵＝"x,y,z,sprite"（同一格不放同一張圖，
--- Place 的 hasSprite）。
+-- Place 的 hasSprite）。circuits＝第六階段的線路（格式與讀寫在 Circuits.lua）。
 -- ponytail：一筆約 100 bytes，單一 GOS 系統存檔上限 10 MiB（pz-family-docs pitfalls）約十萬盞；真的逼近時改分片。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
@@ -22,7 +22,7 @@ end
 function Ledger:initSystem()
     SGlobalObjectSystem.initSystem(self)
     -- 存檔只存白名單裡的鍵：漏設＝這一場正常、重開後帳本消失
-    self.system:setModDataKeys({ "built" })
+    self.system:setModDataKeys({ "built", "circuits" })
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
     if type(self.built) ~= "table" then self.built = {} end

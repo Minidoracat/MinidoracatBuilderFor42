@@ -20,9 +20,13 @@ local DENY = {
         [true] = { label = "MinidoracatBuilder:build", preview = true } },
     dismantle = { [false] = { label = "MinidoracatBuilder:dismantle" },
         [true] = { label = "MinidoracatBuilder:dismantle", preview = true } },
+    wire = { [false] = { label = "MinidoracatBuilder:wire" }, [true] = { label = "MinidoracatBuilder:wire", preview = true } },
 }
 -- 請求的錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）。Server.intent 與游標預覽共用
 Check.INTENT_REACH = 100
+-- 線路（第六階段，設計稿）：一條最多幾個開關、幾片燈；燈和每個開關、接線的人和目標：水平各軸幾格內、樓層差幾層內。
+-- 伺服器 Circuits 照它判斷，客戶端 Wiring 照它寫說明
+Check.CIRCUIT = { MAX_S = 4, MAX_L = 16, RANGE = 16, LEVELS = 2 }
 
 -- 沙盒值，沒設時用 default
 function Check.setting(name, default)
@@ -81,7 +85,8 @@ end
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，伺服器拒絕時它自己推通知）。
 -- 預覽時格子可能不存在：要格子的原版查詢略過（交給伺服器），denies 照座標查（格子不必存在）。
 -- checkPermissions 只在伺服器回 true（LuaManager.java:3054-3057），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
--- why＝"build"（預設）或 "dismantle"：拆除一樣要 BUILD 權限（原版大錘、ISDismantleAction 也是），但不看 WhereCanBuild。
+-- why＝"build"（預設）、"dismantle" 或 "wire"（接線，Circuits）：拆除、接線一樣要 BUILD 權限（原版大錘、ISDismantleAction
+-- 也是），但不看 WhereCanBuild。
 function Check.safehouse(player, c, preview, why)
     why = why or "build"
     if c.sq and not (isServer() and checkPermissions(player, Capability.CanGoInsideSafehouses) == true)

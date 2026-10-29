@@ -377,7 +377,8 @@ local function placeStairs(cells, placed)
 end
 
 -- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
--- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，只控制地圖房間的燈（IsoLightSwitch.java:73-99）。
+-- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，原版只控制地圖房間的燈（IsoLightSwitch.java:73-99），線路上的燈由
+-- 伺服器 Circuits 切（放好後 Server.complete 呼叫 Circuits.placed 自動接線）。
 -- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）。
 -- IsoLightSwitch 沒有 buildMaterials：拆了退什麼記在伺服器帳本（server/MinidoracatBuilder/Ledger.lua）。
 local function newLight(c)
