@@ -3,6 +3,7 @@
 -- builderEntry 判斷要不要列（只給畫面看，伺服器照帳本重查）。
 require "MinidoracatBuilder/Check"
 require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Window"
 require "MinidoracatBuilder/Cursor"
 
@@ -10,7 +11,7 @@ MinidoracatBuilder = MinidoracatBuilder or {}
 local B = MinidoracatBuilder
 local Wiring = B.Wiring or {}
 B.Wiring = Wiring
-local Messages, CC = B.Messages, B.Check.CIRCUIT
+local Messages, Names, CC = B.Messages, B.Names, B.Check.CIRCUIT
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
@@ -19,18 +20,30 @@ local BUSY_MS = 5000 -- 送出後這麼久沒回覆就不再等（伺服器每�
 local PAD, GAP, SW = 8, 6, 10
 -- 接線模式的外框顏色（設計稿）：這個開關綠、已接黃、可接白、別條線路灰
 local COLOR = { this = { 0, 1, 0 }, wired = { 1, 0.85, 0.4 }, free = { 0.95, 0.95, 0.95 }, other = { 0.55, 0.55, 0.55 } }
--- 回這些碼時接線模式關掉（開關不在、太遠、不能用了）
+-- 開關本身（回覆沒有 side；side＝"t" 是點的目標、"l" 是線路上的燈）回這些碼時接線模式關掉
 local FATAL = { GONE = true, NOT_LOADED = true, NOT_SWITCH = true, TOO_FAR = true, OFF = true, NOT_ALLOWED = true, STATE = true }
+-- 放燈沒自動接上的原因 → 翻譯鍵（伺服器 Circuits.lampPlaced）
+local MISS = { MULTI = "IGUI_MBLD_Wire_Miss_MULTI", FULL = "IGUI_MBLD_Wire_Miss_FULL",
+    OUT_OF_RANGE = "IGUI_MBLD_Wire_Miss_OUT_OF_RANGE", DENIED = "IGUI_MBLD_Wire_Miss_DENIED" }
 
 Wiring.results = {} -- 伺服器的 circuit 回覆，新的在後（E2E 讀）
-Wiring.mode = nil   -- 目前的接線模式：{ player, pn, sw = { x, y, z, e }, id, s, l, cand, byPos, busy, cursor, win }
+Wiring.mode = nil   -- 目前的接線模式：{ player, pn, sw = { x, y, z, e }, id, nS, nL, cand, byPos, pick, busy, busyAt, cursor, win }
+                    -- pick：格子 → 下一次點要選的那一個的鍵（keyOf）
 local lastQ = getTimestampMs() % 1000000
 local waiting = {}  -- 請求編號 → 收到回覆時呼叫
 
 local function keyOf(c) return c.x .. "," .. c.y .. "," .. c.z .. "," .. c.e end
+local function posOf(x, y, z) return x .. "," .. y .. "," .. z end
 local function title() return getText("IGUI_MBLD_Wire_Title") end
 
--- 送 circuit／wire。單機直接交給伺服器程式（同一個 Lua 狀態）。回請求編號
+-- 送出後 BUSY_MS 內算還在等（時鐘往回跳時不算，pitfalls「getTimestampMs 會往回跳」）
+local function busy(m)
+    if not m.busy then return false end
+    local t = getTimestampMs()
+    return t >= m.busyAt and t - m.busyAt < BUSY_MS
+end
+
+-- 送 circuit／wire。單機直接交給伺服器程式（同一個 Lua 狀態，回呼在這裡面就跑完）。回請求編號
 function Wiring.send(player, cmd, args, onReply)
     lastQ = lastQ % 2000000000 + 1
     local q = lastQ
@@ -82,33 +95,62 @@ local function refused(player, code)
     tell(player, Wiring.refusal(code))
 end
 
--- 自動接線（放開關、按「接同一房間」）的結果
+-- 放燈沒自動接上（房間裡有本工具的開關時才回）：原因＋手動接的方法
+local function missText(why)
+    local key = MISS[why]
+    if not key then return nil end
+    local reason = why == "FULL" and getText(key, tostring(CC.MAX_L)) or why == "OUT_OF_RANGE" and getText(key, tostring(CC.RANGE))
+        or getText(key)
+    return getText("IGUI_MBLD_Wire_LampMiss", reason)
+end
+
+-- 自動接線（放開關、按「接同一房間」、放燈）的結果
 local function wiredText(r)
     local text
     if r.auto == "lamp" then
+        if r.miss then return missText(r.miss) end
         text = getText("IGUI_MBLD_Wire_LampJoined")
     elseif r.jx then
         text = getText("IGUI_MBLD_Wire_AutoJoined", tostring(r.jx), tostring(r.jy), tostring(#(r.l or {})))
     elseif (r.n or 0) > 0 then
         text = getText("IGUI_MBLD_Wire_Auto", tostring(r.n))
-    else
+    elseif #(r.l or {}) > 0 then
+        text = getText("IGUI_MBLD_Wire_AutoNoNew", tostring(#r.l))
+    elseif r.later then
         text = getText("IGUI_MBLD_Wire_AutoNone")
+    else
+        text = getText("IGUI_MBLD_Wire_AutoNoneManual")
     end
     if (r.taken or 0) > 0 then text = text .. " " .. getText("IGUI_MBLD_Wire_Taken", tostring(r.taken)) end
+    if (r.skipped or 0) > 0 then text = text .. " " .. getText("IGUI_MBLD_Wire_Skipped", tostring(r.skipped)) end
     return text
 end
 
--- circuit：{ q, code, id, s = { { x, y, z, e } }, l, cand = { { x, y, z, e, k, c } }, auto, n, taken, jx, jy, moved, op, note }
-function Wiring.onServerCommand(cmd, args)
+-- 回覆的 who（操作的人的 onlineID）→ 本機的那位玩家；找不到用玩家 0（分割畫面）
+local function localPlayer(who)
+    if who ~= nil then
+        for i = 0, 3 do
+            local p = getSpecificPlayer(i)
+            if p and p:getOnlineID() == who then return p end
+        end
+    end
+    return getSpecificPlayer(0)
+end
+
+-- circuit：{ q, who, code, side, id, s = { { x, y, z, e } }, l, cand = { { x, y, z, e, k, c } }, auto, n, taken, skipped,
+-- later, jx, jy, moved, op, note }。player：單機時伺服器程式直接傳操作的人
+function Wiring.onServerCommand(cmd, args, player)
     if cmd ~= "circuit" then return end
     local list = Wiring.results
     list[#list + 1] = args
     if #list > KEEP then table.remove(list, 1) end
-    local player = getSpecificPlayer(0)
+    player = player or localPlayer(args.who)
     if args.note == "UNLOADED" then return tell(player, getText("IGUI_MBLD_Wire_Unloaded", tostring(args.n))) end
     if args.auto then
         if args.code then return refused(player, args.code) end
-        return tell(player, wiredText(args))
+        local text = wiredText(args)
+        if text then tell(player, text) end
+        return
     end
     local h = args.q and waiting[args.q]
     if h then
@@ -149,7 +191,7 @@ local function remark(m)
     end
 end
 
--- 伺服器回的這條線路與附近可接的 → 狀態、外框
+-- 伺服器回的這條線路與附近可接的 → 狀態、外框。一格可能有好幾個（byPos 存清單，pick 記下一次要選的那一個的鍵）
 function Wiring.apply(m, r)
     m.id = r.id
     local inS, inL = {}, {}
@@ -167,48 +209,108 @@ function Wiring.apply(m, r)
         else
             c.status = "other"
         end
-        m.byPos[c.x .. "," .. c.y .. "," .. c.z] = c
+        local p = posOf(c.x, c.y, c.z)
+        local list = m.byPos[p] or {}
+        list[#list + 1] = c
+        m.byPos[p] = list
     end
     remark(m)
 end
 
--- 那一格可以點的燈或開關（不含這個開關自己）
+-- 那一格現在選的燈或開關（不含這個開關自己）、第幾個、共幾個
 function Wiring.at(x, y, z)
     local m = Wiring.mode
-    return m and m.byPos and m.byPos[x .. "," .. y .. "," .. z] or nil
+    local p = posOf(x, y, z)
+    local list = m and m.byPos and m.byPos[p]
+    if not list then return nil end
+    local want, i = m.pick[p], 1
+    for j, c in ipairs(list) do
+        if keyOf(c) == want then
+            i = j
+            break
+        end
+    end
+    return list[i], i, #list
 end
 
--- 送一個接線指令（op＝add／remove／join／room／clear，c＝點到的那一個）。回覆前不收下一個
-function Wiring.op(op, c)
+-- 送一個接線指令（op＝add／remove／join／room／clear，c＝點到的那一個）。回覆前不收下一個。onDone：成功（apply 之後），
+-- 或被拒而接線模式還開著時呼叫（限流不算）。busy 在送出前設：單機的回覆在 send 裡面就到了，回呼清掉 busy 之後
+-- 不能再被 send 的回傳值蓋回去
+function Wiring.op(op, c, onDone)
     local m = Wiring.mode
-    if not m or (m.busy and getTimestampMs() - m.busyAt < BUSY_MS) then return nil end
+    if not m or busy(m) then return nil end
     local args = { op = op, x = m.sw.x, y = m.sw.y, z = m.sw.z, e = m.sw.e, cand = true }
     if c then args.tx, args.ty, args.tz, args.te = c.x, c.y, c.z, c.e end
-    m.busyAt = getTimestampMs()
-    m.busy = Wiring.send(m.player, "wire", args, function(r)
+    m.busy, m.busyAt = true, getTimestampMs()
+    return Wiring.send(m.player, "wire", args, function(r)
         if Wiring.mode ~= m then return end
         m.busy = nil
         if r.code then
             refused(m.player, r.code)
-            if FATAL[r.code] then Wiring.close() end
+            if FATAL[r.code] and not r.side then return Wiring.close() end
+            if onDone and r.code ~= "RATE_LIMITED" then onDone() end
             return
         end
         Wiring.apply(m, r)
+        if onDone then onDone() end
         if op == "room" then
             tell(m.player, wiredText(r))
         elseif r.moved and op == "add" then
             tell(m.player, getText("IGUI_MBLD_Wire_Moved"))
         end
     end)
-    return m.busy
 end
 
--- 點一格：開關＝接成雙切（已在這條線路就拿掉）；燈＝加入或移除
+-- 點一格：現在選的那個。開關＝接成雙切（已在這條線路就拿掉）；燈＝加入或移除。這一格有好幾個時，回覆後下一次點換
+-- 下一個：記物件的鍵（apply 會重排清單，記第幾個會指回剛操作的那一個）。被拒也換（不然每次都拒的那一個會擋住同一格
+-- 其他的），限流不換
 function Wiring.click(x, y, z)
-    local c = Wiring.at(x, y, z)
+    local m = Wiring.mode
+    local c, _, n = Wiring.at(x, y, z)
     if not c then return nil end
-    if c.k == "s" then return Wiring.op("join", c) end
-    return Wiring.op(c.status == "wired" and "remove" or "add", c)
+    local p, ck = posOf(x, y, z), keyOf(c)
+    local function advance()
+        if n < 2 or Wiring.mode ~= m then return end
+        local list = m.byPos[p] or {}
+        m.pick[p] = nil
+        for j, o in ipairs(list) do
+            if keyOf(o) == ck then
+                m.pick[p] = keyOf(list[j % #list + 1])
+                break
+            end
+        end
+    end
+    return Wiring.op(c.k == "s" and "join" or c.status == "wired" and "remove" or "add", c, advance)
+end
+
+-- 向伺服器要這條線路與附近可接的（打開時）
+function Wiring.refresh(m)
+    m.busy, m.busyAt = true, getTimestampMs()
+    return Wiring.send(m.player, "circuit", { x = m.sw.x, y = m.sw.y, z = m.sw.z, e = m.sw.e, cand = true }, function(r)
+        if Wiring.mode ~= m then return end
+        m.busy = nil
+        if r.code then
+            refused(m.player, r.code)
+            return Wiring.close()
+        end
+        Wiring.apply(m, r)
+    end)
+end
+
+-- 游標停的那一格的說明：「加入：名稱（1／2）」。已在這條線路上的（燈或開關）＝移除
+function Wiring.hoverText(c, i, n)
+    local key = (c.status == "wired" and "IGUI_MBLD_Wire_PadRemove") or (c.k == "s" and "IGUI_MBLD_Wire_PadJoin")
+        or "IGUI_MBLD_Wire_PadAdd"
+    local s = getText(key, Names.of(c.e, "light"))
+    if n > 1 then s = s .. " " .. getText("IGUI_MBLD_Wire_PickOf", tostring(i), tostring(n)) end
+    return s
+end
+
+-- 面板那一行：原文（手把提示用）換了才重截成面板寬
+local function setHover(m, s)
+    if s == m.hoverRaw then return end
+    m.hoverRaw = s
+    m.hoverText = s and m.fit and m.fit(s, m.textW, m.font) or s
 end
 
 -- ---------------------------------------------------------------- 接線模式：游標
@@ -225,16 +327,26 @@ function WireCursor:isValid(square)
     local m = self.mode
     if not self.joypad and B.Cursor.mouseOverUI(nil) then
         self.hover = nil
+        setHover(m, nil)
         return false
     end
-    self.hover = Wiring.at(square:getX(), square:getY(), square:getZ())
-    return self.hover ~= nil and not (m.busy and getTimestampMs() - m.busyAt < BUSY_MS)
+    local c, i, n = Wiring.at(square:getX(), square:getY(), square:getZ())
+    self.hover = c
+    setHover(m, c and Wiring.hoverText(c, i, n) or nil)
+    return c ~= nil and not busy(m)
 end
 
+-- 地上照好／壞色畫一格；停在可以點的格子時，把現在選的那一個用它自己的圖再畫一次（一格好幾個時看得出選的是哪個）
 function WireCursor:render(x, y, z)
     local good, bad = getCore():getGoodHighlitedColor(), getCore():getBadHighlitedColor()
     local c = self.hover and good or bad
     self:getFloorCursorSprite():RenderGhostTileColor(x, y, z, c:getR(), c:getG(), c:getB(), 0.8)
+    local h = self.hover
+    if h then
+        local named = IsoSpriteManager.instance:getNamedMap()
+        local spr = named:containsKey(h.e) and named:get(h.e)
+        if spr then spr:RenderGhostTileColor(h.x, h.y, h.z, 0, 0, 1, 1, 1, 0.6) end
+    end
 end
 
 function WireCursor:tryBuild(x, y, z) Wiring.click(x, y, z) end
@@ -255,11 +367,7 @@ function WireCursor:onJoypadPressButton(joypadIndex, joypadData, button)
     end
 end
 
-function WireCursor:getAPrompt()
-    if not self.hover then return nil end
-    if self.hover.k == "s" then return getText("IGUI_MBLD_Wire_PadJoin") end
-    return getText(self.hover.status == "wired" and "IGUI_MBLD_Wire_PadRemove" or "IGUI_MBLD_Wire_PadAdd")
-end
+function WireCursor:getAPrompt() return self.mode.hoverRaw end
 function WireCursor:getXPrompt() return getText("IGUI_MBLD_Wire_Room") end
 function WireCursor:getLBPrompt() return nil end
 function WireCursor:getRBPrompt() return nil end
@@ -280,6 +388,8 @@ local function newCursor(m)
 end
 
 -- ---------------------------------------------------------------- 接線模式：面板（家族框架 Window）
+
+local LINES = 8 -- 線路、上限、圖例兩列、說明三列、游標停的那一個
 
 local function drawPanel(panel)
     local m = Wiring.mode
@@ -307,6 +417,7 @@ local function drawPanel(panel)
         panel:drawText(s, 0, y, mu.r, mu.g, mu.b, mu.a or 1, f)
         y = y + fh
     end
+    if m.hoverText then panel:drawText(m.hoverText, 0, y, c.r, c.g, c.b, c.a or 1, f) end
 end
 
 local function buildPanel(m, UI)
@@ -318,13 +429,14 @@ local function buildPanel(m, UI)
     m.limit = getText("IGUI_MBLD_Wire_Limit", tostring(CC.MAX_S), tostring(CC.MAX_L))
     m.legend = { { k = "this", s = getText("IGUI_MBLD_Wire_LegendThis") }, { k = "wired", s = getText("IGUI_MBLD_Wire_LegendWired") },
         { k = "free", s = getText("IGUI_MBLD_Wire_LegendFree") }, { k = "other", s = getText("IGUI_MBLD_Wire_LegendOther") } }
-    m.hint = { getText("IGUI_MBLD_Wire_Hint1"), getText("IGUI_MBLD_Wire_Hint2") }
+    m.hint = { getText("IGUI_MBLD_Wire_Hint1"), getText("IGUI_MBLD_Wire_Hint3"), getText("IGUI_MBLD_Wire_Hint2") }
     local w = tm:MeasureStringX(font, getText("IGUI_MBLD_Wire_Circuit", "4", "16"))
     w = math.max(w, tm:MeasureStringX(font, m.limit))
     m.legendW = 0
     for _, it in ipairs(m.legend) do m.legendW = math.max(m.legendW, SW + 4 + tm:MeasureStringX(font, it.s) + 12) end
     w = math.max(w, m.legendW * 2)
     for _, s in ipairs(m.hint) do w = math.max(w, tm:MeasureStringX(font, s)) end
+    m.fit, m.textW = UI.Text and UI.Text.fit, w -- 游標停的那一行截成面板寬（名稱長短不一）
     local pn = m.pn
     local opts = { x = getPlayerScreenLeft(pn) + 20, y = getPlayerScreenTop(pn) + 80, width = w + PAD * 2, height = 100,
         title = title(), icon = "plug", theme = theme,
@@ -336,7 +448,7 @@ local function buildPanel(m, UI)
         return true
     end
     local top = win:contentTop() + GAP
-    local text = ISPanel:new(PAD, top, w, fh * 6 + 8)
+    local text = ISPanel:new(PAD, top, w, fh * LINES + 8)
     text:initialise()
     text.background = false
     text.render = drawPanel
@@ -373,7 +485,7 @@ function Wiring.open(playerNum, sw)
         return false
     end
     Wiring.close()
-    local m = { player = player, pn = playerNum, sw = sw, marked = {}, cand = {} }
+    local m = { player = player, pn = playerNum, sw = sw, marked = {}, cand = {}, pick = {} }
     Wiring.mode = m
     local ok, err = pcall(buildPanel, m, UI)
     if not ok then
@@ -383,17 +495,8 @@ function Wiring.open(playerNum, sw)
     end
     m.cursor = newCursor(m)
     getCell():setDrag(m.cursor, playerNum)
-    m.busyAt = getTimestampMs()
-    m.busy = Wiring.send(player, "circuit", { x = sw.x, y = sw.y, z = sw.z, e = sw.e, cand = true }, function(r)
-        if Wiring.mode ~= m then return end
-        m.busy = nil
-        if r.code then
-            refused(player, r.code)
-            return Wiring.close()
-        end
-        Wiring.apply(m, r)
-    end)
-    return true
+    Wiring.refresh(m)
+    return Wiring.mode == m
 end
 
 function Wiring.close()
@@ -457,9 +560,10 @@ function Wiring.unplug(playerNum, o)
 end
 
 -- 燈：「線路（建造工坊）」子選單。先列出來（變灰），伺服器回了再填：由幾個開關控制（游標移上去時那些開關亮綠框）、拔線、
--- 打開接線模式（開第一個開關的）
-local function lampMenu(context, playerNum, player, o)
-    local opt = context:addOption(getText("IGUI_MBLD_Menu_Circuit"))
+-- 打開接線模式（開第一個開關的）。原版選單關掉後選項表會收回重用（ISContextMenu.lua:849-856 清空、:1088-1092 收回、
+-- :1199-1215 子選單也重用）：送出前在三個選項上都記請求編號，回覆到時三個的編號都對、而且都還在子選單裡才改
+local function lampMenu(context, playerNum, player, o, label)
+    local opt = context:addOption(label)
     local sub = ISContextMenu:getNew(context)
     context:addSubMenu(opt, sub)
     local info = sub:addOption(getText("IGUI_MBLD_Wire_Loading"))
@@ -467,8 +571,22 @@ local function lampMenu(context, playerNum, player, o)
     local unplug = sub:addOption(getText("IGUI_MBLD_Menu_Unplug"), playerNum, Wiring.unplug, o)
     local open = sub:addOption(getText("IGUI_MBLD_Menu_OpenWiring"), playerNum, Wiring.openFromLamp, st)
     info.notAvailable, unplug.notAvailable, open.notAvailable = true, true, true
+    local q = lastQ % 2000000000 + 1
+    local mine = { info, unplug, open }
+    for _, it in ipairs(mine) do it.mbldQ = q end
+    local function current()
+        local inSub = {}
+        for _, it in ipairs(sub.options or {}) do inSub[it] = true end
+        for _, it in ipairs(mine) do
+            if it.mbldQ ~= q or not inSub[it] then return false end
+        end
+        return true
+    end
     Wiring.send(player, "circuit", at(o), function(r)
-        if r.code then
+        if not current() then return end
+        if r.code == "RATE_LIMITED" then
+            info.name = getText("IGUI_MBLD_Menu_Retry")
+        elseif r.code then
             info.name = Wiring.refusal(r.code)
         elseif #(r.s or {}) == 0 then
             info.name = getText("IGUI_MBLD_Menu_NotWired")
@@ -484,17 +602,21 @@ local function lampMenu(context, playerNum, player, o)
 end
 
 -- 原版沒列「開燈／關燈」時補上（沒有房間又不能改裝、或客戶端算沒電，ISWorldObjectContextMenuLogic.java:367-369、
--- ISWorldObjectContextMenu.lua:1226-1236）。選了照原版走過去、排 ISToggleLightAction，伺服器照線路或原版處理
-local function toggleMenu(context, worldobjects, playerNum, o)
+-- ISWorldObjectContextMenu.lua:1226-1236）。選了照原版走過去、排 ISToggleLightAction，伺服器照線路或原版處理。
+-- 同一格有好幾個時，選項名稱後面加物件名稱分得出來
+local function toggleMenu(context, worldobjects, playerNum, o, named)
     local sq = o:getSquare()
     if (sq:getRoom() ~= nil or o:getCanBeModified()) and o:canSwitchLight() then return end
-    context:addOption(getText(o:isActivated() and "ContextMenu_Turn_Off" or "ContextMenu_Turn_On"), worldobjects,
-        ISWorldObjectContextMenu.onToggleLight, o, playerNum)
+    local label = getText(o:isActivated() and "ContextMenu_Turn_Off" or "ContextMenu_Turn_On")
+    if named then label = getText("IGUI_MBLD_Menu_Named", label, Names.of(o:getSprite():getName(), "light")) end
+    context:addOption(label, worldobjects, ISWorldObjectContextMenu.onToggleLight, o, playerNum)
 end
 
 function Wiring.fill(playerNum, context, worldobjects, test)
     local player = getSpecificPlayer(playerNum)
     if not player or player:getVehicle() then return end
+    -- 管理員關掉了：伺服器只拒接線，不列接線與線路；開燈／關燈照列（按開關不看這個設定）
+    local wiring = B.Check.setting("Enabled", true) ~= false
     local found, done = {}, {}
     for _, w in ipairs(worldobjects) do
         local sq = w:getSquare()
@@ -504,19 +626,25 @@ function Wiring.fill(playerNum, context, worldobjects, test)
             for i = 0, objs:size() - 1 do
                 local o = objs:get(i)
                 local k = kindOf(o)
-                if k then found[#found + 1] = { o = o, k = k } end
+                if k and (wiring or ours(o)) then found[#found + 1] = { o = o, k = k } end
             end
         end
     end
     if #found == 0 then return end
     if test then return ISWorldObjectContextMenu.setTest() end -- 手把：有選項就回報（ISWorldObjectContextMenu.lua:122-125）
+    local many = #found > 1
     for _, f in ipairs(found) do
-        if f.k == "s" then
-            context:addOption(getText("IGUI_MBLD_Menu_Wire"), playerNum, Wiring.openFromMenu, f.o)
-        else
-            lampMenu(context, playerNum, player, f.o)
+        local name = many and Names.of(f.o:getSprite():getName(), "light") or nil
+        if wiring and f.k == "s" then
+            local label = getText("IGUI_MBLD_Menu_Wire")
+            if name then label = getText("IGUI_MBLD_Menu_Named", label, name) end
+            context:addOption(label, playerNum, Wiring.openFromMenu, f.o)
+        elseif wiring then
+            local label = getText("IGUI_MBLD_Menu_Circuit")
+            if name then label = getText("IGUI_MBLD_Menu_Named", label, name) end
+            lampMenu(context, playerNum, player, f.o, label)
         end
-        if ours(f.o) then toggleMenu(context, worldobjects, playerNum, f.o) end
+        if ours(f.o) then toggleMenu(context, worldobjects, playerNum, f.o, many) end
     end
 end
 

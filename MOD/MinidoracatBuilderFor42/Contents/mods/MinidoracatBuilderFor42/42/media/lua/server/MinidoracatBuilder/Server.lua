@@ -253,7 +253,10 @@ function Server.complete(player, n, i)
     Place.settle(cells)
     if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
         local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)
-        if not cok then print(LOG .. "circuit auto-wire failed: " .. tostring(cerr)) end
+        if not cok then
+            print(LOG .. "circuit auto-wire failed: " .. tostring(cerr))
+            MinidoracatBuilder.Circuits.send(player, { auto = "switch", code = "INTERNAL", who = player:getOnlineID() })
+        end
     end
     print(LOG .. "BUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. " kind=" .. entry.kind .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
