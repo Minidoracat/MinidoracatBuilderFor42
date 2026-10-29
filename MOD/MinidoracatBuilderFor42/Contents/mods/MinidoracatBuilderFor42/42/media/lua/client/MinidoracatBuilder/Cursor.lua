@@ -25,6 +25,7 @@ local DRAG = { floor = true, wall = true, fence = true, roof = true } -- 能按�
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算走不到（MP 的 placed 比客戶端動作結束晚到）
+local QR, QG, QB = 0.45, 0.75, 1 -- 已送出、還沒蓋好的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
 local ICON, PAD, BOTTOM = 16, 6, 200
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
@@ -524,17 +525,26 @@ end
 
 -- 放開左鍵／手把 A，而且至少一格可蓋（DoTileBuilding:167-170）。只送可蓋的格子；缺料、擋住的跳過。
 -- 覆寫它就不經過原版 ISBuildAction；角色走過去與排動作在 Client.build（伺服器收下才排）。
+-- 送出的每格順便記下各片的虛影（同 refresh 的算法），還沒蓋好前照畫（Cursor.drawQueued）。
 function Cursor:tryBuild(x, y, z)
     if x ~= self.kx or y ~= self.ky or z ~= self.kz then -- 手把同一幀移了游標：先照那一格重算
         local sq = getCell():getGridSquare(x, y, z)
         if not (sq and self:isValid(sq)) then return end
     end
-    local anchors = {}
+    local anchors, parts, scale = {}, {}, Core.getTileScale()
     for _, r in ipairs(self.res) do
-        if r.code == nil then anchors[#anchors + 1] = r.a end
+        if r.code == nil then
+            local a, ps = r.a, {}
+            for j, o in ipairs(self.offs) do
+                local c = r.cells and r.cells[j]
+                ps[j] = { a[1] + o[1], a[2] + o[2], a[3] + o[3], o[4], (c and c.yoff or 0) * scale }
+            end
+            anchors[#anchors + 1] = a
+            parts[#anchors] = ps
+        end
     end
     self.lineX, self.lineY = nil, nil
-    if #anchors > 0 then Cursor.send(self.character, self.name, self.d, anchors) end
+    if #anchors > 0 then Cursor.send(self.character, self.name, self.d, anchors, parts) end
 end
 
 -- 引擎 setDrag 換掉或清掉這個游標時呼叫（IsoCell.java:2563-2567）。
@@ -548,8 +558,8 @@ end
 
 -- ---------------------------------------------------------------- 送出後：被拒與走不到的通知
 
--- 目前等結果的請求：{ player, n, count, placed, accepted, at, idleAt }。每人只留一個請求（Client.build 會清佇列），
--- 所以只追最近一筆。游標關掉後照樣追，通知照發。
+-- 目前等結果的請求：{ player, n, count, placed, accepted, at, idleAt, parts }。每人只留一個請求（Client.build 會清佇列），
+-- 所以只追最近一筆。游標關掉後照樣追，通知照發。watch 清掉（蓋完、被拒、走不到或被打斷、換了別的請求）時排隊虛影一起收。
 local watch
 
 local function tell(player, code, extra)
@@ -557,9 +567,10 @@ local function tell(player, code, extra)
     Messages.toast(player, Messages.refusal(code, extra))
 end
 
--- 送一次建造（游標放開時；E2E 也可直接呼叫）。anchors＝{ { x, y, z }, ... }。回 nonce，或 nil, 原因碼。
-function Cursor.send(player, name, d, anchors)
-    local w = { player = player, count = #anchors, placed = 0, at = getTimestampMs() }
+-- 送一次建造（游標放開時）。anchors＝{ { x, y, z }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，
+-- 省略就不畫排隊虛影。回 nonce，或 nil, 原因碼。
+function Cursor.send(player, name, d, anchors, parts)
+    local w = { player = player, count = #anchors, placed = 0, at = getTimestampMs(), parts = parts }
     watch = w
     local n, code = Client.build(player, name, d, anchors)
     if not n then
@@ -569,6 +580,11 @@ function Cursor.send(player, name, d, anchors)
     end
     w.n = n
     return n
+end
+
+-- 還沒蓋好的格子：{ [i] = 各片 }，沒有在等的請求回 nil（E2E 讀）
+function Cursor.queued()
+    return watch and watch.parts
 end
 
 -- Client.onServerCommand 收進 results 後呼叫。單機的 intent 在 Client.build 回傳前就答覆，那時 nonce 只在 Client.pending。
@@ -585,6 +601,7 @@ function Cursor.onResult(cmd, args)
         w.accepted = true
     elseif cmd == "placed" then
         w.placed = w.placed + 1
+        if w.parts and args.i then w.parts[args.i] = nil end
         if w.placed >= w.count then watch = nil end
     elseif cmd == "refused" then
         -- 被拒就停整串：MP 的 Reject 與 Client 都清掉了後面的動作
@@ -621,5 +638,24 @@ function Cursor.tick()
     if w.placed < w.count then tell(w.player, "WALK") end
 end
 Events.OnTick.Add(Cursor.tick)
+
+-- 已送出、還沒蓋好的格子（使用者 2026-10-29：還沒蓋完前要顯示預計要蓋的格子）：淡虛影＋藍框，蓋好一格收一格。
+-- 游標關掉後角色照樣在蓋，所以不畫在游標的 render，改在世界畫完時畫（OnPostRender，IngameState.java:1198-1201）：
+-- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:319 的 DoBuilding），所以一樣畫在世界最上層。
+-- 不能用 OnPostFloorLayerDraw：它只在舊渲染器（IsoCell.java:856-860）觸發，B42 預設的 FBO 渲染器沒有
+-- （builder-ui-1029a 截圖一格都沒畫出來）。
+function Cursor.drawQueued()
+    local w = watch
+    local parts = w and w.parts
+    if not parts then return end
+    local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:693-700）
+    for _, ps in pairs(parts) do
+        for _, g in ipairs(ps) do
+            g[4]:RenderGhostTileColor(g[1], g[2], g[3], 0, g[5], 1, 1, 1, 0.35)
+            floor:RenderGhostTileColor(g[1], g[2], g[3], QR, QG, QB, 0.8)
+        end
+    end
+end
+Events.OnPostRender.Add(Cursor.drawQueued)
 
 return Cursor

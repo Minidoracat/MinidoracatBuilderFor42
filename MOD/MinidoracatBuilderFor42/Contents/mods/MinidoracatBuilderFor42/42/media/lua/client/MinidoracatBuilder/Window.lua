@@ -1100,8 +1100,9 @@ function W.toggleFavorite()
     if W.st.cat == "fav" then W.refilter(true) end
 end
 
--- 建造：交給 Cursor。手把玩家進放置時視窗收起並交還手把（原版只在沒有 UI 焦點時把按鍵交給游標，
--- JoyPadSetup.lua:323,363-366）；Window:setVisible(false) 會 Focus.releaseJoypad（Widgets/Window.lua:336-348）。
+-- 建造：交給 Cursor，視窗收起、直接進放置（使用者 2026-10-29：按建造後視窗應該自動關閉）；游標結束時
+-- （右鍵取消、項目不能蓋）W.onCursorEnd 把視窗叫回來。手把玩家另外交還手把（原版只在沒有 UI 焦點時把按鍵交給游標，
+-- JoyPadSetup.lua:323,363-366）：Window:setVisible(false) 會 Focus.releaseJoypad（Widgets/Window.lua:336-348）。
 function W.build()
     local v = W.v
     local name = v and v.selName
@@ -1114,11 +1115,8 @@ function W.build()
     W.addRecent(name)
     W.st.picked = nil
     C.onEnd = W.onCursorEnd
-    local hide = W.usingPad()
-    if hide then
-        v.hiddenForBuild = true
-        v.win:setVisible(false)
-    end
+    v.hiddenForBuild = true
+    v.win:setVisible(false)
     -- start 回 nil＝沒開游標（項目不能蓋，Cursor 已發通知），不會有 onEnd：收起的視窗要自己回來
     local ok, res = pcall(C.start, W.playerNum, name, 0)
     if not ok then print(LOG .. "Cursor.start failed: " .. tostring(res)) end
@@ -1129,7 +1127,9 @@ function W.build()
     if W.st.cat == "recent" then W.refilter(true) end
 end
 
--- Cursor 的 deactivate 呼叫：手把建造時收起的視窗回來，接回手把焦點（setVisible(true) 只接玩家 0，Window.lua:329-334）
+-- Cursor 的 deactivate 呼叫：建造時收起的視窗回來；手把玩家接回手把焦點（setVisible(true) 只接玩家 0，Window.lua:329-334；
+-- 鍵盤滑鼠玩家 getJoypadData 是 nil，takeJoypad 不動作，Focus.lua:1031-1035）。放置中從 Dock 打開過視窗（W.open 清掉
+-- hiddenForBuild）就不再動它。
 function W.onCursorEnd(playerNum)
     local v = W.v
     if not (v and v.hiddenForBuild) then return end
@@ -1302,7 +1302,7 @@ function W.create(UI)
     -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3908-3934）
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
-    -- 靠右、不越過畫面中央：角色在畫面中央，放置時視窗留著（滑鼠玩家），不能蓋住要蓋的地方
+    -- 靠右、不越過畫面中央：角色在畫面中央；放置時視窗收起，但放置中可以從 Dock 再打開，那時不能蓋住要蓋的地方
     -- （1080p 實機用 0.62 時視窗從中央左邊開始，虛影整個被蓋住）。寬版要 760*s，半個畫面放不下就用中版。
     local want = math.max(math.floor(760 * s), math.floor(sw * 0.47))
     local half = math.floor(sw / 2) - 20
@@ -1487,10 +1487,12 @@ function W.applyOptions()
     if UI and UI.Dock then UI.Dock.refresh() end
 end
 
--- Dock 回呼每幀被 pcall：只讀快取，不配置（UI ARCH §3.16）
+-- Dock 回呼每幀被 pcall：只讀快取，不配置（UI ARCH §3.16）。入口圖照家族定案用彩色「遊戲物品風」（UI ARCH 第 1004 行；
+-- 使用者 2026-10-29 選鎚子＋手鋸，生成紀錄在 MinidoracatUIFor42 scripts/dock/dock-icons-source.json）；讀不到圖時 Dock 改畫 iconKey
 W.dockSpec = {
     id = "builder",
     order = 80,
+    icon = "media/ui/MinidoracatBuilder/dock_build.png",
     iconKey = "house",
     bind = W.BIND,
     label = function() return MinidoracatBuilder.Window.dockLabel end,
