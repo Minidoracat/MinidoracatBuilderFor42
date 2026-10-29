@@ -2029,6 +2029,14 @@ local function newKinds()
     check(build(SW, 1, "switch_01_0", { 50, 58, 0 }) and made[2] and made[2].lights == 0 and made[2].moved == nil
         and #xpLog == 0 and MinidoracatBuilder.Ledger.get(made[2])["Base.ElectricWire"] == 1,
         "牆面開關（沒有 lightR、不能搬）：照樣是 IsoLightSwitch、不掛光源、不收燈泡；記進帳本，本工具拆時各 1 件一定全退，不給經驗")
+    -- 地圖房屋裡的開關沿用建構子照房間設的狀態、不強制開（伺服器上自建房屋沒有房間，照樣開）
+    local roomSq = squares["50,59,0"] or square(50, 59, 0)
+    local noRoom = roomSq.getRoom
+    function roomSq:getRoom() return {} end
+    give(SW, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
+    check(build(SW, 3, "switch_01_0", { 50, 59, 0 }) and made[3] and made[3].on == nil and made[2].on == true,
+        "地圖房屋裡的開關不強制開（沿用房間狀態）；不在房間裡的開關照樣開")
+    roomSq.getRoom = noRoom
     ISMoveableSpriteProps = nil
 
     -- 窗簾：掛在窗框上；面向 E 的窗框在本格西邊，面向 W 的在東邊那格
