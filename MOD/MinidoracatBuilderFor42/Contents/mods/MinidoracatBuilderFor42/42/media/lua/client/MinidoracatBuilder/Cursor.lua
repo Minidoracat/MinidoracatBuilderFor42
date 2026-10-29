@@ -580,6 +580,12 @@ function Cursor:tryBuild(x, y, z)
     end
 end
 
+-- 放置中點到物件時不讓原版處理（開門、開關燈、拉窗簾）。原版只在拖曳物件有這個方法時才擋
+-- （ISObjectClickHandler.lua:341-344），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）
+function Cursor.onObjectLeftMouseButtonDown()
+    return true
+end
+
 -- 引擎 setDrag 換掉或清掉這個游標時呼叫（IsoCell.java:2563-2567）。
 function Cursor:deactivate()
     self:hideUI()

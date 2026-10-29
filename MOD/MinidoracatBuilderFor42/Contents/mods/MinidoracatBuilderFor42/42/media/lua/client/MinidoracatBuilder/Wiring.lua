@@ -88,7 +88,8 @@ function Wiring.refusal(code)
     return getText(key)
 end
 
-local function tell(player, text) Messages.toast(player, text, title()) end
+-- 接線結果常會接上「另有 N 盞…」兩句，英文 4 行放不下（builder-input-1029c）：最多 8 行
+local function tell(player, text) Messages.toast(player, text, title(), 8) end
 
 local function refused(player, code)
     if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知（同 Cursor 的 tell）
@@ -315,13 +316,19 @@ end
 
 -- ---------------------------------------------------------------- 接線模式：游標
 -- 原版 ISBuildingObject 的子類別（同 Cursor.lua）：引擎照常呼叫 isValid → render → 放開左鍵／手把 A 時 tryBuild。
--- 只用來選格子與擋掉原版的點擊（拖曳物件在時原版不開燈、不開門）；右鍵、手把 B 照原版取消。
+-- 只用來選格子；右鍵、手把 B 照原版取消。點到物件時原版的開燈、開門由 onObjectLeftMouseButtonDown 擋（下方）。
 
 local WireCursor, Class = {}, nil
 
 function WireCursor:getSprite() return self.mode.sw.e end
 function WireCursor:rotateKey() end
 function WireCursor:rotateMouse() end
+
+-- 點燈接線時不讓原版順便開關燈（原版只在拖曳物件有這個方法時才擋，ISObjectClickHandler.lua:341-344；點號呼叫，
+-- 第一個參數是被點的物件，不是游標）。builder-input-1029c／d：沒有這個方法時，點一下燈就被切一次
+function WireCursor.onObjectLeftMouseButtonDown()
+    return true
+end
 
 function WireCursor:isValid(square)
     local m = self.mode

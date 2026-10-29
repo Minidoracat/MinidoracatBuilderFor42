@@ -72,11 +72,12 @@ function Messages.unbuildRefusal(code, extra)
     return getText(key)
 end
 
--- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」。
-function Messages.toast(player, text, title)
+-- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」；
+-- maxLines 省略＝4（超過的最後一行截字）
+function Messages.toast(player, text, title, maxLines)
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
-        UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = 4 })
+        UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = maxLines or 4 })
     elseif player then
         HaloTextHelper.addBadText(player, text)
     end
