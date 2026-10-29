@@ -456,7 +456,8 @@ function Circuits.onToggle(action)
         return Circuits.press(action.character, obj, nil)
     end
     local d = data()
-    local id = d and live(d, Ledger.key(obj))
+    -- 招牌這類帳本有、卻不算開關的（Rules.switchProps）照原版：只有開關會被當成線路的開關
+    local id = d and Circuits.isSwitch(obj) and live(d, Ledger.key(obj))
     -- 沒接線、或線路上還沒有燈的開關照原版（在地圖房屋裡切整間房）
     if not id or count(d.c[id].l) == 0 then return nil end
     action.mbldClaimed = true

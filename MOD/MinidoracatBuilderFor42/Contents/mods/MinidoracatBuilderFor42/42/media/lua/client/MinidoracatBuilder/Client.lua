@@ -172,9 +172,10 @@ end)
 -- （IsoLightSwitch.java:350-379）。本 MOD 蓋的照 load 補上：
 --   不能改裝的燈：照 sprite 設顏色。processClient 用預設的白色建光源（AddItemToMapPacket.java:62-64），重新載入區塊才是 sprite
 --     的顏色（E2E builder-rooms-1029d）；LightingJNI 下次更新看到顏色變了就送（LightingJNI.java:334-343）。能改裝的燈顏色在封包裡。
---   開關：switchLight(activated)（:351-352）。沒補的話自建房間的房間燈停在房間原本的狀態：開關顯示開著、房間卻暗，第一次按
+--   自建房間裡的開關：switchLight(activated)（:351-352）。沒補的話房間燈停在房間原本的狀態：開關顯示開著、房間卻暗，第一次按
 --     看起來沒反應（builder-rooms-1029g）。switchLight 會把房間裡其他燈與開關的 activated 一起改掉（:517-523），同一幀照原值
---     還原（同伺服器 Circuits 的 apply）。招牌不算開關（Rules.switchProps），不補。
+--     還原（同伺服器 Circuits 的 apply）。地圖房屋的房間燈由伺服器同步，客戶端自己切會和伺服器不一致；沒有房間時切了也看不到
+--     （開關的光源不畫，:790-794）。招牌不算開關（Rules.switchProps），不補。
 local function onAdded(obj)
     if not instanceof(obj, "IsoLightSwitch") or not obj:hasModData() or not obj:getModData().builderEntry then return end
     local spr = obj:getSprite()
@@ -191,16 +192,14 @@ local function onAdded(obj)
     end
     if not MinidoracatBuilder.Rules.switchProps(p) then return end
     local sq = obj:getSquare()
-    local room = sq and sq:getRoom()
-    local others, was = {}, {}
-    if room then
-        local list = room:getLightSwitches()
-        for i = 0, list:size() - 1 do
-            local o = list:get(i)
-            if o ~= obj then
-                others[#others + 1] = o
-                was[#others] = o:isActivated()
-            end
+    local room = sq and sq:isUserDefinedRoom() and sq:getRoom()
+    if not room then return end
+    local list, others, was = room:getLightSwitches(), {}, {}
+    for i = 0, list:size() - 1 do
+        local o = list:get(i)
+        if o ~= obj then
+            others[#others + 1] = o
+            was[#others] = o:isActivated()
         end
     end
     obj:switchLight(obj:isActivated())
