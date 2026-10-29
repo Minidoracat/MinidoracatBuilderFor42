@@ -117,7 +117,7 @@ end
 local function notify(text)
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
-        pcall(UI.Toast.show, { title = getText("IGUI_MBLD_Title"), message = text, maxLines = 4 })
+        pcall(UI.Toast.show, { title = getText("IGUI_MBLD_Title"), message = text, maxLines = 8 })
         return
     end
     print(LOG .. text)

@@ -88,8 +88,8 @@ function Wiring.refusal(code)
     return getText(key)
 end
 
--- 接線結果常會接上「另有 N 盞…」兩句，英文 4 行放不下（builder-input-1029c）：最多 8 行
-local function tell(player, text) Messages.toast(player, text, title(), 8) end
+-- 接線結果常會接上「另有 N 盞…」兩句：CatLang 字型下英文要 7 行（builder-input-1029e），法、西、德文更寬，最多 12 行
+local function tell(player, text) Messages.toast(player, text, title(), 12) end
 
 local function refused(player, code)
     if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知（同 Cursor 的 tell）

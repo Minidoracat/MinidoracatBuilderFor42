@@ -73,11 +73,12 @@ function Messages.unbuildRefusal(code, extra)
 end
 
 -- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」；
--- maxLines 省略＝4（超過的最後一行截字）
+-- maxLines 省略＝8（超過的最後一行截字；Toast 只長到實際行數）。4 行時 CatLang 字型下英文的缺料句就放不下，
+-- 法、西、德文更寬
 function Messages.toast(player, text, title, maxLines)
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
-        UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = maxLines or 4 })
+        UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = maxLines or 8 })
     elseif player then
         HaloTextHelper.addBadText(player, text)
     end
