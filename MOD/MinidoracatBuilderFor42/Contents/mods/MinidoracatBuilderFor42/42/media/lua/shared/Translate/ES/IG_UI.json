@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Experiencia: ninguna",
   "IGUI_MBLD_Detail_Gone": "Ya no se puede construir aquí. Puede que el admin haya desactivado su origen. Elige un objeto de otro origen.",
+  "IGUI_MBLD_Detail_WindowLocked": "Bloqueada para siempre: esta ventana no se puede abrir, pero sí romper.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Para quitarlo: recógelo como siempre (se puede mover).",
   "IGUI_MBLD_Refund_scrap": "Para quitarlo: Desarmar del juego original, devuelve parte de los materiales.",

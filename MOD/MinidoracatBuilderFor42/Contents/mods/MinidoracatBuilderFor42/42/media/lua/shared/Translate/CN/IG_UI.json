@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "经验：无",
   "IGUI_MBLD_Detail_Gone": "这里已不能建造此项，管理员可能关闭了它的来源。请改选其他来源的项目。",
+  "IGUI_MBLD_Detail_WindowLocked": "永久锁住：这扇窗户打不开，但可以打破玻璃",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "拆除：照原版搬运（可以移动）",
   "IGUI_MBLD_Refund_scrap": "拆除：原版「拆除」，退回部分材料",

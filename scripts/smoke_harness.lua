@@ -507,6 +507,11 @@ do -- 主程式區域變數上限 200
         and kind({ flags = { "cutW", "makeWindowInvincible" }, keys = { WallW = "" } }) == nil
         and kind({ flags = { "cutW", "makeWindowInvincible" } }) == nil,
         "讓窗打不破的旗標（窗、窗框、牆、牆面疊圖帶 makeWindowInvincible）：不列")
+    check(kind({ keys = { container = "crate", StackReplaceTileOffset = "-1" } }) == nil
+        and kind({ flags = { "solidtrans" }, keys = { StackReplaceTileOffset = "-2" } }) == nil
+        and kind({ keys = { container = "crate", StackReplaceTileOffset = "0" } }) == "container"
+        and kind({ flags = { "solidtrans" } }) == "solid",
+        "疊放圖（StackReplaceTileOffset 不是 0，讀檔時引擎換圖）：容器、實心物件都不列；0 或沒有照常列")
     check(kind({ flags = { "solidfloor", "attachedFloor" } }, "invisible_01_0") == nil
         and kind({ flags = { "cutW", "solid" } }, "underground_01_1") == nil, "引擎內部用的隱形地板、地底方塊：不列")
     check(kind({ keys = { IsMoveAble = "" } }, "solarmod_tileset_01_9") == nil

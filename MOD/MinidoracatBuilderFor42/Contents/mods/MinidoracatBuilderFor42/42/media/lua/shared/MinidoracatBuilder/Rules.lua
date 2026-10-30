@@ -219,6 +219,14 @@ local function excludedName(name)
     return name:find("_on_", 1, true) ~= nil and name:find("_on_%d+$") ~= nil -- 開燈時疊上去的圖
 end
 
+-- 疊放圖不列（使用者 2026-10-30 選）：讀格子時引擎把 StackReplaceTileOffset 不是 0 的物件換成「編號＋偏移」那張
+-- （IsoGridSquare.java:9754-9762，不看有沒有疊著），放下去讀檔就變成另一張圖。離線讀本機 313 個 tiledef 檔（186 萬格）
+-- 有 172 個名稱：160 個容器、8 個實心物件（CustomMapBridge）、4 個 vegetation_（名稱已排除），所以只在這兩處查。
+local function stackReplaced(p)
+    local s = p:get("StackReplaceTileOffset")
+    return s ~= nil and (tonumber(s) or 0) ~= 0
+end
+
 -- 前面的種類都不符時：掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、實心物件、疊圖；都不符就不列
 local function decor(p, mt)
     if mt == "WallObject" or p:has(WallOverlay) then return "wallObject" end
@@ -231,7 +239,7 @@ local function decor(p, mt)
         or p:has(attachedNW) or p:has(attachedSE) or p:has(attachedCeiling) then
         return "attached"
     end
-    if p:has("BlocksPlacement") or p:has(solid) or p:has(solidtrans) then return "solid" end
+    if p:has("BlocksPlacement") or p:has(solid) or p:has(solidtrans) then return not stackReplaced(p) and "solid" or nil end
     if p:has("TileOverlay") then return "overlay" end
     return nil
 end
@@ -299,7 +307,7 @@ function Rules.kindOf(name, p, t)
     end
     local mt = p:get("MoveType")
     if plantOrObject(p, mt) or infiniteWater(p) then return nil end
-    if p:has("container") then return "container" end -- 冰箱帶燈，容器優先
+    if p:has("container") then return not stackReplaced(p) and "container" or nil end -- 冰箱帶燈，容器優先
     if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）。有 lightR 就要三色都有：
         -- 建構子三色都照字串轉數字，缺一個就丟錯（IsoLightSwitch.java:76-83；原版 lighting_indoor_03_5 只有 lightR）

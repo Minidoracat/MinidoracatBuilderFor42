@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Experiência: nenhuma",
   "IGUI_MBLD_Detail_Gone": "Não pode mais ser construído aqui. A administração pode ter desativado a origem. Escolha um item de outra origem.",
+  "IGUI_MBLD_Detail_WindowLocked": "Trancada para sempre: esta janela não pode ser aberta, mas pode ser quebrada.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Remoção: pegue como de costume (pode ser movido).",
   "IGUI_MBLD_Refund_scrap": "Remoção: Desmontar do vanilla, devolve parte dos materiais.",

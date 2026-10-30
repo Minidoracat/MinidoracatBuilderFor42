@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Tecrübe Puanı: yok",
   "IGUI_MBLD_Detail_Gone": "Artık burada inşa edilemez. Yönetici kaynağını kapatmış olabilir. Başka kaynaktan bir öğe seç.",
+  "IGUI_MBLD_Detail_WindowLocked": "Kalıcı olarak kilitli: bu pencere açılamaz ama kırılabilir.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Kaldırma: her zamanki gibi yerden al (taşınabilir).",
   "IGUI_MBLD_Refund_scrap": "Kaldırma: oyunun kendi sökme işlemi, malzemenin bir kısmını geri verir.",

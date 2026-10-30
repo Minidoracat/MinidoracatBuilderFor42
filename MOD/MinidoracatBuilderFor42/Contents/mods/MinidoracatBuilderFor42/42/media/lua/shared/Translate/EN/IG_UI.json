@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Experience: none",
   "IGUI_MBLD_Detail_Gone": "Can no longer be built here. The admin may have turned off its source. Pick an item from another source.",
+  "IGUI_MBLD_Detail_WindowLocked": "Permanently locked: this window can't be opened, but it can be smashed.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Removal: pick it up as usual (it can be moved).",
   "IGUI_MBLD_Refund_scrap": "Removal: vanilla dismantle, returns part of the materials.",

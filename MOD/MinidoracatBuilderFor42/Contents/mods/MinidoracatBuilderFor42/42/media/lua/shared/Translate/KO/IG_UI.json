@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "경험치: 없음",
   "IGUI_MBLD_Detail_Gone": "여기서는 더 이상 지을 수 없습니다. 관리자가 출처를 비활성화했을 수 있습니다. 다른 출처의 항목을 고르세요.",
+  "IGUI_MBLD_Detail_WindowLocked": "영구 잠김: 이 창문은 열 수 없지만 부술 수는 있습니다.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "철거: 평소처럼 들어서 옮깁니다(이동 가능).",
   "IGUI_MBLD_Refund_scrap": "철거: 바닐라 해체, 재료 일부를 돌려받습니다.",

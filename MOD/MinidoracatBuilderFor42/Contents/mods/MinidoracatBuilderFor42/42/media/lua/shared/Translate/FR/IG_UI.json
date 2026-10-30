@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Expérience : aucune",
   "IGUI_MBLD_Detail_Gone": "Plus constructible ici. L'admin a peut-être désactivé sa source. Choisissez un objet d'une autre source.",
+  "IGUI_MBLD_Detail_WindowLocked": "Verrouillée définitivement : cette fenêtre ne peut pas être ouverte, mais vous pouvez la casser.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Retrait : à ramasser comme d'habitude (objet déplaçable).",
   "IGUI_MBLD_Refund_scrap": "Retrait : démontage vanilla, rend une partie des matériaux.",

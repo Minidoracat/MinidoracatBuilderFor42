@@ -694,11 +694,22 @@ local function text(ops, s, x, y, c, font)
     add(ops, { t = "text", s = s, x = x, y = y, c = c, f = font })
 end
 
--- 一段字最多 max 行（預設兩行；詳情不能捲動，放不下就截字加省略號）；回下一行的 y
+-- 一段字最多 max 行（預設兩行：名稱、來源、佔地這類短欄位放不下就截字加省略號）；回下一行的 y
 local function para(v, ops, s, x, y, w, col, max)
     for _, line in ipairs(wrapMax(v.UI.Text, s, w, v.font, max or 2)) do
         text(ops, line, x, y, col, v.font)
         y = y + v.fh + 4
+    end
+    return y
+end
+
+-- 前面加警告圖示、整段用警告色（只能砸不退料、永久上鎖的窗：蓋之前要看得到，不截字）；回下一行的 y
+local function warnLines(v, ops, s, y, w)
+    local c, fh = v.colors, v.fh
+    add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning })
+    for _, line in ipairs(v.UI.Text.wrap(s, w - 20, v.font)) do
+        text(ops, line, 20, y, c.warning, v.font)
+        y = y + fh + 4
     end
     return y
 end
@@ -767,15 +778,18 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     y = y + 2
     y = para(v, ops, getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), 0, y, dw, c.textMuted)
     y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
-    -- 拆除方式放在材料前面：詳情不能捲動，矮的視窗畫不下最後幾行；只能砸、不退料的照樣能蓋，
-    -- 蓋之前一定要看得到（設計稿 DD:596-606）
+    -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
+    -- （IsoWindow.java:84,744）；打破窗不看這個鎖（:264-306）
+    if e.kind == "window" and e.spr:getProperties():has("WindowLocked") then
+        y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowLocked"), y, dw)
+    end
+    -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
-    if refund then
-        local none = refund == "none"
-        local x = none and 20 or 0
-        if none then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
-        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw - x, v.font)) do
-            text(ops, line, x, y, none and c.warning or c.textMuted, v.font)
+    if refund == "none" then
+        y = warnLines(v, ops, getText("IGUI_MBLD_Refund_none"), y, dw)
+    elseif refund then
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
             y = y + lh
         end
     end
@@ -825,8 +839,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：詳情不能捲動，矮的視窗先截掉它，材料與工具照樣看得到（擋得住的限制
-    -- 游標也會標）。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
+    -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動），
+    -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
     -- hasRainBlockingTile），換一句
     local key = e.kind
     if key == "roof" then
@@ -841,12 +855,13 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             y = y + lh
         end
     end
+    return y
 end
 
 -- 窄版選取列：縮圖、名稱、「1×1 · 木板 2、釘子 4」（缺的整行用警告色＋警告圖示）
 local function detailRow(v, ops, e, total, missing, tools)
     local c, fh = v.colors, v.fh
-    local dw, dh = v.detail.width, v.detail.height
+    local dw, dh = v.detail.width, v.detailBox.height
     local thumb = dh - 8
     local tex = texOf(v, e.name)
     if tex then add(ops, { t = "tex", tex = tex, x = 0, y = 4, w = thumb, h = thumb }) end
@@ -880,20 +895,22 @@ local function prepareDetail(v)
     local name = v.selName
     local e = name and Entry.resolve(name)
     local short
+    local h = v.detailBox.height -- 面板高＝內容高（至少可視高）：捲動容器照子元件下緣量捲動範圍
     if e then
         local total, costs, missing, tools = costInfo(v, e)
         short = v.S ~= nil and (missing ~= nil or tools ~= nil)
         if v.mode == "narrow" then
             detailRow(v, ops, e, total, missing, tools)
         else
-            detailFull(v, ops, e, total, costs, missing, tools)
+            h = math.max(h, detailFull(v, ops, e, total, costs, missing, tools))
         end
     elseif name then
         -- 目錄裡有、現在解析不了：管理員剛關掉來源，或規則改了
         -- 名稱（窄版一行）＋為什麼不能蓋，兩行；「建造」不能按的原因只寫在這裡，不能截掉
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
-        para(v, ops, getText("IGUI_MBLD_Detail_Gone"), 0, y, v.detail.width, v.colors.warning)
+        h = math.max(h, para(v, ops, getText("IGUI_MBLD_Detail_Gone"), 0, y, v.detail.width, v.colors.warning))
     end
+    v.detail:setHeight(h)
     v.ops = ops
     v.focusName = name
     v.focusText = name and W.tipOf(v, name, short) or nil
@@ -904,6 +921,26 @@ local function prepareDetail(v)
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
     v.favBtn:setWidth(fw)
     v.buildBtn:setEnabled(e ~= nil)
+end
+
+-- 手把右搖桿捲詳情（使用者 2026-10-30 選）。框架只在焦點落在捲動容器裡或捲動目標上時捲（Focus.lua:1310-1323,1372），
+-- 焦點在方格時不捲，這裡補上；焦點在詳情或左邊分類（navBox 裡的 NavList）時交給框架，不重複捲。門檻、速度同框架
+-- （同原版 ISPanelJoypad:doRightJoystickScrolling）
+local function padScroll(v)
+    local F = v.UI.Focus
+    if not (F and F.holdsJoypad and F.focused and getJoypadAimingAxisY and F.holdsJoypad(v.win)) then return end
+    local c = F.focused()
+    if c == v.detailBox or c == v.nav then return end
+    local data = getJoypadData(W.playerNum)
+    local axis = data and getJoypadAimingAxisY(data.id) or 0
+    if axis <= 0.75 and axis >= -0.75 then return end
+    local box = v.detailBox
+    local room = math.max(0, (box:getScrollHeight() or 0) - box.height)
+    if room <= 0 then return end
+    local ms = UIManager and UIManager.getMillisSinceLastRender and UIManager.getMillisSinceLastRender() or 33.3
+    local step = 20 * ms / 33.3
+    local y = (box:getYScroll() or 0) - (axis > 0 and step or -step)
+    box:setYScroll(math.max(-room, math.min(0, y)))
 end
 
 -- ===== 每幀：狀態列面板的 prerender（排在方格前面）=====
@@ -939,6 +976,7 @@ function W.pump(panel)
     if name ~= v.selName then
         v.selName = name
         v.detailDirty = true
+        v.detailBox:setYScroll(0) -- 換選取從頭看（拆除方式、材料在最前面）
     end
     -- 材料摘要每秒重算一次（地上 3×3 的材料也算）。不靠 OnContainerUpdate：伺服器扣料、發料時客戶端不一定觸發
     -- （E2E ui-mp 1027f：蓋完以後詳情與方格還照扣料前顯示）。
@@ -963,6 +1001,7 @@ function W.pump(panel)
         prepareDetail(v)
     end
     v.pad = W.usingPad()
+    if v.pad then padScroll(v) end
     v.padPicked = v.pad and W.st.picked or nil
     prepareVisible(v)
     if v.aff then runAffordable(v) end
@@ -1378,10 +1417,11 @@ function W.layout()
             or math.max(math.floor(200 * s), math.floor(inner * 0.38))
         gw = gw - dw - GAP
         local dx = PAD + inner - dw
-        v.detail:setX(dx)
-        v.detail:setY(y)
-        v.detail:setWidth(dw)
-        v.detail:setHeight(bodyH - btnH - GAP)
+        v.detailBox:setX(dx)
+        v.detailBox:setY(y)
+        v.detailBox:setWidth(dw)
+        v.detailBox:setHeight(bodyH - btnH - GAP)
+        v.detail:setWidth(v.detailBox:contentWidth())
         -- 最愛按鈕至少放得下較長的標題（v.favW），建造按鈕拿剩下的，不小於自己的標題寬
         local bw = math.min(dw - GAP - v.buildW, math.max(math.floor((dw - GAP) / 2), v.favW))
         v.favBtn:setX(dx)
@@ -1402,10 +1442,11 @@ function W.layout()
         v.favBtn:setX(bx - GAP - v.favW)
         v.favBtn:setY(by)
         v.favBtn:setWidth(v.favW)
-        v.detail:setX(PAD)
-        v.detail:setY(ry)
-        v.detail:setWidth(math.max(40, bx - 2 * GAP - v.favW - PAD))
-        v.detail:setHeight(rowHt)
+        v.detailBox:setX(PAD)
+        v.detailBox:setY(ry)
+        v.detailBox:setWidth(math.max(40, bx - 2 * GAP - v.favW - PAD))
+        v.detailBox:setHeight(rowHt)
+        v.detail:setWidth(v.detailBox:contentWidth())
     end
     -- 最小尺寸也要放得下一整排格子：多了滑桿那一列、格子多一行名稱以後，窄版在 320×縮放的最小高度只剩 68 px
     -- （E2E ui-mp `builder-ui-1029c` minSize，一格 104）。差多少就把最小高度加多少，視窗比它矮就拉高再排一次；
@@ -1510,11 +1551,16 @@ function W.create(UI)
     v.navBox:addChild(v.nav)
     v.clearBtn = button(v, getText("IGUI_MBLD_ClearSearch"), nil, function() MinidoracatBuilder.Window.clearSearch() end)
     v.clearBtn:setVisible(false)
+    -- 詳情放在捲動容器裡（使用者 2026-10-30 選：預設大小畫不下燈的說明時捲動看）：面板高＝內容高（prepareDetail 設），
+    -- 容器照子元件下緣量捲動範圍、裁掉可視區外（框架 ScrollPanel §3.18）。裡面沒有焦點目標，框架把容器本身當
+    -- kind="scroll" 目標（方向鍵、PgUp／PgDn 捲）
+    v.detailBox = UI.ScrollPanel.new({ x = 0, y = 0, width = 100, height = 100, theme = theme })
+    win:addChild(v.detailBox)
     local detail = ISPanel:new(0, 0, 100, 100)
     detail:initialise()
     detail.background = false
     detail.render = W.drawDetail
-    win:addChild(detail)
+    v.detailBox:addChild(detail)
     v.detail = detail
     -- 最愛按鈕寬度照兩種標題較長的那個（窄版要固定寬）
     v.favBtn = button(v, getText("IGUI_MBLD_Fav_Remove"), nil, function() MinidoracatBuilder.Window.toggleFavorite() end)

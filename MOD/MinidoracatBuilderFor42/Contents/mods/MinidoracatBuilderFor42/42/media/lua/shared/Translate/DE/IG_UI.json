@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Erfahrung: keine",
   "IGUI_MBLD_Detail_Gone": "Hier nicht mehr baubar. Der Admin hat evtl. die Quelle deaktiviert. Wähle ein Objekt aus einer anderen Quelle.",
+  "IGUI_MBLD_Detail_WindowLocked": "Dauerhaft verschlossen: Dieses Fenster lässt sich nicht öffnen, du kannst es aber einschlagen.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Entfernen: wie gewohnt aufheben (verschiebbar).",
   "IGUI_MBLD_Refund_scrap": "Entfernen: Vanilla-„Auseinandernehmen“, gibt einen Teil des Materials zurück.",

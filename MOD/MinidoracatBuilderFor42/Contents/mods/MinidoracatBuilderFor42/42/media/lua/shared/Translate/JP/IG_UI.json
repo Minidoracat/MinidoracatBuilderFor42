@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "経験値：なし",
   "IGUI_MBLD_Detail_Gone": "ここではもう建築できません。管理者が提供元を無効にした可能性があります。別の提供元から選んでください。",
+  "IGUI_MBLD_Detail_WindowLocked": "鍵が掛かったまま：この窓は開けられませんが、割ることはできます。",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "撤去：通常どおり拾えます（移動可能）。",
   "IGUI_MBLD_Refund_scrap": "撤去：バニラの解体で、材料の一部が戻ります。",

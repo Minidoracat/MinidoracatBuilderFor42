@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "經驗：無",
   "IGUI_MBLD_Detail_Gone": "這裡已經不能蓋這一項，管理員可能關掉了它的來源。改選其他來源的項目。",
+  "IGUI_MBLD_Detail_WindowLocked": "永久鎖住：這扇窗戶打不開，但可以打破",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "拆除：照原版拿起（可以搬動）",
   "IGUI_MBLD_Refund_scrap": "拆除：原版拆解，退回部分材料",

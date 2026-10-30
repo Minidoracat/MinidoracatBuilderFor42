@@ -60,6 +60,7 @@
   "IGUI_MBLD_XpItem": "%1 +%2",
   "IGUI_MBLD_Detail_NoXp": "Doświadczenie: brak",
   "IGUI_MBLD_Detail_Gone": "Nie da się już tego tu zbudować. Administrator mógł wyłączyć jego źródło. Wybierz element z innego źródła.",
+  "IGUI_MBLD_Detail_WindowLocked": "Zamknięte na stałe: tego okna nie da się otworzyć, ale możesz wybić szybę.",
   "IGUI_MBLD_RowItem": "%1 %2",
   "IGUI_MBLD_Refund_pickup": "Usuwanie: podnieś jak zwykle (można przenosić).",
   "IGUI_MBLD_Refund_scrap": "Usuwanie: zwykłe „Rozmontuj” z gry, zwraca część materiałów.",
