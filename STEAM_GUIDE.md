@@ -1,10 +1,11 @@
+<!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491 -->
 <!-- Steam 指南稿源（繁中）：MOD 的完整說明以本指南為準，簡介只放摘要。格式、版面與同步方式見 pz-family-docs/release.md「完整說明：Steam 指南」 -->
 <!-- 標題：📖 Minidoracat Build Anything MOD 完整說明：建造工坊、材料、線路與拆除 -->
 <!-- 摘要：Minidoracat Build Anything（自由建造）MOD 的圖文說明：建造工坊視窗的搜尋、頁籤、來源與最愛，放置與拖曳一排，門窗、窗簾、樓梯、屋頂、家具、燈與容器的規則，材料、工具與經驗，開關與線路，拆除與手把操作，以及沙盒選項、其他 MOD 設施的關法、給 MOD 作者的 API、已知限制與移除前須知。 -->
 <!-- 截圖：docs/screenshots/steam/zh/ -->
 === 🚀 快速上手
-[b]English version:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything Mod Guide[/url]
-https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX
+[b]English version:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
+https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
 原版與其他 MOD 材質包裡的圖塊都能拿來蓋，蓋的時候要付材料。
 {{img:01-overview-zh.jpg}}
 [olist]

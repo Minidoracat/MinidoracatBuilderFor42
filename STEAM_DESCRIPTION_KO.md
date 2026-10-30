@@ -33,7 +33,7 @@
 [*] [b]서버 검증[/b]: 재료, 거리, 은신처 권한은 모두 서버가 확인합니다
 [*] [b]관리자 설정[/b]: 건축 가능 대상과 장소, 재료 비용 배율을 정하고 특정 모드의 타일을 비활성화할 수 있습니다
 [/list]
-📖 [b]자세한 설명과 자주 묻는 질문:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything Mod Guide[/url] (영어)
+📖 [b]자세한 설명과 자주 묻는 질문:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url] (영어)
 
 [h2]🔗 Minidoracat 모드 모음[/h2]
 모든 모드는 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 전체 컬렉션[/url]에 모아 두었습니다. 필요한 것만 골라 구독하세요.
@@ -51,5 +51,5 @@
 
 [b]#Minidoracat[/b]
 
-Workshop ID: XXXX
+Workshop ID: 3830045886
 Mod ID: MinidoracatBuilderFor42

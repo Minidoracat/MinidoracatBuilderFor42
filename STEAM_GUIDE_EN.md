@@ -1,10 +1,11 @@
+<!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Materials, Wiring and Dismantling -->
 <!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, placing and dragging rows, the rules for doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, switches and wiring, dismantling and gamepad controls, plus the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
-[b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything MOD 完整說明[/url]
-https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX
+[b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
+https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
 Build with any loaded tile, including other mods' tile packs; you pay for what you build with materials.
 {{img:01-overview-en.jpg}}
 [olist]

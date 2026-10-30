@@ -33,7 +33,7 @@
 [*] [b]服务器把关[/b]：材料、距离和安全屋权限都由服务器检查
 [*] [b]管理员设置[/b]：可以设置谁能建、在哪里建和材料倍率，也能关闭指定 MOD 的图块
 [/list]
-📖 [b]玩法、材料、接线、沙盒选项与常见问题：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything MOD 完整說明[/url]（繁体中文）
+📖 [b]玩法、材料、接线、沙盒选项与常见问题：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]（繁体中文）
 
 [h2]🔗 Minidoracat 全系列[/h2]
 其他作品都在[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat 全系列收藏[/url]，按需自选订阅。
@@ -52,5 +52,5 @@ MOD 永远免费。喜欢的话可以请我喝杯咖啡，赞助会用在服务�
 
 [b]#Minidoracat[/b]
 
-Workshop ID: XXXX
+Workshop ID: 3830045886
 Mod ID: MinidoracatBuilderFor42

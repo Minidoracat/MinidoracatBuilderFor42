@@ -1,4 +1,5 @@
 version=1
+id=3830045886
 title=[B42] Build Anything by Minidoracat
 description=[h1]🏗️ Minidoracat Build Anything[/h1]
 description=[h3]By Minidoracat[/h3]
@@ -35,7 +36,7 @@ description=[*] [b]Dismantle[/b]: right-click what you built and choose Dismantl
 description=[*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
 description=[*] [b]Admin settings[/b]: who can build, where, the material multiplier, and turning off tiles from specific mods
 description=[/list]
-description=📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything Mod Guide[/url]
+description=📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
 description=
 description=[h2]🔗 Minidoracat collection[/h2]
 description=All my other mods are in the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat Collection[/url]; subscribe to the ones you need.
@@ -53,7 +54,7 @@ description=[url=https://ko-fi.com/minidoracat][img]https://raw.githubuserconten
 description=
 description=[b]#Minidoracat[/b]
 description=
-description=Workshop ID: XXXX
+description=Workshop ID: 3830045886
 description=Mod ID: MinidoracatBuilderFor42
 tags=Build 42;Building;Interface;Multiplayer
 visibility=public

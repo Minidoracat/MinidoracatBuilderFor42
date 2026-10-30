@@ -33,7 +33,7 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 [*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
 [*] [b]Admin settings[/b]: who can build, where, the material multiplier, and turning off tiles from specific mods
 [/list]
-📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything Mod Guide[/url]
+📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
 
 [h2]🔗 Minidoracat collection[/h2]
 All my other mods are in the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat Collection[/url]; subscribe to the ones you need.
@@ -51,5 +51,5 @@ The mod is free forever. If you like it, you can buy me a coffee; support goes t
 
 [b]#Minidoracat[/b]
 
-Workshop ID: XXXX
+Workshop ID: 3830045886
 Mod ID: MinidoracatBuilderFor42

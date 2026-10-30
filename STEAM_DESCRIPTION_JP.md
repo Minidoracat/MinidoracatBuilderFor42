@@ -33,7 +33,7 @@
 [*] [b]サーバー側で確認[/b]：材料、距離、セーフハウスの権限はサーバーが確認します
 [*] [b]管理者向け設定[/b]：建築できる人と場所、材料コスト倍率、特定の MOD のタイルの無効化を設定できます
 [/list]
-📖 [b]遊び方、材料、配線、サンドボックス設定、よくある質問：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=XXXX]Minidoracat Build Anything Mod Guide[/url]（英語）
+📖 [b]遊び方、材料、配線、サンドボックス設定、よくある質問：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]（英語）
 
 [h2]🔗 Minidoracat シリーズ[/h2]
 ほかの作品は[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat コレクション[/url]にまとめています。必要なものを選んで購読してください。
@@ -51,5 +51,5 @@ MOD はずっと無料です。気に入ったらコーヒー一杯分の支援�
 
 [b]#Minidoracat[/b]
 
-Workshop ID: XXXX
+Workshop ID: 3830045886
 Mod ID: MinidoracatBuilderFor42

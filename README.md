@@ -14,7 +14,7 @@ Project Zomboid Build 42 MOD。
 - **伺服器把關**：材料、距離、走不走得到和安全屋權限都由伺服器檢查；裝了 Minidoracat Safehouse 時照它的權限。
 - **管理員設定**：誰能蓋、在哪裡蓋、最遠距離、一次拖曳最多幾項、材料倍率，也能關掉特定 MOD 或圖塊組。
 
-完整說明與常見問題見 Steam 指南稿 [STEAM_GUIDE.md](STEAM_GUIDE.md)（英文 [STEAM_GUIDE_EN.md](STEAM_GUIDE_EN.md)）。
+完整說明與常見問題見 Steam 指南：[繁體中文](https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491)／[English](https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545)（稿源 [STEAM_GUIDE.md](STEAM_GUIDE.md)、[STEAM_GUIDE_EN.md](STEAM_GUIDE_EN.md)）。
 
 ## 需要
 
@@ -23,7 +23,7 @@ Project Zomboid Build 42 MOD。
 
 ## 安裝
 
-- Steam Workshop：（首次上傳後補上連結）
+- Steam Workshop：[Minidoracat Build Anything](https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886)（ID 3830045886）
 - 手動安裝：把 `MOD/MinidoracatBuilderFor42/Contents/mods/MinidoracatBuilderFor42` 整個資料夾複製到 `%USERPROFILE%\Zomboid\mods\`
 
 ## 開發
