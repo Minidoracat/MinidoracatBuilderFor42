@@ -776,7 +776,11 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + fhM + 2
     end
     y = y + 2
-    y = para(v, ops, getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), 0, y, dw, c.textMuted)
+    -- 來源寫完整的 tileset ID（搜尋要用）：放不下就換行、不截字（詳情可以捲動）
+    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), dw, v.font)) do
+        text(ops, line, 0, y, c.textMuted, v.font)
+        y = y + lh
+    end
     y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
     -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
     -- （IsoWindow.java:84,744）；打破窗不看這個鎖（:264-306）
@@ -911,6 +915,9 @@ local function prepareDetail(v)
         h = math.max(h, para(v, ops, getText("IGUI_MBLD_Detail_Gone"), 0, y, v.detail.width, v.colors.warning))
     end
     v.detail:setHeight(h)
+    -- 換了項目從頭看（拆除方式、材料在最前面）。選取有兩條路會變：方格點選（W.pump）與搜尋、篩選（applyItems
+    -- 自己設 v.selName），都會走到這裡；每秒重組同一項時不動捲動位置
+    if name ~= v.focusName then v.detailBox:setYScroll(0) end
     v.ops = ops
     v.focusName = name
     v.focusText = name and W.tipOf(v, name, short) or nil
@@ -976,7 +983,6 @@ function W.pump(panel)
     if name ~= v.selName then
         v.selName = name
         v.detailDirty = true
-        v.detailBox:setYScroll(0) -- 換選取從頭看（拆除方式、材料在最前面）
     end
     -- 材料摘要每秒重算一次（地上 3×3 的材料也算）。不靠 OnContainerUpdate：伺服器扣料、發料時客戶端不一定觸發
     -- （E2E ui-mp 1027f：蓋完以後詳情與方格還照扣料前顯示）。
