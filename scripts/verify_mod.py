@@ -22,6 +22,11 @@
                            已排序輸入退化 O(n) 深度、數百筆即溢位；一律用迭代 merge sort
   7. MOD/ 樹雜物          — .omc/.claude/.gitnexus 目錄與 .gitkeep 檔；Workshop 整包上傳不看 .gitignore
  7b. mod.info 多值欄位語法 — require/incompatible/load order 只接受逗號且 key 緊貼 =
+ 7c. MOD 清單封面與首發預覽 — 主選單 MOD 清單走一般貼圖、只畫 poster= 第一張，APNG 只解出各幀、主貼圖空白
+                         （ChooseGameInfo.java:519-536、ImageData.java:136-191；2026-10-26 盤點 24 個 MOD 封面都是 APNG）。
+                         MOD/<資料夾>/preview.png 首發前（workshop_publish.json 的 published_file_id 是 null 或沒有）也要
+                         靜態：遊戲內上傳器的預覽框用 getTexture 畫（WorkshopSubmitScreen.lua:318），APNG 一樣空白
+                         （Tesla 首發 2026-10-29 照舊文件用 APNG）。已發布只 PASS 註明：preview.png 只在首發用
   8. 佔位符殘留            — {{TOKEN}} 漏替換（略過根層 temp/、output/ 與各層 node_modules/）
   9. Steam 描述位元組      — 各語言 ≤8000 UTF-8 bytes（中日文 3 bytes/字，容易低估）
  10. 沙盒選項翻譯配對       — 每個 option 要有 Sandbox_<translation> 標題＋ _tooltip＋分頁名
@@ -48,6 +53,11 @@
  17. vehiclewheel 模型兩層 UV — vehiclewheel_static.vert 從 location 3 讀 uv，FBX／GLB 靜態網格進引擎是 pos、normal、
                           UV0、UV1（ImportedStaticMesh.java:29-35）；只有一層時讀到前一次 draw 留下的 attribute 3，
                           車上零件拿到車身的 UV1，貼圖亂掉、沒有錯誤（Tesla 輪子 2026-10-24）。第二層放同一份 UV
+ 18. server／shared 用顯示名稱 setName（WARN，不擋）— setName 的名稱和原名（專用伺服器上是物品全名）不同時存進存檔、
+                         照原樣送給每個客戶端（InventoryItem.java:1711-1714 存、:2038 讀回），伺服器用自己語言的顯示名稱
+                         命名，所有玩家都看到伺服器語言（Tesla 0.1.0 正式服 2026-10-29：卡片鑰匙、手機變英文）。
+                         做法：伺服器不命名、客戶端用自己的語言命名（Tesla client/MinidoracatTesla/KeysUI.lua 的 UI.nameAll）；
+                         本來就要改名的 repo（翻譯包）寫進 verify_ignore.txt 並註明理由
 
 新增檢查時：同步把對應的坑記進 AGENTS.md 踩坑錄，並依「踩坑進化協議」回流到
 pz-mod-template（見 AGENTS.md）。
@@ -63,10 +73,10 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-passed, failed, skipped = [], [], []
+passed, failed, skipped, warned = [], [], [], []
 
 # 豁免清單（選用）：scripts/verify_ignore.txt，每行一個子字串樣式（# 開頭為註解）。
-# 命中樣式的 finding 會列出但不計 FAIL——用於「已逐一查證屬合理例外」的殘留
+# 命中樣式的 finding 會列出但不計 FAIL／WARN——用於「已逐一查證屬合理例外」的殘留
 # （例：翻譯包鏡像了來源 MOD 原文的裸 %）。每個樣式旁必須有註解說明查證依據。
 IGNORE_PATTERNS = []
 _ign = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify_ignore.txt")
@@ -83,20 +93,35 @@ def ok(label):
     print(f"  PASS  {label}")
 
 
-def fail(label, details=None):
+def _unwaived(label, details):
+    """印出 verify_ignore.txt 豁免的 finding，回傳剩下的；全數豁免（或本來就沒有）時記成 PASS。"""
     details = details or []
     kept = [d for d in details if not any(p in d for p in IGNORE_PATTERNS)]
     waived = [d for d in details if any(p in d for p in IGNORE_PATTERNS)]
     for d in waived:
         print(f"  WAIVE {label}: {d}（verify_ignore.txt 豁免）")
     if not kept:
-        if waived:
-            ok(f"{label}（{len(waived)} 筆豁免）")
-        else:
-            ok(label)
+        ok(f"{label}（{len(waived)} 筆豁免）" if waived else label)
+    return kept
+
+
+def fail(label, details=None):
+    kept = _unwaived(label, details)
+    if not kept:
         return
     failed.append(label)
     print(f"  FAIL  {label}")
+    for d in kept:
+        print(f"        {d}")
+
+
+def warn(label, details):
+    """列出但不影響結束碼。"""
+    kept = _unwaived(label, details)
+    if not kept:
+        return
+    warned.append(label)
+    print(f"  WARN  {label}")
     for d in kept:
         print(f"        {d}")
 
@@ -431,6 +456,26 @@ for base, _, files in os.walk(os.path.join(REPO, "MOD")):
             poster_bad.append(f"{os.path.relpath(path, REPO)}: APNG 在 MOD 清單畫成空白，改用靜態 PNG（still.png）")
 fail("MOD 清單封面（poster=）", poster_bad) if poster_bad \
     else ok(f"MOD 清單封面是靜態 PNG（{poster_n} 張）")
+
+# ---- 7c（續）. 首發前 preview.png 是靜態 PNG ----
+# 遊戲內上傳器的預覽框用 getTexture 畫 preview.png（WorkshopSubmitScreen.lua:318），APNG 走這條路只解出各幀、
+# 主貼圖空白（Tesla 首發 2026-10-29 照舊文件用 APNG，預覽框空白）。preview.png 只在首發用：已發布不擋。
+_pub_file = os.path.join(REPO, "scripts", "workshop_publish.json")
+_published = False
+if os.path.isfile(_pub_file):
+    with open(_pub_file, encoding="utf-8") as fh:
+        _published = bool(json.load(fh).get("published_file_id"))
+_mod_root = os.path.join(REPO, "MOD")
+_previews = [os.path.join(_mod_root, d, "preview.png") for d in sorted(os.listdir(_mod_root))
+             if os.path.isfile(os.path.join(_mod_root, d, "preview.png"))] if os.path.isdir(_mod_root) else []
+_apng = [os.path.relpath(p, REPO) for p in _previews if png_animated(p)]
+_t = "首發 preview.png 是靜態 PNG（上傳器預覽框）"
+if _apng and not _published:
+    fail(_t, [f"{p}: APNG 在遊戲內上傳器預覽框畫成空白，首發前改用靜態 PNG" for p in _apng])
+elif _apng:
+    ok(f"{_t}：已發布，preview.png 只在首發用（{len(_apng)} 張 APNG 不擋）")
+else:
+    ok(f"{_t}（{len(_previews)} 張）")
 
 # ---- 8. 佔位符殘留 ----
 tokens = []
@@ -932,7 +977,33 @@ for m in MEDIA_DIRS:
 _t = "vehiclewheel 模型的 FBX／GLB 有兩層 UV（引擎從第二層讀）"
 fail(_t, wheel_uv) if wheel_uv else ok(_t)
 
+# ---- 18. server／shared 不用顯示名稱 setName（警告）----
+# 伺服器端 setName 的名稱和原名不同時存進存檔、照原樣送給每個客戶端（InventoryItem.java:1711-1714 存、:2038 讀回）；
+# 專用伺服器上新物品的原名是物品全名，用伺服器語言的顯示名稱 setName，所有玩家都看到伺服器語言
+# （Tesla 0.1.0 正式服 2026-10-29：卡片鑰匙、手機變英文）。做法：伺服器不命名，客戶端用自己的語言命名
+# （Tesla client/MinidoracatTesla/KeysUI.lua 的 UI.nameAll）。翻譯包這類本來就要改名的 repo：把 finding 寫進
+# scripts/verify_ignore.txt（例 `setName in shared/Foo.lua:`），上一行用 # 註明理由。只看參數，括號跨行也算。
+_DISPLAY_NAME = re.compile(r"(?<!\w)(?:getDisplayName|getItemName|getText|getTextOrNull)\s*\(")
+server_names = []
+for f in LUA_FILES:
+    lua_rel = os.path.relpath(f, REPO).replace(os.sep, "/").split("/lua/", 1)[-1]
+    if not lua_rel.startswith(("server/", "shared/")):
+        continue
+    with open(f, encoding="utf-8", errors="replace") as fh:
+        src = _LONG_COMMENT.sub(lambda mm: "\n" * mm.group().count("\n"), fh.read())
+    code = "\n".join(line.split("--", 1)[0] for line in src.split("\n"))
+    for mm in re.finditer(r":setName\s*\(", code):
+        depth, i = 1, mm.end()
+        while depth and i < len(code):
+            depth += {"(": 1, ")": -1}.get(code[i], 0)
+            i += 1
+        if _DISPLAY_NAME.search(code, mm.end(), i):
+            server_names.append(f"setName in {lua_rel}:{code.count(chr(10), 0, mm.start()) + 1}")
+warn("server／shared 不用顯示名稱 setName（名稱存檔並照原樣送給所有客戶端）", server_names)
+
 # ---- 總結 ----
 print()
 print(f"PASS {len(passed)} / FAIL {len(failed)} / SKIP {len(skipped)}")
+if warned:
+    print(f"WARN {len(warned)}（不影響結束碼）")
 sys.exit(1 if failed else 0)
