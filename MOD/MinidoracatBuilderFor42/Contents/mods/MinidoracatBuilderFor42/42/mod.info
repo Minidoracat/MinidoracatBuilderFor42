@@ -3,5 +3,5 @@ id=MinidoracatBuilderFor42
 description=[B42]用任何已載入的圖塊建造，包含其他 MOD 的材質包；材料與放置由伺服器決定。By Minidoracat
 poster=poster.png
 require=MinidoracatUIFor42
-modversion=42.21.0-0.1.0
+modversion=42.21.0-0.1.1
 versionMin=42.21.0

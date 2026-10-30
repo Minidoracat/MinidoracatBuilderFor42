@@ -184,6 +184,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Power needed[/b]: lights that glow are switched on when built and, as in vanilla, only light up with power.
 [*] [b]Your own houses are off the grid[/b]: hook up a generator.
+[*] [b]Street lights and some signs[/b]: the ones whose details say only at night light up only at night, as in vanilla, and also run on a generator or solar power.
 [*] [b]Switch them directly[/b]: lights built with Build Anything can be switched by hand even outside the map's own houses.
 [*] [b]Movable lights[/b]: switch them, change the bulb or convert them to batteries as in vanilla.
 [*] [b]Furniture, signs and floor lights with a built-in light[/b]: like lights, they only glow with power, but they have no switch.
@@ -454,6 +455,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]Do this first[/h3]
 [olist]
 [*] [b]Switch lights off[/b]: turn off the lights you want off. After removal in multiplayer, switches and immovable lights built with Build Anything inside houses you built yourself don't respond.
+[*] [b]Street lights in singleplayer[/b]: switch off street lights and signs that are lit at night before you save, or after removal their heads keep looking lit (without giving light).
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
@@ -502,6 +504,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]Why doesn't my light turn on?[/h3]
 [list]
 [*] It needs power, and your own houses are off the grid, so hook up a generator.
+[*] Street lights and some signs only light up at night; their details say so.
 [*] If it is wired to a switch, check whether the switch is off.
 [*] Right-click the light and choose Circuit (Build Anything) to see how many switches control it.
 [/list]
