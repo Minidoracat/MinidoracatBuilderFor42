@@ -10,7 +10,7 @@
 [*] [b]必装：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]
 [*] [b]可选：[/b][url=https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078]Minidoracat Safehouse[/url]（按它的安全屋权限决定能不能建）
 [*] 单人和多人都能用；多人游戏需要服务器启用本 MOD
-[*] [b]中途加入／移除：[/b]可以中途加入；移除前请先看完整说明。移除后已建好的东西都会保留，但多人游戏中建造工坊建的开关和不能搬的灯按了没反应，一楼地板也拆不掉
+[*] [b]中途加入／移除：[/b]可以中途加入；移除前请先看完整说明。移除后已建好的东西都会保留，但一楼地板拆不掉；多人游戏中，自己建的房子里用建造工坊建的开关和不能搬的灯按了没反应
 [*] [b]界面语言：[/b]繁體中文、简体中文、English、日本語、한국어、Русский、Español、Português、Türkçe、Français、Polski、Deutsch（翻译有问题请反馈）
 [/list]
 

@@ -425,6 +425,7 @@ end)
 [/code]
 [list]
 [*] [b]Argument[/b]: an array of full tile names (tileset_number), listed one by one.
+[*] [b]Items with several facings[/b]: list the tile for every facing. If you list only some, the item stays in the catalog and just can't be turned to the listed facings.
 [*] [b]Put it in shared[/b]: the client catalog and the server's build check both read this list, so both sides must call it.
 [*] [b]When to call it[/b]: Build Anything catalogs tiles when the game starts, and OnGameBoot fires before that.
 [*] [b]Dedicated servers[/b]: OnGameBoot fires there too.
@@ -450,7 +451,7 @@ end)
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
 [h3]Do this first[/h3]
 [olist]
-[*] [b]Switch lights off[/b]: turn off the lights you want off. After removal in multiplayer, switches and immovable lights built with Build Anything don't respond.
+[*] [b]Switch lights off[/b]: turn off the lights you want off. After removal in multiplayer, switches and immovable lights built with Build Anything inside houses you built yourself don't respond.
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
@@ -461,14 +462,15 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Walls and stairs[/b]: walls still block, and stairs can be climbed.
 [*] [b]Doors, windows and curtains[/b]: open and close as in vanilla.
 [*] [b]Containers[/b]: the items inside are still there.
-[*] [b]Movable lights[/b]: pick them up as in vanilla.
+[*] [b]Movable lights[/b]: switch them on and off directly, or pick them up as in vanilla.
 [*] [b]Loading[/b]: the save loads without errors.
 [/list]
-[h3]Switches and immovable lights[/h3]
+[h3]Switches and lights[/h3]
 [list]
-[*] [b]Singleplayer[/b]: a switch built with Build Anything works the vanilla way and switches the lights in its room together.
-[*] [b]Multiplayer[/b]: switches and immovable lights built with Build Anything don't respond, and lights stay as they were when the game was saved.
-[*] [b]What was tested[/b]: these results come from switches and immovable lights built with Build Anything inside a house you built yourself.
+[*] [b]Your own house, singleplayer[/b]: a switch built with Build Anything works the vanilla way and switches all lights in its room together, movable ones included.
+[*] [b]Your own house, multiplayer[/b]: switches and immovable lights built with Build Anything don't respond, and lights stay as they were when the game was saved.
+[*] [b]Houses from the map[/b]: a switch built with Build Anything switches together with the room's own switch, the vanilla way, but the lights wired to it don't follow. Immovable lights built with Build Anything can be switched directly. Same in singleplayer and multiplayer.
+[*] [b]What was tested[/b]: these results come from a small house built with Build Anything and a bedroom that came with the map.
 [/list]
 [h3]Removing things after removal[/h3]
 [list]
@@ -479,6 +481,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]Adding the mod back[/h3]
 [list]
 [*] [b]Restored[/b]: wiring and Dismantle (Build Anything) work again.
+[*] [b]Lights picked up while it was removed[/b]: are no longer wired.
 [/list]
 === ❓ FAQ
 [h3]I can't find what I want to build[/h3]
