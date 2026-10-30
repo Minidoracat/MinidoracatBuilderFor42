@@ -3079,6 +3079,46 @@ local function circuitScenario()
 end
 circuitScenario()
 
+print("情境二十三：本工具蓋的帶燈非燈物件（Lights.sync）只切自己照 sprite 建的光源")
+local function lightsScenario()
+    local realCell, realInst, realIGS = getCell, instanceof, IsoGridSquare
+    local recalc = 0
+    IsoGridSquare = { setRecalcLightTime = function() recalc = recalc + 1 end }
+    instanceof = function(o, cls) return o.class == cls end
+    local function light(r, g, b, rad, hydro)
+        return { r = r, g = g, b = b, rad = rad, hydro = hydro, on = true,
+            getX = function() return 1 end, getY = function() return 1 end, getZ = function() return 0 end,
+            getR = function(s) return s.r end, getG = function(s) return s.g end, getB = function(s) return s.b end,
+            getRadius = function(s) return s.rad end, isHydroPowered = function(s) return s.hydro end,
+            isActive = function(s) return s.on end, setActive = function(s, v) s.on = v end }
+    end
+    local function obj(class, keys, ours, own)
+        local p = { get = function(_, k) return keys[k] end, has = function(_, k) return keys[k] ~= nil end }
+        return { class = class, powered = false, md = { builderEntry = ours and "x" or nil },
+            getLightSource = function() return own end, hasModData = function() return true end,
+            getModData = function(s) return s.md end, getProperties = function() return p end,
+            checkObjectPowered = function(s) return s.powered end }
+    end
+    local red = { lightR = "255", lightG = "0", lightB = "0", LightRadius = "4" }
+    local mine, sw, vanilla, fuel = light(1, 0, 0, 4), light(1, 0, 0, 4, true), light(1, 0, 0, 4), light(1, 0, 0, 4)
+    local other = light(0, 1, 0, 4)
+    local T = obj("IsoThumpable", red, true, fuel)
+    local objs = { obj("IsoObject", red, false, vanilla), T, obj("IsoThumpable", red, false) }
+    local lamps = { sw, vanilla, fuel, other, mine }
+    getCell = function() return {
+        getLamppostPositions = function() return javaList(lamps) end,
+        getGridSquare = function() return { getObjects = function() return javaList(objs) end } end } end
+    require "MinidoracatBuilder/Lights"
+    local Lights = MinidoracatBuilder.Lights
+    check(Lights.sync() == 1 and not mine.on and sw.on and vanilla.on and fuel.on and other.on and recalc == 1,
+        "沒電：只關本工具物件照 sprite 建的那盞；開關的燈、別的物件的燈、燃料燈、顏色不同的都不動")
+    T.powered = true
+    check(Lights.sync() == 1 and mine.on and recalc == 2, "有電：打開")
+    check(Lights.sync() == 0 and recalc == 2, "狀態沒變：不設、不重算光照")
+    getCell, instanceof, IsoGridSquare = realCell, realInst, realIGS
+end
+lightsScenario()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")

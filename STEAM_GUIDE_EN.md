@@ -184,7 +184,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Power needed[/b]: lights that glow are switched on when built and, as in vanilla, only light up with power.
 [*] [b]Your own houses are off the grid[/b]: hook up a generator.
 [*] [b]Switch them directly[/b]: lights built with Build Anything can be switched by hand even outside the map's own houses.
-[*] [b]Movable lights[/b]: switch them and change the bulb as in vanilla.
+[*] [b]Movable lights[/b]: switch them, change the bulb or convert them to batteries as in vanilla.
+[*] [b]Furniture, signs and floor lights with a built-in light[/b]: like lights, they only glow with power, but they have no switch.
 [*] [b]Switches[/b]: a switch in a closed room tries to wire itself to the lights in that room, see Switches and wiring.
 [/list]
 === 🧰 Materials, tools and XP
@@ -459,7 +460,8 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [/olist]
 [h3]What you built, after removal[/h3]
 [list]
-[*] [b]Walls and stairs[/b]: walls still block, and stairs can be climbed.
+[*] [b]Walls, fences and stairs[/b]: walls still block, fences can be climbed over as in vanilla, and stairs can be climbed.
+[*] [b]Zombies[/b]: can still break walls and fences.
 [*] [b]Doors, windows and curtains[/b]: open and close as in vanilla.
 [*] [b]Containers[/b]: the items inside are still there.
 [*] [b]Movable lights[/b]: switch them on and off directly, or pick them up as in vanilla.
