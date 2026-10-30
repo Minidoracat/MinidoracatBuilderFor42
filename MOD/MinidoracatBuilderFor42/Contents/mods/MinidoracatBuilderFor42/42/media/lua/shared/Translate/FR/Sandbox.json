@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Objets max. par glissement",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 à 64. Nombre d'objets qu'une demande de construction peut placer, par exemple en traçant une rangée de murs.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicateur du coût en matériaux",
-    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 à 10. Multiplie chaque quantité de matériau, arrondie à l'unité supérieure. 0 = aucun matériau ; les outils restent nécessaires. Les objets qui se démontent en matériaux selon leur propre matière (la plupart des meubles) ne descendent jamais sous 1 : le démontage ne rend donc jamais plus que le prix payé. Les admins avec le cheat de construction activé ne paient jamais.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 à 10. Multiplie chaque quantité de matériau, arrondie à l'unité supérieure. 0 = aucun matériau ; les outils restent nécessaires. Les objets qui se démontent en matériaux selon leur propre matière (la plupart des meubles), les rideaux et les ampoules amovibles ne descendent jamais sous 1 : le démontage ne rend donc jamais plus que le prix payé. Les admins avec le cheat de construction activé ne paient jamais.",
     "Sandbox_MinidoracatBuilder_DisabledSources": "Sources désactivées (ID de mods)",
     "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID de mods séparés par des points-virgules. Les tiles de ces mods ne peuvent pas être construites. Par défaut, les mods de la famille Minidoracat et les mods dont les tiles ont leur propre menu de construction sont désactivés.",
     "Sandbox_MinidoracatBuilder_DisabledTilesets": "Tilesets désactivés",

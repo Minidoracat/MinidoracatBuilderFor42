@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "一次拖动最多几项",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 到 64。一次建造请求最多放置几项，例如拖动一整排墙。",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "材料倍率",
-    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 到 10。每种材料的数量乘以这个倍率，向上取整。0 表示不需要材料，工具仍要带。按自身材质拆出材料的物体（多数家具）低于 1 时仍按 1 收取，这样拆除时不会拿回比付出更多的材料。开启建造作弊模式的管理员一律免材料。",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 到 10。每种材料的数量乘以这个倍率，向上取整。0 表示不需要材料，工具仍要带。按自身材质拆出材料的物体（多数家具）、窗帘和能拆下来的灯泡低于 1 时仍按 1 收取，这样拆除时不会拿回比付出更多的材料。开启建造作弊模式的管理员一律免材料。",
     "Sandbox_MinidoracatBuilder_DisabledSources": "关闭的来源（模组 ID）",
     "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "模组 ID 以分号分隔。这些模组的图块不能建造。默认关闭 Minidoracat 家族模组，以及图块属于自己建造菜单的模组。",
     "Sandbox_MinidoracatBuilder_DisabledTilesets": "关闭的图块集",

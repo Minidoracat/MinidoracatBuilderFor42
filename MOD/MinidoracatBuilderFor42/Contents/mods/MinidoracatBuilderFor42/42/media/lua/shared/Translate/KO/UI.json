@@ -1,7 +1,7 @@
 {
   "UI_MinidoracatBuilder_Options": "자유 건축",
   "UI_MinidoracatBuilder_ShowDock": "툴바 버튼 표시",
-  "UI_MinidoracatBuilder_ShowDock_tooltip": "패밀리 툴바의 자유 건축 버튼입니다. 끄면 키 설정 > [MinidoracatBuilder]에서 지정한 키로 창을 여세요.",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "패밀리 툴바의 자유 건축 버튼입니다. 끄면 키 설정 > Minidoracat 자유 건축에서 지정한 키로 창을 여세요.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat 자유 건축",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "건축 창 열기/닫기"
 }

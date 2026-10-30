@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Máximo de objetos por arrastre",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Cuántos objetos puede colocar una solicitud de construcción, por ejemplo al arrastrar una fila de paredes.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicador de materiales",
-    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 a 10. Multiplica cada cantidad de material, redondeando hacia arriba. 0 significa sin materiales; las herramientas siguen siendo necesarias. Los objetos que se desarman en materiales según su propio tipo de material (casi todo el mobiliario) nunca bajan de 1, así que desarmar nunca devuelve más de lo pagado. Los admins con el modo trucos de construcción activado nunca pagan.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "De 0 a 10. Multiplica cada cantidad de material, redondeando hacia arriba. 0 significa sin materiales; las herramientas siguen siendo necesarias. Los objetos que se desarman en materiales según su propio tipo de material (casi todo el mobiliario), las cortinas y las bombillas que se pueden quitar nunca bajan de 1, así que desarmar nunca devuelve más de lo pagado. Los admins con el modo trucos de construcción activado nunca pagan.",
     "Sandbox_MinidoracatBuilder_DisabledSources": "Orígenes desactivados (ID de mods)",
     "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID de mods separados por punto y coma. Los tiles de estos mods no se pueden construir. Por defecto están desactivados los mods de la familia Minidoracat y los mods cuyos tiles pertenecen a sus propios menús de construcción.",
     "Sandbox_MinidoracatBuilder_DisabledTilesets": "Tilesets desactivados",

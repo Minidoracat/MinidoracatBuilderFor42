@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Maks. elementów na przeciągnięcie",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "Od 1 do 64. Ile elementów może postawić jedno żądanie budowy, np. przy przeciąganiu linii ścian.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Mnożnik kosztu materiałów",
-    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "Od 0 do 10. Mnoży każdą ilość materiału, z zaokrągleniem w górę. 0 oznacza brak materiałów; narzędzia są nadal potrzebne. Obiekty, które rozmontowują się na materiały według własnego typu materiału (większość mebli), nigdy nie schodzą poniżej 1, więc rozmontowanie nigdy nie zwraca więcej, niż zapłacono. Administratorzy z włączonymi cheatami budowania nigdy nie płacą.",
+    "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "Od 0 do 10. Mnoży każdą ilość materiału, z zaokrągleniem w górę. 0 oznacza brak materiałów; narzędzia są nadal potrzebne. Obiekty, które rozmontowują się na materiały według własnego typu materiału (większość mebli), zasłony i wyjmowane żarówki nigdy nie schodzą poniżej 1, więc rozmontowanie nigdy nie zwraca więcej, niż zapłacono. Administratorzy z włączonymi cheatami budowania nigdy nie płacą.",
     "Sandbox_MinidoracatBuilder_DisabledSources": "Wyłączone źródła (ID modów)",
     "Sandbox_MinidoracatBuilder_DisabledSources_tooltip": "ID modów rozdzielone średnikami. Kafelków z tych modów nie można budować. Domyślnie wyłączone są mody rodziny Minidoracat oraz mody, których kafelki należą do ich własnych menu budowania.",
     "Sandbox_MinidoracatBuilder_DisabledTilesets": "Wyłączone zestawy kafelków",

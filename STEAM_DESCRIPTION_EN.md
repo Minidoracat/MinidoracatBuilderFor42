@@ -10,7 +10,7 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 [*] [b]Required:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]
 [*] [b]Optional:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078]Minidoracat Safehouse[/url] (its safehouse permissions decide where you can build)
 [*] Works in singleplayer and multiplayer; in multiplayer the server must enable this mod
-[*] [b]Add/remove mid-save:[/b] can be added mid-save; read the full guide before removing it. Everything you built stays after removal, but in multiplayer switches and Build Anything lights stop responding, and ground floors can no longer be removed
+[*] [b]Add/remove mid-save:[/b] can be added mid-save; read the full guide before removing it. Everything you built stays after removal, but in multiplayer the switches and non-movable lights built with Build Anything stop responding, and ground floors can no longer be removed
 [*] [b]Languages:[/b] 繁體中文, 简体中文, English, 日本語, 한국어, Русский, Español, Português, Türkçe, Français, Polski, Deutsch (please report any translation issues)
 [/list]
 

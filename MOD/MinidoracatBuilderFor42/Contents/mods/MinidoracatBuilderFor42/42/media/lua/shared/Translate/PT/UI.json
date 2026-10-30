@@ -1,7 +1,7 @@
 {
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Mostrar botão na barra de ferramentas",
-  "UI_MinidoracatBuilder_ShowDock_tooltip": "O botão do Build Anything na barra de ferramentas da família. Quando desativado, abra a janela com a tecla definida em Atribuição de teclas > [MinidoracatBuilder].",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "O botão do Build Anything na barra de ferramentas da família. Quando desativado, abra a janela com a tecla definida em Atribuição de teclas > Minidoracat Build Anything.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Abrir ou fechar a janela de construção"
 }

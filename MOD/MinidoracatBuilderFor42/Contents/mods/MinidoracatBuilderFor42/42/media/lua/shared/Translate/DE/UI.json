@@ -1,7 +1,7 @@
 {
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Knopf in der Toolbar anzeigen",
-  "UI_MinidoracatBuilder_ShowDock_tooltip": "Der Build-Anything-Knopf in der Familien-Toolbar. Wenn aus, öffnest du das Fenster mit der Taste unter Tastaturbelegung > [MinidoracatBuilder].",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "Der Build-Anything-Knopf in der Familien-Toolbar. Wenn aus, öffnest du das Fenster mit der Taste unter Tastaturbelegung > Minidoracat Build Anything.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Baufenster öffnen oder schließen"
 }

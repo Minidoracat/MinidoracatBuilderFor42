@@ -1,7 +1,7 @@
 {
   "UI_MinidoracatBuilder_Options": "自由建造",
   "UI_MinidoracatBuilder_ShowDock": "顯示工具列按鈕",
-  "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具列上的「建造工坊」按鈕。關掉後仍可用按鍵設定 > [MinidoracatBuilder] 裡綁的鍵開啟。",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具列上的「建造工坊」按鈕。關掉後仍可用「按鍵綁定 > Minidoracat 自由建造」裡綁的鍵開啟。",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat 自由建造",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "開關建造工坊"
 }

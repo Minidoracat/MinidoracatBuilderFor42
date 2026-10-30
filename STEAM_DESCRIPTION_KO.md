@@ -10,7 +10,7 @@
 [*] [b]필수:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]
 [*] [b]선택:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078]Minidoracat Safehouse[/url] (이 모드의 은신처 권한에 따라 지을 수 있는 곳이 정해집니다)
 [*] 싱글과 멀티 모두 지원하며, 멀티에서는 서버에 이 모드가 활성화되어 있어야 합니다
-[*] [b]중간 추가·제거:[/b] 게임 도중에 추가해도 됩니다. 제거하기 전에는 자세한 설명을 꼭 읽어 주세요. 제거해도 지은 것은 모두 남지만, 멀티에서는 스위치와 자유 건축으로 지은 조명을 눌러도 작동하지 않고 1층 바닥은 해체할 수 없습니다
+[*] [b]중간 추가·제거:[/b] 게임 도중에 추가해도 됩니다. 제거하기 전에는 자세한 설명을 꼭 읽어 주세요. 제거해도 지은 것은 모두 남지만, 멀티에서는 자유 건축으로 지은 스위치와 옮길 수 없는 조명을 눌러도 작동하지 않고 1층 바닥은 해체할 수 없습니다
 [*] [b]지원 언어:[/b] 繁體中文, 简体中文, English, 日本語, 한국어, Русский, Español, Português, Türkçe, Français, Polski, Deutsch (번역 문제는 제보해 주세요)
 [/list]
 

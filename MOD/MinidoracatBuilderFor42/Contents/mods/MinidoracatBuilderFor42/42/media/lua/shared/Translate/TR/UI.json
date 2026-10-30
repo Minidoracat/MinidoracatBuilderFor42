@@ -1,7 +1,7 @@
 {
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Araç çubuğu düğmesini göster",
-  "UI_MinidoracatBuilder_ShowDock_tooltip": "Minidoracat araç çubuğundaki Build Anything düğmesi. Kapalıyken pencereyi Tuş ayarları > [MinidoracatBuilder] altında atanan tuşla aç.",
+  "UI_MinidoracatBuilder_ShowDock_tooltip": "Minidoracat araç çubuğundaki Build Anything düğmesi. Kapalıyken pencereyi Tuş ayarları > Minidoracat Build Anything altında atanan tuşla aç.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "İnşa penceresini aç veya kapat"
 }
