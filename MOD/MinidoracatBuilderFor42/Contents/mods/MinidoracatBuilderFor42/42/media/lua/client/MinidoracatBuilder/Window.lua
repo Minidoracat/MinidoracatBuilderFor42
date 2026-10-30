@@ -845,11 +845,14 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     end
     -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動），
     -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
-    -- hasRainBlockingTile），換一句
+    -- hasRainBlockingTile），換一句；路燈與發光招牌（sprite 帶 streetlight）引擎只在夜裡點亮（LightingJNI.java:282-294），
+    -- 本工具接發電機的補亮也照這條（Lights.lua），換一句
     local key = e.kind
     if key == "roof" then
         local p = e.spr:getProperties()
         if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
+    elseif key == "light" and e.spr:getProperties():has("streetlight") then
+        key = "lightStreet"
     end
     local note = getTextOrNull("IGUI_MBLD_Note_" .. key)
     if note then
@@ -1724,6 +1727,17 @@ if first then
         -- 框架 rev 23 備份：載入時、原版讀設定之前呼叫（UI AGENTS 契約 7；QU/Entry.lua:59-66）
         local UI = W.ui({ "modOptionsBackup" })
         if UI and UI.ModOptionsBackup then UI.ModOptionsBackup.protect(o) end
+    end
+    -- 框架 rev 24 更新概要：玩家更新後第一次進遊戲，右上角跳這版的重點（UI AGENTS 契約 8）。release_train.py ready 用
+    -- regex 讀這段：四欄寫字面字串、一欄一行；這版寫了新概要才把 since 改成本版（家族 conventions.md「遊戲內更新概要」）
+    local news = W.ui({ "whatsNew" })
+    if news and news.WhatsNew then
+        news.WhatsNew.register({
+            modId = "MinidoracatBuilderFor42",
+            since = "0.1.1",
+            name = "UI_MinidoracatBuilder_Options",
+            text = "IGUI_MBLD_WhatsNew",
+        })
     end
     Events.OnGameBoot.Add(function() MinidoracatBuilder.Window.initBinds() end)
     Events.OnKeyPressed.Add(function(key) MinidoracatBuilder.Window.onKeyPressed(key) end)

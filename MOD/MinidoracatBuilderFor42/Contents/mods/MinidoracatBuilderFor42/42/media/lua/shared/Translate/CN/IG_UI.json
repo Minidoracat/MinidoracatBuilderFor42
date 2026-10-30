@@ -72,6 +72,8 @@
   "IGUI_MBLD_Note_roof": "挡雨。要让房间算室内（温度），上一层还要有地板。PgUp／PgDn 切换楼层；拖一排要从有支撑的一端拉。",
   "IGUI_MBLD_Note_roofOpen": "这块不挡雨（屋檐、装饰用），下方仍算室外。PgUp／PgDn 切换楼层；拖一排要从有支撑的一端拉。",
   "IGUI_MBLD_Note_light": "有电才会亮：自建的房子不接市电，要用发电机。开关放下时会自动接上同一个封闭房间里的灯；右键开关选「接线...」可以增减。",
+  "IGUI_MBLD_Note_lightStreet": "只在晚上、有电时才会亮：自建的房子不接市电，要用发电机。开关放下时会自动接上同一个封闭房间里的灯；右键开关选「接线...」可以增减。",
+  "IGUI_MBLD_WhatsNew": "用建造工坊盖的路灯与发光招牌，现在接发电机或太阳能，晚上也会亮。",
   "IGUI_MBLD_Note_curtain": "挂在窗框靠室内的一侧；那一格要有屋顶或上一层地板。",
   "IGUI_MBLD_Tool_HAMMER": "锤子",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "石工抹刀",

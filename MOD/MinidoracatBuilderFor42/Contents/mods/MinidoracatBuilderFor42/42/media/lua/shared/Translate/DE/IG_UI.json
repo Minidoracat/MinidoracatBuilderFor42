@@ -72,6 +72,8 @@
   "IGUI_MBLD_Note_roof": "Hält Regen ab. Damit der Raum als drinnen zählt (Temperatur), braucht auch die Etage darüber einen Boden. PgUp/PgDn wechselt die Etage; zieh eine Reihe vom gestützten Ende aus.",
   "IGUI_MBLD_Note_roofOpen": "Dieses Teil hält keinen Regen ab (Traufe, Deko); die Kachel darunter bleibt draußen. PgUp/PgDn wechselt die Etage; zieh eine Reihe vom gestützten Ende aus.",
   "IGUI_MBLD_Note_light": "Leuchtet nur mit Strom: Selbstgebaute Häuser hängen nicht am Stromnetz, nimm also einen Generator. Ein platzierter Lichtschalter verkabelt sich selbst mit den Lampen im selben geschlossenen Raum; Rechtsklick darauf und „Verkabeln...“ wählen, um Lampen hinzuzufügen oder zu entfernen.",
+  "IGUI_MBLD_Note_lightStreet": "Leuchtet nur nachts und nur mit Strom: Selbstgebaute Häuser hängen nicht am Stromnetz, nimm also einen Generator. Ein platzierter Lichtschalter verkabelt sich selbst mit den Lampen im selben geschlossenen Raum; Rechtsklick darauf und „Verkabeln...“ wählen, um Lampen hinzuzufügen oder zu entfernen.",
+  "IGUI_MBLD_WhatsNew": "Deine gebauten Straßenlaternen und Leuchtschilder leuchten jetzt nachts auch mit Generator oder Solarstrom.",
   "IGUI_MBLD_Note_curtain": "Hängt an der Innenseite eines Fensterrahmens. Die Kachel braucht ein Dach oder einen Boden darüber.",
   "IGUI_MBLD_Tool_HAMMER": "Hammer",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Maurerkelle",
