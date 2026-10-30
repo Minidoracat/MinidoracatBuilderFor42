@@ -3090,6 +3090,7 @@ local function lightsScenario()
             getX = function() return 1 end, getY = function() return 1 end, getZ = function() return 0 end,
             getR = function(s) return s.r end, getG = function(s) return s.g end, getB = function(s) return s.b end,
             getRadius = function(s) return s.rad end, isHydroPowered = function(s) return s.hydro end,
+            getSwitches = function(s) return javaList({ s.sw }) end,
             isActive = function(s) return s.on end, setActive = function(s, v) s.on = v end }
     end
     local function obj(class, keys, ours, own)
@@ -3118,6 +3119,99 @@ local function lightsScenario()
     getCell, instanceof, IsoGridSquare = realCell, realInst, realIGS
 end
 lightsScenario()
+
+print("情境二十四：本工具蓋的路燈（streetlight）沒市電時，客戶端補一盞光源、掛亮燈圖")
+local function streetScenario()
+    local realCell, realInst, realIGS, realGT = getCell, instanceof, IsoGridSquare, getGameTime
+    IsoGridSquare = { setRecalcLightTime = function() end }
+    instanceof = function(o, cls) return o.class == cls end
+    local night = 1
+    getGameTime = function() return { getNight = function() return night end } end
+    local lamps = {}
+    local function light(r, g, b, rad, hydro, sw)
+        return { r = r, g = g, b = b, rad = rad, hydro = hydro, sw = sw, on = true,
+            getX = function() return 5 end, getY = function() return 6 end, getZ = function() return 0 end,
+            getR = function(s) return s.r end, getG = function(s) return s.g end, getB = function(s) return s.b end,
+            getRadius = function(s) return s.rad end, isHydroPowered = function(s) return s.hydro end,
+            getSwitches = function(s) return javaList({ s.sw }) end,
+            isActive = function(s) return s.on end, setActive = function(s, v) s.on = v end }
+    end
+    local ON = sprite("lamp_01_on_3", 91)
+    local BASE = sprite("lamp_01_3", 90, { flags = { "HasLightOnSprite" }, keys = { streetlight = "", lightR = "255" } })
+    world({ BASE, ON })
+    local function lampSw(ours)
+        local o = { class = "IsoLightSwitch", act = true, grid = false, can = true, att = {},
+            md = { builderEntry = ours and "lamp_01_3" or nil } }
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:getProperties() return BASE:getProperties() end
+        function o:getSprite() return BASE end
+        function o:isActivated() return self.act end
+        function o:hasGridPower() return self.grid end
+        function o:canSwitchLight() return self.can end
+        function o:isAttachedAnimSprite(s)
+            for _, a in ipairs(self.att) do if a.spr == s then return true end end
+            return false
+        end
+        function o:addAttachedAnimSprite(s)
+            self.att[#self.att + 1] = { spr = s, getParentSprite = function(a) return a.spr end }
+        end
+        function o:getAttachedAnimSprite() return javaList(self.att) end
+        function o:RemoveAttachedAnim(i) table.remove(self.att, i + 1) end
+        return o
+    end
+    getCell = function() return {
+        getLamppostPositions = function() return javaList(lamps) end,
+        addLamppost = function(_, x, y, z, r, g, b, rad)
+            local l = light(r, g, b, rad, false)
+            l.at = x .. "," .. y .. "," .. z
+            lamps[#lamps + 1] = l
+            return l
+        end,
+        removeLamppost = function(_, l)
+            for i, v in ipairs(lamps) do if v == l then table.remove(lamps, i) return end end
+        end,
+        getGridSquare = function() return { getObjects = function() return javaList({}) end } end } end
+    local S, V = lampSw(true), lampSw(false)
+    local own = light(1, 0.3, 0.1, 16, true, S)
+    lamps = { own, light(1, 0.3, 0.1, 16, true, V) }
+    local Lights = MinidoracatBuilder.Lights
+    local function extra()
+        for _, l in ipairs(lamps) do if not l.hydro then return l end end
+    end
+    local function lit() return extra() ~= nil and #S.att == 1 and S.att[1].spr == ON end
+    local function dark() return extra() == nil and #S.att == 0 end
+    check(Lights.sync() == 1 and #lamps == 3 and lit() and #V.att == 0, "夜裡、沒市電、開著、有發電機電：補一盞、掛亮燈圖；地圖的路燈不動")
+    local x = extra()
+    check(x.r == 1 and x.g == 0.3 and x.b == 0.1 and x.rad == 16 and x.at == "5,6,0", "補的光源和燈自己的同色、同半徑、同一格")
+    check(Lights.sync() == 0 and extra() == x and #S.att == 1, "狀態沒變：不重建、不重掛")
+    S.act = false
+    fire("OnTick")
+    check(dark(), "按掉：下一個 tick 就收，不等遊戲分鐘")
+    S.act = true
+    fire("OnTick")
+    check(lit(), "按開：下一個 tick 就補")
+    night = 0.3
+    check(Lights.sync() == 1 and dark(), "白天：收（照原版只在夜裡亮）")
+    night = 1
+    S.grid = true
+    check(Lights.sync() == 0 and dark(), "有市電：交給引擎，不補")
+    S.grid, S.can = false, false
+    check(Lights.sync() == 0 and dark(), "沒有電（canSwitchLight false）：不補")
+    S.can = true
+    Lights.sync()
+    own.r = 0.5
+    check(Lights.sync() == 1 and extra() ~= x and extra().r == 0.5 and #lamps == 3, "燈換了顏色：補的那盞照新顏色重建")
+    instanceof = function() return false end -- 帳本、線路、放置的移除處理不是這裡要驗的
+    fire("OnObjectAboutToBeRemoved", S)
+    instanceof = function(o, cls) return o.class == cls end
+    check(extra() == nil, "燈被移除：當下收掉補的光源")
+    Lights.sync()
+    table.remove(lamps, 1)
+    check(Lights.sync() == 1 and extra() == nil, "燈的光源不在清單上（卸載）：收掉補的光源")
+    getCell, instanceof, IsoGridSquare, getGameTime = realCell, realInst, realIGS, realGT
+end
+streetScenario()
 
 print()
 if failures > 0 then
