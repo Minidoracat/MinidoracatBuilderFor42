@@ -57,7 +57,9 @@
                          照原樣送給每個客戶端（InventoryItem.java:1711-1714 存、:2038 讀回），伺服器用自己語言的顯示名稱
                          命名，所有玩家都看到伺服器語言（Tesla 0.1.0 正式服 2026-10-29：卡片鑰匙、手機變英文）。
                          做法：伺服器不命名、客戶端用自己的語言命名（Tesla client/MinidoracatTesla/KeysUI.lua 的 UI.nameAll）；
-                         本來就要改名的 repo（翻譯包）寫進 verify_ignore.txt 並註明理由
+                         `x:setName(x:getScriptItem():getDisplayName())` 是設回原名、不存不送，不列（Bags bags-names-1030a）；
+                         本來就要改名的 repo（翻譯包）寫進 verify_ignore.txt 並註明理由。抓不到原版程式寫進的名字
+                         （ISClothingExtraAction:createItemNew 換穿時把帶磨損、染血字樣的 getName() 當成改名，:76-79）
 
 新增檢查時：同步把對應的坑記進 AGENTS.md 踩坑錄，並依「踩坑進化協議」回流到
 pz-mod-template（見 AGENTS.md）。
@@ -981,8 +983,11 @@ fail(_t, wheel_uv) if wheel_uv else ok(_t)
 # 伺服器端 setName 的名稱和原名不同時存進存檔、照原樣送給每個客戶端（InventoryItem.java:1711-1714 存、:2038 讀回）；
 # 專用伺服器上新物品的原名是物品全名，用伺服器語言的顯示名稱 setName，所有玩家都看到伺服器語言
 # （Tesla 0.1.0 正式服 2026-10-29：卡片鑰匙、手機變英文）。做法：伺服器不命名，客戶端用自己的語言命名
-# （Tesla client/MinidoracatTesla/KeysUI.lua 的 UI.nameAll）。翻譯包這類本來就要改名的 repo：把 finding 寫進
-# scripts/verify_ignore.txt（例 `setName in shared/Foo.lua:`），上一行用 # 註明理由。只看參數，括號跨行也算。
+# （Tesla client/MinidoracatTesla/KeysUI.lua 的 UI.nameAll）。`x:setName(x:getScriptItem():getDisplayName())` 設的是
+# 原名，不存不送（Bags 2026-10-30 bags-names-1030a 英文伺服器＋中文客戶端實測），不列。翻譯包這類本來就要改名的
+# repo：把 finding 寫進 scripts/verify_ignore.txt（例 `setName in shared/Foo.lua:`），上一行用 # 註明理由。
+# 只看參數，括號跨行也算。抓不到原版程式寫進的名字：原版 ISClothingExtraAction:createItemNew 換穿時把伺服器
+# getName()（帶磨損、染血字樣）和腳本名稱比，不同就當成改名寫進新物品（ISClothingExtraAction.lua:76-79）。
 _DISPLAY_NAME = re.compile(r"(?<!\w)(?:getDisplayName|getItemName|getText|getTextOrNull)\s*\(")
 server_names = []
 for f in LUA_FILES:
@@ -992,13 +997,16 @@ for f in LUA_FILES:
     with open(f, encoding="utf-8", errors="replace") as fh:
         src = _LONG_COMMENT.sub(lambda mm: "\n" * mm.group().count("\n"), fh.read())
     code = "\n".join(line.split("--", 1)[0] for line in src.split("\n"))
-    for mm in re.finditer(r":setName\s*\(", code):
+    for mm in re.finditer(r"(\w[\w.]*)?:setName\s*\(", code):
         depth, i = 1, mm.end()
         while depth and i < len(code):
             depth += {"(": 1, ")": -1}.get(code[i], 0)
             i += 1
-        if _DISPLAY_NAME.search(code, mm.end(), i):
-            server_names.append(f"setName in {lua_rel}:{code.count(chr(10), 0, mm.start()) + 1}")
+        arg = code[mm.end():i - 1]
+        if mm.group(1) and re.fullmatch(rf"\s*{re.escape(mm.group(1))}\s*:\s*getScriptItem\s*\(\s*\)\s*:\s*getDisplayName\s*\(\s*\)\s*", arg):
+            continue  # 設回原名
+        if _DISPLAY_NAME.search(arg):
+            server_names.append(f"setName in {lua_rel}:{code.count(chr(10), 0, mm.end()) + 1}")
 warn("server／shared 不用顯示名稱 setName（名稱存檔並照原樣送給所有客戶端）", server_names)
 
 # ---- 總結 ----
