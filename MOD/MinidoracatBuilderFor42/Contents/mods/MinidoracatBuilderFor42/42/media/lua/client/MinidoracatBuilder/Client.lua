@@ -102,15 +102,14 @@ local function remember(cmd, args)
     if #list > KEEP then table.remove(list, 1) end
 end
 
--- 拆 obj（本 MOD 蓋的那件，Dismantle.kindOf 是 kind；own＝同一件各片所在的格子，走路時不站上去）。先送請求，伺服器收下
--- 才走過去、排動作（同 Client.build）。會清掉玩家目前排著的動作。回 nonce。
-function Client.dismantle(player, obj, kind, own)
-    local sq, spr = obj:getSquare(), obj:getSprite()
+-- 拆 sq 格上叫 name 的那件（kind 種類；north＝格邊種類的方向；own＝同一件各片所在的格子，走路時不站上去）。先送請求，
+-- 伺服器收下才走過去、排動作（同 Client.build）。會清掉玩家目前排著的動作。回 nonce。
+local function unbuild(player, sq, name, kind, north, own)
     lastNonce = lastNonce % 2000000000 + 1
     local n = lastNonce
-    local args = { n = n, x = sq:getX(), y = sq:getY(), z = sq:getZ(), e = spr:getName() }
+    local args = { n = n, x = sq:getX(), y = sq:getY(), z = sq:getZ(), e = name }
     Client.pendingUnbuild = { n = n, x = args.x, y = args.y, z = args.z, e = args.e, kind = kind,
-        north = Entry.north(kind, spr), own = own or {}, player = player }
+        north = north, own = own or {}, player = player }
     Client.pending = nil -- 同上：還沒收下的建造請求作廢
     ISTimedActionQueue.clear(player)
     if isClient() then
@@ -119,6 +118,17 @@ function Client.dismantle(player, obj, kind, own)
         MinidoracatBuilder.Server.dismantleIntent(player, args) -- 單機：當場回覆（Server.send 直接呼叫 onServerCommand）
     end
     return n
+end
+
+-- 拆 obj（本 MOD 蓋的那件，Dismantle.kindOf 是 kind；own＝同一件各片所在的格子）
+function Client.dismantle(player, obj, kind, own)
+    local spr = obj:getSprite()
+    return unbuild(player, obj:getSquare(), spr:getName(), kind, Entry.north(kind, spr), own)
+end
+
+-- 拆掛在地板上的地面覆蓋（t＝Dismantle.overlay 的結果）
+function Client.dismantleOverlay(player, t)
+    return unbuild(player, t.sq, t.name, "floorOverlay", nil, {})
 end
 
 local function queueUnbuild(b)

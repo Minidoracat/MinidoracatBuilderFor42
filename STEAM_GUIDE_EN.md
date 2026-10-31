@@ -153,6 +153,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
 [*] [b]Railing ends[/b]: railing ends that block only one side of a square are not listed (zombies would not come to break them), and a search tells you why.
 [*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too.
+[*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
+[*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
 [*] [b]Other recipe pieces[/b]: walls, fences and anything else with its own functions are still built from the vanilla build menu or that mod's menu.
 [/list]
 [h3]Doors and windows[/h3]
@@ -337,7 +339,7 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 {{img:10-dismantle-en.jpg}}
 [h3]Dismantle (Build Anything)[/h3]
 [list]
-[*] [b]What it removes[/b]: walls, floors, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved.
+[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved.
 [*] [b]What it can't remove[/b]: things built in vanilla or other ways.
 [*] [b]How[/b]: right-click and choose Dismantle (Build Anything), and your character walks over.
 [*] [b]Tools[/b]: the same as for building.
@@ -529,6 +531,7 @@ end)
 [*] [b]Disassembling containers the vanilla way[/b]: vanilla Disassemble on a container that can't be moved loses what is inside, the same for vanilla-built ones.
 [*] [b]Before removing a container[/b]: empty it first, or use Dismantle (Build Anything), which asks you to empty it.
 [*] [b]After a server crash[/b]: lights that can't be moved and were built after the last save can't be dismantled with Build Anything, only smashed with a sledgehammer.
+[*] [b]Floor overlays after a server crash[/b]: overlays built after the last save, if still there, can't be dismantled with Build Anything; they go away when that square's floor is replaced.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
@@ -538,6 +541,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Street lights in singleplayer[/b]: switch off street lights and signs that are lit at night before you save, or after removal their heads keep looking lit (without giving light).
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
+[*] [b]Remove floor overlays you don't want[/b]: road markings, cracks and similar overlays built with Build Anything can't be removed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
 [*] [b]Singleplayer[/b]: back up the save, remove this mod from that save's mod list, then load it.
 [/olist]
@@ -562,6 +566,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Walls[/b]: vanilla Disassemble or a sledgehammer.
 [*] [b]Immovable lights[/b]: only by smashing with a sledgehammer.
 [*] [b]Ground floors[/b]: can't be removed.
+[*] [b]Floor overlays[/b]: can't be removed, like the map's own road markings; they go away when that square's floor is replaced.
 [/list]
 [h3]Adding the mod back[/h3]
 [list]
@@ -615,7 +620,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [/list]
 [h3]What should I do before removing this mod?[/h3]
 [list]
-[*] Switch lights off, then dismantle ground floors and immovable lights you don't want, as Before removing this mod explains.
+[*] Switch lights off, then dismantle ground floors, floor overlays and immovable lights you don't want, as Before removing this mod explains.
 [/list]
 === 💬 Reporting issues
 [list]

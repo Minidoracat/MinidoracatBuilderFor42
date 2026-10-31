@@ -402,6 +402,15 @@ function Rules.classify(spr)
     return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType())
 end
 
+-- 地面覆蓋裡帶 FloorOverlay 的單格圖：照地圖讀檔的做法掛在那格的地板上（CellLoader.java:256-264），不建物件。
+-- 獨立物件的話，原版 tileGeometry.txt 標 Translucent 的（交通標線、污漬、血跡這類）排進半透明層、深度和地板打平，
+-- 畫出來只剩一段一段（IsoSprite.java:1097,1142-1149；FBORenderCell.java:1713-1715,1927-1929）。Lua 讀不到這個旗標
+-- （IsoSprite.depthFlags 沒有 getter），所以照地圖：FloorOverlay 一律掛。只有 attachedFloor 的（地上的雜物、石頭）
+-- 地圖也是獨立物件，照舊。ponytail：多格的地面覆蓋（正式服 14 個 tiledef MOD 都沒有）照舊建物件；有了再逐格掛。
+function Rules.onFloor(kind, spr)
+    return kind == "floorOverlay" and spr:getSpriteGrid() == nil and spr:getProperties():has(FloorOverlay)
+end
+
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
 -- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。

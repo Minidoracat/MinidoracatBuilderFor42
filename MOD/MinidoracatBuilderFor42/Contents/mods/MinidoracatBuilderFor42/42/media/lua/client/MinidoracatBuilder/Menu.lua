@@ -15,7 +15,8 @@ local Menu = MinidoracatBuilder.Menu or {}
 MinidoracatBuilder.Menu = Menu
 
 -- 點到的格子上、以及正上方那格的屋頂（在上一層的屋頂從底下點不到：從屋裡點地板就拆得到頭上那片），本 MOD 蓋的、
--- 本工具能拆的東西。同一件（多格、樓梯三片）只列一次。回 { { obj, kind, plan }, ... }
+-- 本工具能拆的東西，含點到的格子地板上本 MOD 掛的地面覆蓋（Dismantle.overlays）。同一件（多格、樓梯三片）只列一次。
+-- 回 { { obj 或 overlay, kind, plan, name＝sprite 名稱 }, ... }
 function Menu.targets(worldobjects)
     local out, seen, done = {}, {}, {}
     local function scan(sq, onlyRoof)
@@ -28,9 +29,13 @@ function Menu.targets(worldobjects)
                 if kind and (not onlyRoof or kind == "roof") then
                     local plan = Dismantle.plan(o, kind)
                     for _, p in ipairs(plan.remove) do seen[p] = true end
-                    out[#out + 1] = { obj = o, kind = kind, plan = plan }
+                    out[#out + 1] = { obj = o, kind = kind, plan = plan, name = o:getSprite():getName() }
                 end
             end
+        end
+        if onlyRoof then return end
+        for _, t in ipairs(Dismantle.overlays(sq)) do
+            out[#out + 1] = { overlay = t, kind = "floorOverlay", plan = Dismantle.overlayPlan(t), name = t.name }
         end
     end
     for _, w in ipairs(worldobjects) do
@@ -45,6 +50,7 @@ function Menu.targets(worldobjects)
 end
 
 function Menu.onPick(player, t)
+    if t.overlay then return Client.dismantleOverlay(player, t.overlay) end
     local own = {}
     for _, o in ipairs(t.plan.remove) do own[#own + 1] = o:getSquare() end
     Client.dismantle(player, t.obj, t.kind, own)
@@ -137,7 +143,7 @@ function Menu.fill(playerNum, context, worldobjects, test)
         local sub = ISContextMenu:getNew(context)
         context:addSubMenu(context:addOption(label), sub)
         for _, t in ipairs(targets) do
-            addOne(sub, Names.of(t.obj:getSprite():getName(), t.kind), player, t)
+            addOne(sub, Names.of(t.name, t.kind), player, t)
         end
     end
     if #tiles > 0 then

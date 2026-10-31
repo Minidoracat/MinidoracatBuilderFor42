@@ -3,6 +3,8 @@
 -- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... }, perkOf = { [fullType] = 技能名或 false },
 -- chanceOf = { [fullType] = 原版拆解定義的 baseChance（照機率退料的材料才有） }, fee = { [fullType] = 拆了不退的數量 }, back,
 -- scrap（true＝照原版拆解產出收；false＝照種類基本價） }；多格每格各算一次。
+require "MinidoracatBuilder/Rules"
+
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Cost = MinidoracatBuilder.Cost or {}
 MinidoracatBuilder.Cost = Cost
@@ -345,7 +347,8 @@ end
 --   "scrap"：CanScrap 且 Material 有定義（:104-123）、有拆解產出：照圖塊材質重查產出（getScrapItemsList，:3304-3348）。
 --   "builder"：其他不能搬的 IsoThumpable 與燈：本工具拆除（Server.dismantle），每項退 1..v（v＝退料表）。第一個
 --     Material 有拆解定義的，原版搬動工具也能拆（ISThumpableSpriteProps，:4320-4340），同樣 1..v；一樓以下的地板不給它拆
---     （Place.thumpable 的 isDismantable）。
+--     （Place.thumpable 的 isDismantable）。掛在地板上的地面覆蓋（Rules.onFloor）不是物件，原版拆解點不到，
+--     帶 CanScrap 的也歸本工具拆。
 --   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
 --   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
@@ -353,6 +356,7 @@ function Cost.refund(kind, spr)
     local p = spr:getProperties()
     if p:has("IsMoveAble") then return "pickup" end
     if kind == "curtain" then return "sheet" end
+    if MinidoracatBuilder.Rules.onFloor(kind, spr) then return "builder" end
     local mat = p:get("Material")
     if p:has("CanScrap") and mat and mat ~= "Undefined" and scrapInto(kind, p, {}, {}) then return "scrap" end
     if NOT_BUILDER[kind] then return "none" end

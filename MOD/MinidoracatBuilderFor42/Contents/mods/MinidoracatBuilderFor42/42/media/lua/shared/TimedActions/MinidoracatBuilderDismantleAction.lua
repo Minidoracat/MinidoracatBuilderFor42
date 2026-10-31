@@ -18,7 +18,8 @@ function MinidoracatBuilderDismantleAction:isValid()
     local b = pending(self)
     if not b then return true end -- 伺服器照請求重查（Server.dismantle）
     local sq = getCell():getGridSquare(b.x, b.y, b.z)
-    return sq ~= nil and MinidoracatBuilder.Dismantle.find(sq, b.e) ~= nil
+    local D = MinidoracatBuilder.Dismantle
+    return sq ~= nil and (D.find(sq, b.e) ~= nil or D.hung(sq, b.e) ~= nil)
 end
 
 function MinidoracatBuilderDismantleAction:waitToStart()

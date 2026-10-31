@@ -11,11 +11,13 @@ require "MinidoracatBuilder/Check"
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Ledger"
 require "MinidoracatBuilder/Floors"
+require "MinidoracatBuilder/Overlays"
 require "MinidoracatBuilder/Circuits"
 
 local Sources, Entry, Cost = MinidoracatBuilder.Sources, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
 local Place, Materials, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Materials, MinidoracatBuilder.Check
 local Dismantle, Ledger, Rules = MinidoracatBuilder.Dismantle, MinidoracatBuilder.Ledger, MinidoracatBuilder.Rules
+local Overlays = MinidoracatBuilder.Overlays
 local Server = MinidoracatBuilder.Server or {}
 MinidoracatBuilder.Server = Server
 
@@ -334,13 +336,21 @@ function Server.dismantleDuration(player, n)
     if player:isTimedActionInstant() then return 1 end
     local sq = getCell():getGridSquare(it.x, it.y, it.z)
     local obj = sq and Dismantle.find(sq, it.e)
-    return Entry.duration(obj and Dismantle.kindOf(obj), player)
+    local kind = obj and Dismantle.kindOf(obj) or (sq and Dismantle.hung(sq, it.e) and "floorOverlay") or nil
+    return Entry.duration(kind, player)
 end
 
 -- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
--- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:74-81）。移除時引擎丟的例外 Kahlua 只記 log、不往上丟
--- （MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
+-- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:74-81）；掛在地板上的地面覆蓋拿掉那張、清覆蓋帳本。移除時引擎丟的
+-- 例外 Kahlua 只記 log、不往上丟（MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
 local function removeAll(kind, plan)
+    local t = plan.overlay
+    if t then
+        if not Place.detach(t.floor, t.name) then
+            error("overlay not removed at " .. t.sq:getX() .. "," .. t.sq:getY() .. "," .. t.sq:getZ())
+        end
+        Overlays.forget(t.sq, t.name)
+    end
     local top, west, squares = nil, false, {}
     for i, o in ipairs(plan.remove) do
         local t, s = o:getSprite():getType(), o:getSquare()
@@ -372,11 +382,12 @@ local function keepLanding(player, l)
         or Check.safehouse(player, { x = s:getX(), y = s:getY(), z = s:getZ(), sq = s }, true, "dismantle") ~= nil
 end
 
--- MinidoracatBuilderDismantleAction:complete()：照這位玩家的拆除請求，拆那格上 sprite 名稱相同、本 MOD 蓋的那件。
+-- MinidoracatBuilderDismantleAction:complete()：照這位玩家的拆除請求，拆那格上 sprite 名稱相同、本 MOD 蓋的那件；
+-- 格上沒有那件物件時，找那格地板上掛的那張地面覆蓋（Dismantle.hung，不看記號）。
 -- 物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
 -- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈）：同一件被兩個動作拆時，後到的
--- 找不到物件（GONE），不會再退。燈與平台只認帳本；IsoThumpable 照 Place.refundOf（一樓以下的地板在地板帳本）。
--- 查不到退料表的不拆（回 NOT_OURS，平台留著）。
+-- 找不到物件（GONE），不會再退。燈與平台只認帳本；地面覆蓋只認覆蓋帳本（Overlays）；IsoThumpable 照 Place.refundOf
+-- （一樓以下的地板在地板帳本）。查不到退料表的不拆（回 NOT_OURS，平台留著）。
 -- 移除出錯時不退料（只會少，不會多）；退的料掉在玩家腳下（屋頂這類在上一層的，拆了也拿得到）。不給經驗。
 function Server.dismantle(player, n)
     local it = unbuildFor(player, n)
@@ -393,12 +404,23 @@ function Server.dismantle(player, n)
     local sq = getCell():getGridSquare(x, y, z)
     if not sq then return dismantleRefused(player, n, "NOT_LOADED", at) end
     local obj = Dismantle.find(sq, name)
-    if not obj then return dismantleRefused(player, n, "GONE", at) end
-    local kind = Dismantle.kindOf(obj)
-    local plan = Dismantle.plan(obj, kind)
+    local kind, plan
+    if obj then
+        kind = Dismantle.kindOf(obj)
+        plan = Dismantle.plan(obj, kind)
+    else
+        local t = Dismantle.hung(sq, name)
+        if not t then return dismantleRefused(player, n, "GONE", at) end
+        kind, plan = "floorOverlay", Dismantle.overlayPlan(t)
+    end
     local code, extra = Dismantle.check(player, kind, plan)
     if code then return dismantleRefused(player, n, code, extra) end
     local refund = {}
+    if plan.overlay then
+        local mats = Overlays.get(sq, name)
+        if not mats then return dismantleRefused(player, n, "NOT_OURS", at) end
+        rollInto(refund, mats)
+    end
     for _, o in ipairs(plan.refund) do
         local mats
         if instanceof(o, "IsoLightSwitch") then

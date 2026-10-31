@@ -33,6 +33,24 @@ local function hasSprite(sq, name, farming)
     return false
 end
 
+-- obj 的附加圖（地圖的地面、牆面疊圖，本 MOD 掛的地面覆蓋）裡最後一張叫 name 的位置（0 起算），沒有回 nil
+local function attachedAt(obj, name)
+    local list = obj and obj:getAttachedAnimSprite()
+    for i = (list and list:size() or 0) - 1, 0, -1 do
+        local spr = list:get(i):getParentSprite()
+        if spr and spr:getName() == name then return i end
+    end
+    return nil
+end
+Place.attachedAt = attachedAt
+
+-- 一個物件存檔與同步只帶前 255 張附加圖（IsoObject.java:1359、4630-4635；張數只用 1 byte），再多就會消失
+local MAX_ATTACHED = 255
+local function attachedCount(obj)
+    local list = obj and obj:getAttachedAnimSprite()
+    return list and list:size() or 0
+end
+
 -- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
 -- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）
 local function edgeTaken(sq, north)
@@ -165,6 +183,12 @@ end
 function Place.check(kind, spr, sq, player, role, planned)
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
+    if Rules.onFloor(kind, spr) then
+        -- 掛在地板上（Place.attach）：要有地板、地板上還沒有同一張（地圖原有的也算）、附加圖還沒滿；不蓋在高草、樹上
+        local floor = sq:getFloor()
+        return floor ~= nil and attachedAt(floor, spr:getName()) == nil and attachedCount(floor) < MAX_ATTACHED
+            and not vegetation(sq)
+    end
     local p = spr:getProperties()
     if kind == "floor" then
         -- 原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）
@@ -452,6 +476,94 @@ local function newLight(c)
     return obj
 end
 
+-- ---------------------------------------------------------------- 掛在地板上的地面覆蓋（Rules.onFloor）
+-- 圖掛在那格地板的附加圖上（地圖讀檔同一種，CellLoader.java:256-264），不建物件。transmitUpdatedSpriteToClients 把整串
+-- 附加圖送給客戶端（IsoObject.java:4614-4645；客戶端照 sprite id 重掛、重畫那格，GameClient.java:1122-1162），跟著地板存檔。
+-- 地板 modData 的 builderOverlays（{ [圖名] = true }）只決定右鍵選單列不列；拆了退什麼只看伺服器的覆蓋帳本
+-- （server/MinidoracatBuilder/Overlays.lua）。地板物件被移除（換地板、拆地板）時圖跟著舊地板走（地圖的標線也是），
+-- 帳本照 Place.onAboutToBeRemoved 整格清掉。不觸發移除事件的原版動作不清：鏟地只拿掉附加圖；火燒對一般地板只拿掉
+-- 附加圖、IsoThumpable 地板直接換成新物件。見 builder-dev placement.md「掛在地板上的地面覆蓋」。
+local LOG = "[MinidoracatBuilderFor42] "
+local function at(sq) return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() end
+
+local function mark(floor, name, on)
+    local md = floor:getModData()
+    local own = type(md.builderOverlays) == "table" and md.builderOverlays or {}
+    own[name] = on or nil
+    local any = false
+    for _ in pairs(own) do
+        any = true
+        break
+    end
+    md.builderOverlays = any and own or nil
+end
+
+-- 在 sq 的地板掛上 spr，寫記號、同步、記帳本（items＝拆了退什麼）。拆回用的紀錄（Place.undo；attached 欄位分辨紀錄與
+-- 物件）在掛上之前就記進 placed（給了的話），後面幾步出錯時照樣拆得回；也當回傳值。附加圖滿了丟錯（Place.check 已擋）。
+function Place.attach(sq, spr, items, placed)
+    local floor, name = sq:getFloor(), spr:getName()
+    if attachedCount(floor) >= MAX_ATTACHED then error("floor overlays full at " .. at(sq)) end
+    local rec = { attached = true, floor = floor, name = name }
+    if placed then placed[#placed + 1] = rec end
+    floor:addAttachedAnimSprite(spr)
+    mark(floor, name, true)
+    floor:transmitUpdatedSpriteToClients()
+    floor:transmitModData()
+    local Overlays = MinidoracatBuilder.Overlays
+    if Overlays then Overlays.put(sq, name, items) end
+    return rec
+end
+
+-- 拿掉 floor 上最後一張叫 name 的附加圖與記號並同步，回有沒有拿掉。引擎丟的例外 Kahlua 只記 log、不往上丟
+-- （MethodCaller.java:34-43），所以照張數確認真的少了一張。帳本由呼叫端清（拆除要先讀退料再拿掉）
+function Place.detach(floor, name)
+    local i = attachedAt(floor, name)
+    if not i then return false end
+    local n = attachedCount(floor)
+    floor:RemoveAttachedAnim(i)
+    if attachedCount(floor) ~= n - 1 then return false end
+    mark(floor, name, false)
+    floor:transmitUpdatedSpriteToClients()
+    floor:transmitModData()
+    return true
+end
+
+-- 0.2.0 以前蓋的地面覆蓋是獨立的 IsoThumpable：改掛到那格的地板，退料照它的 buildMaterials 記進覆蓋帳本（只在伺服器、
+-- 帳本建好之後；排隊見 Place.migrate）。當下逐項再確認：還在目前載入的那一格、記號和圖一樣、現在的圖仍會掛在地板上、
+-- 物件是舊版蓋地面覆蓋時的樣子（伺服器建的時候設的欄位：不是地板、殭屍不打、可穿過，Place 的 thumpable）、
+-- 那格有地板而且地板上沒有同一張、附加圖還沒滿；不符合的照舊留著。先掛圖再移除舊物件：移除失敗就拿掉剛掛的那張。
+-- 回有沒有改
+function Place.relink(obj)
+    local sq, spr = obj:getSquare(), obj:getSprite()
+    if not (sq and spr and obj:hasModData() and obj:getModData().builderEntry == spr:getName()) then return false end
+    if getCell():getGridSquare(sq:getX(), sq:getY(), sq:getZ()) ~= sq or not sq:getObjects():contains(obj) then
+        return false
+    end
+    if not Rules.onFloor(Rules.classify(spr), spr) or obj:isFloor() or obj:isThumpable() or not obj:isCanPassThrough() then
+        return false
+    end
+    local floor, name = sq:getFloor(), spr:getName()
+    if not floor or attachedAt(floor, name) or attachedCount(floor) >= MAX_ATTACHED then return false end
+    local items, parts = {}, {}
+    for ft, v in pairs(obj:getBuildMaterials()) do
+        local n = math.floor(tonumber(v) or 0)
+        if n >= 1 then
+            items[ft] = n
+            parts[#parts + 1] = ft .. "x" .. n
+        end
+    end
+    Place.attach(sq, spr, items)
+    sq:transmitRemoveItemFromSquare(obj, false)
+    if sq:getObjects():contains(obj) then
+        Place.detach(floor, name)
+        local Overlays = MinidoracatBuilder.Overlays
+        if Overlays then Overlays.forget(sq, name) end
+        error("not removed at " .. at(sq))
+    end
+    print(LOG .. "RELINK overlay e=" .. name .. " at=" .. at(sq) .. " refund=" .. table.concat(parts, ","))
+    return true
+end
+
 -- 依序放好 cells 的每一格（{ sq, spr, cost, yoff, role }）。物件一建好就記進 placed（之後出錯時拆回用；還沒加進格子的
 -- 拆回時會略過）。丟錯由呼叫端 pcall 接。
 function Place.build(kind, cells, placed)
@@ -481,6 +593,8 @@ function Place.build(kind, cells, placed)
             obj:getModData().builderEntry = spr:getName()
             placed[#placed + 1] = obj
             if facing == "S" or facing == "E" then placeWindow(sq, obj, north) else finish(sq, obj) end
+        elseif Rules.onFloor(kind, spr) then
+            Place.attach(sq, spr, refundable(c.cost), placed)
         else
             obj = thumpable(c, kind, north)
             -- 屋頂不擋整格；AddSpecialObject 不會重算下面幾層「有屋頂」（客戶端收到 AddItemToMap 才算，
@@ -497,13 +611,19 @@ function Place.build(kind, cells, placed)
     end
 end
 
--- 拆回這次已放的物件（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
--- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。
+-- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
+-- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。掛在地板上的（Place.attach 的紀錄）拿掉那張、清帳本。
 function Place.undo(placed)
     for i = #placed, 1, -1 do
         local obj = placed[i]
-        local sq = obj:getSquare()
-        if sq then sq:transmitRemoveItemFromSquare(obj, false) end
+        if type(obj) == "table" and obj.attached == true then
+            Place.detach(obj.floor, obj.name)
+            local Overlays, sq = MinidoracatBuilder.Overlays, obj.floor:getSquare()
+            if Overlays and sq then Overlays.forget(sq, obj.name) end
+        else
+            local sq = obj:getSquare()
+            if sq then sq:transmitRemoveItemFromSquare(obj, false) end
+        end
     end
 end
 
@@ -515,10 +635,14 @@ function Place.settle(cells)
     end
 end
 
--- IsoThumpable 移出世界前：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
--- 原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
--- 物件不該再退料。
+-- 移出世界前：
+--   地板：掛在上面的地面覆蓋跟著消失，那一格的覆蓋帳本整格清掉（只在伺服器，Overlays.dropFloor）。
+--   IsoThumpable：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
+--     原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
+--     物件不該再退料。
 function Place.onAboutToBeRemoved(obj)
+    local Overlays = MinidoracatBuilder.Overlays
+    if Overlays and instanceof(obj, "IsoObject") then Overlays.dropFloor(obj) end
     if not instanceof(obj, "IsoThumpable") then return end
     local Floors, sq = MinidoracatBuilder.Floors, obj:getSquare()
     if Floors and sq and sq:getZ() <= 0 and obj:isFloor() then Floors.forget(obj) end
@@ -526,13 +650,28 @@ function Place.onAboutToBeRemoved(obj)
 end
 Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAboutToBeRemoved(obj) end)
 
--- 讀檔時修 0.1.1 以前蓋的（每格載入一次，兩端都跑，重複跑結果一樣）：
+-- 讀檔時修舊版蓋的（每格載入一次，兩端都跑，重複跑結果一樣）：
 --   一樓以下的地板：不給原版搬動工具拆（兩端）；只在伺服器、帳本建好時清掉 buildMaterials，本工具會拆的、圖和蓋的時候
 --     一樣的先記進地板帳本（沒付料的記空表：照樣能拆、不退）。
 --     ponytail: 帳本還沒建好就不搬、buildMaterials 留著（單機讀檔先 IsoWorld.init 讀格子、之後才建 GOS，
 --     GameLoadingState.java:305,313；專用伺服器先建 GOS 再收連線，GameServer.java:816）。下次載入那格時再搬；要當場補再加排隊。
 --   牆角柱（WallSE）：當時歸在牆，放成可穿過、不是轉角，原生尋路會連同一格的牆一起當成打不了（thumpable 的柱子說明）。
 --     現在歸柱子或不列（BLOCKS_EDGE 這類）的照原版轉角柱改；現在歸柵欄這類的不動。
+--   地面覆蓋（0.2.0 以前是獨立物件，Rules.onFloor）：只在伺服器排隊，帳本建好之後的下一個 tick 改掛到地板
+--     （Place.relink）。讀檔回呼裡不移除物件：這時正在列這一格的物件，單機的帳本也還沒建（同上）。
+local relinkQueue, relinking = {}, false
+local function relinkTick()
+    local Overlays = MinidoracatBuilder.Overlays
+    if not (Overlays and Overlays.instance) then return end
+    local list = relinkQueue
+    relinkQueue, relinking = {}, false
+    Events.OnTick.Remove(relinkTick)
+    for _, obj in ipairs(list) do
+        local ok, err = pcall(Place.relink, obj)
+        if not ok then print(LOG .. "overlay relink failed: " .. tostring(err)) end
+    end
+end
+
 function Place.migrate(obj)
     if not (instanceof(obj, "IsoThumpable") and obj:hasModData()) then return end
     local md = obj:getModData()
@@ -548,6 +687,13 @@ function Place.migrate(obj)
             Floors.put(obj, obj:getBuildMaterials())
         end
         if obj:hasBuildMaterials() then wipe(obj:getBuildMaterials()) end
+    elseif spr and not isClient() and spr:getProperties():has(F.FloorOverlay) and spr:getName() == md.builderEntry
+        and Rules.onFloor(Rules.classify(spr), spr) then
+        relinkQueue[#relinkQueue + 1] = obj
+        if not relinking then
+            relinking = true
+            Events.OnTick.Add(relinkTick)
+        end
     elseif spr and not obj:isCorner() and spr:getProperties():has(F.WallSE) then
         local kind = Rules.classify(spr)
         if kind == nil or kind == "post" then

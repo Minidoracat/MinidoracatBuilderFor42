@@ -1,5 +1,6 @@
--- 拆除（第五階段，設計稿「拆」）：本 MOD 蓋的、Cost.refund 是 "builder" 的東西（不能搬、原版不照材質拆的 IsoThumpable
--- 與燈）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：IsoThumpable 照 Place.refundOf；燈記在伺服器帳本 Ledger）。
+-- 拆除（第五階段，設計稿「拆」）：本 MOD 蓋的、Cost.refund 是 "builder" 的東西（不能搬、原版不照材質拆的 IsoThumpable、
+-- 燈、掛在地板上的地面覆蓋）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：IsoThumpable 照 Place.refundOf；燈記在伺服器
+-- 帳本 Ledger；地面覆蓋記在覆蓋帳本 Overlays）。
 -- 兩端共用、只讀世界：客戶端右鍵選單用 preview 判斷，伺服器 Server.dismantle 照同一份重查後才拆。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
@@ -51,6 +52,48 @@ function Dismantle.find(sq, name)
         if spr and spr:getName() == name and Dismantle.kindOf(o) then return o end
     end
     return nil
+end
+
+-- 掛在地板上的地面覆蓋（Rules.onFloor、Place.attach）：sq 的地板掛著 name、name 是會掛在地板上的圖，回
+-- { sq, floor, name, spr }，否則 nil。不看記號：伺服器拆不拆、退多少只看覆蓋帳本（Server.dismantle），沒有那一筆回 NOT_OURS。
+function Dismantle.hung(sq, name)
+    local floor = sq:getFloor()
+    if not (floor and Place.attachedAt(floor, name)) then return nil end
+    local spr = Entry.sprite(name)
+    if not (spr and Rules.onFloor(Rules.classify(spr), spr)) then return nil end
+    return { sq = sq, floor = floor, name = name, spr = spr }
+end
+
+-- 右鍵選單用：同上，而且地板記號（Place.attach 寫的 builderOverlays）寫著是本 MOD 掛的。記號只決定列不列
+function Dismantle.overlay(sq, name)
+    local floor = sq:getFloor()
+    local own = floor and floor:hasModData() and floor:getModData().builderOverlays
+    if type(own) ~= "table" or not own[name] then return nil end
+    return Dismantle.hung(sq, name)
+end
+
+-- sq 上本 MOD 掛的每一張地面覆蓋（右鍵選單），照名稱排（一格只有幾張，逐張插入；不用 table.sort，家族規則）
+function Dismantle.overlays(sq)
+    local out, floor = {}, sq:getFloor()
+    local own = floor and floor:hasModData() and floor:getModData().builderOverlays
+    if type(own) ~= "table" then return out end
+    for name in pairs(own) do
+        local t = type(name) == "string" and Dismantle.overlay(sq, name)
+        if t then
+            local i = #out + 1
+            while i > 1 and out[i - 1].name > name do
+                out[i] = out[i - 1]
+                i = i - 1
+            end
+            out[i] = t
+        end
+    end
+    return out
+end
+
+-- 拆一張掛在地板上的：沒有物件要移除，格子照那一格（Dismantle.check、Dismantle.tools）
+function Dismantle.overlayPlan(t)
+    return { remove = {}, refund = {}, overlay = t, foreign = false }
 end
 
 -- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = 平台或 nil,
@@ -109,6 +152,7 @@ end
 function Dismantle.tools(kind, plan)
     local list = {}
     for i, o in ipairs(plan.remove) do list[i] = Cost.of(kind, o:getSprite(), 1) end
+    if plan.overlay then list[#list + 1] = Cost.of(kind, plan.overlay.spr, 1) end
     return Cost.sum(list).tools
 end
 
@@ -145,6 +189,10 @@ function Dismantle.check(player, kind, plan, preview)
     for i, o in ipairs(plan.remove) do
         local sq = o:getSquare()
         cells[i] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), sq = sq }
+    end
+    if plan.overlay then
+        local sq = plan.overlay.sq
+        cells[1] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), sq = sq }
     end
     if #cells == 0 then return "GONE", nil end
     if plan.foreign then return "NOT_OURS", { x = cells[1].x, y = cells[1].y, z = cells[1].z } end

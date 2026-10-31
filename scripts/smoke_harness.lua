@@ -3584,6 +3584,288 @@ do
     getText, getTextOrNull = realGetText, realGetTextOrNull
 end
 
+print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交通標線斷斷續續）：蓋、重複、拆、帳本、地板移除、讀檔改掛")
+;(function()
+    nowMs = nowMs + 180000
+    local Place, Dismantle, Overlays = MinidoracatBuilder.Place, MinidoracatBuilder.Dismantle, MinidoracatBuilder.Overlays
+    local Menu = MinidoracatBuilder.Menu
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class ~= nil and (o.class == cls or cls == "IsoObject") end
+    scrapDefs.OvMetal = { perk = perkObj("MetalWelding"), returnItems = { { returnItem = "Base.ScrapMetal", maxAmount = 2 } } }
+    local floorS = sprite("ov_floor_01_0", 2606, { flags = { "solidfloor" } })
+    local tlS = sprite("ov_lines_01_10", 2601, { flags = { "FloorOverlay" } })
+    local tl2S = sprite("ov_lines_01_11", 2607, { flags = { "FloorOverlay" } })
+    local debrisS = sprite("ov_debris_01_0", 2602, { flags = { "attachedFloor" } })
+    local scrapS = sprite("ov_scrap_01_0", 2603, { flags = { "FloorOverlay", "attachedFloor" },
+        keys = { CanScrap = "", Material = "OvMetal" } })
+    local looseS = sprite("ov_scrap_01_1", 2604, { flags = { "attachedFloor" }, keys = { CanScrap = "", Material = "OvMetal" } })
+    local gridS = sprite("ov_grid_01_0", 2605, { flags = { "FloorOverlay" } })
+    gridS.grid = { getAnchorSprite = function() return gridS end }
+    world({ floorS, tlS, tl2S, debrisS, scrapS, looseS, gridS })
+    local TL, TL2 = "ov_lines_01_10", "ov_lines_01_11"
+    check(Rules.onFloor("floorOverlay", tlS) and not Rules.onFloor("floorOverlay", debrisS)
+        and not Rules.onFloor("floorOverlay", gridS) and not Rules.onFloor("solid", tlS)
+        and Rules.classify(tlS) == "floorOverlay" and Rules.classify(debrisS) == "floorOverlay",
+        "照地圖：帶 FloorOverlay 的單格地面覆蓋掛在地板上；只有 attachedFloor 的、多格的照舊建物件")
+    check(Cost.refund("floorOverlay", scrapS) == "builder" and Cost.refund("floorOverlay", looseS) == "scrap",
+        "掛在地板上的歸本工具拆（原版拆解點不到），帶 CanScrap 也一樣；獨立物件照舊原版拆")
+
+    -- 地板：附加圖、modData、兩種同步各送幾次。格子移除物件時照引擎先觸發 OnObjectAboutToBeRemoved
+    local function floorOf(sq)
+        local f = { class = "IsoObject", att = {}, md = {}, sprites = 0, mds = 0 }
+        function f:getSprite() return floorS end
+        function f:getSquare() return sq end
+        function f:getAttachedAnimSprite() return javaList(self.att) end
+        function f:addAttachedAnimSprite(spr) self.att[#self.att + 1] = { getParentSprite = function() return spr end } end
+        function f:RemoveAttachedAnim(i) table.remove(self.att, i + 1) end
+        function f:hasModData() return next(self.md) ~= nil end
+        function f:getModData() return self.md end
+        function f:transmitUpdatedSpriteToClients() self.sprites = self.sprites + 1 end
+        function f:transmitModData() self.mds = self.mds + 1 end
+        return f
+    end
+    local function hung(f)
+        local out = {}
+        for i, a in ipairs(f.att) do out[i] = a:getParentSprite():getName() end
+        return table.concat(out, ",")
+    end
+    local function ground(x, y, noFloor)
+        local o = {}
+        local sq = square(x, y, 0, o)
+        if not noFloor then o.floor = floorOf(sq) end
+        sq.dropped = {}
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        return sq, o.floor
+    end
+    local function lastSent() return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {} end
+    local function unbuild(p, n, x, y, e)
+        sent = {}
+        Server.dismantleIntent(p, { n = n, x = x, y = y, z = 0, e = e })
+        sent = {}
+        Server.dismantle(p, n)
+        return lastSent()
+    end
+    local here = ground(44, 46)
+    local Pl = player({ id = 2601, x = 44.5, y = 45.5, here = here })
+    Pl.inv:add(item("Base.Hammer", { HAMMER = true }))
+    local pay = Cost.of("floorOverlay", tlS, 1).items
+    give(Pl, pay)
+
+    local A, fA = ground(44, 44)
+    local ok, cmd = build(Pl, 2601, TL, { 44, 44, 0 })
+    local rec = Overlays.get(A, TL)
+    local same = rec ~= nil
+    for ft, n in pairs(pay) do if not rec or rec[ft] ~= n then same = false end end
+    check(ok and cmd == "placed" and #A.objects == 0 and hung(fA) == TL and fA.md.builderOverlays[TL] == true
+        and fA.sprites == 1 and fA.mds == 1 and same,
+        "蓋交通標線：掛在那格地板上、不建物件，附加圖與記號都送給客戶端，退料（＝付的料）記在覆蓋帳本")
+    give(Pl, pay)
+    local ok2, _, a2 = build(Pl, 2602, TL, { 44, 44, 0 })
+    check(not ok2 and a2.code == "BLOCKED" and hung(fA) == TL, "同一格已經掛著同一張：BLOCKED，不疊兩張")
+    local B, fB = ground(45, 44)
+    fB:addAttachedAnimSprite(tlS) -- 地圖原有的
+    local ok3, _, a3 = build(Pl, 2603, TL, { 45, 44, 0 })
+    check(not ok3 and a3.code == "BLOCKED" and hung(fB) == TL, "地圖原本就掛著同一張：BLOCKED")
+    local N = ground(46, 44, true)
+    local ok4, _, a4 = build(Pl, 2604, TL, { 46, 44, 0 })
+    check(not ok4 and a4.code == "BLOCKED" and #N.objects == 0, "沒有地板的格子：BLOCKED（沒地方掛），也不建物件")
+
+    -- 右鍵選單只列有記號的；伺服器只認帳本
+    local tg = Menu.targets({ { getSquare = function() return A end } })
+    check(#tg == 1 and tg[1].kind == "floorOverlay" and tg[1].overlay ~= nil and tg[1].name == TL
+        and #Menu.targets({ { getSquare = function() return B end } }) == 0,
+        "右鍵選單：列出本 MOD 掛的那張；地圖原有的（沒有記號）不列")
+    fB.md.builderOverlays = { [TL] = true } -- 記號在、覆蓋帳本沒有那一筆
+    local c, a = unbuild(Pl, 2605, 45, 44, TL)
+    check(c == "dismantleRefused" and a.code == "NOT_OURS" and hung(fB) == TL,
+        "地圖原有的、地板上有記號但覆蓋帳本沒有：NOT_OURS、不拿掉")
+    local bare = player({ id = 2602, x = 44.5, y = 45.5, here = here })
+    c, a = unbuild(bare, 2606, 44, 44, TL)
+    check(c == "dismantleRefused" and a.code == "NO_TOOL" and hung(fA) == TL, "沒帶工具（和蓋的時候一樣）：NO_TOOL、不拿掉")
+    HARNESS_ROLL = "max"
+    c = unbuild(Pl, 2607, 44, 44, TL)
+    local back = true
+    for ft, n in pairs(pay) do if here.dropped[ft] ~= n then back = false end end
+    check(c == "dismantled" and hung(fA) == "" and fA.md.builderOverlays == nil and Overlays.get(A, TL) == nil and back
+        and fA.sprites == 2 and fA.mds == 2, "拆：拿掉附加圖與記號並同步、清帳本、照帳本退（最多全部）")
+    c, a = unbuild(Pl, 2608, 44, 44, TL)
+    check(c == "dismantleRefused" and a.code == "GONE", "拆過的再拆一次：GONE、不再退")
+    -- 記號只決定選單列不列：記號被清掉、附加圖與帳本都在，伺服器照樣拆
+    local W, fW = ground(45, 45)
+    give(Pl, pay)
+    build(Pl, 2610, TL, { 45, 45, 0 })
+    fW.md.builderOverlays = nil
+    here.dropped = {}
+    c = unbuild(Pl, 2611, 45, 45, TL)
+    check(c == "dismantled" and hung(fW) == "" and Overlays.get(W, TL) == nil and here.dropped["Base.Plank"] == 1,
+        "記號被清掉、附加圖與帳本都在：伺服器照樣拆、照帳本退")
+    local Q, fQ = ground(45, 46)
+    give(Pl, pay)
+    build(Pl, 2615, TL, { 45, 46, 0 })
+    function fQ:RemoveAttachedAnim() end -- 引擎丟的例外 Kahlua 只記 log：圖沒拿掉
+    here.dropped = {}
+    c, a = unbuild(Pl, 2616, 45, 46, TL)
+    check(c == "dismantleRefused" and a.code == "INTERNAL" and hung(fQ) == TL and Overlays.get(Q, TL) ~= nil
+        and next(here.dropped) == nil, "拿不掉那張（引擎出錯）：INTERNAL、不退料、帳本留著")
+
+    -- 地板移出世界：那一格整格清掉，不看那時還掛著哪幾張；別的物件移除時不動帳本
+    local D, fD = ground(43, 45)
+    give(Pl, Cost.of("floorOverlay", tl2S, 1).items)
+    local okD = build(Pl, 2609, TL2, { 43, 45, 0 })
+    local other = { class = "IsoObject", att = {} }
+    function other:getSquare() return D end
+    function other:getSprite() return debrisS end
+    function other:getAttachedAnimSprite() return javaList({ { getParentSprite = function() return tl2S end } }) end
+    fire("OnObjectAboutToBeRemoved", other)
+    local kept = okD and Overlays.get(D, TL2) ~= nil
+    fD.att = {} -- 原版鏟地這類只拿掉附加圖、不移除地板：帳本留著
+    local still = Overlays.get(D, TL2) ~= nil
+    fire("OnObjectAboutToBeRemoved", fD)
+    check(kept and still and Overlays.get(D, TL2) == nil,
+        "地板移除時那一格整格清掉（附加圖先被拿掉也一樣）；別的物件移除時不動")
+    local Cf, fCf = ground(43, 46)
+    give(Pl, pay)
+    build(Pl, 2614, TL, { 43, 46, 0 })
+    local had = Overlays.get(Cf, TL) ~= nil
+    function fCf:getProperties() return floorS:getProperties() end
+    function fCf:getTextureName() return floorS:getName() end
+    function fCf:getType() return T.normal end
+    Cf.objects[#Cf.objects + 1] = fCf
+    Place.clearFloor(Cf)
+    check(had and #Cf.objects == 0 and Overlays.get(Cf, TL) == nil, "本工具換地板（先拆舊地板）：那一格的覆蓋帳本跟著清")
+    local U, fU = ground(47, 46)
+    Place.undo({ Place.attach(U, tlS, { ["Base.Plank"] = 1 }) })
+    check(hung(fU) == "" and fU.md.builderOverlays == nil and Overlays.get(U, TL) == nil, "放到一半出錯拆回：拿掉那張、清記號與帳本")
+    local E, fE = ground(42, 45)
+    function fE:transmitModData() error("injected failure after addAttachedAnimSprite") end
+    local placedE = {}
+    local okE = pcall(Place.attach, E, tlS, { ["Base.Plank"] = 1 }, placedE)
+    function fE:transmitModData() self.mds = self.mds + 1 end
+    Place.undo(placedE)
+    check(not okE and #placedE == 1 and hung(fE) == "" and fE.md.builderOverlays == nil and Overlays.get(E, TL) == nil,
+        "掛上之後才出錯：紀錄在掛之前就記進 placed，拆回拿得掉")
+    -- 附加圖存檔、同步只帶 255 張：滿了不掛（地圖原有的也算）
+    local Fu, fFu = ground(46, 45)
+    local fill = sprite("ov_fill_01_0", 2608, { flags = { "FloorOverlay" } })
+    for _ = 1, 255 do fFu:addAttachedAnimSprite(fill) end
+    give(Pl, pay)
+    local okF, _, aF = build(Pl, 2612, TL, { 46, 45, 0 })
+    table.remove(fFu.att)
+    local okG = build(Pl, 2613, TL, { 46, 45, 0 })
+    check(not okF and aF.code == "BLOCKED" and okG and #fFu.att == 255 and Overlays.get(Fu, TL) ~= nil,
+        "地板已有 255 張附加圖：BLOCKED、不扣料；少一張就掛得上")
+    local placedFu = {}
+    local okA = pcall(Place.attach, Fu, tl2S, { ["Base.Plank"] = 1 }, placedFu)
+    check(not okA and #placedFu == 0 and #fFu.att == 255 and Overlays.get(Fu, TL2) == nil,
+        "直接掛到已有 255 張的地板：丟錯，什麼都沒動（沒記紀錄、沒掛、沒記帳本）")
+
+    -- 讀檔改掛：0.2.0 以前的獨立物件，帳本建好後的下一個 tick 改掛到地板，退料照 buildMaterials
+    local function legacy(sq, spr, entry)
+        local o = { class = "IsoThumpable", spr = spr, mats = { ["Base.Plank"] = "2", ["Base.Nails"] = "1" },
+            md = { builderEntry = entry } }
+        function o:getSprite() return self.spr end
+        function o:getSquare() return sq end
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:getBuildMaterials() return self.mats end
+        function o:isFloor() return self.floor == true end
+        function o:hasBuildMaterials() return next(self.mats) ~= nil end
+        function o:isCorner() return false end
+        -- 舊版地面覆蓋建的時候伺服器設的欄位（Place 的 thumpable）：不是地板、殭屍不打、可穿過；三項各自翻
+        function o:isThumpable() return self.thump == true end
+        function o:isCanPassThrough() return self.pass ~= false end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    local L, fL = ground(41, 41)
+    local LN = ground(42, 41, true)
+    local LD, fLD = ground(43, 41)
+    fLD:addAttachedAnimSprite(tlS)
+    local LT = ground(41, 42)
+    legacy(L, tlS, TL)
+    local noFloor = legacy(LN, tlS, TL)
+    local dup = legacy(LD, tlS, TL)
+    local mismatch = legacy(LT, tlS, "something_else_01_0")
+    local LW = ground(42, 42)
+    local wallLike = legacy(LW, tlS, TL)
+    wallLike.thump = true -- 圖和記號都改成標線、殭屍打得到的牆
+    local LF, fLF = ground(44, 41)
+    local floorLike = legacy(LF, tlS, TL)
+    floorLike.floor = true -- 只有「是地板」不像（一樓的地板讀檔時走地板那條，不會排隊；二樓以上才會，下面直接呼叫）
+    local LP, fLP = ground(44, 42)
+    local noPass = legacy(LP, tlS, TL)
+    noPass.pass = false -- 只有「不能穿過」不像
+    local LG, fLG = ground(44, 43)
+    local moved = legacy(LG, tlS, TL)
+    local LS = ground(43, 42)
+    local swapped = legacy(LS, tlS, TL)
+    local LR, fLR = ground(43, 43)
+    local stuck = legacy(LR, tlS, TL)
+    function LR:transmitRemoveItemFromSquare() return -1 end -- 移除失敗：物件還在
+    local ticks = count("OnTick")
+    local inst = Overlays.instance
+    Overlays.instance = nil -- 單機：讀格子時帳本還沒建
+    for _, sq in ipairs({ L, LN, LD, LT, LW, LS, LR, LP, LG }) do fire("LoadGridsquare", sq) end
+    swapped.spr, swapped.md.builderEntry = debrisS, debrisS:getName() -- 排隊之後才換成不掛的圖
+    ground(44, 43) -- 排隊之後那一格換成另一份（卸載重載）：排著的是舊的那份
+    fire("OnTick")
+    local waited = #L.objects == 1 and count("OnTick") == ticks + 1
+    Overlays.instance = inst
+    fire("OnTick")
+    local r = Overlays.get(L, TL)
+    check(waited and #L.objects == 0 and hung(fL) == TL and fL.md.builderOverlays[TL] == true and r
+        and r["Base.Plank"] == 2 and r["Base.Nails"] == 1 and count("OnTick") == ticks,
+        "讀檔改掛：帳本建好前先排著；建好後的下一個 tick 拿掉舊物件、掛到地板，退料照 buildMaterials，摘掉 tick 事件")
+    check(LN.objects[1] == noFloor and LD.objects[1] == dup and hung(fLD) == TL and LT.objects[1] == mismatch
+        and Overlays.get(LD, TL) == nil and Overlays.get(LT, TL) == nil,
+        "不改掛：沒有地板、地板上已經有同一張、記號和圖不一樣的照舊留著，不記帳本")
+    local okFL, didFL = pcall(Place.relink, floorLike)
+    check(LW.objects[1] == wallLike and okFL and didFL == false and LF.objects[1] == floorLike and LP.objects[1] == noPass
+        and hung(fLF) == "" and hung(fLP) == "" and Overlays.get(LW, TL) == nil and Overlays.get(LF, TL) == nil
+        and Overlays.get(LP, TL) == nil and LS.objects[1] == swapped and Overlays.get(LS, debrisS:getName()) == nil,
+        "不改掛：建的時候的欄位有一項不像舊版地面覆蓋（殭屍打得到、是地板、不能穿過）、排隊之後換成不掛的圖，照舊留著")
+    check(LG.objects[1] == moved and hung(fLG) == "" and Overlays.get(LG, TL) == nil,
+        "不改掛：排隊之後那一格已換成另一份（卸載重載），舊的那份照舊")
+    check(LR.objects[1] == stuck and hung(fLR) == "" and fLR.md.builderOverlays == nil and Overlays.get(LR, TL) == nil,
+        "改掛時舊物件移不掉：拿掉剛掛的那張、清記號與帳本，舊物件留著")
+    local LX, fLX = ground(45, 41)
+    for _ = 1, 255 do fLX:addAttachedAnimSprite(fill) end
+    local full = legacy(LX, tlS, TL)
+    local okX, didX = pcall(Place.relink, full)
+    check(okX and didX == false and LX.objects[1] == full and #fLX.att == 255 and Overlays.get(LX, TL) == nil,
+        "地板已有 255 張附加圖：不改掛（不丟錯），舊物件留著")
+
+    -- 安全屋與建造作弊（其他種類走同一條路，這裡補覆蓋的）
+    local SH, fSH = ground(43, 44)
+    SH.owner = "someone"
+    give(Pl, pay)
+    local okSH, _, aSH = build(Pl, 2615, TL, { 43, 44, 0 })
+    check(not okSH and aSH.code == "SAFEHOUSE" and hung(fSH) == "" and Overlays.get(SH, TL) == nil,
+        "別人的安全屋：SAFEHOUSE、不掛、不記帳本")
+    local SD, fSD = ground(42, 44)
+    local okSD = build(Pl, 2616, TL, { 42, 44, 0 })
+    SD.owner = "someone"
+    local cSD, aSD = unbuild(Pl, 2617, 42, 44, TL)
+    SD.owner = nil
+    check(okSD and cSD == "dismantleRefused" and aSD.code == "SAFEHOUSE" and hung(fSD) == TL and Overlays.get(SD, TL) ~= nil,
+        "拆別人安全屋裡的：SAFEHOUSE、不拿掉、帳本留著")
+    local CP = player({ id = 2603, x = 44.5, y = 45.5, here = here, cheat = true })
+    local CC, fCC = ground(42, 46)
+    local okC = build(CP, 2618, TL, { 42, 46, 0 })
+    local recC = Overlays.get(CC, TL)
+    here.dropped = {}
+    local cC = unbuild(CP, 2619, 42, 46, TL)
+    check(okC and recC ~= nil and next(recC) == nil and cC == "dismantled" and hung(fCC) == "" and next(here.dropped) == nil,
+        "建造作弊：照掛、帳本是空表；拆得掉、什麼都不退")
+    instanceof = realInst
+    scrapDefs.OvMetal = nil
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")
