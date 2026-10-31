@@ -24,14 +24,14 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 
 [h2]✨ Features[/h2]
 [list]
-[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one catalog, with search and favorites
+[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, or right-click something on the ground to pick its tile
 [*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building, with no skill level needed and XP for building
 [*] [b]Drag a row[/b]: walls, floors, fences and roofs in one drag, skipping tiles you can't afford
 [*] [b]Switches for the lights you pick[/b]: choose which lights each switch controls, movable lights included
 [*] [b]Auto wiring and two-way switches[/b]: a switch in a closed room wires itself to the lights there, and two switches can share them
 [*] [b]Dismantle[/b]: right-click what you built and choose Dismantle (Build Anything) to get materials back
 [*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
-[*] [b]Admin settings[/b]: who can build, where, the material multiplier, and turning off tiles from specific mods
+[*] [b]Admin settings[/b]: turn kinds, mods and tilesets on or off in game, and change the building rules
 [/list]
 📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
 

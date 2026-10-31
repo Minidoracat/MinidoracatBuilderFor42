@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Ten element nie chroni przed deszczem (okap, ozdoba); pole pod nim zostaje na zewnątrz. PgUp/PgDn zmienia poziom; rząd przeciągaj od podpartego końca.",
   "IGUI_MBLD_Note_light": "Świeci tylko z zasilaniem: zbudowane przez ciebie domy nie są podłączone do sieci, więc użyj agregatu prądotwórczego. Postawiony przełącznik sam łączy się z lampami w tym samym zamkniętym pokoju; kliknij go PPM i wybierz „Podłączanie…”, by dodać lub usunąć lampy.",
   "IGUI_MBLD_Note_lightStreet": "Świeci tylko nocą i tylko z zasilaniem: zbudowane przez ciebie domy nie są podłączone do sieci, więc użyj agregatu prądotwórczego. Postawiony przełącznik sam łączy się z lampami w tym samym zamkniętym pokoju; kliknij go PPM i wybierz „Podłączanie…”, by dodać lub usunąć lampy.",
-  "IGUI_MBLD_WhatsNew": "Zbudowane przez ciebie latarnie i podświetlane szyldy świecą teraz nocą także z agregatu lub energii słonecznej.",
+  "IGUI_MBLD_WhatsNew": "Kliknij PPM na ziemi i wybierz „Wybierz kafelek”, by go znaleźć. Nowe: słupki i podłogi z receptur budowy.",
   "IGUI_MBLD_Note_curtain": "Wisi po wewnętrznej stronie ramy okna. Pole musi mieć nad sobą dach lub podłogę.",
   "IGUI_MBLD_Tool_HAMMER": "Młotek",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Kielnia",

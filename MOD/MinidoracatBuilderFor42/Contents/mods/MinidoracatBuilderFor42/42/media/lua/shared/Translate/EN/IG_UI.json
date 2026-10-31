@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "This piece does not keep rain out (eaves, decoration); the square below stays outdoors. PgUp/PgDn changes the level; drag a row from the supported end.",
   "IGUI_MBLD_Note_light": "Lights up only with power: self-built houses are not on the grid, so use a generator. A switch you place wires itself to the lights in the same closed room; right-click it and choose Wiring... to add or remove lights.",
   "IGUI_MBLD_Note_lightStreet": "Lights up only at night, and only with power: self-built houses are not on the grid, so use a generator. A switch you place wires itself to the lights in the same closed room; right-click it and choose Wiring... to add or remove lights.",
-  "IGUI_MBLD_WhatsNew": "Street lights and lit signs you build now light up at night on generator or solar power.",
+  "IGUI_MBLD_WhatsNew": "Right-click the ground and choose Pick tile to find that tile. New: posts, and floors from build recipes.",
   "IGUI_MBLD_Note_curtain": "Hangs on the indoor side of a window frame. The square needs a roof or a floor above it.",
   "IGUI_MBLD_Tool_HAMMER": "Hammer",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Mason's Trowel",

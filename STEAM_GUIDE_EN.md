@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, placing and dragging rows, the rules for doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, switches and wiring, dismantling and gamepad controls, plus the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, picking a tile with a right-click, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
@@ -10,10 +10,10 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:01-overview-en.jpg}}
 [olist]
 [*] [b]Open the window[/b]: click the Build Anything button on the family toolbar (a hammer and a handsaw).
-[*] [b]Find something[/b]: search by name, or narrow it down with the tabs, kinds, tilesets and sources.
+[*] [b]Find something[/b]: search by name, narrow it down with the tabs, kinds, tilesets and sources, or right-click the ground and choose Pick tile (Build Anything).
 [*] [b]Check the details[/b]: select an item, and the right side lists materials, tools, XP and how it is removed.
 [*] [b]Place it[/b]: press Build, then click the ground.
-[*] [b]Drag a row[/b]: hold the left button and drag to build a row of walls, floors, fences or roofs.
+[*] [b]Drag a row[/b]: hold the left button and drag to build a row of walls, posts, floors, fences or roofs.
 [*] [b]Pay for it[/b]: keep the materials in your bags or on the ground next to you, and your character walks over and builds.
 [/olist]
 [h3]Requirements[/h3]
@@ -39,14 +39,28 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:02-search-en.jpg}}
 [h3]Finding things[/h3]
 [list]
-[*] [b]Search[/b]: by name, tileset or source mod.
-[*] [b]Paste a tile name[/b]: paste a full tile name to jump straight to that item.
+[*] [b]Search[/b]: by name, tileset, source mod or full tile name.
+[*] [b]Full tile names[/b]: search a full name (blends_street_01_101, for example), and if it is in the list, that item is selected.
+[*] [b]Other looks of a tile[/b]: an open door, a smashed window, a closed curtain, one square of a multi-square object and the like select the item they belong to.
+[*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
 [*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds and Tilesets, with item counts in parentheses.
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]One item per object[/b]: the facings of one object are one item.
 [*] [b]Different objects with the same name[/b]: each is listed separately.
+[*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
+[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected.
+[*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
+[/list]
+[h3]Pick tile with a right-click[/h3]
+{{img:15-pick-en.jpg}}
+[list]
+[*] [b]How[/b]: right-click the ground and choose Pick tile (Build Anything).
+[*] [b]What it lists[/b]: every image on that square, including overlays on the floor and on walls.
+[*] [b]Pick one[/b]: Build Anything opens with that item selected.
+[*] [b]Tiles you can't build[/b]: shown in red, and hovering one tells you why.
+[*] [b]Gamepad[/b]: works too.
 [/list]
 [h3]Sources[/h3]
 {{img:13-mods-en.jpg}}
@@ -68,6 +82,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:03-detail-en.jpg}}
 [list]
 [*] [b]Source[/b]: Source: mod name (tileset), and a long tileset name wraps instead of being cut off.
+[*] [b]Tile name[/b]: Tile: shows the full tile name, ready to copy when you report a problem or search.
 [*] [b]Footprint[/b]: how many squares it covers and how many facings it has.
 [*] [b]Flagged first[/b]: permanently locked windows and things that can only be smashed for no materials are listed before the materials, with a warning.
 [*] [b]Removal[/b]: how it is removed later and what you get back, see Dismantling.
@@ -76,6 +91,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Experience[/b]: which skill gets how much XP, or Experience: none.
 [*] [b]Notes[/b]: kinds with extra rules, such as stairs, roofs, lights and curtains, get a note.
 [*] [b]Scrolling[/b]: when the details are taller than the window, scroll with the mouse wheel or the scroll bar.
+[*] [b]Admin shortcuts[/b]: see Admin panel.
 [/list]
 === 🧰 Placing and dragging
 {{img:04-cursor-en.jpg}}
@@ -95,7 +111,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dragging a row[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, walls, fences and roofs, by holding the left button, dragging, and releasing to queue them.
+[*] [b]What you can drag[/b]: floors, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them.
 [*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped.
 [*] [b]When short[/b]: the box says what those tiles still need together.
 [*] [b]Materials for only the first few[/b]: only the tiles you can afford are built, and the rest are skipped.
@@ -129,9 +145,15 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 === 🧰 Rules for each kind
 [h3]Walls, floors and fences[/h3]
 [list]
-[*] [b]Zombies can break them[/b]: walls and window frames have 450 durability, fences 300.
+[*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300.
 [*] [b]Stair openings[/b]: walls, fences and door frames can't block the way onto or off stairs.
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
+[*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use.
+[*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
+[*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
+[*] [b]Railing ends[/b]: railing ends that block only one side of a square are not listed (zombies would not come to break them), and a search tells you why.
+[*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too.
+[*] [b]Other recipe pieces[/b]: walls, fences and anything else with its own functions are still built from the vanilla build menu or that mod's menu.
 [/list]
 [h3]Doors and windows[/h3]
 [list]
@@ -206,7 +228,7 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [table]
 [tr][th]Kind[/th][th]Wood[/th][th]Masonry[/th][th]Metal[/th][/tr]
 [tr][td]Floor[/td][td]1 Plank + 1 Nails[/td][td]4 Ceramic Tile[/td][td]1 Steel Sheet - Small[/td][/tr]
-[tr][td]Wall, window frame[/td][td]4 Plank + 6 Nails[/td][td]4 Brick[/td][td]3 Steel Rod + 3 Steel Sheet - Small[/td][/tr]
+[tr][td]Wall, post, window frame[/td][td]4 Plank + 6 Nails[/td][td]4 Brick[/td][td]3 Steel Rod + 3 Steel Sheet - Small[/td][/tr]
 [tr][td]Door frame[/td][td]4 Plank + 4 Nails[/td][td]4 Brick[/td][td]4 Steel Rod[/td][/tr]
 [tr][td]Fence[/td][td]2 Plank + 2 Nails[/td][td]2 Brick[/td][td]2 Steel Rod[/td][/tr]
 [tr][td]Door[/td][td]4 Plank + 4 Nails + 2 Door Hinge + 1 Doorknob[/td][td]As wood[/td][td]3 Steel Sheet - Small + 2 Door Hinge + 1 Doorknob[/td][/tr]
@@ -366,9 +388,41 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Wire this room[/b]: X.
 [*] [b]Leave[/b]: B.
 [/list]
+=== ⚙️ Admin panel
+{{img:14-admin-en.jpg}}
+Players who can change sandbox options can turn what can be built on or off for every player in game. The panel changes the sandbox options in the next chapter.
+[h3]Opening it[/h3]
+[list]
+[*] [b]Who sees it[/b]: players who can change sandbox options, that is admins in multiplayer and the host of a game hosted from the game, and you yourself in singleplayer.
+[*] [b]Where[/b]: the Manage button at the right end of the Per row slider row in the Build Anything window.
+[/list]
+[h3]Four pages[/h3]
+[list]
+[*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
+[*] [b]Sources[/b]: turn all tiles from a mod on or off.
+[*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
+[*] [b]Rules[/b]: the six rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items per drag and Material cost multiplier.
+[/list]
+[h3]Applying[/h3]
+[list]
+[*] [b]Change, then apply[/b]: your changes stay in the panel until you press Apply, and Revert drops changes not applied yet.
+[*] [b]After applying[/b]: the server saves them, and every player's Build Anything follows within a few seconds.
+[*] [b]Changes by other admins[/b]: changes you have already received are kept; if two admins press Apply at almost the same time, the later one overwrites the earlier one.
+[*] [b]If the server doesn't apply them[/b]: the panel says why, and Try again sends them again.
+[*] [b]Kinds turned off[/b]: players can't see or build them, and things already built stay and can still be dismantled.
+[*] [b]Sources and tilesets turned off[/b]: players can't see or build those tiles.
+[*] [b]The base game[/b]: can't be turned off as a whole, so turn off its tilesets or kinds instead.
+[/list]
+[h3]Shortcuts in the details[/h3]
+[list]
+[*] [b]Where[/b]: when an admin selects an item, Turn off this tileset and Turn off this source appear above Build in the details.
+[*] [b]Confirm first[/b]: a confirmation says how many items it turns off, and pressing Turn off applies it for every player.
+[*] [b]Turning it back on[/b]: use the admin panel.
+[*] [b]Narrow window[/b]: the two buttons are hidden.
+[/list]
 === ⚙️ Sandbox options and defaults
 {{img:12-sandbox-en.jpg}}
-On the Minidoracat Build Anything page of the sandbox settings.
+On the Minidoracat Build Anything page of the sandbox settings, or in game with the Manage panel.
 [table]
 [tr][th]Option[/th][th]Default[/th][th]Range[/th][th]What it does[/th][/tr]
 [tr][td]Enable building[/td][td]On[/td][td]On/off[/td][td]When off, the server refuses every build request from this mod. Things already built stay[/td][/tr]
@@ -380,10 +434,35 @@ On the Minidoracat Build Anything page of the sandbox settings.
 [tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods and mods whose tiles belong to their own build menus are off[/td][/tr]
 [tr][td]Disabled tilesets[/td][td]Empty[/td][td]Tileset names separated by semicolons[/td][td]Tiles from these tilesets can't be built, for example walls_exterior_house_01[/td][/tr]
 [/table]
+The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes, all on by default. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
+[table]
+[tr][th]Option[/th][th]Covers[/th][/tr]
+[tr][td]Floor[/td][td]Floors, including flat roof floors[/td][/tr]
+[tr][td]Floor overlay[/td][td]Rugs, road markings and other overlays laid on a floor[/td][/tr]
+[tr][td]Wall[/td][td]Walls, including corner walls that cover two sides. Corner posts are under Post[/td][/tr]
+[tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
+[tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
+[tr][td]Wall overlay[/td][td]Decorative pieces laid over a wall[/td][/tr]
+[tr][td]Door[/td][td]Doors. They go into a door frame[/td][/tr]
+[tr][td]Window[/td][td]Windows. They go into a window frame[/td][/tr]
+[tr][td]Door frame[/td][td]Door frames[/td][/tr]
+[tr][td]Window frame[/td][td]Window frames[/td][/tr]
+[tr][td]Window fitting[/td][td]Blinds, shutters and other fittings hung on a window[/td][/tr]
+[tr][td]Curtain[/td][td]Curtains hung on the indoor side of a window[/td][/tr]
+[tr][td]Roof[/td][td]Roof pieces and eaves[/td][/tr]
+[tr][td]Stairs[/td][td]Three-piece stairs[/td][/tr]
+[tr][td]Furniture[/td][td]Furniture and objects that can be picked up[/td][/tr]
+[tr][td]Container[/td][td]Containers you can store items in, such as cabinets, fridges and crates[/td][/tr]
+[tr][td]Solid object[/td][td]Objects that block the whole square and can't be picked up[/td][/tr]
+[tr][td]Light[/td][td]Lights, light switches, street lights and lit signs[/td][/tr]
+[tr][td]Wall-mounted[/td][td]Things hung on a wall, such as pictures, shelves and signs[/td][/tr]
+[tr][td]Attached object[/td][td]Objects attached to the side of a wall or to a ceiling[/td][/tr]
+[tr][td]Overlay[/td][td]Other overlay pieces[/td][/tr]
+[/table]
 [list]
 [*] [b]Build cheat[/b]: admins with the build cheat on never pay.
 [*] [b]After changing settings[/b]: the server checks the current settings on every placement.
-[*] [b]Windows opened before the change[/b]: their requests are refused with a prompt to reopen, and no materials are used.
+[*] [b]Open windows[/b]: follow the new settings within a few seconds, so there is no need to reopen them.
 [*] [b]With Enable building off[/b]: nobody can wire, but built lights and switches still work.
 [*] [b]With Admins only[/b]: ordinary players can't wire, admins can, and lights and switches still work.
 [*] [b]Safehouse[/b]: with Minidoracat Safehouse installed, every square follows its safehouse permissions.
@@ -409,10 +488,11 @@ These are not in the catalog either:
 [h3]When another mod on your server has such facilities[/h3]
 [olist]
 [*] [b]Find the tileset[/b]: select the facility in Build Anything, and the first line of the details reads Source: mod name (tileset).
-[*] [b]Turn off the tileset[/b]: add the tileset name to the sandbox option Disabled tilesets, several separated by semicolons.
-[*] [b]Or turn off the whole mod[/b]: add its mod ID to Disabled sources (mod IDs), and none of its tiles can be built.
+[*] [b]Turn it off in game[/b]: with the facility selected, press Turn off this tileset or Turn off this source in the details, or turn it off on the Tilesets or Sources page of the Manage panel, see Admin panel.
+[*] [b]Or in the sandbox: turn off the tileset[/b]: add the tileset name to the sandbox option Disabled tilesets, several separated by semicolons.
+[*] [b]Or in the sandbox: turn off the whole mod[/b]: add its mod ID to Disabled sources (mod IDs), and none of its tiles can be built.
 [*] [b]Keep the defaults[/b]: when editing Disabled sources (mod IDs), keep the default mod IDs.
-[*] [b]On the players' side[/b]: the tiles you turned off can no longer be built, and players with the window open are asked to reopen it the next time they build.
+[*] [b]On the players' side[/b]: the tiles you turned off can no longer be built, and open windows follow the change.
 [/olist]
 [list]
 [*] [b]Only a few tiles[/b]: ask that mod's author to call the API in the next chapter.
@@ -433,7 +513,7 @@ end)
 [*] [b]When to call it[/b]: Build Anything catalogs tiles when the game starts, and OnGameBoot fires before that.
 [*] [b]Dedicated servers[/b]: OnGameBoot fires there too.
 [*] [b]Without Build Anything[/b]: the check above skips the call.
-[*] [b]A whole tileset[/b]: server admins can also add it to the sandbox option Disabled tilesets.
+[*] [b]A whole tileset[/b]: server admins can also turn it off in the Manage panel or the sandbox option Disabled tilesets.
 [/list]
 === ⚠️ Known limitations
 [list]
@@ -492,7 +572,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]I can't find what I want to build[/h3]
 [list]
 [*] Set the source back to All sources, the tab to All, and untick Only what I can build.
-[*] The admin may have turned off its source or tileset.
+[*] Search its full tile name, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
 [*] Some things are never in the catalog, see For server admins: other mods' facilities.
 [/list]
 [h3]An item is dimmed. Can I still build it?[/h3]

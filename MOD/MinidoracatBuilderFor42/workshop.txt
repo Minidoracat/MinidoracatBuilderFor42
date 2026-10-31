@@ -27,14 +27,14 @@ description=[/olist]
 description=
 description=[h2]✨ Features[/h2]
 description=[list]
-description=[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one catalog, with search and favorites
+description=[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, or right-click something on the ground to pick its tile
 description=[*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building, with no skill level needed and XP for building
 description=[*] [b]Drag a row[/b]: walls, floors, fences and roofs in one drag, skipping tiles you can't afford
 description=[*] [b]Switches for the lights you pick[/b]: choose which lights each switch controls, movable lights included
 description=[*] [b]Auto wiring and two-way switches[/b]: a switch in a closed room wires itself to the lights there, and two switches can share them
 description=[*] [b]Dismantle[/b]: right-click what you built and choose Dismantle (Build Anything) to get materials back
 description=[*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
-description=[*] [b]Admin settings[/b]: who can build, where, the material multiplier, and turning off tiles from specific mods
+description=[*] [b]Admin settings[/b]: turn kinds, mods and tilesets on or off in game, and change the building rules
 description=[/list]
 description=📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
 description=
