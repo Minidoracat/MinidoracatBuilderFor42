@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Bu parça yağmuru kesmez (saçak, süs); alttaki kare dış mekân kalır. PgUp/PgDn katı değiştirir; bir sırayı desteklenen uçtan sürükle.",
   "IGUI_MBLD_Note_light": "Yalnızca elektrik varsa yanar: kendi yaptığın evler şebekeye bağlı değildir, jeneratör kullan. Koyduğun düğme aynı kapalı odadaki lambalara kendiliğinden bağlanır; lamba eklemek veya çıkarmak için düğmeye sağ tıklayıp Kablolama... seç.",
   "IGUI_MBLD_Note_lightStreet": "Yalnızca geceleri ve elektrik varsa yanar: kendi yaptığın evler şebekeye bağlı değildir, jeneratör kullan. Koyduğun düğme aynı kapalı odadaki lambalara kendiliğinden bağlanır; lamba eklemek veya çıkarmak için düğmeye sağ tıklayıp Kablolama... seç.",
-  "IGUI_MBLD_WhatsNew": "Zemine sağ tıklayıp Tile seç ile o tile'ı bul. Yeni: direkler ve yapı tariflerindeki zeminler.",
+  "IGUI_MBLD_WhatsNew": "Yol çizgileri ve çatlaklar artık kesik görünmüyor; önceden yapılanlar yüklemede düzelir.",
   "IGUI_MBLD_Note_curtain": "Pencere çerçevesinin iç tarafına asılır. O karenin üstünde çatı veya zemin olmalı.",
   "IGUI_MBLD_Tool_HAMMER": "Çekiç",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Duvarcı Malası",

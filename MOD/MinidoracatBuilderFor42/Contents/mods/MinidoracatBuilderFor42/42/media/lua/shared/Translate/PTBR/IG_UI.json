@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Esta peça não protege da chuva (beiral, decoração); o quadrado abaixo continua ao ar livre. PgUp/PgDn muda o andar; arraste uma linha a partir da ponta apoiada.",
   "IGUI_MBLD_Note_light": "Só acende com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
   "IGUI_MBLD_Note_lightStreet": "Só acende à noite e com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
-  "IGUI_MBLD_WhatsNew": "Botão direito no chão e Escolher tile encontra esse tile. Novo: postes e pisos de receitas de construção.",
+  "IGUI_MBLD_WhatsNew": "Faixas e rachaduras no chão não aparecem mais cortadas; as antigas se corrigem ao carregar.",
   "IGUI_MBLD_Note_curtain": "Fica no lado interno de um batente de janela. O quadrado precisa de telhado ou de piso acima.",
   "IGUI_MBLD_Tool_HAMMER": "Martelo",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Colher de Pedreiro",
