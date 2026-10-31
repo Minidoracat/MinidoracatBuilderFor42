@@ -1,7 +1,7 @@
 -- 目錄分批整理（client）：進遊戲後才開始，不卡載入也不卡畫面（設計稿 1.1；bt-perf §10、§11）。
 -- OnGameStart 只複製清單、掛事件（它是同步的，跑多久第一幀就晚多久）；之後每 tick 用時間預算分批：
 --   第一段：namedMap 每個 sprite → 過濾 → Rules.classify → Index.add
---   第二段：讀 tiledef 來源表，再建搜尋鍵（有名稱的項目＋tileset）
+--   第二段：讀 tiledef 來源表，再建搜尋鍵（有名稱的項目＋tileset），建 tileset 鍵時順便把它的桶照編號排
 -- 做完自己摘掉 tick 事件。每 tick 整段 pcall：出錯就停止並記 log，不會每 tick 重丟。
 require "MinidoracatBuilder/Rules"
 require "MinidoracatBuilder/Sources"
@@ -107,8 +107,10 @@ local function runKeys(budget)
         else
             local k = j - groups.n
             Index.addSetKey(k, modNameOf(Index.setFile[sets[k]]))
+            Index.sortSet(sets[k]) -- 名稱鍵都建好了（它照群組記的位置取名稱），才能換順序
         end
-        if budget and j % CHECK_EVERY == 0 then
+        -- 排序那一段每格的成本差很多（桶大小不一）：每格都看時鐘
+        if budget and (j > groups.n or j % CHECK_EVERY == 0) then
             local t = now()
             if t - t0 >= budget or t < t0 then break end
         end
@@ -180,7 +182,7 @@ end
 
 function Catalog.start()
     if job or Catalog.state == "ready" then return end
-    Rules.ensureWindowStates()
+    Rules.ensure()
     local named = IsoSpriteManager.instance:getNamedMap()
     -- HashMap.values() 的類別沒公開，丟進公開的 ArrayList 建構子；也避免之後 getSprite 新增項目時迭代器失效
     local list = ArrayList.new(named:values())

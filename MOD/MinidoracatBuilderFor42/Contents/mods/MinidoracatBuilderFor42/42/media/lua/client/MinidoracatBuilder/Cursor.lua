@@ -21,7 +21,7 @@ local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials,
 -- （PackThrow ThrowCursor.lua 同做法）。
 local Class, Marks, Panel
 local LOG = "[MinidoracatBuilderFor42] "
-local DRAG = { floor = true, wall = true, fence = true, roof = true } -- 能按住拖一排的種類（第三、四階段的決定）
+local DRAG = { floor = true, wall = true, fence = true, roof = true, post = true } -- 能按住拖一排的種類（第三、四階段的決定；柱子原本算牆）
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算停下（MP 的 placed 比客戶端動作結束晚到）

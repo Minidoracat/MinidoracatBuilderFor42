@@ -114,6 +114,49 @@ function Index.addSetKey(i, modName)
     Index.setKey.n = i
 end
 
+-- 一個桶照圖塊編號排：第一段照 namedMap 的雜湊順序加入（Catalog.start），同組的 #5、#0、#21 混在一起。
+-- 不用 table.sort（Kahlua 的實作是遞迴，深度有上限；家族規則）：由下而上的合併排序，編號和名稱一起搬。
+-- 要在 addNameKey 之後才排：它照群組記的位置（g.slot）取名稱。
+function Index.sortBucket(arr)
+    local n = arr.n
+    if n < 2 then return end
+    local a, ka, b, kb = {}, {}, {}, {}
+    for i = 1, n do
+        a[i] = arr[i]
+        ka[i] = tonumber(arr[i]:match("_(%d+)$")) or 0
+    end
+    local width = 1
+    while width < n do
+        local i = 1
+        while i <= n do
+            local mid, hi = math.min(i + width, n + 1), math.min(i + 2 * width, n + 1)
+            local l, r, k = i, mid, i
+            while l < mid and r < hi do
+                if ka[r] < ka[l] then
+                    b[k], kb[k], r = a[r], ka[r], r + 1
+                else
+                    b[k], kb[k], l = a[l], ka[l], l + 1
+                end
+                k = k + 1
+            end
+            while l < mid do b[k], kb[k], l, k = a[l], ka[l], l + 1, k + 1 end
+            while r < hi do b[k], kb[k], r, k = a[r], ka[r], r + 1, k + 1 end
+            i = i + 2 * width
+        end
+        a, b, ka, kb = b, a, kb, ka
+        width = width * 2
+    end
+    for i = 1, n do arr[i] = a[i] end
+end
+
+-- 這個 tileset 在每個種類的桶都照編號排（第二段建 tileset 搜尋鍵時順便做）
+function Index.sortSet(tileset)
+    for _, sets in pairs(Index.bucket) do
+        local arr = sets[tileset]
+        if arr then Index.sortBucket(arr) end
+    end
+end
+
 -- 整理完：丟掉只在整理期間用的群組表
 function Index.finish()
     Index.groups = nil

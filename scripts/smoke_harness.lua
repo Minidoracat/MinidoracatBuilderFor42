@@ -35,6 +35,7 @@ function isClient() return false end
 function isServer() return true end
 function getText(key) return key end
 function getTextOrNull() return nil end
+function getRecipeDisplayName(name) return "R:" .. name end -- 標出有翻成配方顯示名稱
 
 local handlers = {}
 Events = setmetatable({}, {
@@ -120,6 +121,16 @@ IsoSpriteManager = { instance = { getNamedMap = function()
     }
 end } }
 ArrayList = { new = function(list) return list end }
+-- 假 SpriteConfigManager：建造配方的轉角柱（Rules.recordCorners 讀 getScript():getCornerSprite()）。
+-- 名稱放 SpriteConfigManager.corners（主程式的 local 已到 200 上限）
+SpriteConfigManager = { corners = {}, GetObjectInfoList = function()
+    local infos = {}
+    for i, name in ipairs(SpriteConfigManager.corners) do
+        infos[i] = { getScript = function() return { getCornerSprite = function() return name end } end }
+    end
+    infos[#infos + 1] = { getScript = function() return nil end } -- 沒有 SpriteConfig 腳本的
+    return javaList(infos)
+end }
 
 -- 假 MOD 清單與 mod.info
 local modInfos = {}
@@ -295,7 +306,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {}, set = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "setIsStairs" }) do
+        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "setIsStairs", "setCorner" }) do
         o[s] = function(self, v) self.set[s] = v end -- 記最後一次設的值
     end
     function o:getSprite() return spriteMap[name] end
@@ -1198,7 +1209,8 @@ do
         sprite("wood_test_01_0", 954, { flags = { "solidtrans" }, keys = { Material = "Wood", PickUpWeight = "40" } }),
         sprite("top_test_01_0", 955, { flags = { "solid" }, keys = { IsTableTop = "" } }),
         sprite("shelf_test_01_0", 956, { flags = { "solid" }, keys = { MoveType = "WallObject", container = "shelves" } }),
-        sprite("rug_test_01_0", 957, { flags = { "solid" }, keys = { MoveType = "FloorRug", Material = "Wood", PickUpWeight = "40" } }) })
+        sprite("rug_test_01_0", 957, { flags = { "solid" }, keys = { MoveType = "FloorRug", Material = "Wood", PickUpWeight = "40" } }),
+        sprite("post_test_01_0", 959, { flags = { "WallSE" } }) })
     local function put(id, x, name)
         local P = player({ id = id, x = x + 0.5, y = 61.5, here = square(x, 61, 0) })
         P.inv:add(item("Base.Hammer", { HAMMER = true }))
@@ -1218,6 +1230,11 @@ do
     local fo = put(38, 72, "fence_test_01_0")
     check(fo and fo.set.setIsThumpable == true and fo.set.setMaxHealth == 300 and fo.set.setThumpDmg == nil
         and fo.set.setBlockAllTheSquare == false, "帶 solid 的柵欄（格邊種類）：照固定 300 血，不套家具、不整格擋")
+    -- 柱子（WallSE；使用者 2026-10-31 拆成新種類）：照原版補的轉角柱，轉角＋不可穿過（不然殭屍把它當這一格的西牆打；
+    -- 可穿過的話原生尋路會把同一格的牆也當成打不了）
+    local po = put(39, 74, "post_test_01_0")
+    check(po and po.set.setCorner == true and po.set.setMaxHealth == 450 and po.set.setCanPassThrough == false
+        and w.set.setCorner == false, "柱子：轉角、不可穿過、450 血（照原版 addCorner）；牆不是轉角")
 end
 square(48, 53, 0, { noReach = true })
 ok, cmd, a = build(Q, 12, "solid_01_0", { 48, 53, 0 })
@@ -3212,6 +3229,182 @@ local function streetScenario()
     getCell, instanceof, IsoGridSquare, getGameTime = realCell, realInst, realIGS, realGT
 end
 streetScenario()
+
+print("情境二十五：2026-10-31 玩家回饋（柱子、配方的地板、不列的原因、種類開關、同組照編號排、管理面板合併）")
+do
+    local realIsServer, realPanel = isServer, ISPanel
+    isServer = function() return false end
+    ISPanel = ISPanel or { derive = function(self) return setmetatable({}, { __index = self }) end } -- 只驗合併，不建面板
+    require "MinidoracatBuilder/Admin"
+    isServer, ISPanel = realIsServer, realPanel
+    local W, Admin = MinidoracatBuilder.Window, MinidoracatBuilder.Admin
+    local realGetText, realGetTextOrNull = getText, getTextOrNull
+    local function keyed(k, ...)
+        local a = { ... }
+        if #a == 0 then return k end
+        return k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    getText, getTextOrNull = keyed, keyed
+    local function code(o, name) return select(2, Rules.classify(sprite(name or "test_01_0", 5, o))) end
+    -- 柱子：WallSE、沒有牆鍵只有撞車或單邊碰撞、配方的轉角柱；已經列出的不換種類
+    check(kind({ flags = { "WallSE" } }) == "post" and kind({ flags = { "WallSE" }, keys = { WallN = "" } }) == "wall",
+        "WallSE：柱子；同時帶牆鍵的照舊是牆")
+    check(kind({ keys = { HitByCar = "", CanScrap = "" } }) == "post", "沒有牆鍵、只有撞車（柵欄柱、收尾柱）：柱子")
+    check(code({ flags = { "collideN" } }) == "BLOCKS_EDGE" and code({ flags = { "collideW" } }) == "BLOCKS_EDGE"
+        and code({ flags = { "collideN", "collideW" } }) == "BLOCKS_EDGE" and code({ flags = { "collideN" }, keys = { HitByCar = "" } }) == "BLOCKS_EDGE"
+        and code({ flags = { "WallSE", "collideW" } }) == "BLOCKS_EDGE",
+        "擋一條格邊卻不是牆的（欄杆收尾；使用者 2026-10-31 選不收）：不列，原因 BLOCKS_EDGE；柱子都不擋格邊")
+    check(kind({ flags = { "solid" }, keys = { HitByCar = "" } }) == "solid"
+        and kind({ flags = { "HoppableN" }, keys = { HitByCar = "" } }) == "fence", "原本就列出的不換種類：帶撞車的實心物件、柵欄照舊")
+    SpriteConfigManager.corners = { "corner_01_60" }
+    Rules.recordCorners()
+    check(kind({ keys = { CanScrap = "" } }, "corner_01_60") == "post" and kind({ keys = { CanScrap = "" } }, "corner_01_61") == nil
+        and Rules.corners == 1, "建造配方指定的轉角柱：柱子；其他沒有屬性的照樣不列")
+    SpriteConfigManager.corners = {}
+    Rules.recordCorners()
+    -- 建造配方的圖（EntityScript）：只收地板與地面覆蓋（使用者 2026-10-31 選）
+    check(kind({ flags = { "solidfloor", "EntityScript" } }) == "floor" and kind({ flags = { "FloorOverlay", "EntityScript" } }) == "floorOverlay",
+        "配方的地板與地面覆蓋：列")
+    check(kind({ flags = { "WallN", "EntityScript" }, keys = { WallN = "" } }) == nil
+        and code({ flags = { "WallN", "EntityScript" }, keys = { WallN = "" } }) == "ENTITY", "配方的牆：不列，原因 ENTITY")
+    -- 不列的原因碼（每個 nil 都帶原因，建造視窗才說得出為什麼）
+    check(code({ flags = { "doorW", "open" } }) == "DOOR_OPEN" and code({ flags = { "doorW" }, keys = { DoubleDoor = "3" } }) == "DOUBLE_DOOR"
+        and code({}) == "NO_KIND" and code({ keys = { IsMoveAble = "" } }, "crafted_04_120") == "LUA"
+        and code({ keys = { RoofGroup = "1" } }, "e_roof_snow_01_3") == "PREFIX" and code({ type = T.tree }) == "TREE"
+        and code({ flags = { "vegitation" } }) == "PLANT" and code({ flags = { "solidfloor" }, keys = { waterAmount = "9999" } }) == "WATER"
+        and code({ keys = { container = "crate", StackReplaceTileOffset = "-1" } }) == "STACK"
+        and code({ type = T.stairsBW, keys = { CanScrap = "" } }) == "STAIRS_PART" and code({ keys = { LightRadius = "5" } }) == "LIGHT"
+        and code({ type = T.curtainS, keys = { MoveType = "WindowObject", IsClosedState = "" } }) == "CURTAIN_CLOSED"
+        and code({ flags = { "WallSE", "makeWindowInvincible" } }) == "INVINCIBLE", "不列的圖都帶原因碼")
+    -- Entry.why：原因與改選的那一張
+    local closed = sprite("door_x_01_0", 60, { flags = { "doorN" } })
+    local open = sprite("door_x_01_2", 61, { flags = { "doorN", "open" } })
+    local wallE = sprite("wall_x_01_0", 62, { flags = { "WallN", "EntityScript" }, keys = { WallN = "", EntityScriptName = "Base.WoodWall" } })
+    local post = sprite("fence_x_01_29", 63, { keys = { HitByCar = "" } })
+    local p3 = sprite("fence_x_01_3", 64, { keys = { HitByCar = "" } })
+    local p13 = sprite("fence_x_01_13", 65, { keys = { HitByCar = "" } })
+    -- 另一面的門：目錄只收編號最小的北面（0），西面關著的是 4、開著的是 6
+    world({ closed, open, wallE, post, p3, p13,
+        sprite("door_z_01_0", 66, { flags = { "doorN" }, keys = { Facing = "N", Woffset = "4" } }),
+        sprite("door_z_01_4", 67, { flags = { "doorW" }, keys = { Facing = "W", Noffset = "-4" } }),
+        sprite("door_z_01_6", 68, { flags = { "doorW", "open" }, keys = { Facing = "W", Noffset = "-4" } }) })
+    local c1, _, alt1 = Entry.why("door_x_01_2")
+    local c2, a2 = Entry.why("wall_x_01_0")
+    check(c1 == "DOOR_OPEN" and alt1 == "door_x_01_0" and c2 == "ENTITY" and a2 == "Base.WoodWall"
+        and Entry.why("nope_01_0") == "UNKNOWN" and Entry.why("door_x_01_0") == nil,
+        "Entry.why：開著的門改選關著那張（−2）、配方的牆說是哪個配方、沒有這張圖 UNKNOWN、能蓋的沒有原因")
+    check(W.whyText("ENTITY", a2) == "IGUI_MBLD_Why_ENTITY(R:Base.WoodWall)", "配方的原因寫配方的顯示名稱，不寫腳本 ID")
+    -- 種類開關：伺服器回 DISABLED、說明是哪個種類、算進設定摘要
+    local d0 = Entry.digest()
+    sb.KindPost = false
+    local pe, pc = Entry.resolve("fence_x_01_29")
+    local c3, a3 = Entry.why("fence_x_01_29")
+    check(pe == nil and pc == "DISABLED" and c3 == "DISABLED_KIND" and a3 == "post" and Entry.digest() ~= d0,
+        "關掉柱子：伺服器回 DISABLED、說明是柱子、設定摘要跟著變（舊視窗的請求回 STALE）")
+    -- 建造視窗：同組照編號排、完整名稱搜關掉的種類不列並說明、開著的門改選關著那扇、頁籤種類與狀態列
+    Index.reset()
+    Index.add("door", "door_x_01_0", "door_x_01", 0, 1)
+    Index.add("door", "door_z_01_0", "door_z_01", 0, 1)
+    for _, n in ipairs({ 29, 3, 13 }) do Index.add("post", "fence_x_01_" .. n, "fence_x_01", n, 1) end
+    for i = 1, Index.setName.n do
+        Index.addSetKey(i, "")
+        Index.sortSet(Index.setName[i])
+    end
+    local b = Index.bucket.post.fence_x_01
+    check(b[1] == "fence_x_01_3" and b[2] == "fence_x_01_13" and b[3] == "fence_x_01_29", "同一組照編號排（3、13、29，不照字串）")
+    sb.DisabledTilesets = ""
+    local function st(q) return { query = q, tab = "all", cat = "all", source = "all", recent = { n = 0 } } end
+    local hidden = W.filter(st("fence_x_01_29"))
+    local title, hint = W.emptyQuery("fence_x_01_29")
+    local wallTab = table.concat(W.tabKinds("wall"), ",")
+    check(hidden.n == 0 and title:find("IGUI_MBLD_Why_Title", 1, true) and hint:find("IGUI_MBLD_Why_DISABLED_KIND", 1, true)
+        and W.kindsOff() == 1 and wallTab == "wall,fence,wallOverlay",
+        "關掉的種類：完整名稱也搜不到、空白狀態說明是哪個種類、頁籤不含它、狀態列算得出關了幾種")
+    sb.KindPost = nil
+    local r, jump = W.filter(st("door_x_01_2"))
+    check(r.n == 1 and r[1] == "door_x_01_0" and jump == "door_x_01_0", "搜開著的門：清單換成關著那扇所在的桶並選到它")
+    check((function()
+        local r2, jump2 = W.filter(st("door_z_01_6"))
+        return r2.n == 1 and r2[1] == "door_z_01_0" and jump2 == "door_z_01_0"
+    end)(), "搜另一面開著的門：先換成關著那扇（−2），它不在目錄就找目錄收的那一面")
+    sb.KindDoor = false
+    check((function() -- 主程式的 local 已到 200 上限：新的檢查包在函式裡
+        local c4, a4, alt4 = Entry.why("door_x_01_2")
+        return c4 == "DISABLED_KIND" and a4 == "door" and alt4 == nil
+    end)(), "開著的門、關著那扇的種類被關了：說是哪個種類被關，不叫玩家去找蓋不了的那張")
+    sb.KindDoor = nil
+    -- 管理面板：合併只動這次改的 id，照字母排、分號接
+    check(Admin.merge("b;a; c ", { d = true, a = false }) == "b;c;d" and Admin.merge("", { x = false }) == "",
+        "管理面板合併：沒改到的留著、打開的拿掉、關掉的加進去，排序後分號接")
+    -- 管理面板套用：權限和原版封包同一個判斷、先驗完才動手、多人等伺服器的值回來（逾時算失敗）
+    ;(function()
+        local real = { isClient, isCoopHost, haveAccess, getSandboxOptions, SandboxOptions }
+        clockStep = 0 -- 逾時只靠下面手動往前撥
+        local allowed, sent, liveSets, lua = false, {}, {}, 0
+        -- 伺服器現在的整份設定：原版、別的 MOD、本 MOD 沒改到的值都要原樣送回去（封包是整份快照）
+        local liveVals = { ["Base.Zombies"] = 4, ["OtherMod.Opt"] = "x", ["MinidoracatBuilder.KindPost"] = true,
+            ["MinidoracatBuilder.DisabledTilesets"] = "keep_01" }
+        sb.DisabledTilesets = "keep_01"
+        local live = { vals = liveVals }
+        function live:getOptionByName(n) return liveVals[n] ~= nil or nil end
+        function live:set(n, v) liveSets[#liveSets + 1] = n; liveVals[n] = v; sb[n:sub(20)] = v end
+        function live:toLua() lua = lua + 1 end
+        getSandboxOptions = function() return live end
+        SandboxOptions = { new = function()
+            local c = { vals = {} }
+            function c:copyValuesFrom(o) for k, v in pairs(o.vals) do self.vals[k] = v end end
+            function c:set(n, v) self.vals[n] = v end
+            function c:sendToServer()
+                local snap, n = {}, 0
+                for k, v in pairs(self.vals) do snap[k] = v; n = n + 1 end
+                snap.n = n
+                sent[#sent + 1] = snap
+            end
+            return c
+        end }
+        isCoopHost = function() return false end
+        haveAccess = function(cap) return allowed and cap == "SandboxOptions" end
+        isClient = function() return true end
+        local okA, errA = Admin.apply({ kinds = { post = false } })
+        check(Admin.canManage() == false and okA == false and errA == "NO_PERMISSION" and #sent == 0,
+            "多人、連線沒有沙盒權限：不能管理、不送封包（送了會被伺服器記反作弊）")
+        isCoopHost = function() return true end
+        check(Admin.canManage() == true, "合作模式的主機：照原版封包放行")
+        isCoopHost = function() return false end
+        allowed = true
+        local done, ticks = {}, count("OnTick")
+        local ok1 = Admin.apply({ kinds = { post = false } }, function(v) done[#done + 1] = v end)
+        local poll = handlers.OnTick[#handlers.OnTick]
+        local ok2, e2 = Admin.apply({ kinds = { post = true } })
+        local s1 = sent[1] or {}
+        check(ok1 == true and #sent == 1 and s1.n == 4 and s1["MinidoracatBuilder.KindPost"] == false and s1["Base.Zombies"] == 4
+            and s1["OtherMod.Opt"] == "x" and s1["MinidoracatBuilder.DisabledTilesets"] == "keep_01" and ok2 == false and e2 == "BUSY",
+            "有權限：送整份設定、只改這次的選項（原版、別的 MOD、沒改到的照舊）；等待中再套用回 BUSY")
+        poll()
+        check(#done == 0 and Admin.pending ~= nil, "伺服器的值還沒回來：繼續等")
+        sb.KindPost = false
+        poll()
+        check(done[1] == true and Admin.pending == nil and count("OnTick") == ticks, "伺服器的值回來：成功、摘掉 tick 事件")
+        liveVals["OtherMod.Opt"] = "y" -- 套用前收到別人改的值：照收到的送
+        Admin.apply({ tilesets = { foo_01 = true } }, function(v) done[#done + 1] = v end)
+        local s2 = sent[2] or {}
+        check(s2["OtherMod.Opt"] == "y" and s2["MinidoracatBuilder.DisabledTilesets"] == "foo_01;keep_01"
+            and s2["MinidoracatBuilder.KindPost"] == true, "套用當下才複製：帶上剛收到的別人的值，圖塊組照現在的字串合併")
+        nowMs = nowMs + Admin.TIMEOUT_MS + 1
+        handlers.OnTick[#handlers.OnTick]()
+        check(done[2] == false and Admin.pending == nil and count("OnTick") == ticks, "超過 10 秒沒回來：失敗、摘掉 tick 事件")
+        isClient = function() return false end
+        local okU, eU, kU = Admin.apply({ kinds = { post = true }, rules = { NoSuch = 1 } })
+        check(okU == false and eU == "UNKNOWN_OPTION" and kU == "NoSuch" and #liveSets == 0,
+            "單機遇到不存在的選項：回 UNKNOWN_OPTION，一個都沒改（set 會丟例外，不能改到一半）")
+        local okS = Admin.apply({ kinds = { post = true } })
+        check(okS == true and #liveSets == 1 and lua == 1 and sb.KindPost == true and Admin.pending == nil,
+            "單機：直接改好、更新 SandboxVars")
+        isClient, isCoopHost, haveAccess, getSandboxOptions, SandboxOptions = real[1], real[2], real[3], real[4], real[5]
+        sb.KindPost, sb.DisabledTilesets = nil, ""
+    end)()
+    getText, getTextOrNull = realGetText, realGetTextOrNull
+end
 
 print()
 if failures > 0 then

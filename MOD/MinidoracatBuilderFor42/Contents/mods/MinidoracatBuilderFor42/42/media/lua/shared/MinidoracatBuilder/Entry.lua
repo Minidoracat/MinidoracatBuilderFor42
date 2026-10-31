@@ -9,25 +9,39 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 5
+Entry.VERSION = 6
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
--- 能蓋的種類。車庫門、雙開門第二版（設計稿 Rules.classify 的註記）。
-Entry.BUILDABLE = { floor = true, wall = true, windowFrame = true, doorFrame = true, fence = true, door = true,
-    window = true, furniture = true, container = true, wallObject = true, windowObject = true, floorOverlay = true,
-    wallOverlay = true, attached = true, solid = true, overlay = true, stairs = true, light = true, curtain = true,
-    roof = true }
+-- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門第二版
+-- （設計稿 Rules.classify 的註記）。
+Entry.KINDS = { "floor", "floorOverlay", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
+    "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "light", "wallObject",
+    "attached", "overlay" }
+Entry.BUILDABLE = {}
+-- 種類開關（沙盒每種一個勾選框，使用者 2026-10-31 選）：鍵＝Kind＋種類 ID 字首大寫，例 KindFloorOverlay。鍵名上線後不能改
+Entry.KIND_KEY = {}
+for _, k in ipairs(Entry.KINDS) do
+    Entry.BUILDABLE[k] = true
+    Entry.KIND_KEY[k] = "Kind" .. k:sub(1, 1):upper() .. k:sub(2)
+end
 
 -- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:252-255）
 Entry.STAIR_FLOOR = "carpentry_02_57"
 
--- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著
-Entry.EDGE = { wall = true, windowFrame = true, doorFrame = true, fence = true, door = true, window = true }
+-- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著。柱子不佔邊（NORTH／WEST 是空的；擋邊的圖 Rules 不列），
+-- 走 Place.check 的柱子分支
+Entry.EDGE = { wall = true, windowFrame = true, doorFrame = true, fence = true, door = true, window = true, post = true }
 
 -- 沙盒值（SandboxVars.MinidoracatBuilder）；離線測試沒有 SandboxVars 時用空表，各欄位由呼叫端給預設
 function Entry.settings()
     return SandboxVars and SandboxVars.MinidoracatBuilder or {}
+end
+
+-- 這個種類開著（沙盒沒有這個鍵時當開著）。s＝Entry.settings()，呼叫端已經拿到的就傳
+function Entry.kindOn(kind, s)
+    local key = Entry.KIND_KEY[kind]
+    return key == nil or (s or Entry.settings())[key] ~= false
 end
 
 -- 「a;b;c」→ 集合。只快取上一次的字串：管理員改了才重切。
@@ -50,13 +64,20 @@ local disabledSources, disabledTilesets = setCache(), setCache()
 
 -- 規則版本＋會改變判斷的設定。兩端都從 SandboxVars 算（客戶端連線時伺服器整包推送，之後改了也即時轉送），
 -- 不必另外傳。只用來給玩家看得懂的錯誤，不是安全機制：伺服器照樣每格重算。
+-- 字串沒變就回上次的（建造視窗每秒比一次；停用清單可能很長，Kahlua 逐字算雜湊不便宜）
+local lastRaw, lastDigest
 function Entry.digest()
     local s = Entry.settings()
+    local bits = {}
+    for i, k in ipairs(Entry.KINDS) do bits[i] = Entry.kindOn(k, s) and "1" or "0" end
     local raw = table.concat({ tostring(s.CostMultiplier or 1), tostring(s.WhereCanBuild or 1),
-        s.DisabledSources or "", s.DisabledTilesets or "" }, "|")
-    local h = 5381
-    for i = 1, #raw do h = (h * 33 + raw:byte(i)) % 2147483647 end
-    return "r" .. Entry.VERSION .. ":" .. h
+        s.DisabledSources or "", s.DisabledTilesets or "", table.concat(bits) }, "|")
+    if raw ~= lastRaw then
+        local h = 5381
+        for i = 1, #raw do h = (h * 33 + raw:byte(i)) % 2147483647 end
+        lastRaw, lastDigest = raw, "r" .. Entry.VERSION .. ":" .. h
+    end
+    return lastDigest
 end
 
 -- 查 sprite 一律 containsKey＋get：全域 getSprite 查不到時會往 namedMap 加一個空 sprite（IsoSpriteManager.java:47-49,77-82）
@@ -71,7 +92,7 @@ end
 function Entry.resolve(name)
     local spr = Entry.sprite(name)
     if not spr then return nil, "UNKNOWN" end
-    Rules.ensureWindowStates()
+    Rules.ensure()
     local id = spr:getID()
     if id < 0 or id == NO_TILE_ID then return nil, "UNKNOWN" end
     local kind = Rules.classify(spr)
@@ -88,10 +109,85 @@ function Entry.resolve(name)
     local file = Sources.fileOf(id)
     local mod = Sources.isModFile(file) and Sources.map()[file] or nil
     local s = Entry.settings()
-    if (mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset] then
+    if (mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset]
+        or not Entry.kindOn(kind, s) then
         return nil, "DISABLED"
     end
     return { name = name, spr = spr, kind = kind, tileset = tileset, num = tonumber(num), mod = mod }
+end
+
+-- 同一個 tileset 編號差 d 的名稱
+local function offset(name, d)
+    local tileset, num = name:match("^(.*)_(%d+)$")
+    return tileset and (tileset .. "_" .. (tonumber(num) + d)) or nil
+end
+
+-- 樓梯中片、頂片所屬那一組的底片（Rules.stairsSet 的 B 片在 ±1、±2）
+local function stairsBottom(name)
+    local named = IsoSpriteManager.instance:getNamedMap()
+    for _, d in ipairs({ -2, -1, 1, 2 }) do
+        local b = offset(name, d)
+        local set = b and named:containsKey(b) and Rules.stairsSet(named, b)
+        if set and (set.m == name or set.t == name) then return b end
+    end
+    return nil
+end
+
+-- 這個名稱為什麼不能蓋、該改找哪一張（建造視窗搜完整圖塊名、右鍵挑圖塊用）。回 code, arg, alt：
+--   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 車庫門、
+--     PART 多格的其他格、STAIRS_SET 湊不成三格的樓梯片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
+--   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
+--   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片），能蓋才給。
+--     那張也不能蓋時改給它能蓋的那張，不然 code／arg 改說它的原因（只往下查一層；nested 是內部用的）
+function Entry.why(name, nested)
+    local entry, res = Entry.resolve(name)
+    if entry then return nil end
+    local spr = Entry.sprite(name)
+    if not spr or spr:getID() < 0 or spr:getID() == NO_TILE_ID then return "UNKNOWN" end
+    local p = spr:getProperties()
+    local kind, code = Rules.classify(spr)
+    local arg, alt
+    if code == "ENTITY" then
+        arg = p:get("EntityScriptName")
+    elseif code == "WINDOW_STATE" then
+        alt = Rules.windowOf(name)
+    elseif code == "DOOR_OPEN" then
+        alt = offset(name, -2)
+    elseif code == "CURTAIN_CLOSED" then
+        alt = offset(name, 4)
+    elseif code == "STACK" then
+        alt = offset(name, tonumber(p:get("StackReplaceTileOffset")) or 0)
+    elseif res == "DISABLED" then -- resolve 最後才查開關：走到這裡的種類、樓梯組、原點都沒問題
+        local s = Entry.settings()
+        local tileset = name:match("^(.*)_%d+$")
+        if not Entry.kindOn(kind, s) then
+            code, arg = "DISABLED_KIND", kind
+        elseif disabledTilesets(s.DisabledTilesets)[tileset] then
+            code, arg = "DISABLED_TILESET", tileset
+        else
+            code, arg = "DISABLED_SOURCE", Sources.map()[Sources.fileOf(spr:getID())]
+        end
+    elseif res == "UNSUPPORTED" then
+        code = "UNSUPPORTED"
+    elseif kind == "stairs" then
+        code, alt = "STAIRS_SET", stairsBottom(name)
+    elseif kind then
+        local grid = spr:getSpriteGrid()
+        local anchor = grid and grid:getAnchorSprite()
+        if anchor and anchor ~= spr then code, alt = "PART", anchor:getName() end
+    end
+    if alt and not Entry.resolve(alt) then
+        -- 叫玩家去找的那張也不能蓋（管理員關掉了、打不破的窗…）：照著做也找不到，改說它的原因
+        local c2, a2, alt2
+        if not nested then c2, a2, alt2 = Entry.why(alt, true) end
+        if alt2 then
+            alt = alt2
+        else
+            if c2 and c2 ~= "UNKNOWN" then code, arg = c2, a2 end
+            alt = nil
+        end
+    end
+    return code or "UNKNOWN", arg, alt
 end
 
 -- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W。引擎替同組的每個成員寫「其他面的原點 − 自己」的 Noffset 等，
@@ -147,15 +243,15 @@ function Entry.cells(spr)
     return out
 end
 
--- 佔格邊的種類放在哪條邊：回 n（北邊）、w（西邊）。牆角（WallNW）兩條都佔，柱子（WallSE）都不佔。
+-- 佔格邊的種類放在哪條邊：回 n（北邊）、w（西邊）。牆角（WallNW）兩條都佔，柱子兩條都不佔。
 -- 透明牆角與透明門框只有字串鍵、沒有同名旗標（IsoWorld.java:932-965），字串鍵用 has(String) 查。
 local F = IsoFlagType
 local NORTH = { wall = { F.WallN, F.WallNTrans, F.WallNW, "WallNWTrans" }, windowFrame = { F.WindowN },
     doorFrame = { F.DoorWallN, "DoorWallNTrans" }, fence = { F.HoppableN, F.TallHoppableN }, door = { F.doorN },
-    window = { F.windowN } }
+    window = { F.windowN }, post = {} }
 local WEST = { wall = { F.WallW, F.WallWTrans, F.WallNW, "WallNWTrans" }, windowFrame = { F.WindowW },
     doorFrame = { F.DoorWallW, "DoorWallWTrans" }, fence = { F.HoppableW, F.TallHoppableW }, door = { F.doorW },
-    window = { F.windowW } }
+    window = { F.windowW }, post = {} }
 local function anyFlag(p, list)
     for i = 1, #list do
         if p:has(list[i]) then return true end
@@ -181,7 +277,7 @@ end
 -- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
 -- 樓梯一個動作蓋整組
 local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100,
-    stairs = 200, roof = 120 }
+    stairs = 200, roof = 120, post = 200 }
 function Entry.duration(kind, player)
     local level = player and player:getPerkLevel(Perks.Woodwork) or 0
     return math.max(20, (TIME[kind] or 100) - level * 5)

@@ -33,3 +33,67 @@ option MinidoracatBuilder.DisabledSources
 /* 關掉的 tileset：名稱以分號分隔 */
 option MinidoracatBuilder.DisabledTilesets
 {type = string, default = , page = MinidoracatBuilder, translation = MinidoracatBuilder_DisabledTilesets,}
+
+/* 能蓋的種類（使用者 2026-10-31 選每種一個勾選框，放另一頁）：關掉的種類玩家看不到、伺服器拒絕（DISABLED），已經蓋好的不受影響也還能拆。鍵名＝Kind＋種類 ID 字首大寫（Entry.KIND_KEY），上線後不可改名 */
+option MinidoracatBuilder.KindFloor
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindFloor,}
+
+option MinidoracatBuilder.KindFloorOverlay
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindFloorOverlay,}
+
+option MinidoracatBuilder.KindWall
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWall,}
+
+option MinidoracatBuilder.KindFence
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindFence,}
+
+option MinidoracatBuilder.KindPost
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindPost,}
+
+option MinidoracatBuilder.KindWallOverlay
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWallOverlay,}
+
+option MinidoracatBuilder.KindDoor
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindDoor,}
+
+option MinidoracatBuilder.KindWindow
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWindow,}
+
+option MinidoracatBuilder.KindDoorFrame
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindDoorFrame,}
+
+option MinidoracatBuilder.KindWindowFrame
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWindowFrame,}
+
+option MinidoracatBuilder.KindWindowObject
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWindowObject,}
+
+option MinidoracatBuilder.KindCurtain
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindCurtain,}
+
+option MinidoracatBuilder.KindRoof
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindRoof,}
+
+option MinidoracatBuilder.KindStairs
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindStairs,}
+
+option MinidoracatBuilder.KindFurniture
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindFurniture,}
+
+option MinidoracatBuilder.KindContainer
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindContainer,}
+
+option MinidoracatBuilder.KindSolid
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindSolid,}
+
+option MinidoracatBuilder.KindLight
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindLight,}
+
+option MinidoracatBuilder.KindWallObject
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWallObject,}
+
+option MinidoracatBuilder.KindAttached
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindAttached,}
+
+option MinidoracatBuilder.KindOverlay
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindOverlay,}

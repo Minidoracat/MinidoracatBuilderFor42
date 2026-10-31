@@ -12,6 +12,7 @@ local PLANK, NAILS = "Base.Plank", "Base.Nails"
 local WOOD = {
     floor = { [PLANK] = 1, [NAILS] = 1 },                                   -- WoodFloorLvl1
     wall = { [PLANK] = 4, [NAILS] = 6 },                                    -- WoodenWallFrame＋WoodenWallLvl1
+    post = { [PLANK] = 4, [NAILS] = 6 },                                    -- 柱子原本算牆（使用者 2026-10-31 拆成新種類），價錢照舊
     windowFrame = { [PLANK] = 4, [NAILS] = 6 },                             -- WoodenWallFrame＋WoodenWindowFrameLvl1
     doorFrame = { [PLANK] = 4, [NAILS] = 4 },                               -- WoodDoorFrameLvl1
     fence = { [PLANK] = 2, [NAILS] = 2 },                                   -- WoodFenceLvl1
@@ -44,12 +45,13 @@ local CURTAIN, LONG_CURTAIN = { ["Base.Sheet"] = 1 }, { ["Base.Sheet"] = 2 }
 local MASONRY = {
     floor = { ["Base.ClayTile"] = 4 },
     wall = { ["Base.ClayBrick"] = 4 }, windowFrame = { ["Base.ClayBrick"] = 4 }, doorFrame = { ["Base.ClayBrick"] = 4 },
-    fence = { ["Base.ClayBrick"] = 2 }, solid = { ["Base.ClayBrick"] = 2 },
+    fence = { ["Base.ClayBrick"] = 2 }, solid = { ["Base.ClayBrick"] = 2 }, post = { ["Base.ClayBrick"] = 4 },
 }
 -- 金屬：MetalWallFrame＋MetalWallLvl1 等（焊條、噴燈燃料是可耗用的，ponytail：只要求帶著噴燈與面罩）
 local METAL = {
     floor = { ["Base.SmallSheetMetal"] = 1 },
     wall = { ["Base.MetalBar"] = 3, ["Base.SmallSheetMetal"] = 3 },
+    post = { ["Base.MetalBar"] = 3, ["Base.SmallSheetMetal"] = 3 },
     windowFrame = { ["Base.MetalBar"] = 3, ["Base.SmallSheetMetal"] = 3 },
     doorFrame = { ["Base.MetalBar"] = 4 }, fence = { ["Base.MetalBar"] = 2 },
     door = { ["Base.SmallSheetMetal"] = 3, ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1 },

@@ -40,11 +40,11 @@ local DIM_MAX = 1024    -- 缺料快取：滿了整張清掉，要比一個畫�
 W.PER_ROW_FILE = "MinidoracatBuilder/window.txt"
 W.PER_ROW_MIN, W.PER_ROW_MAX, W.PER_ROW_DEFAULT = 2, 10, 5
 
--- 頁籤與種類（設計稿的九個頁籤；只列 Entry.BUILDABLE）
+-- 頁籤與種類（設計稿的九個頁籤；只列 Entry.BUILDABLE）。柱子在「牆」頁籤（使用者 2026-10-31 選新增「柱子」）
 W.TABS = { "all", "floor", "wall", "doorWindow", "roof", "stairs", "furniture", "light", "decor" }
 W.TAB_KINDS = {
     floor = { "floor", "floorOverlay" },
-    wall = { "wall", "fence", "wallOverlay" },
+    wall = { "wall", "fence", "post", "wallOverlay" },
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
     stairs = { "stairs" },
@@ -233,8 +233,23 @@ local function append(out, arr)
     end
 end
 
+-- 這個頁籤裡管理員沒關掉的種類（沙盒 Kind*，Entry.kindOn；伺服器同一套，Entry.resolve 回 DISABLED）
 local function tabKinds(tab)
-    return W.TAB_KINDS[tab] or W.TAB_KINDS.all
+    local s, out = Entry.settings(), {}
+    for _, k in ipairs(W.TAB_KINDS[tab] or W.TAB_KINDS.all) do
+        if Entry.kindOn(k, s) then out[#out + 1] = k end
+    end
+    return out
+end
+W.tabKinds = tabKinds
+
+-- 管理員關掉了幾種
+function W.kindsOff()
+    local s, n = Entry.settings(), 0
+    for _, k in ipairs(Entry.KINDS) do
+        if not Entry.kindOn(k, s) then n = n + 1 end
+    end
+    return n
 end
 
 -- 完整 sprite 名稱（大小寫照原樣）而且在目錄裡：回它所在的那一桶
@@ -242,13 +257,33 @@ local function exactBucket(q)
     if not q:find("_%d+$") or not Entry.sprite(q) then return nil end
     local ts = q:match("^(.*)_%d+$")
     if W.blocked(ts) then return nil end
-    for _, sets in pairs(Index.bucket or {}) do
-        local b = sets[ts]
+    local s = Entry.settings()
+    for kind, sets in pairs(Index.bucket or {}) do
+        local b = Entry.BUILDABLE[kind] and Entry.kindOn(kind, s) and sets[ts] -- 目錄也收了車庫門，不能蓋
         if b then
             for i = 1, b.n do
                 if b[i] == q then return b end
             end
         end
+    end
+    return nil
+end
+
+-- 完整圖塊名不在目錄時，同一件東西在目錄裡的那一項。先換成能蓋的那一張（Entry.why 的 alt：開著的門、窗的狀態圖、
+-- 拉上的窗簾、疊放圖、多格的其他格、樓梯的中頂片；能蓋的就是它自己），它不在目錄時再找併成一項的其他朝向
+-- （Catalog 只留編號最小的那面）。回 那一項, 它的桶
+local function listedAlt(q)
+    local code, _, alt = Entry.why(q)
+    if code and not alt then return nil end
+    local b = alt and exactBucket(alt)
+    if b then return alt, b end
+    local target = alt or q
+    local e = Entry.resolve(target)
+    for d = 1, 4 do
+        local f = e and Entry.face(e, d)
+        local name = f and f:getName()
+        b = name and name ~= target and exactBucket(name)
+        if b then return name, b end
     end
     return nil
 end
@@ -313,18 +348,20 @@ function W.mineCount(list, kinds)
 end
 
 -- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"f:圖塊組"）, source（"all"／"vanilla"／MOD ID）,
---          fav、recent（{ n, 名稱… }）}。回 names（{ n, 名稱… }）, jump（完整圖塊名命中時要選取的那一項）。
+--          fav、recent（{ n, 名稱… }）}。回 names（{ n, 名稱… }）, jump（完整圖塊名命中時要選取的那一項；不在目錄時
+--          改選同一件東西在目錄裡的那一項，listedAlt）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
 -- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出（bt-perf §5.4）。
 function W.filter(st)
     local q = trim(st.query)
     local ql = string.lower(q)
     if q ~= "" then
-        local b = exactBucket(q)
+        local b, jump = exactBucket(q), q
+        if not b and q:find("_%d+$") then jump, b = listedAlt(q) end
         if b then
             local out = { n = 0 }
             append(out, b)
-            return out, q
+            return out, jump
         end
     end
     local kinds = tabKinds(st.tab)
@@ -409,7 +446,7 @@ end
 function W.sources()
     local counts, order, total = {}, {}, 0
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
-    for _, k in ipairs(W.TAB_KINDS.all) do
+    for _, k in ipairs(tabKinds("all")) do
         local sets = kindSets[k]
         if sets then
             for j = 1, sets.n do
@@ -557,6 +594,36 @@ end
 
 -- ===== 套用篩選 =====
 
+-- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）
+function W.whyText(code, arg)
+    if code == "DISABLED_KIND" then
+        arg = Names.kind(arg)
+    elseif code == "DISABLED_SOURCE" and arg then
+        arg = W.modName(arg)
+    elseif code == "ENTITY" and arg then
+        -- 配方的顯示名稱（Translator.getRecipeName：沒有翻譯時回原名；LuaManager.java:8848-8853、Translator.java:691-701）
+        arg = getRecipeDisplayName(arg)
+    end
+    return getTextOrNull("IGUI_MBLD_Why_" .. tostring(code), tostring(arg or "?")) or getText("IGUI_MBLD_Why_UNKNOWN")
+end
+
+-- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（審查 1031 HIGH：原本叫玩家試較短的字，照做也找不到）：
+-- 在目錄裡卻沒出現的，是被「只看能蓋的」濾掉；能蓋卻不在目錄的，是這版遊戲沒有它的貼圖（目錄只收有貼圖的），
+-- 或目錄還在整理
+function W.emptyQuery(q)
+    if not (q:find("_%d+$") and Entry.sprite(q)) then
+        return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint")
+    end
+    if exactBucket(q) or listedAlt(q) then return getText("IGUI_MBLD_Empty_Only"), nil end
+    local code, arg = Entry.why(q)
+    if code == "UNKNOWN" then return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint") end
+    if not code then
+        if not (B.Catalog and B.Catalog.state == "ready") then return getText("IGUI_MBLD_Catalog_Wait"), nil end
+        code = "NO_TEXTURE"
+    end
+    return getText("IGUI_MBLD_Why_Title", q), W.whyText(code, arg)
+end
+
 local function prepareEmpty(v)
     local grid, st = v.grid, W.st
     v.emptyTitle, v.emptyHint = nil, nil
@@ -570,7 +637,7 @@ local function prepareEmpty(v)
     if cs == "failed" then
         title = getText("IGUI_MBLD_Catalog_Failed")
     elseif q ~= "" then
-        title, hint = getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint")
+        title, hint = W.emptyQuery(q)
     elseif cs ~= "ready" then
         title = getText("IGUI_MBLD_Catalog_Wait")
     elseif st.cat == "fav" then
@@ -604,7 +671,8 @@ function W.setStatus(v)
     elseif v.aff then
         v.statusText = getText("IGUI_MBLD_Status_Checking", tostring(v.affPct or 0))
     else
-        v.statusText = getText("IGUI_MBLD_Status_Count", tostring(#v.grid:getItems()))
+        local n, off = tostring(#v.grid:getItems()), W.kindsOff()
+        v.statusText = off > 0 and getText("IGUI_MBLD_Status_CountOff", n, tostring(off)) or getText("IGUI_MBLD_Status_Count", n)
     end
 end
 
@@ -781,6 +849,11 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
+    -- 完整圖塊名（審查 1031 MEDIUM：畫面上只看得到「blends street 01 #101」，玩家回報時給不出名稱；和 pzmap、TileZed 同寫法）
+    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Tile", e.name), dw, v.font)) do
+        text(ops, line, 0, y, c.textMuted, v.font)
+        y = y + lh
+    end
     y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
     -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
     -- （IsoWindow.java:84,744）；打破窗不看這個鎖（:264-306）
@@ -912,10 +985,12 @@ local function prepareDetail(v)
             h = math.max(h, detailFull(v, ops, e, total, costs, missing, tools))
         end
     elseif name then
-        -- 目錄裡有、現在解析不了：管理員剛關掉來源，或規則改了
+        -- 目錄裡有、現在解析不了：管理員剛關掉種類、來源或圖塊組，或規則改了（Entry.why 說是哪一個）
         -- 名稱（窄版一行）＋為什麼不能蓋，兩行；「建造」不能按的原因只寫在這裡，不能截掉
+        local code, arg = Entry.why(name)
+        local why = code and W.whyText(code, arg) or getText("IGUI_MBLD_Detail_Gone")
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
-        h = math.max(h, para(v, ops, getText("IGUI_MBLD_Detail_Gone"), 0, y, v.detail.width, v.colors.warning))
+        h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning))
     end
     v.detail:setHeight(h)
     -- 換了項目從頭看（拆除方式、材料在最前面）。選取有兩條路會變：方格點選（W.pump）與搜尋、篩選（applyItems
@@ -931,6 +1006,13 @@ local function prepareDetail(v)
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
     v.favBtn:setWidth(fw)
     v.buildBtn:setEnabled(e ~= nil)
+    -- 管理員快捷鈕（W.layout 只在管理員的寬、中版排出來）：停用這一項的圖塊組；來源是 MOD 才能整個停用
+    -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）
+    local src = e and W.sourceOf(e.tileset)
+    local modSrc = src ~= nil and src ~= "vanilla" and src ~= "?"
+    v.qTileset:setEnabled(e ~= nil)
+    v.qSource:setEnabled(modSrc)
+    v.qSource:setTooltip(src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
 end
 
 -- 手把右搖桿捲詳情（使用者 2026-10-30 選）。框架只在焦點落在捲動容器裡或捲動目標上時捲（Focus.lua:1310-1323,1372），
@@ -953,6 +1035,21 @@ local function padScroll(v)
     box:setYScroll(math.max(-room, math.min(0, y)))
 end
 
+-- 管理員改了沙盒（種類、來源、圖塊組、成本倍率；改了 SandboxVars 會整包轉送，GameClient.java:2772-2779）：重排頁籤、
+-- 來源、分類與清單。開窗時比對一次（W.open），開著時每秒比對（W.pump）
+function W.syncSettings(v)
+    local dg = Entry.digest()
+    if v.digest == dg then return end
+    if v.digest then
+        -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
+        v.S, v.dim, v.dimN, v.sumAt = nil, {}, 0, 0
+        W.refreshTabs(v)
+        W.refreshCatalog(v)
+        v.detailDirty = true
+    end
+    v.digest = dg
+end
+
 -- ===== 每幀：狀態列面板的 prerender（排在方格前面）=====
 
 function W.pump(panel)
@@ -962,6 +1059,10 @@ function W.pump(panel)
     if v.typedAt and now - v.typedAt >= W.DEBOUNCE_MS then
         v.typedAt = nil
         W.refilter(false)
+    end
+    if now - (v.syncAt or 0) >= SUMMARY_MS then
+        v.syncAt = now
+        W.syncSettings(v)
     end
     local C = B.Catalog
     local cs = C and C.state or "ready"
@@ -1121,6 +1222,35 @@ end
 
 -- ===== 動作 =====
 
+-- 管理員關掉的種類（沙盒 Kind*）：頁籤裡的種類全關就停用那個頁籤（框架 Tabs:setItemEnabled，rev 12），選著的回「全部」
+function W.refreshTabs(v)
+    local s = Entry.settings()
+    for i = 2, #W.TABS do
+        local id, on = W.TABS[i], false
+        for _, k in ipairs(W.TAB_KINDS[id]) do
+            if Entry.kindOn(k, s) then
+                on = true
+                break
+            end
+        end
+        v.tabs:setItemEnabled(id, on)
+        if not on and W.st.tab == id then
+            W.st.tab = "all"
+            v.tabs:setSelected("all", true)
+        end
+    end
+end
+
+-- 搜尋欄填這個字（右鍵挑圖塊填完整圖塊名：清單換成它所在的那一桶並選到它，W.filter）
+function W.setQuery(q)
+    local v = W.v
+    if not v then return end
+    v.search:setText(q) -- 靜默，不觸發 onChange
+    W.st.query = q
+    v.typedAt = nil
+    W.refilter(false)
+end
+
 function W.refreshCats(v)
     local st = W.st
     local groups = W.categories(st.tab)
@@ -1219,6 +1349,25 @@ function W.toggleFavorite()
     v.detailDirty = true
     W.refreshCats(v)
     if W.st.cat == "fav" then W.refilter(true) end
+end
+
+-- 「管理」：管理面板（Admin.lua；權限由原版沙盒封包檢查，這裡只決定看不看得到）
+function W.openAdmin()
+    local A = B.Admin
+    if A and A.available() and A.canManage() then A.open(W.playerNum) end
+end
+
+-- 詳情的管理員快捷鈕：對所有玩家停用選著那一項的圖塊組或來源（Admin.quick 先跳確認）
+function W.quickDisable(field)
+    local v, A = W.v, B.Admin
+    local e = v and v.selName and Entry.resolve(v.selName)
+    if not (e and A and A.available() and A.canManage()) then return end
+    if field == "tileset" then
+        A.quick(W.playerNum, "tileset", e.tileset)
+        return
+    end
+    local src = W.sourceOf(e.tileset)
+    if src ~= "vanilla" and src ~= "?" then A.quick(W.playerNum, "source", src) end
 end
 
 -- 建造：交給 Cursor，視窗收起、直接進放置（使用者 2026-10-29：按建造後視窗應該自動關閉）；游標結束時
@@ -1358,15 +1507,24 @@ function W.layout()
         v.only:setY(y + math.floor((rowH - v.only.height) / 2))
     end
     y = y + rowH + GAP
-    -- 第二列：一排幾格（使用者 2026-10-29：搜尋列下方）；「只看能蓋的」放不進第一列、放得進這一列時排在滑桿右邊
-    local pr = v.rowSlider
-    local cbRowS = not cbRow1 and inner - pr.width - GAP >= cbW
+    -- 第二列：一排幾格（使用者 2026-10-29：搜尋列下方）；「只看能蓋的」放不進第一列、放得進這一列時排在滑桿右邊；
+    -- 最右邊是「管理」：只有能改沙盒的玩家看得到（Admin.canManage），不排就不進焦點順序（隱藏的元件 Focus 跳過）
+    local pr, ab, A = v.rowSlider, v.adminBtn, B.Admin
+    local admin = A ~= nil and A.available() and A.canManage()
+    ab:setVisible(admin)
+    local abW = admin and (ab.width + GAP) or 0
+    local cbRowS = not cbRow1 and inner - pr.width - GAP - abW >= cbW
     local hS = cbRowS and math.max(pr.height, v.only.height) or pr.height
+    if admin then hS = math.max(hS, ab.height) end
     pr:setX(PAD)
     pr:setY(y + math.floor((hS - pr.height) / 2))
     if cbRowS then
         v.only:setX(PAD + pr.width + GAP)
         v.only:setY(y + math.floor((hS - v.only.height) / 2))
+    end
+    if admin then
+        ab:setX(PAD + inner - ab.width)
+        ab:setY(y + math.floor((hS - ab.height) / 2))
     end
     y = y + hS + GAP
     local cbPlaced = cbRow1 or cbRowS
@@ -1421,23 +1579,41 @@ function W.layout()
         v.nav:setWidth(v.navBox:contentWidth())
         gx, gw = PAD + navW + GAP, inner - navW - GAP
     end
+    local quick = admin and mode ~= "narrow"
+    v.qTileset:setVisible(quick)
+    v.qSource:setVisible(quick)
     if mode ~= "narrow" then
         local dw = mode == "wide" and math.max(math.floor(220 * s), math.floor(inner * 0.28))
             or math.max(math.floor(200 * s), math.floor(inner * 0.38))
         gw = gw - dw - GAP
         local dx = PAD + inner - dw
+        local by = y + bodyH - btnH
+        -- 管理員快捷鈕排在建造鈕上面：兩顆並排放得下（各自的標題寬）就一列，不然各占一列
+        local qh = 0
+        if quick then
+            local qT, qS, half = v.qTileset, v.qSource, math.floor((dw - GAP) / 2)
+            local one = v.qTW <= half and v.qSW <= half
+            qh = one and (btnH + GAP) or 2 * (btnH + GAP)
+            local qy = by - qh
+            qT:setX(dx)
+            qT:setY(qy)
+            qT:setWidth(one and half or dw)
+            qS:setX(one and (dx + half + GAP) or dx)
+            qS:setY(one and qy or (qy + btnH + GAP))
+            qS:setWidth(one and (dw - half - GAP) or dw)
+        end
         v.detailBox:setX(dx)
         v.detailBox:setY(y)
         v.detailBox:setWidth(dw)
-        v.detailBox:setHeight(bodyH - btnH - GAP)
+        v.detailBox:setHeight(math.max(btnH, bodyH - btnH - GAP - qh))
         v.detail:setWidth(v.detailBox:contentWidth())
         -- 最愛按鈕至少放得下較長的標題（v.favW），建造按鈕拿剩下的，不小於自己的標題寬
         local bw = math.min(dw - GAP - v.buildW, math.max(math.floor((dw - GAP) / 2), v.favW))
         v.favBtn:setX(dx)
-        v.favBtn:setY(y + bodyH - btnH)
+        v.favBtn:setY(by)
         v.favBtn:setWidth(bw)
         v.buildBtn:setX(dx + bw + GAP)
-        v.buildBtn:setY(y + bodyH - btnH)
+        v.buildBtn:setY(by)
         v.buildBtn:setWidth(dw - bw - GAP)
     else
         local rowHt = math.max(math.floor(56 * s), 2 * v.fh + 12, btnH + 8)
@@ -1580,6 +1756,17 @@ function W.create(UI)
     v.buildBtn = button(v, getText("IGUI_MBLD_Build"), "primary", function() MinidoracatBuilder.Window.build() end)
     v.buildW = v.buildBtn.width
     v.padHint = getText("IGUI_MBLD_PadHint")
+    -- 「管理」與詳情的管理員快捷鈕：建好先藏著，W.layout 只在管理員時排出來（Admin.lua）
+    v.adminBtn = UI.Button.new({ x = 0, y = 0, title = getText("IGUI_MBLD_Admin_Button"), icon = "settings", style = "ghost",
+        theme = theme, tooltip = getText("IGUI_MBLD_Admin_ButtonTip"),
+        onClick = function() MinidoracatBuilder.Window.openAdmin() end })
+    v.adminBtn:fitWidth()
+    win:addChild(v.adminBtn)
+    v.qTileset = button(v, getText("IGUI_MBLD_Admin_DisableTileset"), "ghost",
+        function() MinidoracatBuilder.Window.quickDisable("tileset") end)
+    v.qSource = button(v, getText("IGUI_MBLD_Admin_DisableSource"), "ghost",
+        function() MinidoracatBuilder.Window.quickDisable("source") end)
+    v.qTW, v.qSW = v.qTileset.width, v.qSource.width
 
     win:addToUIManager()
     if ISLayoutManager and ISLayoutManager.RegisterWindow then -- addToUIManager 之後（QU/Window.lua:240-243）
@@ -1594,6 +1781,7 @@ function W.create(UI)
     W.layout()
     v.catState = B.Catalog and B.Catalog.state or "ready"
     v.catAt = getTimestampMs()
+    W.refreshTabs(v)
     W.refreshCatalog(v)
     return v
 end
@@ -1635,17 +1823,7 @@ function W.open(playerNum)
     end
     v.hiddenForBuild = false
     v.sumAt = 0 -- 下一幀就重算材料
-    -- 管理員改了沙盒（關掉或打開來源、圖塊組、成本倍率）：重開視窗時重排來源、分類與清單
-    local dg = Entry.digest()
-    if v.digest ~= dg then
-        if v.digest then
-            -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
-            v.S, v.dim, v.dimN, v.sumAt = nil, {}, 0, 0
-            W.refreshCatalog(v)
-            v.detailDirty = true
-        end
-        v.digest = dg
-    end
+    W.syncSettings(v)
     v.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）
     v.win:bringToTop()
     return true

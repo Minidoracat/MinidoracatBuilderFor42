@@ -237,7 +237,7 @@ end
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
 -- 樓梯照 Wood_Stairs 剛好 6 級、沒有建造加成時的血量：health 150＋最高相關技能等級 6 × skillBaseHealth 50
 -- （stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:657-668，等級越高原版越耐打）
-local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450 }
+local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450, post = 450 }
 -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
 --   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
 --   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
@@ -258,12 +258,19 @@ local function thumpable(c, kind, north)
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
     local solid = not Entry.EDGE[kind] and (p:has(F.solid) or p:has(F.solidtrans))
-    -- 屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
-    obj:setCanPassThrough(not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN) or p:has(F.WallNTrans)
-        or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
+    -- 柱子照原版補的轉角柱（ISBuildUtil.lua:89-93）：轉角、不可穿過（IsoThumpable 預設 false，IsoThumpable.java:107）。
+    --   不設轉角的話 north＝false 的柱子會被當成這一格的西牆，殭屍走過西邊那條線時把它當目標打（IsoGridSquare.java:3816
+    --   getSpecialWall、:4027 testCollideSpecialObjects、IsoZombie.java:3681）。可穿過的話原生尋路找格邊能不能打時，
+    --   遇到它就回「不能打」，連同一格的牆也遮掉（nativeCode/SquareUpdateTask.java:356-381 遇到第一個 IsoThumpable 就回）。
+    --   斜走會被擋，和原版一樣（IsoThumpable.java:896-915）。擋格邊的圖 Rules 不列（BLOCKS_EDGE），柱子都不擋格邊
+    local corner = kind == "post"
+    -- 其餘屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
+    obj:setCanPassThrough(not corner and not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN)
+        or p:has(F.WallNTrans) or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
     obj:setBlockAllTheSquare(solid or p:has("BlocksPlacement"))
     obj:setIsHoppable(kind == "fence")
     obj:setIsDoorFrame(kind == "doorFrame")
+    obj:setCorner(corner)
     obj:setCanBarricade(kind == "windowFrame")
     obj:setIsFloor(kind == "floor")
     local hp, dmg = HEALTH[kind], nil

@@ -16,7 +16,7 @@ local WallSE, solidfloor, WallOverlay, FloorOverlay = F.WallSE, F.solidfloor, F.
 local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.cutW, F.solid, F.solidtrans
 local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
 local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
-local invincible, doorOpen = F.makeWindowInvincible, F.open
+local invincible, doorOpen, collideN, collideW = F.makeWindowInvincible, F.open, F.collideN, F.collideW
 
 -- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
 local TYPE = {}
@@ -153,7 +153,7 @@ function Rules.recordWindowStates(sprites, late)
             for k = 1, #list do
                 local t = list[k]
                 if not WINDOW_STATE[t] then
-                    WINDOW_STATE[t] = true
+                    WINDOW_STATE[t] = wins[j] -- 記關著那張的名稱：搜狀態圖時改選它（Entry.why）
                     n = n + 1
                 end
                 local s = idx[t]
@@ -178,24 +178,54 @@ function Rules.recordWindowStates(sprites, late)
         .. " windows, " .. sprites:size() .. " sprites in " .. (getTimestampMs() - t0) .. " ms" .. (late and " (late)" or ""))
 end
 
+-- 牆配方指定的轉角柱（原版蓋牆時自動補的那根，ISBuildUtil.lua:89-100；名稱照 ISBuildIsoEntity.lua:913 取）。
+-- 圖塊定義載入時記：ScriptManager 的 PostTileDefinitions 先建好 SpriteConfig（IsoWorld.java:1976-1978、
+-- ScriptManager.java:363-366）。只用在 kindOf 走到最後還沒有種類的圖（沒有牆鍵、沒有撞車屬性的柱子，
+-- 例：constructedobjects_01_60）。集合放在 Rules 表上，理由同 WINDOW_STATE。
+local CORNER = Rules.cornerSet or {}
+Rules.cornerSet = CORNER
+-- Rules.corners：記了幾個名稱；nil＝還沒記
+function Rules.recordCorners()
+    CORNER = {}
+    Rules.cornerSet = CORNER
+    local n, infos = 0, SpriteConfigManager.GetObjectInfoList()
+    for i = 0, infos:size() - 1 do
+        local script = infos:get(i):getScript()
+        local name = script and script:getCornerSprite()
+        if name and not CORNER[name] then
+            CORNER[name] = true
+            n = n + 1
+        end
+    end
+    Rules.corners = n
+end
+
 -- 圖塊定義（重新）載入：屬性是新的、還沒被改過，照這份重記
 function Rules.onTileDefinitions(manager)
     WINDOW_STATE = {}
     Rules.windowStateSet = WINDOW_STATE
     Rules.windowStates = nil
     Rules.recordWindowStates(ArrayList.new(manager:getNamedMap():values()))
+    Rules.recordCorners()
 end
 Events.OnLoadedTileDefinitions.Add(function(manager) MinidoracatBuilder.Rules.onTileDefinitions(manager) end)
 
--- 沒趕上 OnLoadedTileDefinitions（整個 Lua 在世界載入後才重設）時，第一次分類前照現在的屬性補記
-function Rules.ensureWindowStates()
+-- 沒趕上 OnLoadedTileDefinitions（整個 Lua 在世界載入後才重設）時，第一次分類前照現在的屬性補記窗的狀態圖與轉角柱
+function Rules.ensure()
     if Rules.windowStates == nil then
         Rules.recordWindowStates(ArrayList.new(IsoSpriteManager.instance:getNamedMap():values()), true)
     end
+    if Rules.corners == nil then Rules.recordCorners() end
 end
 
 function Rules.isWindowState(name)
-    return WINDOW_STATE[name] == true
+    return WINDOW_STATE[name] ~= nil
+end
+
+-- 窗的狀態圖對到的關著那張（不是狀態圖回 nil）
+function Rules.windowOf(name)
+    local w = WINDOW_STATE[name]
+    return type(w) == "string" and w or nil
 end
 
 -- 型別代碼："stairs"／"curtain"／"roof"／"tree"／"light"／nil
@@ -227,21 +257,32 @@ local function stackReplaced(p)
     return s ~= nil and (tonumber(s) or 0) ~= 0
 end
 
--- 前面的種類都不符時：掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、實心物件、疊圖；都不符就不列
-local function decor(p, mt)
+-- 前面的種類都不符時：掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、實心物件、疊圖、柱子；都不符就不列
+local function decor(name, p, mt)
     if mt == "WallObject" or p:has(WallOverlay) then return "wallObject" end
     if mt == "WindowObject" then return "windowObject" end
     if mt == "FloorRug" or p:has(FloorOverlay) or p:has(attachedFloor) then return "floorOverlay" end
     if p:has(cutN) or p:has(cutW) then -- 牆鍵已在前面判斷過
-        return not p:has(invincible) and "wallOverlay" or nil
+        if p:has(invincible) then return nil, "INVINCIBLE" end
+        return "wallOverlay"
     end
     if p:has(attachedN) or p:has(attachedS) or p:has(attachedE) or p:has(attachedW)
         or p:has(attachedNW) or p:has(attachedSE) or p:has(attachedCeiling) then
         return "attached"
     end
-    if p:has("BlocksPlacement") or p:has(solid) or p:has(solidtrans) then return not stackReplaced(p) and "solid" or nil end
+    if p:has("BlocksPlacement") or p:has(solid) or p:has(solidtrans) then
+        if stackReplaced(p) then return nil, "STACK" end
+        return "solid"
+    end
     if p:has("TileOverlay") then return "overlay" end
-    return nil
+    -- 擋一條格邊卻不是牆的（只有 collideN／collideW 的欄杆收尾）不列（使用者 2026-10-31 選）：原生尋路只把帶牆旗標或轉角的
+    -- 當成打得穿的邊（nativeCode/SquareUpdateTask.java:356-381），放下後殭屍不會規劃路線來打，圍得出打不壞的牆
+    -- （E2E builder-place-1031z）。柱子一律不擋格邊，所以這條排在柱子前面
+    if p:has(collideN) or p:has(collideW) then return nil, "BLOCKS_EDGE" end
+    -- 柵欄柱、收尾柱（沒有牆鍵，只有撞車）與牆配方指定的轉角柱（使用者 2026-10-31 選新增「柱子」）。
+    -- 只動原本不列的圖：已經列出的項目不換種類。撞車是字串屬性（IsoPropertyType.java:212，原版 GameClient.java:1138 同查法）
+    if p:has("HitByCar") or CORNER[name] then return "post" end
+    return nil, "NO_KIND"
 end
 
 -- 植物，以及加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
@@ -261,36 +302,37 @@ local function infiniteWater(p)
     return w ~= nil and (tonumber(w) or 0) >= 9999
 end
 
--- 回傳種類字串；nil＝不列（排除或不屬於任何種類）
--- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
-function Rules.kindOf(name, p, t)
-    if not name or UNLISTED[name] or WINDOW_STATE[name] or excludedName(name) then return nil end
-    if p:has(EntityScript) then return nil end -- 原版或 MOD 的 entity：走原版建造
+-- 種類判斷本體（不看 entity），回種類，或 nil 與原因碼
+local function kindOfProps(name, p, t)
     local tc = TYPE[t]
-    if tc == "tree" then return nil end
+    if tc == "tree" then return nil, "TREE" end
     if tc == "stairs" then -- 目錄只收湊得成三格的（Rules.stairsSet）
-        if infiniteWater(p) then return nil end
+        if infiniteWater(p) then return nil, "WATER" end
         -- 能搬或能拆成零件的樓梯片，原版拆解照一般搬動只拆那一片（ISMoveableSpriteProps.lua:41-44），不整組拆，
         -- 和三片都寫整組退料表的做法不合（Place.placeStairs）
-        if p:has("CanScrap") or p:has("IsMoveAble") then return nil end
+        if p:has("CanScrap") or p:has("IsMoveAble") then return nil, "STAIRS_PART" end
         return "stairs"
     end
     if p:has("GarageDoor") then return "garage" end
     if p:has(doorN) or p:has(doorW) then
         -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:789-796），單片放會開錯圖、MP 不同步；之後和車庫門一起做
-        if p:has("DoubleDoor") then return nil end
+        if p:has("DoubleDoor") then return nil, "DOUBLE_DOOR" end
         -- 開著的門：關著那張 +2，載入圖塊時引擎替它補上門旗標與 open（IsoWorld.java:1477-1505），和關著那張是同一扇門
-        if p:has(doorOpen) then return nil end
+        if p:has(doorOpen) then return nil, "DOOR_OPEN" end
         return "door"
     end
     -- 打不破的窗不列：窗自己帶 makeWindowInvincible，或同一格同方向帶 cutN/W 的物件帶它，窗就打不破、爬不過，
     -- 殭屍也不開（IsoWindow.java:1150-1172,436,1111-1135,1314）。原版 tiledef 帶它的 10 張（8 扇窗、2 片商場鐵捲門）
     -- 都搬不動，玩家拿不到。2026-10-27 傾印的目錄（正式服 13 個 tiledef MOD）也只有這 10 張，所以只在窗、窗框、牆、
-    -- 牆面疊圖查，不每格多一次 Java 呼叫。
+    -- 柱子、牆面疊圖查，不每格多一次 Java 呼叫。
     if p:has(windowN) or p:has(windowW) then -- 窗一定也帶 WindowN/W，所以先判斷
-        return not p:has(invincible) and "window" or nil
+        if p:has(invincible) then return nil, "INVINCIBLE" end
+        return "window"
     end
-    if p:has("WindowN") or p:has("WindowW") then return not p:has(invincible) and "windowFrame" or nil end
+    if p:has("WindowN") or p:has("WindowW") then
+        if p:has(invincible) then return nil, "INVINCIBLE" end
+        return "windowFrame"
+    end
     if p:has("DoorWallN") or p:has("DoorWallW") or p:has("DoorWallNTrans") or p:has("DoorWallWTrans") then
         return "doorFrame"
     end
@@ -298,28 +340,62 @@ function Rules.kindOf(name, p, t)
         return "fence" -- 先於牆：低柵欄也帶牆鍵
     end
     if p:has("WallN") or p:has("WallW") or p:has("WallNW") or p:has("WallNTrans") or p:has("WallWTrans")
-        or p:has("WallNWTrans") or p:has(WallSE) then
-        return not p:has(invincible) and "wall" or nil
+        or p:has("WallNWTrans") then
+        if p:has(invincible) then return nil, "INVINCIBLE" end
+        return "wall"
+    end
+    -- 牆角補洞的柱子（WallSE）：使用者 2026-10-31 選新增「柱子」種類，照原版補的轉角柱放（Place.thumpable）
+    if p:has(WallSE) then
+        if p:has(invincible) then return nil, "INVINCIBLE" end
+        if p:has(collideN) or p:has(collideW) then return nil, "BLOCKS_EDGE" end -- 柱子不擋格邊（見 decor）
+        return "post"
     end
     if p:has(solidfloor) then -- 平屋頂地板也在這
-        if infiniteWater(p) then return nil end
+        if infiniteWater(p) then return nil, "WATER" end
         return "floor"
     end
     local mt = p:get("MoveType")
-    if plantOrObject(p, mt) or infiniteWater(p) then return nil end
-    if p:has("container") then return not stackReplaced(p) and "container" or nil end -- 冰箱帶燈，容器優先
+    if plantOrObject(p, mt) then return nil, "PLANT" end
+    if infiniteWater(p) then return nil, "WATER" end
+    if p:has("container") then -- 冰箱帶燈，容器優先
+        if stackReplaced(p) then return nil, "STACK" end
+        return "container"
+    end
     if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）。有 lightR 就要三色都有：
         -- 建構子三色都照字串轉數字，缺一個就丟錯（IsoLightSwitch.java:76-83；原版 lighting_indoor_03_5 只有 lightR）
-        if tc ~= "light" and not p:has("lightR") then return nil end
-        if p:has("lightR") and not (p:has("lightG") and p:has("lightB")) then return nil end
+        if tc ~= "light" and not p:has("lightR") then return nil, "LIGHT" end
+        if p:has("lightR") and not (p:has("lightG") and p:has("lightB")) then return nil, "LIGHT" end
         return "light"
     end
     -- 窗簾只列打開的那張：IsoCurtain 把給的那張當開著、編號 −4 當關著（IsoCurtain.java:91-96）。床單、帳篷布不列
-    if tc == "curtain" and mt == "WindowObject" then return not p:has("IsClosedState") and "curtain" or nil end
+    if tc == "curtain" and mt == "WindowObject" then
+        if p:has("IsClosedState") then return nil, "CURTAIN_CLOSED" end
+        return "curtain"
+    end
     if p:has("IsMoveAble") then return "furniture" end -- 可搬的遮雨棚也在這
     if tc == "roof" or p:has("RoofGroup") then return "roof" end -- 屋簷也算
-    return decor(p, mt)
+    return decor(name, p, mt)
+end
+
+-- 回種類字串；不列時回 nil 與原因碼（建造視窗說明為什麼搜不到，Entry.why；翻譯 IGUI_MBLD_Why_<碼>）：
+--   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴、ENTITY 建造配方的圖、TREE 樹、PLANT 植物與有功能的
+--   物件、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水、STACK 疊放圖、STAIRS_PART 能搬
+--   或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED 拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、
+--   NO_KIND 沒有能判斷種類的屬性。
+-- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
+-- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
+-- 只收地板與地面覆蓋（使用者 2026-10-31 選）：放下的是本工具的物件，不是配方的 entity——地圖物件只有讀地圖時才建
+-- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。
+function Rules.kindOf(name, p, t)
+    if not name then return nil, "NO_KIND" end
+    if UNLISTED[name] then return nil, "LUA" end
+    if WINDOW_STATE[name] then return nil, "WINDOW_STATE" end
+    if excludedName(name) then return nil, "PREFIX" end
+    if not p:has(EntityScript) then return kindOfProps(name, p, t) end
+    local kind = kindOfProps(name, p, t)
+    if kind == "floor" or kind == "floorOverlay" then return kind end
+    return nil, "ENTITY"
 end
 
 function Rules.classify(spr)
