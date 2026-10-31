@@ -10,6 +10,7 @@ require "MinidoracatBuilder/Materials"
 require "MinidoracatBuilder/Check"
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Ledger"
+require "MinidoracatBuilder/Floors"
 require "MinidoracatBuilder/Circuits"
 
 local Sources, Entry, Cost = MinidoracatBuilder.Sources, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
@@ -373,8 +374,9 @@ end
 
 -- MinidoracatBuilderDismantleAction:complete()：照這位玩家的拆除請求，拆那格上 sprite 名稱相同、本 MOD 蓋的那件。
 -- 物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
--- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉 buildMaterials、帳本清掉燈）：同一件被兩個動作拆時，後到的
--- 找不到物件（GONE），不會再退。燈與平台只認帳本：帳本沒記的不拆（燈回 NOT_OURS，平台留著）。
+-- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈）：同一件被兩個動作拆時，後到的
+-- 找不到物件（GONE），不會再退。燈與平台只認帳本；IsoThumpable 照 Place.refundOf（一樓以下的地板在地板帳本）。
+-- 查不到退料表的不拆（回 NOT_OURS，平台留著）。
 -- 移除出錯時不退料（只會少，不會多）；退的料掉在玩家腳下（屋頂這類在上一層的，拆了也拿得到）。不給經驗。
 function Server.dismantle(player, n)
     local it = unbuildFor(player, n)
@@ -401,10 +403,10 @@ function Server.dismantle(player, n)
         local mats
         if instanceof(o, "IsoLightSwitch") then
             mats = Ledger.get(o)
-            if not mats then return dismantleRefused(player, n, "NOT_OURS", at) end
         else
-            mats = o:getBuildMaterials()
+            mats = Place.refundOf(o)
         end
+        if not mats then return dismantleRefused(player, n, "NOT_OURS", at) end
         rollInto(refund, mats)
     end
     if plan.landing and keepLanding(player, plan.landing) then plan.landing = nil end

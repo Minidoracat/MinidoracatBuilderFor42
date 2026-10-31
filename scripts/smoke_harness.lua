@@ -279,6 +279,7 @@ square = function(x, y, z, o)
     function sq:disableErosion() end
     function sq:RecalcAllWithNeighbours() end
     function sq:getWorldObjects() return javaList(self.world) end
+    function sq:getSpecialObjects() return javaList(self.objects) end
     function sq:canReachTo(other) return not other.noReach end
     squares[x .. "," .. y .. "," .. z] = sq
     return sq
@@ -312,6 +313,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     function o:getSprite() return spriteMap[name] end
     function o:getBuildMaterials() return self.mats end
     function o:getModData() return self.md end
+    function o:isFloor() return self.set.setIsFloor == true end
     function o:getSquare() return sq end
     return o
 end }
@@ -1253,6 +1255,12 @@ ok = build(Q, 18, "floor_01_0", { 45, 45, 0 })
 Q.pos.x, Q.pos.y = 50.5, 51.5
 check(ok and #fA.objects == 1 and fA.objects[1].name == "floor_01_0" and #fB.objects == 1,
     "換地板只拆這一格的那片：跨到別人安全屋的另一片留著")
+check((function() -- 主程式的 local 已到 200 上限：新的檢查包在函式裡
+    local fo = fA.objects[1]
+    local e = MinidoracatBuilder.Floors.get(fo)
+    return e ~= nil and e.s == "floor_01_0" and e.i["Base.Plank"] ~= nil and next(fo.mats) == nil
+        and fo.md.builderRefund == nil and fo.set.setIsDismantable == false
+end)(), "一樓的地板：退料記在地板帳本（連同蓋的圖），buildMaterials 留空、modData 不放，不給原版搬動工具拆")
 square(96, 96, 0, { floor = {} })
 local I = player({ id = 23, x = 96.5, y = 97.5, instant = true })
 before = regionPokes
@@ -2181,13 +2189,20 @@ local function dismantleScenario()
     -- 本 MOD 蓋的物件（modData 有 builderEntry）；mats＝退料表（字串，照 Java 欄位）。多格：group＝同一組（同一個原點），
     -- cands＝引擎 getSpriteGridObjectsIncludingSelf 收到的（同一張 sprite grid、不看原點，可能混到別組）
     local function ours(sq, spr, mats, class)
-        local o = { class = class or "IsoThumpable", mats = mats or {}, md = { builderEntry = spr:getName() } }
+        local o = { class = class or "IsoThumpable", mats = mats or {}, md = { builderEntry = spr:getName() },
+            floor = spr:getProperties():has(IsoFlagType.solidfloor) } -- isFloor 是建的時候設的欄位，換圖不變
         function o:getSprite() return spr end
         function o:getSquare() return sq end
         function o:hasModData() return true end
         function o:getModData() return self.md end
-        function o:isDismantable() return true end
+        function o:isDismantable() return self.dism ~= false end
+        function o:setIsDismantable(v) self.dism = v end
         function o:getBuildMaterials() return self.mats end
+        function o:isFloor() return self.floor end
+        function o:hasBuildMaterials() return next(self.mats) ~= nil end
+        function o:isCorner() return self.corner == true end
+        function o:setCorner(v) self.corner = v end
+        function o:setCanPassThrough(v) self.pass = v end
         function o:isObjectNoContainerOrEmpty() return not self.full end
         function o:getSpriteGridObjectsIncludingSelf() return javaList(self.cands or self.group or { self }) end
         function o:isConnectedSpriteGridObject(x) return x == self or (self.group ~= nil and self.group == x.group) end
@@ -2288,6 +2303,8 @@ local function dismantleScenario()
     -- 燈只認帳本：帳本沒記的不拆；帳本裡的照帳本退，移出世界時帳本清掉
     check(type(HARNESS_GOS_KEYS.MinidoracatBuilder) == "table" and HARNESS_GOS_KEYS.MinidoracatBuilder[1] == "built",
         "帳本存檔白名單有 built（漏了重開後帳本消失）")
+    check(type(HARNESS_GOS_KEYS.MinidoracatBuilderFloors) == "table"
+        and HARNESS_GOS_KEYS.MinidoracatBuilderFloors[1] == "floors", "地板帳本存檔白名單有 floors（漏了重開後地板帳本消失）")
     local fake = ours(at(74, 71, 0), switchS, nil, "IsoLightSwitch")
     local LP = hammerer(2209, 73.5, 71.5, at(73, 71, 0))
     LP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
@@ -2452,7 +2469,9 @@ local function dismantleScenario()
     check(Server.dismantle(WP, 21) == false and has(at(77, 70, 0), WE), "請求過期（走太久）：不拆")
 
     -- 地板：一樓拆了換泥土；二樓以上格上還有東西不拆
-    local F0 = ours(at(73, 75, 0), floorS, { ["Base.Plank"] = "1" })
+    local F0 = ours(at(73, 75, 0), floorS, {})
+    F0.dism = false
+    MinidoracatBuilder.Floors.put(F0, { ["Base.Plank"] = 1 })
     unbuild(GP, 12, 73, 75, 0, "df_01_0")
     local dirt
     if Server.dismantle(GP, 12) then
@@ -2466,6 +2485,150 @@ local function dismantleScenario()
     Server.dismantle(GP, 13)
     c, a = lastSent()
     check(c == "dismantleRefused" and a.code == "FLOOR_IN_USE" and has(up, F1), "二樓的地板上還有牆：FLOOR_IN_USE、不拆")
+
+    -- 一樓的地板退料在伺服器的地板帳本：本工具照它退，不看 modData；圖和蓋的時候不同的地板不退
+    local FP = hammerer(2230, 75.5, 76.5, at(75, 76, 0))
+    FP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    check((function()
+        local Floors = MinidoracatBuilder.Floors
+        local G = ours(at(74, 75, 0), floorS, {})
+        G.dism = false
+        Floors.put(G, { ["Base.Plank"] = 3 })
+        G.md.builderRefund = { ["Base.Axe"] = "99" } -- modData 裡的退料表不採信
+        local drop = at(75, 76, 0)
+        drop.dropped = {}
+        unbuild(FP, 22, 74, 75, 0, "df_01_0")
+        return Server.dismantle(FP, 22) and not has(at(74, 75, 0), G) and drop.dropped["Base.Plank"] == 3
+            and drop.dropped["Base.Axe"] == nil and Floors.get(G) == nil
+    end)(), "一樓的地板（不給原版搬動工具拆）：照地板帳本退、不看 modData、移除時帳本清掉")
+    check((function()
+        local Floors = MinidoracatBuilder.Floors
+        local otherS = sprite("dfo_01_9", 2215, { flags = { "solidfloor" } })
+        local V = ours(at(75, 75, 0), floorS, {})
+        V.dism = false
+        Floors.put(V, { ["Base.Plank"] = 3 })
+        function V:getSprite() return otherS end
+        local drop = at(75, 76, 0)
+        drop.dropped = {}
+        unbuild(FP, 23, 75, 75, 0, "dfo_01_9")
+        Server.dismantle(FP, 23)
+        local c1, a1 = lastSent()
+        unbuild(FP, 24, 75, 75, 0, "df_01_0")
+        Server.dismantle(FP, 24)
+        local c2, a2 = lastSent()
+        V.md.builderEntry = "dfo_01_9"
+        unbuild(FP, 25, 75, 75, 0, "dfo_01_9")
+        Server.dismantle(FP, 25)
+        local c3, a3 = lastSent()
+        return c1 == "dismantleRefused" and a1.code == "GONE" and c2 == "dismantleRefused" and a2.code == "GONE"
+            and c3 == "dismantleRefused" and a3.code == "NOT_OURS" and next(drop.dropped) == nil and Floors.get(V) ~= nil
+    end)(), "地板的圖和蓋的時候不同就不退")
+    check((function()
+        local Floors, Place = MinidoracatBuilder.Floors, MinidoracatBuilder.Place
+        local sq = at(76, 75, 0)
+        local V = ours(sq, floorS, {})
+        V.dism = false
+        Floors.put(V, { ["Base.Plank"] = 3 })
+        local L = ours(sq, switchS, nil, "IsoLightSwitch")
+        Ledger.put(L, { ["Base.ElectricWire"] = 1 })
+        local W = ours(sq, wallS, { ["Base.Plank"] = "4" })
+        local drop = at(75, 76, 0)
+        drop.dropped = {}
+        function V:getSprite() return switchS end
+        V.md.builderEntry = "dl_01_0"
+        unbuild(FP, 26, 76, 75, 0, "dl_01_0")
+        Server.dismantle(FP, 26)
+        local c1, a1 = lastSent()
+        function V:getSprite() return floorS end
+        V.md.builderEntry = nil
+        function L:getSprite() return floorS end
+        L.md.builderEntry = "df_01_0"
+        unbuild(FP, 27, 76, 75, 0, "df_01_0")
+        Server.dismantle(FP, 27)
+        local c2, a2 = lastSent()
+        function W:getSprite() return floorS end
+        local own = Place.refundOf(W) == W.mats and W.mats["Base.Plank"] == "4"
+        sq:transmitRemoveItemFromSquare(L)
+        sq:transmitRemoveItemFromSquare(W)
+        return c1 == "dismantleRefused" and a1.code == "NOT_OURS" and c2 == "dismantleRefused" and a2.code == "NOT_OURS"
+            and own and next(drop.dropped) == nil and has(sq, V) and Floors.get(V) ~= nil
+            and Floors.get(V).i["Base.Plank"] == 3
+    end)(), "同一格不同物件的退料紀錄互不影響")
+    check((function()
+        local Floors, Place = MinidoracatBuilder.Floors, MinidoracatBuilder.Place
+        local sq = at(77, 74, 0)
+        local A = ours(sq, floorS, {})
+        Floors.put(A, { ["Base.Plank"] = 2 })
+        function A:getSprite() return wallS end
+        function A:getProperties() return wallS:getProperties() end
+        function A:getTextureName() return wallS:getName() end
+        Place.clearFloor(sq)
+        return not has(sq, A) and Floors.get(A) == nil
+    end)(), "放地板前清掉這一格本 MOD 的舊地板：照建的時候的地板欄位，不看現在的圖")
+    check((function()
+        local Floors, Place = MinidoracatBuilder.Floors, MinidoracatBuilder.Place
+        local sq = at(77, 73, 0)
+        local A = ours(sq, floorS, {})
+        A.dism = false
+        Floors.put(A, { ["Base.Plank"] = 2 })
+        function A:getSprite() return wallS end
+        function A:getProperties() return wallS:getProperties() end
+        function A:getTextureName() return wallS:getName() end
+        local B = ours(sq, floorS, {})
+        local second = Place.refundOf(B)
+        A.md.builderEntry = nil
+        sq:transmitRemoveItemFromSquare(A)
+        return second == nil and Floors.get(B) == nil
+    end)(), "一格有兩片地板時不退；地板移掉時一律清掉這一格的地板帳本")
+
+    -- 讀檔搬移（Place.migrate，LoadGridsquare）：0.1.1 以前一樓地板的退料在 buildMaterials、牆角柱可穿過又不是轉角
+    check((function()
+        local Place, Floors = MinidoracatBuilder.Place, MinidoracatBuilder.Floors
+        local postS = sprite("dp_01_0", 2216, { flags = { "WallSE" } })
+        local edgeS = sprite("dp_01_1", 2217, { flags = { "WallSE", "collideN" } }) -- 現在不列（BLOCKS_EDGE）的牆角柱
+        local fenceS = sprite("dp_01_2", 2218, { flags = { "WallSE", "HoppableN", "collideN" } }) -- 現在歸柵欄
+        local pickS = sprite("dfm_01_0", 2219, { flags = { "solidfloor" }, keys = { IsMoveAble = "" } })
+        local sq = engineSq(70, 77, 0)
+        local OF = ours(sq, floorS, { ["Base.Plank"] = "2" })
+        local OP = ours(sq, postS, {})
+        OP.corner, OP.pass = false, true
+        local OE = ours(sq, edgeS, {})
+        OE.corner, OE.pass = false, true
+        local OC = ours(sq, fenceS, { ["Base.Plank"] = "2" })
+        local OW = ours(sq, wallS, { ["Base.Plank"] = "4" })
+        local NO = ours(sq, floorS, { ["Base.Plank"] = "5" })
+        NO.md.builderEntry = nil -- 不是本 MOD 蓋的
+        local UP = ours(engineSq(70, 77, 1), floorS, { ["Base.Plank"] = "1" })
+        local OZ = ours(engineSq(72, 77, 0), floorS, {}) -- 沒付料（建造作弊、材料倍率 0）
+        local OK = ours(engineSq(73, 77, 0), pickS, { ["Base.Plank"] = "1" }) -- 能搬的地板：本工具不拆
+        fire("LoadGridsquare", sq)
+        fire("LoadGridsquare", sq) -- 重複跑結果一樣
+        for _, o in ipairs({ UP, OZ, OK, OZ }) do Place.migrate(o) end
+        local r, z = Floors.get(OF), Floors.get(OZ)
+        return r and r.s == "df_01_0" and r.i["Base.Plank"] == "2" and next(OF.mats) == nil and OF.dism == false
+            and OP.corner == true and OP.pass == false and OE.corner == true and OE.pass == false
+            and OC.corner ~= true and OC.pass == nil and OW.corner ~= true and OW.mats["Base.Plank"] == "4"
+            and NO.mats["Base.Plank"] == "5" and NO.dism == nil and UP.mats["Base.Plank"] == "1" and UP.dism == nil
+            and z and next(z.i) == nil and Dismantle.kindOf(OZ) == "floor" and next(Place.refundOf(OZ)) == nil
+            and Floors.get(OK) == nil and next(OK.mats) == nil and OK.dism == false
+    end)(), "讀檔：一樓地板的退料搬進地板帳本（沒付料的記空表）、不給原版搬動工具拆，牆角柱改成轉角＋不可穿過；"
+        .. "現在歸柵欄的、牆、別人的、二樓的地板不動，能搬的地板不記帳")
+    check((function()
+        local Place, Floors = MinidoracatBuilder.Place, MinidoracatBuilder.Floors
+        local OL = ours(engineSq(71, 77, 0), floorS, { ["Base.Plank"] = "2" })
+        local inst = Floors.instance
+        Floors.instance = nil -- 帳本還沒建好（單機讀檔的第一批格子）
+        Place.migrate(OL)
+        Floors.instance = inst
+        local onServer = Place.refundOf(OL)
+        local realS = isServer
+        isServer = function() return false end
+        local kept = OL.mats["Base.Plank"] == "2" and Place.refundOf(OL) == OL.mats
+        isServer = realS
+        Place.migrate(OL)
+        local r = Floors.get(OL)
+        return onServer == nil and kept and r and r.i["Base.Plank"] == "2" and next(OL.mats) == nil
+    end)(), "讀檔時帳本還沒建好：退料留在 buildMaterials（單機照它退，專用伺服器不照），下次載入才搬進帳本")
 
     -- 右鍵選單：點地板也列出正上方那格的屋頂；樓梯三片只列一次
     local Menu = (function() require "MinidoracatBuilder/Menu" return MinidoracatBuilder.Menu end)()
@@ -3301,6 +3464,21 @@ do
     local c3, a3 = Entry.why("fence_x_01_29")
     check(pe == nil and pc == "DISABLED" and c3 == "DISABLED_KIND" and a3 == "post" and Entry.digest() ~= d0,
         "關掉柱子：伺服器回 DISABLED、說明是柱子、設定摘要跟著變（舊視窗的請求回 STALE）")
+    check((function()
+        Index.reset()
+        -- 同一件的兩面：先加 #9 當代表，再來 #2 換成代表（位置不變、編號跟著換）
+        Index.add("furniture", "sofa_x_01_9", "sofa_x_01", 9, 1, "sofa_x_01|furniture|Sofa", "Sofa")
+        Index.add("furniture", "sofa_x_01_5", "sofa_x_01", 5, 1)
+        Index.add("furniture", "sofa_x_01_2", "sofa_x_01", 2, 1, "sofa_x_01|furniture|Sofa", "Sofa")
+        -- 不該發生的重複編號（補零的名稱）：不掉項目
+        Index.add("wall", "dup_x_01_7", "dup_x_01", 7, 1)
+        Index.add("wall", "dup_x_01_07", "dup_x_01", 7, 1)
+        Index.add("wall", "dup_x_01_1", "dup_x_01", 1, 1)
+        for i = 1, Index.setName.n do Index.sortSet(Index.setName[i]) end
+        local s, d = Index.bucket.furniture.sofa_x_01, Index.bucket.wall.dup_x_01
+        return s.n == 2 and s[1] == "sofa_x_01_2" and s[2] == "sofa_x_01_5" and s.k == nil
+            and d.n == 3 and d[1] == "dup_x_01_1" and d[2] == "dup_x_01_7" and d[3] == "dup_x_01_07"
+    end)(), "排序：同一件換成編號較小的那面時照新編號排；重複的編號不掉項目、照加入順序；排完桶只留名稱")
     -- 建造視窗：同組照編號排、完整名稱搜關掉的種類不列並說明、開著的門改選關著那扇、頁籤種類與狀態列
     Index.reset()
     Index.add("door", "door_x_01_0", "door_x_01", 0, 1)

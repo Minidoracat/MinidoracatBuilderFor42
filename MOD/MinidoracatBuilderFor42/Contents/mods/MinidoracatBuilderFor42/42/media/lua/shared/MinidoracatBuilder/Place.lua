@@ -3,8 +3,9 @@
 -- 通則：建好物件、設完屬性，才 AddSpecialObject（引擎自己更新室內判定與碰撞），再 transmit 一次。
 -- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4430-4471）。
 require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Cost"
 
-local Entry, Rules = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules
+local Entry, Rules, Cost = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules, MinidoracatBuilder.Cost
 local Place = MinidoracatBuilder.Place or {}
 MinidoracatBuilder.Place = Place
 
@@ -232,7 +233,50 @@ local function refundable(cost)
     return out
 end
 
--- 退料只寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它）；modData 只放顯示用的資料
+-- 一樓以下（含地下室）的地板：buildMaterials 留空，也不給原版搬動工具拆（isDismantable＝false）；本工具會拆的退料記在
+-- 伺服器的地板帳本（Floors）。見 builder-dev placement.md「一樓地板的退料」
+local function groundFloor(obj, sq)
+    if sq:getZ() > 0 then return false end
+    if obj:isFloor() then return true end
+    local spr = obj:getSprite()
+    return spr ~= nil and spr:getProperties():has(F.solidfloor)
+end
+Place.groundFloor = groundFloor
+
+-- 這一格除了 obj 之外還有 IsoThumpable 的地板（照建的時候設的 isFloor）
+local function otherFloor(sq, obj)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        if o ~= obj and instanceof(o, "IsoThumpable") and o:isFloor() then return true end
+    end
+    return false
+end
+
+-- 拆了退什麼（Server.dismantle 讀，只在伺服器）：一樓以下的地板照地板帳本，現在的圖和蓋的時候一樣、這一格只有
+-- 它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、還沒搬的舊地板照 buildMaterials
+-- （Place.migrate）。都沒有回 nil。
+function Place.refundOf(obj)
+    local sq = obj:getSquare()
+    if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return obj:getBuildMaterials() end
+    local Floors = MinidoracatBuilder.Floors
+    local e = Floors and Floors.get(obj)
+    if e then
+        local spr = obj:getSprite()
+        return spr and e.s == spr:getName() and not otherFloor(sq, obj) and e.i or nil
+    end
+    if isServer() or not obj:hasBuildMaterials() then return nil end -- 專用伺服器讀格子前就建好帳本，都搬過了
+    return obj:getBuildMaterials()
+end
+
+local function wipe(t)
+    local keys = {}
+    for k in pairs(t) do keys[#keys + 1] = k end
+    for i = 1, #keys do t[keys[i]] = nil end
+end
+
+-- 退料寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它），一樓以下的地板改記在地板帳本（groundFloor）；
+-- 退多少不看 modData
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
 -- 門開著也走不過去（IsoGridSquare.java:3804-3818）
 -- 樓梯照 Wood_Stairs 剛好 6 級、沒有建造加成時的血量：health 150＋最高相關技能等級 6 × skillBaseHealth 50
@@ -277,13 +321,15 @@ local function thumpable(c, kind, north)
     if solid then hp, dmg = solidHealth(p) end
     if dmg then obj:setThumpDmg(dmg) end
     obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的東西照原版不打
-    obj:setIsDismantable(true)
+    obj:setIsDismantable(not groundFloor(obj, sq))
     hp = hp or 200
     obj:setMaxHealth(hp)
     obj:setHealth(hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
-    local mats = obj:getBuildMaterials()
-    for ft, v in pairs(refundable(c.cost)) do mats[ft] = tostring(v) end
+    if not groundFloor(obj, sq) then
+        local mats = obj:getBuildMaterials()
+        for ft, v in pairs(refundable(c.cost)) do mats[ft] = tostring(v) end
+    end
     obj:getModData().builderEntry = spr:getName()
     -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
     if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end
@@ -292,14 +338,17 @@ end
 
 -- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
 -- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
--- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。
+-- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。IsoThumpable 的地板照建的時候設的 isFloor 拆，不看現在的圖：
+-- 地板帳本一格只記一筆（Floors）。
 function Place.clearFloor(sq)
     local objects, rug = sq:getObjects(), nil
     for i = objects:size() - 1, 0, -1 do
         local o = objects:get(i)
         local p = o:getProperties()
         local tex = o:getTextureName() or ""
-        if tex:find("floors_rugs", 1, true) then
+        if instanceof(o, "IsoThumpable") and o:isFloor() then
+            sq:transmitRemoveItemFromSquare(o, false)
+        elseif tex:find("floors_rugs", 1, true) then
             rug = o
         elseif p and (p:has(F.canBeRemoved) or p:has(F.solidfloor) or p:has(F.noStart) or p:has(F.taintedWater)
             or (p:has(F.vegitation) and o:getType() ~= T.tree)) or tex:find("blends_grassoverlays", 1, true) then
@@ -440,6 +489,10 @@ function Place.build(kind, cells, placed)
             placed[#placed + 1] = obj
             if kind == "floor" then placeFloor(sq, obj) else finish(sq, obj) end
             if kind == "roof" then getCell():checkHaveRoof(sq:getX(), sq:getY()) end
+            local Floors = MinidoracatBuilder.Floors
+            if Floors and kind == "floor" and sq:getZ() <= 0 and Cost.refund(kind, spr) == "builder" then
+                Floors.put(obj, refundable(c.cost))
+            end
         end
     end
 end
@@ -462,14 +515,51 @@ function Place.settle(cells)
     end
 end
 
--- 本 MOD 蓋的 IsoThumpable 移出世界前清掉退料表：原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、
--- ISBuildingObject.lua:51-69），已經移除的物件不該再退料。
+-- IsoThumpable 移出世界前：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
+-- 原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
+-- 物件不該再退料。
 function Place.onAboutToBeRemoved(obj)
-    if not (instanceof(obj, "IsoThumpable") and obj:hasModData() and obj:getModData().builderEntry) then return end
-    local mats, keys = obj:getBuildMaterials(), {}
-    for k in pairs(mats) do keys[#keys + 1] = k end
-    for i = 1, #keys do mats[keys[i]] = nil end
+    if not instanceof(obj, "IsoThumpable") then return end
+    local Floors, sq = MinidoracatBuilder.Floors, obj:getSquare()
+    if Floors and sq and sq:getZ() <= 0 and obj:isFloor() then Floors.forget(obj) end
+    if obj:hasModData() and obj:getModData().builderEntry then wipe(obj:getBuildMaterials()) end
 end
 Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAboutToBeRemoved(obj) end)
+
+-- 讀檔時修 0.1.1 以前蓋的（每格載入一次，兩端都跑，重複跑結果一樣）：
+--   一樓以下的地板：不給原版搬動工具拆（兩端）；只在伺服器、帳本建好時清掉 buildMaterials，本工具會拆的、圖和蓋的時候
+--     一樣的先記進地板帳本（沒付料的記空表：照樣能拆、不退）。
+--     ponytail: 帳本還沒建好就不搬、buildMaterials 留著（單機讀檔先 IsoWorld.init 讀格子、之後才建 GOS，
+--     GameLoadingState.java:305,313；專用伺服器先建 GOS 再收連線，GameServer.java:816）。下次載入那格時再搬；要當場補再加排隊。
+--   牆角柱（WallSE）：當時歸在牆，放成可穿過、不是轉角，原生尋路會連同一格的牆一起當成打不了（thumpable 的柱子說明）。
+--     現在歸柱子或不列（BLOCKS_EDGE 這類）的照原版轉角柱改；現在歸柵欄這類的不動。
+function Place.migrate(obj)
+    if not (instanceof(obj, "IsoThumpable") and obj:hasModData()) then return end
+    local md = obj:getModData()
+    local sq = md.builderEntry and obj:getSquare()
+    if not sq then return end
+    local spr = obj:getSprite()
+    if groundFloor(obj, sq) then
+        if obj:isDismantable() then obj:setIsDismantable(false) end
+        local Floors = MinidoracatBuilder.Floors
+        if not (Floors and Floors.instance) then return end
+        if obj:isFloor() and spr and spr:getName() == md.builderEntry and not Floors.get(obj)
+            and Cost.refund("floor", spr) == "builder" then
+            Floors.put(obj, obj:getBuildMaterials())
+        end
+        if obj:hasBuildMaterials() then wipe(obj:getBuildMaterials()) end
+    elseif spr and not obj:isCorner() and spr:getProperties():has(F.WallSE) then
+        local kind = Rules.classify(spr)
+        if kind == nil or kind == "post" then
+            obj:setCorner(true)
+            obj:setCanPassThrough(false)
+        end
+    end
+end
+-- 特殊物件（IsoThumpable 都是）讀檔時另外列一份（IsoGridSquare.java:3247-3250），一般格子沒有
+Events.LoadGridsquare.Add(function(sq)
+    local list = sq:getSpecialObjects()
+    for i = 0, list:size() - 1 do MinidoracatBuilder.Place.migrate(list:get(i)) end
+end)
 
 return Place

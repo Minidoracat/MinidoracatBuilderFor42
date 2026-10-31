@@ -1,28 +1,41 @@
 -- 拆除（第五階段，設計稿「拆」）：本 MOD 蓋的、Cost.refund 是 "builder" 的東西（不能搬、原版不照材質拆的 IsoThumpable
--- 與燈）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：IsoThumpable 的 buildMaterials；燈記在伺服器帳本 Ledger）。
+-- 與燈）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：IsoThumpable 照 Place.refundOf；燈記在伺服器帳本 Ledger）。
 -- 兩端共用、只讀世界：客戶端右鍵選單用 preview 判斷，伺服器 Server.dismantle 照同一份重查後才拆。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Materials"
 require "MinidoracatBuilder/Check"
+require "MinidoracatBuilder/Place"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Dismantle = MinidoracatBuilder.Dismantle or {}
 MinidoracatBuilder.Dismantle = Dismantle
 local Rules, Entry, Cost = MinidoracatBuilder.Rules, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
-local Materials, Check = MinidoracatBuilder.Materials, MinidoracatBuilder.Check
+local Materials, Check, Place = MinidoracatBuilder.Materials, MinidoracatBuilder.Check, MinidoracatBuilder.Place
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
--- 本 MOD 蓋的片：Place 建的 IsoThumpable 或 IsoLightSwitch，modData 的 builderEntry 有值（和 Place.onAboutToBeRemoved
--- 同一個判斷：移除前清退料表的就是這些）。退多少不看這個記號，只看伺服器寫的退料表（buildMaterials、帳本）。
+-- 本 MOD 蓋的片：Place 建的 IsoThumpable 或 IsoLightSwitch，modData 的 builderEntry 有值。退多少不看這個記號，只看
+-- 伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved 清退料表時不比圖；
+-- 見 builder-dev placement.md「一樓地板的退料」）。
 local function mine(o)
-    return (instanceof(o, "IsoThumpable") or instanceof(o, "IsoLightSwitch")) and o:hasModData()
-        and o:getModData().builderEntry and true or false
+    if not ((instanceof(o, "IsoThumpable") or instanceof(o, "IsoLightSwitch")) and o:hasModData()) then return false end
+    local e = o:getModData().builderEntry
+    if not e then return false end
+    if instanceof(o, "IsoThumpable") and o:isFloor() then
+        local spr = o:getSprite()
+        return spr ~= nil and spr:getName() == e
+    end
+    return true
 end
 
--- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。
+-- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
+-- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
 function Dismantle.kindOf(obj)
-    if not mine(obj) or (instanceof(obj, "IsoThumpable") and not obj:isDismantable()) then return nil end
+    if not mine(obj) then return nil end
+    if instanceof(obj, "IsoThumpable") and not obj:isDismantable() then
+        local sq = obj:getSquare()
+        if not (sq and Place.groundFloor(obj, sq)) then return nil end
+    end
     local spr = obj:getSprite()
     local kind = spr and Rules.classify(spr)
     if not kind or Cost.refund(kind, spr) ~= "builder" then return nil end

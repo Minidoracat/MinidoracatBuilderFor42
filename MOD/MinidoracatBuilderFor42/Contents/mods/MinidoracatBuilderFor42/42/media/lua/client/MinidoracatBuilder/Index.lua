@@ -1,6 +1,7 @@
 -- 目錄索引：整場遊戲留在記憶體，不存硬碟（bt-perf §4、§8）。
 -- bucket[種類][tileset] = { n = 數量, 名稱1, 名稱2, … }：只存 sprite 名稱字串（Java 端同一個物件，不另佔空間），
 -- 不存每項一張表（3.5 萬項：名稱陣列約 2 MB，每項一張表約 12 MB）。陣列自己記 n：Kahlua 的 #t 是二分搜尋。
+-- 整理期間桶另有 k（圖塊編號，排序用），排完就丟掉。
 -- 按「種類 × tileset」分桶：介面的頁籤（種類）與分類（圖塊組）直接取桶，不必每次掃全部。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Index = MinidoracatBuilder.Index or {}
@@ -25,7 +26,7 @@ end
 Index.reset()
 
 -- 加一個項目。key＝群組鍵（Catalog.scanSprite 建）：同一件的各面共用一個鍵、只留一項，取編號最小的那張當代表，
--- 整理順序不影響結果；共用名稱的不同物件各用自己的鍵；沒有 CustomName 時 nil。
+-- 整理順序不影響結果；共用名稱的不同物件各用自己的鍵；沒有 CustomName 時 nil。num＝圖塊編號，記在桶的 k（排序用，排完丟掉）。
 -- 每次整理約跑 5.7 萬次：只做表操作，不呼叫 Java（AGENTS.md 踩坑「目錄整理的成本幾乎只看 Java 呼叫次數」）。
 function Index.add(kind, name, tileset, num, file, key, raw)
     local g = key and Index.groups[key]
@@ -33,6 +34,7 @@ function Index.add(kind, name, tileset, num, file, key, raw)
         if num < g.num then
             g.arr[g.slot] = name
             g.num = num
+            if g.arr.k then g.arr.k[g.slot] = num end
         end
         return
     end
@@ -45,7 +47,7 @@ function Index.add(kind, name, tileset, num, file, key, raw)
     end
     local arr = sets[tileset]
     if not arr then
-        arr = { n = 0 }
+        arr = { n = 0, k = {} }
         sets[tileset] = arr
         local ks = Index.kindSets[kind]
         ks.n = ks.n + 1
@@ -53,6 +55,7 @@ function Index.add(kind, name, tileset, num, file, key, raw)
     end
     arr.n = arr.n + 1
     arr[arr.n] = name
+    arr.k[arr.n] = num
     Index.kindCount[kind] = Index.kindCount[kind] + 1
     Index.items = Index.items + 1
     local count = Index.sets[tileset]
@@ -115,38 +118,51 @@ function Index.addSetKey(i, modName)
 end
 
 -- 一個桶照圖塊編號排：第一段照 namedMap 的雜湊順序加入（Catalog.start），同組的 #5、#0、#21 混在一起。
--- 不用 table.sort（Kahlua 的實作是遞迴，深度有上限；家族規則）：由下而上的合併排序，編號和名稱一起搬。
--- 要在 addNameKey 之後才排：它照群組記的位置（g.slot）取名稱。
+-- 計數排序：照 Index.add 記的編號（arr.k）放進位置表、再依編號收回，O(項目數＋編號範圍)，不比字串、不跑 match。
+-- 同一個 tileset 的編號不重複（名稱就是 tileset_編號）；萬一重複，照加入順序排在同編號後面，不掉項目。
+-- 排完丟掉 k：桶只留名稱。要在 addNameKey 之後才排：它照群組記的位置（g.slot）取名稱。
 function Index.sortBucket(arr)
-    local n = arr.n
-    if n < 2 then return end
-    local a, ka, b, kb = {}, {}, {}, {}
+    local n, k = arr.n, arr.k
+    arr.k = nil
+    if n < 2 or not k then return end
+    local lo, hi = k[1], k[1]
+    for i = 2, n do
+        local v = k[i]
+        if v < lo then lo = v elseif v > hi then hi = v end
+    end
+    -- ponytail: 編號範圍超過 4096 的桶不排（tiledef 一張圖頂多上千格，碰不到；碰到時要排再改用合併排序）
+    if hi - lo > 4096 then return end
+    local at, more = {}, nil
     for i = 1, n do
-        a[i] = arr[i]
-        ka[i] = tonumber(arr[i]:match("_(%d+)$")) or 0
-    end
-    local width = 1
-    while width < n do
-        local i = 1
-        while i <= n do
-            local mid, hi = math.min(i + width, n + 1), math.min(i + 2 * width, n + 1)
-            local l, r, k = i, mid, i
-            while l < mid and r < hi do
-                if ka[r] < ka[l] then
-                    b[k], kb[k], r = a[r], ka[r], r + 1
-                else
-                    b[k], kb[k], l = a[l], ka[l], l + 1
-                end
-                k = k + 1
+        local off = k[i] - lo
+        if at[off] == nil then
+            at[off] = arr[i]
+        else
+            more = more or {}
+            local m = more[off]
+            if not m then
+                m = { n = 0 }
+                more[off] = m
             end
-            while l < mid do b[k], kb[k], l, k = a[l], ka[l], l + 1, k + 1 end
-            while r < hi do b[k], kb[k], r, k = a[r], ka[r], r + 1, k + 1 end
-            i = i + 2 * width
+            m.n = m.n + 1
+            m[m.n] = arr[i]
         end
-        a, b, ka, kb = b, a, kb, ka
-        width = width * 2
     end
-    for i = 1, n do arr[i] = a[i] end
+    local j = 0
+    for off = 0, hi - lo do
+        local name = at[off]
+        if name then
+            j = j + 1
+            arr[j] = name
+            local m = more and more[off]
+            if m then
+                for x = 1, m.n do
+                    j = j + 1
+                    arr[j] = m[x]
+                end
+            end
+        end
+    end
 end
 
 -- 這個 tileset 在每個種類的桶都照編號排（第二段建 tileset 搜尋鍵時順便做）
