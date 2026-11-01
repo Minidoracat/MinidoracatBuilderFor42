@@ -307,7 +307,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     local o = { name = name, north = north, mats = {}, md = {}, set = {} }
     for _, s in ipairs({ "setCanPassThrough", "setBlockAllTheSquare", "setIsHoppable", "setIsDoorFrame",
         "setCanBarricade", "setIsFloor", "setIsThumpable", "setIsDismantable", "setMaxHealth", "setHealth",
-        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "setIsStairs", "setCorner" }) do
+        "setThumpDmg", "setRenderYOffset", "setExplored", "transmitCompleteItemToClients", "setIsStairs", "setCorner", "setName" }) do
         o[s] = function(self, v) self.set[s] = v end -- 記最後一次設的值
     end
     function o:getSprite() return spriteMap[name] end
@@ -319,6 +319,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     function o:getContainerCount() return #(self.boxes or {}) end
     function o:getContainerByIndex(i) return (self.boxes or {})[i + 1] end
     function o:getThumpDmg() return self.set.setThumpDmg or 8 end
+    function o:getName() return self.set.setName end
     return o
 end }
 -- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）
@@ -1008,7 +1009,7 @@ clockStep = 0
 sb.MaxCellsPerDrag = 2
 local P = player({ id = 7 })
 local function intent(p, o)
-    local args = { n = o.n or 5, e = o.e or "walls_test_01_4", d = o.d or 0, c = o.c or { 10, 20, 0 },
+    local args = { n = o.n or 5, e = o.e or "walls_test_01_4", c = o.c or { 10, 20, 0, o.d or 0 },
         v = o.v or Entry.digest() }
     sent = {}
     Server.intent(p, args)
@@ -1019,9 +1020,9 @@ check(intent(P, {}) == nil and sent[1] and sent[1].cmd == "accepted" and Server.
 check(regionPokes == 0, "那一帶沒有地板格：不喚醒區域系統（也不記，下次再試）")
 check(intent(P, { v = "r0:1" }) == "STALE", "設定摘要不同：STALE")
 check(intent(P, { c = {} }) == "BAD_REQUEST", "沒有座標：BAD_REQUEST")
-check(intent(P, { c = { 10, 20, 0, 11, 20, 0, 12, 20, 0 } }) == "BAD_REQUEST", "超過每次上限：BAD_REQUEST")
-check(intent(P, { c = { 1.5, 2, 0 } }) == "BAD_REQUEST", "座標不是整數：BAD_REQUEST")
-check(intent(P, { c = { 1, 2, 40 } }) == "BAD_REQUEST", "樓層超出範圍：BAD_REQUEST")
+check(intent(P, { c = { 10, 20, 0, 0, 11, 20, 0, 0, 12, 20, 0, 0 } }) == "BAD_REQUEST", "超過每次上限：BAD_REQUEST")
+check(intent(P, { c = { 1.5, 2, 0, 0 } }) == "BAD_REQUEST", "座標不是整數：BAD_REQUEST")
+check(intent(P, { c = { 1, 2, 40, 0 } }) == "BAD_REQUEST", "樓層超出範圍：BAD_REQUEST")
 check(intent(P, { e = "tree_01_0" }) == "UNKNOWN", "排除的項目：UNKNOWN")
 check(intent(P, { d = 1 }) == "BAD_FACE", "不存在的朝向：BAD_FACE")
 check(intent(P, { n = 6 }) == nil and Server.intents[7].n == 6, "新請求取代舊的（每人只留一個）")
@@ -1042,8 +1043,8 @@ check(Server.complete(P, 6, 1) == false and sent[1] and sent[1].args.code == "NO
 check(Server.duration(P, 6, 1) == 200, "施工時間：木工 0 的牆 200 tick（那一帶沒喚醒，不加等待）")
 check(Server.duration(player({ id = 7, instant = true }), 6, 1) == 1, "別的玩家物件問不到請求：1 tick 後被拒")
 check(Server.duration(P, 99, 1) == 1, "找不到請求：1 tick")
-check(intent(P, { n = 9, c = { 200, 20, 0 } }) == "TOO_FAR", "錨點離玩家超過 100 格：TOO_FAR")
-check(intent(P, { n = 10, c = { 60, 20, 0 } }) == nil and Server.intents[7].n == 10,
+check(intent(P, { n = 9, c = { 200, 20, 0, 0 } }) == "TOO_FAR", "錨點離玩家超過 100 格：TOO_FAR")
+check(intent(P, { n = 10, c = { 60, 20, 0, 0 } }) == nil and Server.intents[7].n == 10,
     "點遠處（50 格）再走過去：收下（和每次項數無關）")
 intent(P, { n = 6 })
 check(Server.intents[7] == nil or Server.intents[7].n ~= 9, "被拒的請求不取代舊的")
@@ -1072,7 +1073,8 @@ local function give(p, spec)
 end
 local function build(p, n, e, at)
     sent = {}
-    Server.intent(p, { n = n, e = e or "walls_test_01_4", d = 0, c = at or { 50, 50, 0 }, v = Entry.digest() })
+    local c = at or { 50, 50, 0 }
+    Server.intent(p, { n = n, e = e or "walls_test_01_4", c = { c[1], c[2], c[3], c[4] or 0 }, v = Entry.digest() })
     if sent[1] and sent[1].cmd == "refused" then return false, sent[1].cmd, sent[1].args end
     sent = {}
     local ok = Server.complete(p, n, 1)
@@ -1092,7 +1094,7 @@ check(not ok and a.code == "NO_TOOL" and a.tools[1] == "HAMMER" and #wallSq.obje
 Q.inv:add(hammer)
 sent = {}
 holes["52,52,0"], holes["49,52,0"] = true, true
-Server.intent(Q, { n = 3, e = "walls_test_01_4", d = 0, c = { 52, 52, 0 }, v = Entry.digest() })
+Server.intent(Q, { n = 3, e = "walls_test_01_4", c = { 52, 52, 0, 0 }, v = Entry.digest() })
 Q.pos.x = 57.5
 local before = created
 sent = {}
@@ -1172,7 +1174,7 @@ ok = build(G, 10, nil, { 52, 53, 0 })
 check(ok and #open.world == 3 and #behind.world == 6, "釘子在走得到的地上：只拿缺的 6 根")
 square(48, 52, 0, { moving = { {} } })
 ok, cmd, a = build(Q, 11, "solid_01_0", { 48, 52, 0 })
-check(not ok and a.code == "BLOCKED", "會擋路的東西：格上有人時 BLOCKED")
+check(not ok and a.code == "OCCUPIED", "會擋路的東西：格上有人時 OCCUPIED")
 square(47, 51, 0, { solid = true })
 ok, cmd, a = build(Q, 19, "crate_01_0", { 47, 51, 0 })
 check(not ok and a.code == "BLOCKED", "不能搬的實心容器：不疊在已經實心的格子上")
@@ -1269,16 +1271,16 @@ square(96, 96, 0, { floor = {} })
 local I = player({ id = 23, x = 96.5, y = 97.5, instant = true })
 before = regionPokes
 sent = {}
-Server.intent(I, { n = 14, e = "walls_test_01_4", d = 0, c = { 96, 96, 0, 97, 96, 0 }, v = Entry.digest() })
+Server.intent(I, { n = 14, e = "walls_test_01_4", c = { 96, 96, 0, 0, 97, 96, 0, 0 }, v = Entry.digest() })
 check(regionPokes == before + 1, "那一帶有地板：喚醒區域系統一次")
 check(Server.duration(I, 14, 1) == 150, "即時動作的第一項也等滿喚醒的 3 秒（150 tick）")
 check(Server.duration(I, 14, 2) == 1, "第二項排在第一項之後：不再等")
-Server.intent(I, { n = 15, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
+Server.intent(I, { n = 15, e = "walls_test_01_4", c = { 96, 96, 0, 0 }, v = Entry.digest() })
 check(regionPokes == before + 1, "同一帶第二次請求：不再喚醒")
 local X = player({ id = 24, x = 96.5, y = 97.5 })
-Server.intent(X, { n = 16, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
+Server.intent(X, { n = 16, e = "walls_test_01_4", c = { 96, 96, 0, 0 }, v = Entry.digest() })
 nowMs = nowMs + 181000
-Server.intent(I, { n = 17, e = "walls_test_01_4", d = 0, c = { 96, 96, 0 }, v = Entry.digest() })
+Server.intent(I, { n = 17, e = "walls_test_01_4", c = { 96, 96, 0, 0 }, v = Entry.digest() })
 check(Server.intents[24] == nil and Server.intents[23].n == 17, "過期的請求：下一次有人送請求時清掉（不留住玩家物件）")
 
 print("情境十三：客戶端收到拒絕（單機靠這裡停下後面的動作）")
@@ -1299,19 +1301,19 @@ check(cleared[1] == "PA", "目前這筆被拒：清掉那位玩家的佇列")
 local realIsServer = isServer
 isServer = function() return false end
 sb.Enabled = false
-local nn, why = Client.build(player({ id = 30 }), "walls_test_01_4", 0, { { 10, 20, 0 } })
+local nn, why = Client.build(player({ id = 30 }), "walls_test_01_4", { { 10, 20, 0, 0 } })
 sb.Enabled = nil
 isServer = realIsServer
 check(nn == nil and why == "OFF" and added == 0, "單機請求當場被拒：回原因碼、不排動作")
 isServer = function() return false end
-local nn2 = Client.build(player({ id = 31 }), "walls_test_01_4", 0, { { 10, 20, 0 }, { 11, 20, 0 } })
+local nn2 = Client.build(player({ id = 31 }), "walls_test_01_4", { { 10, 20, 0, 0 }, { 11, 20, 0, 0 } })
 isServer = realIsServer
 check(nn2 ~= nil and added == 2, "單機請求收下：伺服器當場回 accepted，排兩項動作")
 local realIsClient = isClient
 isClient = function() return true end
 function sendClientCommand() end
 added = 0
-local nn3 = Client.build(player({ id = 32 }), "walls_test_01_4", 0, { { 10, 20, 0 } })
+local nn3 = Client.build(player({ id = 32 }), "walls_test_01_4", { { 10, 20, 0, 0 } })
 check(nn3 ~= nil and added == 0, "MP：送出請求時還不排動作（動作不能比請求先到）")
 Client.onServerCommand("accepted", { n = nn3 })
 check(added == 1, "MP：收到 accepted 才排動作")
@@ -1397,7 +1399,7 @@ do
     world({ wallN, sprite("walls_test_01_5", 5005, { flags = { "WallW" }, keys = { WallW = "" } }), solidS, crateS, floorS })
     local kHere = square(56, 44, 0)
     local K = player({ id = 60, x = 56.5, y = 44.5, here = kHere })
-    square(57, 44, 0, { moving = { {} } })   -- 格上有人：實心的東西 BLOCKED
+    square(57, 44, 0, { moving = { {} } })   -- 格上有人：實心的東西 OCCUPIED
     square(55, 44, 0, { noReach = true })    -- 走不到
     square(56, 43, 0, { owner = "someone" }) -- 別人的安全屋
     local PV = { preview = true }
@@ -1407,7 +1409,7 @@ do
         { "walls_test_01_4", 0, { 56, 49, 0 }, "TOO_FAR", 49 },
         { "solid_01_0", 0, { 55, 44, 0 }, "UNREACHABLE", 44 },
         { "walls_test_01_4", 0, { 56, 43, 0 }, "SAFEHOUSE", 43 },
-        { "solid_01_0", 0, { 57, 44, 0 }, "BLOCKED", 44 },
+        { "solid_01_0", 0, { 57, 44, 0 }, "OCCUPIED", 44 },
         { "walls_test_01_4", 0, { 56, 45, 0 }, nil },
     }
     for _, c in ipairs(cases) do
@@ -1788,7 +1790,9 @@ do
         end
         for _, t in ipairs(W.TABS) do want["IGUI_MBLD_Tab_" .. t] = true end
         for _, r in ipairs({ "pickup", "scrap", "builder", "sheet", "none" }) do want["IGUI_MBLD_Refund_" .. r] = true end
-        for code in pairs(Messages.UNBUILD_CODES) do want["IGUI_MBLD_UnbuildRefuse_" .. code] = true end
+        for code in pairs(Messages.UNBUILD_CODES) do
+            want["IGUI_MBLD_UnbuildRefuse_" .. code], want["IGUI_MBLD_UnbuildShort_" .. code] = true, true
+        end
         want["IGUI_MBLD_Menu_Dismantle"], want["IGUI_MBLD_NotRemoved"] = true, true
         for d = 0, 4 do want["IGUI_MBLD_Face_" .. d] = true end
         for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER" }) do
@@ -1832,7 +1836,7 @@ local function stopNotices()
     Messages.toast = function(_, text, title) told = tostring(title) .. "|" .. text end
     Cursor.get = function() return nil end
     ISTimedActionQueue = { isPlayerDoingAction = function() return false end }
-    C.build = function(p, _, _, cells)
+    C.build = function(p, _, cells)
         nonce = nonce + 1
         C.pending = { n = nonce, cells = cells, player = p }
         return nonce
@@ -1840,8 +1844,8 @@ local function stopNotices()
     local function run(count, placed, noRoom)
         told = nil
         local cells = {}
-        for i = 1, count do cells[i] = { i, 0, 0 } end
-        local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", 0, cells, nil)
+        for i = 1, count do cells[i] = { i, 0, 0, 0 } end
+        local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", cells, nil)
         C.pending.noRoom = noRoom
         Cursor.onResult("accepted", { n = n })
         for i = 1, placed do Cursor.onResult("placed", { n = n, i = i }) end
@@ -1925,7 +1929,7 @@ local function newKinds()
     local FP = who(2160, 41.5, 49.5)
     local fe = Entry.resolve("stf_01_0")
     sent = {}
-    Server.intent(FP, { n = 1, e = "stf_01_0", d = 1, c = { 41, 49, 0 }, v = Entry.digest() })
+    Server.intent(FP, { n = 1, e = "stf_01_0", c = { 41, 49, 0, 1 }, v = Entry.digest() })
     check(fe and Entry.face(fe, 1) == nil and Entry.face(Entry.resolve("stg_01_0"), 1) == stG[6]
         and Check.item(FP, "stf_01_0", 1, { 41, 49, 0 }) == "BAD_FACE"
         and sent[1] and sent[1].cmd == "refused" and sent[1].args.code == "BAD_FACE",
@@ -2220,6 +2224,8 @@ local function dismantleScenario()
         function o:getType() return spr:getType() end
         function o:getThumpDmg() return self.dmg or 8 end
         function o:getContainerCount() return 0 end
+        function o:getName() return self.name end
+        function o:setName(v) self.name = v end
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -2234,7 +2240,7 @@ local function dismantleScenario()
     local function lastSent() return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {} end
     local function unbuild(p, n, x, y, z, e)
         sent = {}
-        Server.dismantleIntent(p, { n = n, x = x, y = y, z = z, e = e })
+        Server.dismantleIntent(p, { n = n, t = { x, y, z, e } })
         return lastSent()
     end
     local wallS = sprite("dw_01_0", 2201, { keys = { WallN = "" } })
@@ -2255,20 +2261,20 @@ local function dismantleScenario()
         "本 MOD 蓋的牆：認得出來，拆除請求收下")
     local O = hammerer(2202, 71.5, 72.5, here)
     sent = {}
-    check(Server.dismantle(O, 1) == false and has(at(72, 71, 0), W) and #sent == 0,
+    check(Server.dismantle(O, 1, 1) == false and has(at(72, 71, 0), W) and #sent == 0,
         "別的玩家拿同一個 nonce：沒有請求，不拆、MP 不回覆")
     HARNESS_ROLL = "max"
-    check(Server.dismantle(P, 1) == true and not has(at(72, 71, 0), W) and here.dropped["Base.Plank"] == 4
+    check(Server.dismantle(P, 1, 1) == true and not has(at(72, 71, 0), W) and here.dropped["Base.Plank"] == 4
         and here.dropped["Base.Nails"] == 6 and next(W.mats) == nil and (lastSent()) == "dismantled",
         "拆牆：移除、照退料表退到玩家腳下（最多全部）；移除前退料表已清空（先讀再移除）")
     sent = {}
-    check(Server.dismantle(P, 1) == false and here.dropped["Base.Plank"] == 4,
+    check(Server.dismantle(P, 1, 1) == false and here.dropped["Base.Plank"] == 4,
         "同一筆請求再送一次：不再拆、不再退")
     HARNESS_ROLL = "min"
     here.dropped = {}
     local W2 = ours(at(72, 72, 0), wallS, { ["Base.Plank"] = "4", ["Base.Nails"] = "6" })
     unbuild(P, 2, 72, 72, 0, "dw_01_0")
-    check(Server.dismantle(P, 2) and here.dropped["Base.Plank"] == 1 and here.dropped["Base.Nails"] == 1 and not has(at(72, 72, 0), W2),
+    check(Server.dismantle(P, 2, 1) and here.dropped["Base.Plank"] == 1 and here.dropped["Base.Nails"] == 1 and not has(at(72, 72, 0), W2),
         "每項至少退 1 件")
     HARNESS_ROLL = "max"
 
@@ -2276,15 +2282,15 @@ local function dismantleScenario()
     local far = hammerer(2203, 76.5, 76.5, at(76, 76, 0))
     local W3 = ours(at(72, 73, 0), wallS, { ["Base.Plank"] = "4" })
     unbuild(far, 3, 72, 73, 0, "dw_01_0")
-    Server.dismantle(far, 3)
+    Server.dismantle(far, 3, 1)
     local c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "TOO_FAR" and has(at(72, 73, 0), W3), "太遠：TOO_FAR、不拆")
+    check(c == "dismantleSkipped" and a.code == "TOO_FAR" and has(at(72, 73, 0), W3), "太遠：TOO_FAR、不拆")
     check(Dismantle.check(far, "wall", Dismantle.plan(W3, "wall"), true) == nil, "右鍵選單預覽不查距離（選了會先走過去）")
     local bare = player({ id = 2204, x = 71.5, y = 73.5, here = here })
     unbuild(bare, 4, 72, 73, 0, "dw_01_0")
-    Server.dismantle(bare, 4)
+    Server.dismantle(bare, 4, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NO_TOOL" and a.tools[1] == "HAMMER" and has(at(72, 73, 0), W3),
+    check(c == "dismantleSkipped" and a.code == "NO_TOOL" and a.tools[1] == "HAMMER" and has(at(72, 73, 0), W3),
         "沒帶工具（和蓋的時候一樣）：NO_TOOL、列出缺的工具")
     local cheat = player({ id = 2205, x = 71.5, y = 73.5, here = here, cheat = true })
     check(Dismantle.check(cheat, "wall", Dismantle.plan(W3, "wall")) == nil, "建造作弊：不查工具")
@@ -2292,20 +2298,20 @@ local function dismantleScenario()
     local W4 = ours(owned, wallS, { ["Base.Plank"] = "4" })
     local SP = hammerer(2206, 70.5, 74.5, at(70, 74, 0))
     unbuild(SP, 5, 70, 75, 0, "dw_01_0")
-    Server.dismantle(SP, 5)
+    Server.dismantle(SP, 5, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "SAFEHOUSE" and has(owned, W4), "別人的安全屋：SAFEHOUSE、不拆")
+    check(c == "dismantleSkipped" and a.code == "SAFEHOUSE" and has(owned, W4), "別人的安全屋：SAFEHOUSE、不拆")
     local B = ours(at(73, 71, 0), boxS, { ["Base.Plank"] = "2" })
     B.full = true
     unbuild(P, 6, 73, 71, 0, "db_01_0")
-    Server.dismantle(P, 6)
+    Server.dismantle(P, 6, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NOT_EMPTY" and has(at(73, 71, 0), B), "容器裡還有東西：NOT_EMPTY、不拆（不讓內容物消失）")
+    check(c == "dismantleSkipped" and a.code == "NOT_EMPTY" and has(at(73, 71, 0), B), "容器裡還有東西：NOT_EMPTY、不拆（不讓內容物消失）")
     local ch = ours(at(73, 72, 0), chairS, { ["Base.Plank"] = "2" })
     unbuild(P, 7, 73, 72, 0, "dc_01_0")
-    Server.dismantle(P, 7)
+    Server.dismantle(P, 7, 1)
     c, a = lastSent()
-    check(Dismantle.kindOf(ch) == nil and c == "dismantleRefused" and a.code == "GONE" and has(at(73, 72, 0), ch),
+    check(Dismantle.kindOf(ch) == nil and c == "dismantleSkipped" and a.code == "GONE" and has(at(73, 72, 0), ch),
         "能搬的（照原版拿起）不歸本工具拆：找不到可拆的那件（GONE）")
 
     -- 燈只認帳本：帳本沒記的不拆；帳本裡的照帳本退，移出世界時帳本清掉
@@ -2317,14 +2323,14 @@ local function dismantleScenario()
     local LP = hammerer(2209, 73.5, 71.5, at(73, 71, 0))
     LP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
     unbuild(LP, 8, 74, 71, 0, "dl_01_0")
-    Server.dismantle(LP, 8)
+    Server.dismantle(LP, 8, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(74, 71, 0), fake),
+    check(c == "dismantleSkipped" and a.code == "NOT_OURS" and has(at(74, 71, 0), fake),
         "燈的 modData 有 builderEntry、帳本沒記：NOT_OURS、不拆不退")
     local L = ours(at(74, 72, 0), switchS, nil, "IsoLightSwitch")
     Ledger.put(L, { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 })
     unbuild(LP, 9, 74, 72, 0, "dl_01_0")
-    check(Server.dismantle(LP, 9) and at(73, 71, 0).dropped["Base.ElectricWire"] == 1 and not has(at(74, 72, 0), L)
+    check(Server.dismantle(LP, 9, 1) and at(73, 71, 0).dropped["Base.ElectricWire"] == 1 and not has(at(74, 72, 0), L)
         and Ledger.get(L) == nil, "帳本裡的燈：照帳本退、移除時帳本清掉")
 
     -- 樓梯：三片加本 MOD 補的平台（帳本有記）一起拆，只照被點的那片退一次；清掉平台格的 ConnectedToStairs
@@ -2347,7 +2353,7 @@ local function dismantleScenario()
     buildUtil.getStairObjects = function() return { T0, M0, B0, landing } end -- 原版收三片＋旁邊沒地板的平台
     local SP2 = hammerer(2207, 75.5, 72.5, at(75, 72, 0))
     unbuild(SP2, 10, 75, 73, 0, "ds_01_1")
-    check(Server.dismantle(SP2, 10) and not has(at(74, 73, 0), T0) and not has(at(75, 73, 0), M0)
+    check(Server.dismantle(SP2, 10, 1) and not has(at(74, 73, 0), T0) and not has(at(75, 73, 0), M0)
         and not has(at(76, 73, 0), B0) and not has(plat, landing) and plat.md.ConnectedToStairsfalse == nil
         and at(75, 72, 0).dropped["Base.Plank"] == 13 and at(75, 72, 0).dropped["Base.Nails"] == 8 and Ledger.get(landing) == nil,
         "樓梯：點中片，三片與平台一起拆、只退一組、平台格的 ConnectedToStairs 清掉、帳本的平台清掉")
@@ -2364,13 +2370,13 @@ local function dismantleScenario()
     M1.md.builderEntry = false -- 記號要有值（和 Place.onAboutToBeRemoved 同一個判斷），false 不算
     buildUtil.getStairObjects = function() return { T1, M1, B1, land1 } end
     unbuild(SP3, 14, 74, 76, 0, "ds_01_2")
-    Server.dismantle(SP3, 14)
+    Server.dismantle(SP3, 14, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(74, 76, 0), T1) and has(at(75, 76, 0), M1)
+    check(c == "dismantleSkipped" and a.code == "NOT_OURS" and has(at(74, 76, 0), T1) and has(at(75, 76, 0), M1)
         and has(at(76, 76, 0), B1) and next(at(75, 75, 0).dropped) == nil, "樓梯有一片的記號是 false：整組不拆、不退")
     M1.md.builderEntry = "ds_01_1"
     unbuild(SP3, 15, 74, 76, 0, "ds_01_2")
-    check(Server.dismantle(SP3, 15) and not has(at(75, 76, 0), M1) and has(plat1, land1) and Ledger.get(land1) ~= nil,
+    check(Server.dismantle(SP3, 15, 1) and not has(at(75, 76, 0), M1) and has(plat1, land1) and Ledger.get(land1) ~= nil,
         "平台上還有別的東西（牆）：拆樓梯、平台留著")
     -- 別方向的樓梯片不算這一組；平台不在帳本（蓋樓梯時那格原本就有地板）
     local plat2 = engineSq(73, 77, 1)
@@ -2384,7 +2390,7 @@ local function dismantleScenario()
     Ledger.put(landN, {})
     buildUtil.getStairObjects = function() return { T2, M2, NM, B2, land2, landN } end
     unbuild(SP3, 16, 74, 77, 0, "ds_01_2")
-    check(Server.dismantle(SP3, 16) and not has(at(74, 77, 0), T2) and not has(at(75, 77, 0), M2)
+    check(Server.dismantle(SP3, 16, 1) and not has(at(74, 77, 0), T2) and not has(at(75, 77, 0), M2)
         and not has(at(76, 77, 0), B2) and has(at(75, 77, 0), NM) and has(plat2, land2)
         and has(platN, landN) and Ledger.get(landN) ~= nil,
         "別方向的樓梯片與它的平台不算這一組（不拆）；這一組的平台不在帳本（原本就有的地板）：留著")
@@ -2397,7 +2403,7 @@ local function dismantleScenario()
     Ledger.put(land3, {})
     buildUtil.getStairObjects = function() return { T3, M3, B3, land3 } end
     unbuild(SP3, 17, 74, 76, 0, "ds_01_2")
-    check(Server.dismantle(SP3, 17) and not has(at(75, 76, 0), M3) and has(plat3, land3), "平台在別人的安全屋：拆樓梯、平台留著")
+    check(Server.dismantle(SP3, 17, 1) and not has(at(75, 76, 0), M3) and has(plat3, land3), "平台在別人的安全屋：拆樓梯、平台留著")
     buildUtil.getStairObjects = realStairs
 
     -- 多格：同一組（同一個原點）整組拆、每片照自己的退料表退；引擎一起收到的別組那片（同一張 grid、原點不同）不拆
@@ -2409,7 +2415,7 @@ local function dismantleScenario()
     GA.cands = { GA, GB, GX }
     local GP = hammerer(2208, 71.5, 74.5, at(71, 74, 0))
     unbuild(GP, 11, 71, 75, 0, "db_01_0")
-    check(Server.dismantle(GP, 11) and not has(at(71, 75, 0), GA) and not has(at(72, 75, 0), GB) and has(at(72, 75, 0), GX)
+    check(Server.dismantle(GP, 11, 1) and not has(at(71, 75, 0), GA) and not has(at(72, 75, 0), GB) and has(at(72, 75, 0), GX)
         and at(71, 74, 0).dropped["Base.Plank"] == 4, "多格：同一組整組拆、每片照自己的退料表退（2＋2）；原點不同的別組那片不拆")
     -- 同一組有一片沒有記號：整組不拆、不退
     local GC = ours(at(73, 74, 0), boxS, { ["Base.Plank"] = "2" })
@@ -2418,9 +2424,9 @@ local function dismantleScenario()
     local g2 = { GC, GD }
     GC.group, GD.group, GC.cands = g2, g2, { GC, GD }
     unbuild(GP, 22, 73, 74, 0, "db_01_0")
-    Server.dismantle(GP, 22)
+    Server.dismantle(GP, 22, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NOT_OURS" and has(at(73, 74, 0), GC) and has(at(74, 74, 0), GD)
+    check(c == "dismantleSkipped" and a.code == "NOT_OURS" and has(at(73, 74, 0), GC) and has(at(74, 74, 0), GD)
         and at(71, 74, 0).dropped["Base.Plank"] == 4, "多格：同一組有一片沒有本 MOD 的記號：整組不拆、不退")
 
     -- 原版拆解擋的：集水的裡面有水、門框裝著門、窗框釘著木板、樓梯頂端接著的地板；移除沒生效不退料
@@ -2429,9 +2435,9 @@ local function dismantleScenario()
         { ["Base.Plank"] = "2" })
     WC.fluid = true
     unbuild(WP, 18, 77, 72, 0, "dwc_01_0")
-    Server.dismantle(WP, 18)
+    Server.dismantle(WP, 18, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "NOT_EMPTY" and has(at(77, 72, 0), WC), "集水的裡面有水：NOT_EMPTY、不拆")
+    check(c == "dismantleSkipped" and a.code == "NOT_EMPTY" and has(at(77, 72, 0), WC), "集水的裡面有水：NOT_EMPTY、不拆")
     local DF = ours(at(74, 72, 0), sprite("ddf_01_0", 2213, { flags = { "DoorWallN" }, keys = { DoorWallN = "" } }),
         { ["Base.Plank"] = "4" })
     at(74, 72, 0).getDoor = function(_, dir)
@@ -2462,19 +2468,19 @@ local function dismantleScenario()
     function stuck:transmitRemoveItemFromSquare() return -1 end -- 引擎沒移掉（錯誤被 Kahlua 吞掉，pcall 看不到）
     local WS = ours(stuck, wallS, { ["Base.Plank"] = "4" })
     unbuild(WP, 19, 76, 72, 0, "dw_01_0")
-    Server.dismantle(WP, 19)
+    Server.dismantle(WP, 19, 1)
     c, a = lastSent()
     check(c == "dismantleRefused" and a.code == "INTERNAL" and has(stuck, WS) and next(at(75, 70, 0).dropped) == nil,
-        "移除沒生效：INTERNAL、不退料")
+        "移除沒生效：INTERNAL、不退料、整批停（dismantleRefused，可能只拆了一部分）")
     sb.WhereCanBuild = 2
     local WW = ours(at(74, 71, 0), wallS, { ["Base.Plank"] = "4" })
     unbuild(WP, 20, 74, 71, 0, "dw_01_0")
-    check(Server.dismantle(WP, 20) and not has(at(74, 71, 0), WW), "只能在安全屋內蓋（WhereCanBuild=2）：拆除不看，安全屋外照樣能拆")
+    check(Server.dismantle(WP, 20, 1) and not has(at(74, 71, 0), WW), "只能在安全屋內蓋（WhereCanBuild=2）：拆除不看，安全屋外照樣能拆")
     sb.WhereCanBuild = nil
     local WE = ours(at(77, 70, 0), wallS, { ["Base.Plank"] = "4" })
     unbuild(WP, 21, 77, 70, 0, "dw_01_0")
-    nowMs = nowMs + 181000
-    check(Server.dismantle(WP, 21) == false and has(at(77, 70, 0), WE), "請求過期（走太久）：不拆")
+    nowMs = nowMs + 180000 * 32 + 1000 -- 期限照一區最多幾件（MaxCellsPerDrag 預設 32）×每件 180 秒
+    check(Server.dismantle(WP, 21, 1) == false and has(at(77, 70, 0), WE), "請求過期（走太久，期限照一區最多件數給）：不拆")
 
     -- 地板：一樓拆了換泥土；二樓以上格上還有東西不拆
     local F0 = ours(at(73, 75, 0), floorS, {})
@@ -2482,7 +2488,7 @@ local function dismantleScenario()
     MinidoracatBuilder.Floors.put(F0, { ["Base.Plank"] = 1 })
     unbuild(GP, 12, 73, 75, 0, "df_01_0")
     local dirt
-    if Server.dismantle(GP, 12) then
+    if Server.dismantle(GP, 12, 1) then
         for _, o in ipairs(at(73, 75, 0).objects) do if o.name == "blends_natural_01_64" then dirt = o end end
     end
     check(dirt and not has(at(73, 75, 0), F0), "一樓的地板拆了換泥土（照原版）")
@@ -2490,9 +2496,9 @@ local function dismantleScenario()
     local F1 = ours(up, floorS, { ["Base.Plank"] = "1" })
     ours(up, wallS, {})
     unbuild(GP, 13, 72, 76, 1, "df_01_0")
-    Server.dismantle(GP, 13)
+    Server.dismantle(GP, 13, 1)
     c, a = lastSent()
-    check(c == "dismantleRefused" and a.code == "FLOOR_IN_USE" and has(up, F1), "二樓的地板上還有牆：FLOOR_IN_USE、不拆")
+    check(c == "dismantleSkipped" and a.code == "FLOOR_IN_USE" and has(up, F1), "二樓的地板上還有牆：FLOOR_IN_USE、不拆")
 
     -- 一樓的地板退料在伺服器的地板帳本：本工具照它退，不看 modData；圖和蓋的時候不同的地板不退
     local FP = hammerer(2230, 75.5, 76.5, at(75, 76, 0))
@@ -2506,7 +2512,7 @@ local function dismantleScenario()
         local drop = at(75, 76, 0)
         drop.dropped = {}
         unbuild(FP, 22, 74, 75, 0, "df_01_0")
-        return Server.dismantle(FP, 22) and not has(at(74, 75, 0), G) and drop.dropped["Base.Plank"] == 3
+        return Server.dismantle(FP, 22, 1) and not has(at(74, 75, 0), G) and drop.dropped["Base.Plank"] == 3
             and drop.dropped["Base.Axe"] == nil and Floors.get(G) == nil
     end)(), "一樓的地板（不給原版搬動工具拆）：照地板帳本退、不看 modData、移除時帳本清掉")
     check((function()
@@ -2519,17 +2525,17 @@ local function dismantleScenario()
         local drop = at(75, 76, 0)
         drop.dropped = {}
         unbuild(FP, 23, 75, 75, 0, "dfo_01_9")
-        Server.dismantle(FP, 23)
+        Server.dismantle(FP, 23, 1)
         local c1, a1 = lastSent()
         unbuild(FP, 24, 75, 75, 0, "df_01_0")
-        Server.dismantle(FP, 24)
+        Server.dismantle(FP, 24, 1)
         local c2, a2 = lastSent()
         V.md.builderEntry = "dfo_01_9"
         unbuild(FP, 25, 75, 75, 0, "dfo_01_9")
-        Server.dismantle(FP, 25)
+        Server.dismantle(FP, 25, 1)
         local c3, a3 = lastSent()
-        return c1 == "dismantleRefused" and a1.code == "GONE" and c2 == "dismantleRefused" and a2.code == "GONE"
-            and c3 == "dismantleRefused" and a3.code == "NOT_OURS" and next(drop.dropped) == nil and Floors.get(V) ~= nil
+        return c1 == "dismantleSkipped" and a1.code == "GONE" and c2 == "dismantleSkipped" and a2.code == "GONE"
+            and c3 == "dismantleSkipped" and a3.code == "NOT_OURS" and next(drop.dropped) == nil and Floors.get(V) ~= nil
     end)(), "地板的圖和蓋的時候不同就不退")
     check((function()
         local Floors, Place = MinidoracatBuilder.Floors, MinidoracatBuilder.Place
@@ -2545,20 +2551,20 @@ local function dismantleScenario()
         function V:getSprite() return switchS end
         V.md.builderEntry = "dl_01_0"
         unbuild(FP, 26, 76, 75, 0, "dl_01_0")
-        Server.dismantle(FP, 26)
+        Server.dismantle(FP, 26, 1)
         local c1, a1 = lastSent()
         function V:getSprite() return floorS end
         V.md.builderEntry = nil
         function L:getSprite() return floorS end
         L.md.builderEntry = "df_01_0"
         unbuild(FP, 27, 76, 75, 0, "df_01_0")
-        Server.dismantle(FP, 27)
+        Server.dismantle(FP, 27, 1)
         local c2, a2 = lastSent()
         function W:getSprite() return floorS end
         local own = Place.refundOf(W) == W.mats and W.mats["Base.Plank"] == "4"
         sq:transmitRemoveItemFromSquare(L)
         sq:transmitRemoveItemFromSquare(W)
-        return c1 == "dismantleRefused" and a1.code == "NOT_OURS" and c2 == "dismantleRefused" and a2.code == "NOT_OURS"
+        return c1 == "dismantleSkipped" and a1.code == "NOT_OURS" and c2 == "dismantleSkipped" and a2.code == "NOT_OURS"
             and own and next(drop.dropped) == nil and has(sq, V) and Floors.get(V) ~= nil
             and Floors.get(V).i["Base.Plank"] == 3
     end)(), "同一格不同物件的退料紀錄互不影響")
@@ -2619,6 +2625,7 @@ local function dismantleScenario()
             and NO.mats["Base.Plank"] == "5" and NO.dism == nil and UP.mats["Base.Plank"] == "1" and UP.dism == nil
             and z and next(z.i) == nil and Dismantle.kindOf(OZ) == "floor" and next(Place.refundOf(OZ)) == nil
             and Floors.get(OK) == nil and next(OK.mats) == nil and OK.dism == false
+            and OW.name == "dw_01_0" and NO.name == nil
     end)(), "讀檔：一樓地板的退料搬進地板帳本（沒付料的記空表）、不給原版搬動工具拆，牆角柱改成轉角＋不可穿過；"
         .. "現在歸柵欄的、牆、別人的、二樓的地板不動，能搬的地板不記帳")
     check((function()
@@ -3653,9 +3660,9 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     local function lastSent() return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {} end
     local function unbuild(p, n, x, y, e)
         sent = {}
-        Server.dismantleIntent(p, { n = n, x = x, y = y, z = 0, e = e })
+        Server.dismantleIntent(p, { n = n, t = { x, y, 0, e } })
         sent = {}
-        Server.dismantle(p, n)
+        Server.dismantle(p, n, 1)
         return lastSent()
     end
     local here = ground(44, 46)
@@ -3674,11 +3681,11 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         "蓋交通標線：掛在那格地板上、不建物件，附加圖與記號都送給客戶端，退料（＝付的料）記在覆蓋帳本")
     give(Pl, pay)
     local ok2, _, a2 = build(Pl, 2602, TL, { 44, 44, 0 })
-    check(not ok2 and a2.code == "BLOCKED" and hung(fA) == TL, "同一格已經掛著同一張：BLOCKED，不疊兩張")
+    check(not ok2 and a2.code == "SAME_TILE" and hung(fA) == TL, "同一格已經掛著同一張：SAME_TILE，不疊兩張")
     local B, fB = ground(45, 44)
     fB:addAttachedAnimSprite(tlS) -- 地圖原有的
     local ok3, _, a3 = build(Pl, 2603, TL, { 45, 44, 0 })
-    check(not ok3 and a3.code == "BLOCKED" and hung(fB) == TL, "地圖原本就掛著同一張：BLOCKED")
+    check(not ok3 and a3.code == "SAME_TILE" and hung(fB) == TL, "地圖原本就掛著同一張：SAME_TILE")
     local N = ground(46, 44, true)
     local ok4, _, a4 = build(Pl, 2604, TL, { 46, 44, 0 })
     check(not ok4 and a4.code == "BLOCKED" and #N.objects == 0, "沒有地板的格子：BLOCKED（沒地方掛），也不建物件")
@@ -3690,11 +3697,11 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         "右鍵選單：列出本 MOD 掛的那張；地圖原有的（沒有記號）不列")
     fB.md.builderOverlays = { [TL] = true } -- 記號在、覆蓋帳本沒有那一筆
     local c, a = unbuild(Pl, 2605, 45, 44, TL)
-    check(c == "dismantleRefused" and a.code == "NOT_OURS" and hung(fB) == TL,
+    check(c == "dismantleSkipped" and a.code == "NOT_OURS" and hung(fB) == TL,
         "地圖原有的、地板上有記號但覆蓋帳本沒有：NOT_OURS、不拿掉")
     local bare = player({ id = 2602, x = 44.5, y = 45.5, here = here })
     c, a = unbuild(bare, 2606, 44, 44, TL)
-    check(c == "dismantleRefused" and a.code == "NO_TOOL" and hung(fA) == TL, "沒帶工具（和蓋的時候一樣）：NO_TOOL、不拿掉")
+    check(c == "dismantleSkipped" and a.code == "NO_TOOL" and hung(fA) == TL, "沒帶工具（和蓋的時候一樣）：NO_TOOL、不拿掉")
     HARNESS_ROLL = "max"
     c = unbuild(Pl, 2607, 44, 44, TL)
     local back = true
@@ -3702,7 +3709,7 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     check(c == "dismantled" and hung(fA) == "" and fA.md.builderOverlays == nil and Overlays.get(A, TL) == nil and back
         and fA.sprites == 2 and fA.mds == 2, "拆：拿掉附加圖與記號並同步、清帳本、照帳本退（最多全部）")
     c, a = unbuild(Pl, 2608, 44, 44, TL)
-    check(c == "dismantleRefused" and a.code == "GONE", "拆過的再拆一次：GONE、不再退")
+    check(c == "dismantleSkipped" and a.code == "GONE", "拆過的再拆一次：GONE、不再退")
     -- 記號只決定選單列不列：記號被清掉、附加圖與帳本都在，伺服器照樣拆
     local W, fW = ground(45, 45)
     give(Pl, pay)
@@ -3719,7 +3726,7 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     here.dropped = {}
     c, a = unbuild(Pl, 2616, 45, 46, TL)
     check(c == "dismantleRefused" and a.code == "INTERNAL" and hung(fQ) == TL and Overlays.get(Q, TL) ~= nil
-        and next(here.dropped) == nil, "拿不掉那張（引擎出錯）：INTERNAL、不退料、帳本留著")
+        and next(here.dropped) == nil, "拿不掉那張（引擎出錯）：INTERNAL、不退料、帳本留著、整批停")
 
     -- 地板移出世界：那一格整格清掉，不看那時還掛著哪幾張；別的物件移除時不動帳本
     local D, fD = ground(43, 45)
@@ -3789,6 +3796,8 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         function o:isCanPassThrough() return self.pass ~= false end
         function o:getThumpDmg() return 8 end
         function o:getContainerCount() return 0 end
+        function o:getName() return self.name end
+        function o:setName(v) self.name = v end
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -3862,7 +3871,7 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     SD.owner = "someone"
     local cSD, aSD = unbuild(Pl, 2617, 42, 44, TL)
     SD.owner = nil
-    check(okSD and cSD == "dismantleRefused" and aSD.code == "SAFEHOUSE" and hung(fSD) == TL and Overlays.get(SD, TL) ~= nil,
+    check(okSD and cSD == "dismantleSkipped" and aSD.code == "SAFEHOUSE" and hung(fSD) == TL and Overlays.get(SD, TL) ~= nil,
         "拆別人安全屋裡的：SAFEHOUSE、不拿掉、帳本留著")
     local CP = player({ id = 2603, x = 44.5, y = 45.5, here = here, cheat = true })
     local CC, fCC = ground(42, 46)
@@ -4020,6 +4029,8 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         function x:getContainerByIndex(i) return self.boxes[i + 1] end
         function x:isFloor() return false end
         function x:isCorner() return false end
+        function x:getName() return self.name end
+        function x:setName(v) self.name = v end
         return x
     end
     local function load(list) for _, o in ipairs(list) do Place.migrate(o) end end
@@ -4104,6 +4115,700 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         "讀檔、容器：.5 邊界照四捨五入進位（50×1.15＝58、冷凍庫 15×4.1＝62）")
     instanceof = realInst
     IsoDoor = nil
+end)()
+
+print("情境二十八：疊放、放不下的原因碼、原地替換、配對面（2026-11-01 設計稿 FYiNFUQ-Qcq6）")
+;(function()
+    nowMs = nowMs + 180000
+    local Place, Dismantle = MinidoracatBuilder.Place, MinidoracatBuilder.Dismantle
+    local realInst, realProps = instanceof, ISMoveableSpriteProps
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    -- 圖塊：flags＝旗標（Entry.edges、格子屬性），keys＝字串鍵（Rules 有些照字串查）
+    local function sp(name, id, flags, keys, o)
+        o = o or {}
+        o.flags, o.keys = flags, keys or {}
+        for _, f in ipairs(flags or {}) do if o.keys[f] == nil and f:match("^[A-Z]") then o.keys[f] = "" end end
+        return sprite(name, id, o)
+    end
+    local wallN = sp("rp_wall_01_1", 2801, { "WallN" })
+    local wallW = sp("rp_wall_01_0", 2802, { "WallW" })
+    local frameN = sp("rp_frame_01_1", 2803, { "WindowN" })
+    local wallN2 = sp("rp_wall_02_1", 2804, { "WallN" })
+    local floorA = sp("rp_floor_01_0", 2805, { "solidfloor" })
+    local floorB = sp("rp_floor_01_1", 2806, { "solidfloor" })
+    local lampA = sp("rp_lamp_01_0", 2807, {}, {}, { type = T.lightswitch })
+    local lampB = sp("rp_lamp_01_1", 2808, {}, {}, { type = T.lightswitch })
+    local boxA = sp("rp_box_01_0", 2809, { "solid" }, { container = "crate" })
+    local boxB = sp("rp_box_01_1", 2810, { "solid" }, { container = "crate" })
+    local crate = sp("rp_crate_01_0", 2811, { "solid" }, { IsMoveAble = "", IsStackable = "", IsTable = "", Surface = "32" })
+    local chair = sp("rp_chair_01_0", 2812, { "solid" }, { IsMoveAble = "" })
+    local stA = sp("rp_stairs_01_0", 2813, {}, {}, { type = T.stairsBW })
+    local stB = sp("rp_stairs_02_0", 2814, {}, {}, { type = T.stairsBW })
+    local ovA = sp("rp_ovl_01_0", 2815, {}, { TileOverlay = "" })
+    local ovB = sp("rp_ovl_01_1", 2816, {}, { TileOverlay = "" })
+    local gridS = sp("rp_box_01_2", 2817, { "solid" }, { container = "crate" })
+    gridS.grid = {}
+    -- 配對面（d＝5）：原版的幾種排法（Main 離線讀 tiledef）
+    local pf = {}
+    local function edgeSet(prefix, kindFlags, list)
+        for num, side in pairs(list) do
+            local name = prefix .. "_" .. num
+            pf[name] = sp(name, 2900 + #spriteOrder + num, { kindFlags[side] })
+        end
+    end
+    edgeSet("pf_house_01", { N = "WallN", W = "WallW" }, { [0] = "W", [1] = "N", [4] = "W", [5] = "N" })
+    edgeSet("pf_wood_01", { N = "WallN", W = "WallW" }, { [4] = "W", [5] = "W", [6] = "N", [7] = "N" })
+    edgeSet("pf_fence_01", { N = "HoppableN", W = "HoppableW" },
+        { [1] = "N", [2] = "W", [8] = "N", [9] = "N", [10] = "W", [11] = "W" })
+    edgeSet("pf_mall_01", { N = "WallN", W = "WallW" }, { [56] = "N", [57] = "W" })
+    edgeSet("pf_lone_01", { N = "WallN", W = "WallW" }, { [0] = "W" })
+    pf.pf_house_01_2 = sp("pf_house_01_2", 2990, { "WallNW" })
+    pf.pf_door_01_0 = sp("pf_door_01_0", 2991, { "doorN" })
+    pf.pf_door_01_1 = sp("pf_door_01_1", 2992, { "doorW" })
+    pf.pf_door_01_2 = sp("pf_door_01_2", 2993, { "doorN" }) -- 開門的圖（+2）
+    local shelfA = sp("rp_shelf_01_0", 2818, {}, { container = "shelves" }) -- 不實心的容器：同格放得下兩個
+    local shelfB = sp("rp_shelf_01_1", 2819, {}, { container = "shelves" })
+    -- 植入違規用：會佔住位置（實心／擋放置）的燈與覆蓋，不換名單拿掉時才會被當成可換
+    local lampS1 = sp("rp_lamp_02_0", 2820, { "solid" }, {}, { type = T.lightswitch })
+    local lampS2 = sp("rp_lamp_02_1", 2821, { "solid" }, {}, { type = T.lightswitch })
+    local ovX1 = sp("rp_ovl_02_0", 2822, {}, { TileOverlay = "", BlocksPlacement = "" })
+    local ovX2 = sp("rp_ovl_02_1", 2823, {}, { TileOverlay = "", BlocksPlacement = "" })
+    local all = { wallN, wallW, frameN, wallN2, floorA, floorB, lampA, lampB, boxA, boxB, crate, chair, stA, stB, ovA, ovB, gridS,
+        shelfA, shelfB, lampS1, lampS2, ovX1, ovX2 }
+    for _, s in pairs(pf) do all[#all + 1] = s end
+    world(all)
+
+    -- 配對面
+    local function pair(name)
+        local e = Entry.resolve(name)
+        local s = e and Entry.face(e, 5)
+        return s and s:getName() or nil
+    end
+    check(pair("pf_house_01_0") == "pf_house_01_1" and pair("pf_house_01_1") == "pf_house_01_0"
+        and pair("pf_house_01_4") == "pf_house_01_5" and pair("pf_mall_01_56") == "pf_mall_01_57"
+        and pair("pf_mall_01_57") == "pf_mall_01_56", "配對面：編號 xor 1 那張只佔另一條邊（偶數西、奇數北；56N 57W 也成立）")
+    check(pair("pf_wood_01_4") == "pf_wood_01_6" and pair("pf_wood_01_5") == "pf_wood_01_7" and pair("pf_wood_01_7") == "pf_wood_01_5"
+        and pair("pf_fence_01_8") == "pf_fence_01_10" and pair("pf_fence_01_11") == "pf_fence_01_9",
+        "配對面：兩張一組（4W 5W 6N 7N、8N 9N 10W 11W）改看 ±2")
+    check(pair("pf_fence_01_1") == "pf_fence_01_2" and pair("pf_fence_01_2") == "pf_fence_01_1",
+        "配對面：xor 1 那張不存在時就近找（1N 2W）")
+    check(pair("pf_house_01_2") == nil and pair("pf_door_01_0") == nil and pair("pf_lone_01_0") == nil
+        and Entry.face(Entry.resolve("pf_house_01_0"), 6) == nil,
+        "配對面：佔兩條邊的角片、門、找不到另一邊的都回 nil；d＝6 不存在")
+    local wallEntry = Entry.resolve("pf_house_01_0")
+    check(Entry.face(wallEntry, 5) == Entry.face(wallEntry, 5) and Entry.face(wallEntry, 0) == pf.pf_house_01_0,
+        "配對面：同一項目查兩次結果一樣（快取），d＝0 照舊是自己")
+
+    -- 格子與物件
+    for x = 100, 107 do for y = 100, 107 do square(x, y, 0) end end
+    local P = player({ id = 2801, x = 103.5, y = 103.5, here = squares["103,103,0"] })
+    local PV = { preview = true }
+    local function at(x, y, o) -- 重建一格（格子屬性照 o.flags，引擎是各物件屬性的聯集）
+        squares[x .. "," .. y .. ",0"] = nil
+        return square(x, y, 0, o)
+    end
+    local function obj(sq, spr, o)
+        o = o or {}
+        local x = { class = o.class or "IsoThumpable", mats = o.mats or { ["Base.Plank"] = "4" }, md = {}, yoff = o.yoff or 0,
+            floor = spr:getProperties():has(F.solidfloor) }
+        if o.ours ~= false then x.md.builderEntry = spr:getName() end
+        function x:getSprite() return spr end
+        function x:getProperties() return spr:getProperties() end
+        function x:getSquare() return sq end
+        function x:hasModData() return true end
+        function x:getModData() return self.md end
+        function x:isDismantable() return true end
+        function x:getBuildMaterials() return self.mats end
+        function x:hasBuildMaterials() return next(self.mats) ~= nil end
+        function x:isFloor() return self.floor end
+        function x:getRenderYOffset() return self.yoff end
+        function x:getSpriteGridObjectsIncludingSelf() return javaList(self.cands or { self }) end
+        function x:isConnectedSpriteGridObject(y) return y == self or (self.cands ~= nil) end
+        function x:isObjectNoContainerOrEmpty() return not self.full end
+        function x:hasFluid() return false end
+        function x:isBarricaded() return self.barricaded == true end
+        function x:isStairsObject() return false end
+        sq.objects[#sq.objects + 1] = x
+        return x
+    end
+
+    -- 疊放：照原版搬家具疊箱子那一支（ISMoveableSpriteProps.lua:1772-1777）
+    ISMoveableSpriteProps = { new = function(spr)
+        local p = spr:getProperties()
+        local s = { isStackable = p:has("IsStackable"), isTable = p:has("IsTable"), surface = tonumber(p:get("Surface")) or 0,
+            yOffsetCursor = 0 }
+        function s:getTotalTableHeight(sq)
+            for i = #sq.objects, 1, -1 do
+                local o = sq.objects[i]
+                local op = o:getSprite():getProperties()
+                if op:has("IsTable") and tonumber(op:get("Surface")) then return o:getRenderYOffset() + tonumber(op:get("Surface")) end
+            end
+            return 0
+        end
+        function s:canPlaceMoveableInternal(_, sq)
+            if not sq:has("IsTable") then return true end
+            if self.isStackable and self.isTable and self.surface and not sq:has("IsTableTop") and not sq:has("IsHigh") then
+                local h = self:getTotalTableHeight(sq)
+                self.yOffsetCursor = h
+                return h + self.surface <= 96
+            end
+            return false
+        end
+        return s
+    end }
+    local s1 = at(101, 101)
+    local ok1, y1 = Place.check("furniture", crate, s1, P)
+    local s2 = at(101, 102, { flags = { IsTable = true, solid = true } })
+    obj(s2, crate, { yoff = 0 })
+    local ok2, y2 = Place.check("furniture", crate, s2, P)
+    obj(s2, crate, { yoff = 32 })
+    local ok3, y3 = Place.check("furniture", crate, s2, P)
+    obj(s2, crate, { yoff = 64 })
+    local ok4, c4 = Place.check("furniture", crate, s2, P)
+    check(ok1 == true and y1 == 0 and ok2 == true and y2 == 32 and ok3 == true and y3 == 64 and ok4 == false and c4 == "STACK_FULL",
+        "疊放：同一張可疊的箱子不被「同一格同一張圖」擋，疊在第 2、3 層（墊高 32、64）；總高超過 96 回 STACK_FULL")
+    local s3 = at(101, 103, { flags = { solid = true } })
+    obj(s3, chair)
+    local ok5, c5 = Place.check("furniture", chair, s3, P)
+    local cc5 = Check.item(P, "rp_chair_01_0", 0, { 101, 103, 0 }, PV)
+    check(ok5 == false and c5 == "SAME_TILE" and cc5 == "SAME_TILE",
+        "不可疊的同一張：SAME_TILE（Check.item 照傳碼，不再只有 BLOCKED）")
+    local s4 = at(101, 104)
+    s4.moving = { {} }
+    local ok6, c6 = Place.check("furniture", crate, s4, P)
+    local s5 = at(101, 105)
+    function s5:isVehicleIntersecting() return true end
+    local ok7, c7 = Place.check("furniture", crate, s5, P)
+    local s5b = at(101, 106)
+    s5b.moving = { {} }
+    local ok7b = Place.check("floor", floorA, s5b, P) -- 不擋路的照舊不看格上有沒有人
+    check(ok6 == false and c6 == "OCCUPIED" and ok7 == false and c7 == "VEHICLE" and ok7b == true,
+        "擋路的東西那格有人：OCCUPIED；車子壓著：VEHICLE；地板不看人")
+    ISMoveableSpriteProps = realProps
+
+    -- 原地替換
+    local function wallSq(x, y, flags) return at(x, y, { flags = flags or { WallN = true } }) end
+    local r1 = wallSq(103, 101)
+    local oldW = obj(r1, wallN, { mats = { ["Base.Plank"] = "10", ["Base.Nails"] = "1" } })
+    local cF, _, iF = Check.item(P, "rp_frame_01_1", 0, { 103, 101, 0 }, PV)
+    local cS, _, iS = Check.item(P, "rp_frame_01_1", 0, { 103, 101, 0 })
+    local tp = iF.total and iF.total.items or {}
+    check(cF == nil and iF.replace and iF.replace.obj == oldW and iF.replace.kind == "wall" and #iF.replace.plan.remove == 1
+        and iF.replace.had == oldW.mats and iF.replace.estimated == false
+        and iF.back["Base.Plank"] == 10 - tp["Base.Plank"] and iF.pay["Base.Nails"] == tp["Base.Nails"] - 1,
+        "牆換成窗框（預覽）：舊的那件不算擋、info.replace 帶舊物件與退料表，pay／back 是差額")
+    check(cS == nil and iS.replace and iS.replace.had == oldW.mats and iS.replace.estimated == nil,
+        "牆換成窗框（伺服器）：退料照 Place.refundOf")
+    local r2 = at(103, 102, { flags = { WindowN = true } })
+    local oldFr = obj(r2, frameN)
+    local cW, _, iW = Check.item(P, "rp_wall_02_1", 0, { 103, 102, 0 }, PV)
+    check(cW == nil and iW.replace and iW.replace.obj == oldFr, "窗框換回牆也成立（同一組 edge）")
+    oldFr.barricaded = true
+    check(Check.item(P, "rp_wall_02_1", 0, { 103, 102, 0 }, PV) == "ATTACHED", "舊的窗框釘著木板：ATTACHED（不換）")
+    local r3 = wallSq(103, 103)
+    obj(r3, wallN)
+    check(Dismantle.replaceable(r3, "wall", wallN) == nil and Check.item(P, "rp_wall_01_1", 0, { 103, 103, 0 }, PV) == "SAME_TILE",
+        "同一張圖不算替換：SAME_TILE")
+    local cD, _, iD = Check.item(P, "rp_wall_01_0", 0, { 103, 103, 0 }, PV)
+    check(cD == nil and iD.replace == nil, "不同邊（北牆上蓋西牆）：不是替換，照一般蓋")
+    local r4 = wallSq(103, 104)
+    obj(r4, wallN, { ours = false })
+    check(Dismantle.replaceable(r4, "wall", wallN2) == nil and Check.item(P, "rp_wall_02_1", 0, { 103, 104, 0 }, PV) == "BLOCKED",
+        "不是本 MOD 蓋的：不換，那條邊照舊被擋（BLOCKED）")
+    local r5 = wallSq(103, 105)
+    local estW = obj(r5, wallN, { mats = {} })
+    local _, _, iE = Check.item(P, "rp_wall_02_1", 0, { 103, 105, 0 }, PV)
+    check(iE.replace and iE.replace.obj == estW and iE.replace.estimated == true
+        and iE.replace.had["Base.Plank"] == Cost.of("wall", wallN, 1).items["Base.Plank"],
+        "預覽拿不到退料表（一樓地板記在伺服器）：照現在的價估，標成估計")
+    local r6 = at(104, 101, { flags = { solid = true }, solid = true }) -- isSolid() 與 has(solid) 都成立（舊的那件是實心的）
+    local oldB = obj(r6, boxA)
+    local cB, _, iB = Check.item(P, "rp_box_01_1", 0, { 104, 101, 0 }, PV)
+    oldB.full = true
+    check(cB == nil and iB.replace and iB.replace.obj == oldB and Check.item(P, "rp_box_01_1", 0, { 104, 101, 0 }, PV) == "NOT_EMPTY",
+        "容器換容器：舊的實心不算擋；舊的裡面有東西時 NOT_EMPTY")
+    oldB.full = nil
+    oldB.cands = { oldB, obj(at(104, 106), boxA) }
+    check(Dismantle.replaceable(r6, "container", boxB) == nil, "多格（拆的時候會動到兩片）：不換")
+    check(Dismantle.swappable("container", boxA, "container", gridS) == false
+        and Dismantle.swappable("container", gridS, "container", boxB) == false, "新的或舊的是多格圖：不換")
+    local r9 = at(102, 105)
+    local shelf = obj(r9, shelfA)
+    local cSh, _, iSh = Check.item(P, "rp_shelf_01_1", 0, { 102, 105, 0 }, PV)
+    check(Dismantle.replaceable(r9, "container", shelfB) == nil and Dismantle.swappable("container", shelfA, "container", shelfB) == false
+        and Dismantle.replaceableOld("container", shelf, Dismantle.plan(shelf, "container")) == false
+        and cSh == nil and iSh.replace == nil,
+        "同種類但舊的不佔位置（不實心、同格放得下）：照舊共存，不當成替換，「換成...」也不列")
+    local r7 = at(104, 102)
+    local oldF = obj(r7, floorA)
+    local cFl, _, iFl = Check.item(P, "rp_floor_01_1", 0, { 104, 102, 0 }, PV)
+    check(cFl == nil and iFl.replace and iFl.replace.obj == oldF, "地板換地板：替換")
+    local r8 = at(104, 103)
+    local lamp = obj(r8, lampS1, { class = "IsoLightSwitch" })
+    check(Dismantle.kindOf(lamp) == "light" and Dismantle.replaceable(r8, "light", lampS2) == nil, "燈（會佔位置的也一樣）：不換")
+    Dismantle.NO_REPLACE.light = nil -- 植入違規：燈拿掉不換的名單，要抓得到
+    local planted = Dismantle.replaceable(r8, "light", lampS2)
+    Dismantle.NO_REPLACE.light = true
+    check(planted == lamp, "植入違規：燈不在不換名單時會被當成替換（上一條測得到）")
+    check(Dismantle.swappable("stairs", stA, "stairs", stB) == false and Dismantle.swappable("overlay", ovA, "overlay", ovB) == false
+        and Dismantle.swappable("floorOverlay", ovA, "floorOverlay", ovB) == false
+        and Dismantle.swappable("wall", wallN, "fence", sp("rp_fence_01_1", 2818, { "HoppableN" })) == true
+        and Dismantle.swappable("wall", wallN, "container", boxB) == false,
+        "樓梯、疊圖、地面覆蓋不換；牆和柵欄同一組；不同組不換")
+    Dismantle.NO_REPLACE.floorOverlay = nil
+    local plantedOv = Dismantle.swappable("floorOverlay", ovX1, "floorOverlay", ovX2)
+    Dismantle.NO_REPLACE.floorOverlay = true
+    check(plantedOv == true, "植入違規：地面覆蓋不在不換名單時會被當成可換（上一條測得到）")
+
+    -- 差額
+    local pay, back = Check.net({ ["Base.Plank"] = 4, ["Base.Nails"] = 6 }, { ["Base.Plank"] = "6", ["Base.Nails"] = "2", ["Base.Screws"] = "1" })
+    local pay2, back2 = Check.net({ ["Base.Plank"] = 4 }, { ["Base.Plank"] = "4" })
+    check(pay["Base.Nails"] == 4 and pay["Base.Plank"] == nil and back["Base.Plank"] == 2 and back["Base.Screws"] == 1
+        and back["Base.Nails"] == nil and next(pay2) == nil and next(back2) == nil,
+        "Check.net：新的多的要補、舊的多的會退（退料表的值是字串）；材料相同兩邊都空")
+
+    -- 訊息：原因各一行（件數多的在前）、拆除總結的三種寫法（getText 替身把參數接在鍵後面）
+    local Messages = MinidoracatBuilder.Messages
+    local realGetText = getText
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local rows = Messages.reasons({ NOT_EMPTY = 1, ATTACHED = 3, GONE = 1 }, true)
+    local brow = Messages.reasons({ OVER_MAX = { n = 2, extra = { max = 32 } }, SAME_TILE = 5 })
+    check(#rows == 3 and rows[1] == "IGUI_MBLD_ShortCount(IGUI_MBLD_UnbuildShort_ATTACHED,3)"
+        and rows[2]:find("GONE", 1, true) and rows[3]:find("NOT_EMPTY", 1, true)
+        and brow[1] == "IGUI_MBLD_ReasonCount(5,IGUI_MBLD_Refuse_SAME_TILE)"
+        and brow[2] == "IGUI_MBLD_ReasonCount(2,IGUI_MBLD_Refuse_OVER_MAX(32))"
+        and Messages.unbuildShort("SCRAP") == "IGUI_MBLD_UnbuildShort_SCRAP"
+        and Messages.unbuildShort("WHAT") == "IGUI_MBLD_UnbuildShort_Other(WHAT)",
+        "原因各一行：件數多的在前、同數照碼名；建造帶格數與附帶欄位（OVER_MAX 的上限）；不認得的碼附上碼")
+    local t1, h1 = Messages.unbuildSummary({ done = 1, total = 1, skipped = {}, refund = { ["Base.Plank"] = 3 } }, "牆")
+    local t0 = Messages.unbuildSummary({ done = 0, total = 1, skipped = { NOT_EMPTY = 1 }, refund = {} }, "箱子")
+    local tm, hm = Messages.unbuildSummary({ done = 5, total = 7, skipped = { ATTACHED = 2 }, refund = { ["Base.Plank"] = 4 } })
+    local ts, hs = Messages.unbuildSummary({ done = 2, total = 7, skipped = {}, refund = {}, stopped = true })
+    check(t1 == "IGUI_MBLD_UnbuildSummary_One(牆,IGUI_MBLD_ItemCount(Base.Plank,3))" and h1 == "IGUI_MBLD_UnbuildDone"
+        and t0 == "IGUI_MBLD_UnbuildRefuse_NOT_EMPTY"
+        and tm:find("IGUI_MBLD_UnbuildSummary_Many(5,", 1, true) and tm:find("IGUI_MBLD_UnbuildSummary_Kept(2,", 1, true)
+        and hm == "IGUI_MBLD_UnbuildDone"
+        and ts == "IGUI_MBLD_UnbuildSummary_Stopped(2,7,IGUI_MBLD_RefundNothing)" and hs == "IGUI_MBLD_UnbuildStopped",
+        "拆除總結：一件寫名稱與退料、一件拆不了寫原因、多件寫留著幾件與原因、停下寫 N／M 與沒有退料")
+    getText = realGetText
+    instanceof = realInst
+end)()
+
+print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不中斷、整批停）、原地替換的補差與回復（2026-11-01 契約 C4–C6）")
+;(function()
+    nowMs = nowMs + 180000
+    local Client, Floors = MinidoracatBuilder.Client, MinidoracatBuilder.Floors
+    local realInst, realIsServer, realIsClient, realSend = instanceof, isServer, isClient, sendClientCommand
+    local realQ, realLu, realToast = ISTimedActionQueue, luautils, MinidoracatBuilder.Messages.toast
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local function sp(name, id, flags, keys)
+        keys = keys or {}
+        for _, f in ipairs(flags) do if keys[f] == nil and f:match("^[A-Z]") then keys[f] = "" end end
+        return sprite(name, id, { flags = flags, keys = keys })
+    end
+    local wallW, wallN = sp("cs_wall_01_0", 3201, { "WallW" }), sp("cs_wall_01_1", 3202, { "WallN" })
+    local wallN2, lone = sp("cs_wall_02_1", 3203, { "WallN" }), sp("cs_lone_01_0", 3204, { "WallW" })
+    local boxS = sp("cs_box_01_0", 3205, { "solid" }, { container = "crate" })
+    local floorA, floorB = sp("cs_floor_01_0", 3206, { "solidfloor" }), sp("cs_floor_01_1", 3207, { "solidfloor" })
+    world({ wallW, wallN, wallN2, lone, boxS, floorA, floorB })
+    -- 格子：移除時照引擎先觸發 OnObjectAboutToBeRemoved；退料掉在這裡時記件數
+    local function at(x, y, o)
+        local sq = square(x, y, 0, o)
+        sq.dropped = {}
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        return sq
+    end
+    for x = 110, 117 do for y = 110, 117 do at(x, y) end end
+    local function S(x, y) return squares[x .. "," .. y .. ",0"] end
+    local function obj(sq, spr, mats, o)
+        o = o or {}
+        local x = { class = "IsoThumpable", mats = mats or { ["Base.Plank"] = "4" }, md = { builderEntry = spr:getName() },
+            floor = spr:getProperties():has(F.solidfloor), full = o.full }
+        function x:getSprite() return spr end
+        function x:getProperties() return spr:getProperties() end
+        function x:getSquare() return sq end
+        function x:hasModData() return true end
+        function x:getModData() return self.md end
+        function x:isDismantable() return true end
+        function x:getBuildMaterials() return self.mats end
+        function x:hasBuildMaterials() return next(self.mats) ~= nil end
+        function x:isFloor() return self.floor end
+        function x:getRenderYOffset() return 0 end
+        function x:getTextureName() return spr:getName() end
+        function x:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function x:isConnectedSpriteGridObject(y) return y == self end
+        function x:isObjectNoContainerOrEmpty() return not self.full end
+        function x:hasFluid() return false end
+        function x:isBarricaded() return false end
+        function x:isStairsObject() return false end
+        function x:getHealth() return self.hp or 450 end
+        function x:getMaxHealth() return 450 end
+        sq.objects[#sq.objects + 1] = x
+        return x
+    end
+    local function has(sq, o) for _, v in ipairs(sq.objects) do if v == o then return true end end return false end
+    local function named(sq, name) for _, v in ipairs(sq.objects) do if v.name == name then return v end end return nil end
+    local here = S(113, 113)
+    local P = player({ id = 3201, x = 113.5, y = 113.5, here = here })
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    local nonce = 3200
+    local function last() return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {} end
+
+    -- C4：建造請求每格帶朝向（步幅 4），沒有頂層 d
+    sb.MaxCellsPerDrag = 3
+    local function intent(c, e)
+        nonce = nonce + 1
+        sent = {}
+        Server.intent(P, { n = nonce, e = e or "cs_wall_01_0", c = c, v = Entry.digest() })
+        return last()
+    end
+    local c1 = intent({ 111, 111, 0, 0, 112, 111, 0, 5 })
+    local it = Server.intents[3201]
+    check(c1 == "accepted" and it and it.c[1][4] == 0 and it.c[2][4] == 5 and it.d == nil,
+        "建造請求：每格 { x, y, z, d }（d＝5 配對面也收），請求不再有頂層朝向")
+    local _, a6 = intent({ 111, 111, 0, 6 })
+    local _, a3 = intent({ 111, 111, 0, 112, 111, 0 })
+    local _, a1 = intent({ 111, 111, 0 })
+    local _, aMax = intent({ 111, 111, 0, 0, 112, 111, 0, 0, 113, 111, 0, 0, 114, 111, 0, 0 })
+    local _, aF = intent({ 111, 111, 0, 0, 112, 111, 0, 5 }, "cs_lone_01_0")
+    check(a6.code == "BAD_REQUEST" and a3.code == "BAD_REQUEST" and a1.code == "BAD_REQUEST" and aMax.code == "BAD_REQUEST"
+        and aF.code == "BAD_FACE" and aF.x == 112 and Server.intents[3201].n == nonce - 5,
+        "壞格式：d＝6、步幅 3（第 4 欄是下一格的 x）、少 d、超過 MaxCellsPerDrag 都 BAD_REQUEST；第 2 格沒有配對面 BAD_FACE（帶那格座標）；被拒的不取代舊請求")
+    nowMs = nowMs + 6000 -- 限流
+    local got
+    isClient = function() return true end
+    sendClientCommand = function(_, _, cmd, args) got = { cmd = cmd, args = args } end
+    ISTimedActionQueue = { clear = function() end, add = function() end, isPlayerDoingAction = function() return false end }
+    local nb, why = Client.build(P, "cs_lone_01_0", { { 111, 111, 0, 0 }, { 112, 111, 0, 5 } })
+    local ng = Client.build(P, "cs_wall_01_0", { { 111, 111, 0, 0 }, { 112, 111, 0, 5 } })
+    isClient = realIsClient
+    check(nb == nil and why == "BAD_FACE" and ng and got.cmd == "intent" and got.args.d == nil and #got.args.c == 8
+        and got.args.c[4] == 0 and got.args.c[8] == 5 and Client.pending.cells[2][4] == 5,
+        "Client.build：某格的朝向不存在當場回 BAD_FACE；送出的請求每格攤平 x, y, z, d")
+    Client.pending = nil
+
+    -- C6：拆除清單
+    local function unbuild(t)
+        nonce = nonce + 1
+        sent = {}
+        Server.dismantleIntent(P, { n = nonce, t = t })
+        local c, a = last()
+        return c, a, nonce
+    end
+    local bad = {}
+    bad[1] = select(2, unbuild({ 112, 112, 0, "a", 113, 112, 0, "b", 114, 112, 0, "c", 115, 112, 0, "d" })).code
+    bad[2] = select(2, unbuild({ 112, 112, 0, 7 })).code
+    bad[3] = select(2, unbuild({ 112.5, 112, 0, "a" })).code
+    bad[4] = select(2, unbuild("112,112,0,a")).code
+    bad[5] = select(2, unbuild({})).code
+    bad[6] = select(2, unbuild({ 112, 112, 0 })).code
+    bad[7] = select(2, unbuild({ 112, 112, 0, "cs_wall_01_1\nUNBUILD user=admin" })).code
+    check(bad[1] == "BAD_REQUEST" and bad[2] == "BAD_REQUEST" and bad[3] == "BAD_REQUEST" and bad[4] == "BAD_REQUEST"
+        and bad[5] == "BAD_REQUEST" and bad[6] == "BAD_REQUEST" and bad[7] == "BAD_REQUEST" and Server.unbuilds[3201] == nil,
+        "拆除清單：超過 MaxCellsPerDrag、名稱不是字串、座標不是整數、不是表、空的、少名稱、名稱帶控制字元（會寫進 log）都 BAD_REQUEST，不留請求")
+    nowMs = nowMs + 6000
+    HARNESS_ROLL = "max"
+    local W1 = obj(S(112, 112), wallN, { ["Base.Plank"] = "4" })
+    local B = obj(S(113, 112), boxS, { ["Base.Plank"] = "2" }, { full = true })
+    local W2 = obj(S(114, 112), wallN, { ["Base.Nails"] = "3" })
+    local cA, _, n1 = unbuild({ 112, 112, 0, "cs_wall_01_1", 113, 112, 0, "cs_box_01_0", 114, 112, 0, "cs_wall_01_1" })
+    local u = Server.unbuilds[3201]
+    check(cA == "dismantleAccepted" and u and #u.list == 3 and u.list[2][4] == "cs_box_01_0" and u.left == 3,
+        "拆除清單收下：照順序存成 { x, y, z, 名稱 }")
+    local dur = Server.dismantleDuration(P, n1, 1)
+    sent = {}
+    local r1 = Server.dismantle(P, n1, 1)
+    local k1, b1 = last()
+    local r2 = Server.dismantle(P, n1, 2)
+    local k2, b2 = last()
+    local r3 = Server.dismantle(P, n1, 3)
+    local k3, b3 = last()
+    check(dur == Entry.duration("wall", P) and r1 == true and k1 == "dismantled" and b1.i == 1 and b1.refund["Base.Plank"] == 4
+        and r2 == true and k2 == "dismantleSkipped" and b2.i == 2 and b2.code == "NOT_EMPTY" and b2.x == 113 and has(S(113, 112), B)
+        and r3 == true and k3 == "dismantled" and b3.i == 3 and b3.refund["Base.Nails"] == 3 and not has(S(114, 112), W2)
+        and not has(S(112, 112), W1) and here.dropped["Base.Plank"] == 4 and here.dropped["Base.Nails"] == 3
+        and Server.unbuilds[3201] == nil,
+        "中間那件裡面有東西：送 dismantleSkipped、回 true（佇列照走），下一件照拆；拆好的帶退料；輪完請求清掉")
+    sent = {}
+    check(Server.dismantle(P, n1, 2) == false and #sent == 0 and Server.dismantleDuration(P, n1, 3) == 1,
+        "輪過的那件再送一次：沒有請求（MP 不回覆）、施工時間 1")
+    nowMs = nowMs + 6000
+    local W3 = obj(S(112, 113), wallN)
+    local W4 = obj(S(114, 113), wallN)
+    local _, _, n2 = unbuild({ 112, 113, 0, "cs_wall_01_1", 114, 113, 0, "cs_wall_01_1" })
+    sb.Enabled = false
+    sent = {}
+    local rOff = Server.dismantle(P, n2, 1)
+    local kOff, bOff = last()
+    sb.Enabled = nil
+    sent = {}
+    check(rOff == false and kOff == "dismantleRefused" and bOff.code == "OFF" and bOff.i == 1 and Server.unbuilds[3201] == nil
+        and Server.dismantle(P, n2, 2) == false and #sent == 0 and has(S(112, 113), W3) and has(S(114, 113), W4),
+        "總開關關掉：dismantleRefused、回 false（整批停）、請求清掉，後面那件也不拆")
+    S(112, 113).objects, S(114, 113).objects = {}, {}
+    -- 期限照一區最多件數：過了單件的 180 秒（中間夾著伺服器看不到的原版拆解）還在期限內，照樣拆
+    nowMs = nowMs + 6000
+    local W5 = obj(S(111, 112), wallN)
+    local _, _, n5 = unbuild({ 111, 112, 0, "cs_wall_01_1" })
+    nowMs = nowMs + 180000 * 2
+    check(Server.dismantle(P, n5, 1) == true and not has(S(111, 112), W5),
+        "一區拆除的期限照件數給：超過單件的 180 秒、還在期限內照樣拆")
+    -- 移除出錯（INTERNAL）：整批停，後面那件不拆、請求清掉
+    nowMs = nowMs + 6000
+    local XS = S(111, 113)
+    local baseX = XS.transmitRemoveItemFromSquare
+    local W6 = obj(XS, wallN)
+    function XS:transmitRemoveItemFromSquare(o, safely)
+        if o == W6 then return -1 end -- 引擎沒移掉（錯誤被 Kahlua 吞掉）
+        return baseX(self, o, safely)
+    end
+    local W7 = obj(S(111, 114), wallN)
+    local _, _, n6 = unbuild({ 111, 113, 0, "cs_wall_01_1", 111, 114, 0, "cs_wall_01_1" })
+    sent = {}
+    local r6 = Server.dismantle(P, n6, 1)
+    local k6, b6 = last()
+    check(r6 == false and k6 == "dismantleRefused" and b6.code == "INTERNAL" and Server.unbuilds[3201] == nil
+        and Server.dismantle(P, n6, 2) == false and has(XS, W6) and has(S(111, 114), W7),
+        "兩件的清單第一件移除出錯（INTERNAL）：整批停、請求清掉，第二件不拆")
+    XS.transmitRemoveItemFromSquare = baseX
+    XS.objects, S(111, 114).objects = {}, {}
+
+    -- C5：原地替換（牆換牆：舊的 木板 10、釘子 1）
+    nowMs = nowMs + 6000
+    local total = Cost.sum(Cost.forCells("wall", { wallN2 }, 1))
+    local had = { ["Base.Plank"] = "10", ["Base.Nails"] = "1" }
+    local pay, back = Check.net(total.items, had)
+    -- 格子照引擎重算的屬性帶 WallN（那條邊被舊牆佔著：不帶 replacing 的 Place.check 放不下＝替換）
+    at(115, 113, { flags = { WallN = true } })
+    at(116, 113, { flags = { WallN = true } })
+    local OW = obj(S(115, 113), wallN, { ["Base.Plank"] = "10", ["Base.Nails"] = "1" })
+    OW.hp = 225 -- 被打掉一半
+    nonce = nonce + 1
+    local okP, _, aP = build(P, nonce, "cs_wall_02_1", { 115, 113, 0 })
+    check(not okP and aP.code == "NO_MATERIAL" and next(pay) ~= nil and aP.need["Base.Plank"] == pay["Base.Plank"]
+        and aP.need["Base.Nails"] == pay["Base.Nails"] and has(S(115, 113), OW),
+        "替換缺料：只要差額（pay），不是新的整份；舊的留著")
+    give(P, pay)
+    xpLog = {}
+    here.dropped = {}
+    nonce = nonce + 1
+    local okR, cmdR, aR = build(P, nonce, "cs_wall_02_1", { 115, 113, 0 })
+    local left = 0
+    for ft in pairs(pay) do left = left + P.inv:count(ft) end
+    local backOk = next(back) ~= nil
+    for ft, v in pairs(back) do if here.dropped[ft] ~= v then backOk = false end end
+    local c0 = Cost.forCells("wall", { wallN2 }, 1)[1]
+    local want = Cost.xp({ { items = pay, perkOf = c0.perkOf, chanceOf = c0.chanceOf, fee = {}, uniform = c0.uniform } }, P)
+    local gotXp, full = {}, Cost.xp({ c0 }, P)
+    for _, x in ipairs(xpLog) do gotXp[x.perk] = (gotXp[x.perk] or 0) + x.n end
+    local xpOk = true
+    for perk, v in pairs(want) do if gotXp["perk:" .. perk] ~= v then xpOk = false end end
+    for perk in pairs(gotXp) do if not want[perk:gsub("^perk:", "")] then xpOk = false end end
+    check(okR and cmdR == "placed" and aR.replaced == true and not has(S(115, 113), OW) and named(S(115, 113), "cs_wall_02_1")
+        and left == 0 and backOk,
+        "替換：先蓋新的再拆舊的、回 placed { replaced }；只扣差額、多的照拆除退（最多全部）掉在腳下")
+    check(xpOk and (full.Woodwork or 0) >= (want.Woodwork or 0), "替換的經驗只照補的料（pay）給")
+    local NW = named(S(115, 113), "cs_wall_02_1")
+    check(NW and NW.set.setName == "cs_wall_02_1", "本工具蓋的 IsoThumpable 一律有名稱（圖名）：爬窗框時引擎拿名稱比對，null 會 NPE")
+    check(NW and NW.set.setMaxHealth and NW.set.setHealth == math.floor(NW.set.setMaxHealth / 2),
+        "替換照舊件剩下的耐久比例（舊的剩一半，新的也一半）：換一款不能順便修好")
+    -- 移除舊的失敗：收回新的、舊的留著、不扣不退
+    local FS = S(116, 113)
+    local base = FS.transmitRemoveItemFromSquare
+    local OX
+    function FS:transmitRemoveItemFromSquare(o, safely)
+        if o == OX then return -1 end -- 引擎沒移掉（錯誤被 Kahlua 吞掉）
+        return base(self, o, safely)
+    end
+    OX = obj(FS, wallN, { ["Base.Plank"] = "10", ["Base.Nails"] = "1" })
+    give(P, pay)
+    xpLog = {}
+    here.dropped = {}
+    nonce = nonce + 1
+    local okX, _, aX = build(P, nonce, "cs_wall_02_1", { 116, 113, 0 })
+    local kept = true
+    for ft, v in pairs(pay) do if P.inv:count(ft) ~= v then kept = false end end
+    check(not okX and aX.code == "INTERNAL" and has(FS, OX) and #FS.objects == 1 and kept and next(here.dropped) == nil
+        and #xpLog == 0, "替換時舊的移不掉：INTERNAL、新的收回、舊的留著、不扣料不退料不給經驗")
+    P.inv = inventory()
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    -- 地板：蓋新的時舊片已被 Place.clearFloor 拆掉，之後出錯 → 收回新的、照原圖與原退料蓋回舊的（地板帳本照舊）
+    local FF = S(115, 115)
+    local add, failOnce = FF.AddSpecialObject, true
+    function FF:AddSpecialObject(o, idx)
+        add(self, o, idx)
+        if failOnce then
+            failOnce = false
+            error("injected failure after AddSpecialObject")
+        end
+    end
+    local OF = obj(FF, floorA, {})
+    Floors.put(OF, { ["Base.Plank"] = 3 })
+    local fTotal = Cost.sum(Cost.forCells("floor", { floorB }, 1))
+    local fPay = Check.net(fTotal.items, { ["Base.Plank"] = 3 })
+    give(P, fPay)
+    nonce = nonce + 1
+    local okF, _, aF2 = build(P, nonce, "cs_floor_01_1", { 115, 115, 0 })
+    local back1 = named(FF, "cs_floor_01_0")
+    local fe = back1 and Floors.get(back1)
+    check(not okF and aF2.code == "INTERNAL" and not has(FF, OF) and back1 ~= nil and named(FF, "cs_floor_01_1") == nil
+        and fe ~= nil and fe.i["Base.Plank"] == 3,
+        "替換地板時出錯：舊片已被拆掉的照原圖、原退料蓋回，新的收回，地板帳本照舊")
+    -- 蓋回也出錯：收回蓋到一半的，舊的退料表整份退給玩家（材料不跟著舊的一起不見），不扣新的料
+    local FG = S(115, 114)
+    local addG = FG.AddSpecialObject
+    function FG:AddSpecialObject(o, idx)
+        addG(self, o, idx)
+        error("injected failure after AddSpecialObject")
+    end
+    local OG = obj(FG, floorA, {})
+    Floors.put(OG, { ["Base.Plank"] = 3 })
+    P.inv = inventory()
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(P, fPay)
+    here.dropped = {}
+    nonce = nonce + 1
+    local okG, _, aG = build(P, nonce, "cs_floor_01_1", { 115, 114, 0 })
+    local paidG = true
+    for ft, v in pairs(fPay) do if P.inv:count(ft) ~= v then paidG = false end end
+    check(not okG and aG.code == "INTERNAL" and #FG.objects == 0 and here.dropped["Base.Plank"] == 3 and paidG,
+        "替換地板時新的、舊的都蓋不上：格子清空，舊的退料表整份退（木板 3），新的料不扣")
+    -- 舊的一樓地板查不到帳本：照改版前蓋新地板（拆掉舊片、不退料、付全價），不卡 NOT_OURS
+    local FH = S(114, 115)
+    local OH = obj(FH, floorA, {})
+    give(P, fTotal.items)
+    nonce = nonce + 1
+    local okH, cmdH, aH = build(P, nonce, "cs_floor_01_1", { 114, 115, 0 })
+    check(okH and cmdH == "placed" and aH.replaced == nil and not has(FH, OH) and named(FH, "cs_floor_01_1") ~= nil,
+        "舊的一樓地板帳本對不上：照一般蓋新地板（不算替換、不卡 NOT_OURS）")
+    -- 換地板時舊地板上本工具掛的地面覆蓋：換好照帳本掛回去；掛不回去（這裡圖不存在）就整份退，帳本不留半筆
+    local FJ = S(112, 112)
+    FJ.objects = {}
+    local OJ = obj(FJ, floorA, {})
+    Floors.put(OJ, { ["Base.Plank"] = 3 })
+    MinidoracatBuilder.Overlays.put(FJ, "cs_gone_01_0", { ["Base.Nails"] = 2 })
+    give(P, fPay)
+    here.dropped = {}
+    nonce = nonce + 1
+    local okJ, cmdJ, aJ = build(P, nonce, "cs_floor_01_1", { 112, 112, 0 })
+    check(okJ and cmdJ == "placed" and aJ.replaced == true and here.dropped["Base.Nails"] == 2
+        and MinidoracatBuilder.Overlays.get(FJ, "cs_gone_01_0") == nil,
+        "換地板：舊地板上本工具的地面覆蓋掛不回去時整份退（釘子 2），帳本不留")
+    P.inv = inventory()
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+
+    -- C6 客戶端：Client.dismantleMany（單機：伺服器當場回覆，動作 complete 直接進 Server.dismantle）
+    nowMs = nowMs + 6000
+    isServer = function() return false end
+    local queued, busy, told = {}, false, {}
+    ISTimedActionQueue = { clear = function() queued = {} end, add = function(a) queued[#queued + 1] = a end,
+        isPlayerDoingAction = function() return busy end }
+    luautils = { walkAdjWall = function() return true end, walkAdj = function() return true end }
+    MinidoracatBuilder.Messages.toast = function(_, text, title) told[#told + 1] = { text = text, title = title } end
+    local function item3(x, y, name, kind) return { x = x, y = y, z = 0, name = name, kind = kind or "wall", north = true,
+        own = {}, route = "builder" } end
+    local D1, DB, D2 = obj(S(112, 114), wallN), obj(S(113, 114), boxS, nil, { full = true }), obj(S(114, 114), wallN)
+    local gone = { getSquare = function() return nil end }
+    local summary
+    local nm = Client.dismantleMany(P, { item3(112, 114, "cs_wall_01_1"),
+        { x = 115, y = 114, z = 0, name = "cs_x_01_0", route = "scrap", obj = gone },
+        item3(113, 114, "cs_box_01_0", "container"), item3(114, 114, "cs_wall_01_1") }, function(s) summary = s end)
+    local b = Client.pendingUnbuild
+    check(b and b.n == nm and #b.list == 3 and #queued == 3 and queued[1].i == 1 and queued[2].i == 2 and queued[3].i == 3
+        and b.skipped.GONE == 1 and b.left == 3,
+        "dismantleMany：本工具拆的照順序送一張清單、收下後照順序排（第 i 件）；原版拆解那件已經不在：當場記成跳過")
+    for _, a in ipairs(queued) do a:complete() end
+    check(summary and summary.done == 2 and summary.total == 4 and summary.skipped.NOT_EMPTY == 1 and summary.skipped.GONE == 1
+        and summary.refund["Base.Plank"] == 8 and summary.stopped == false and Client.pendingUnbuild == nil
+        and not has(S(112, 114), D1) and has(S(113, 114), DB) and not has(S(114, 114), D2),
+        "dismantleMany：中間那件跳過後照拆下一件；全部輪完呼叫 onDone（拆好件數、跳過的原因×數、退料合計、沒停下）")
+    -- 停下：做完第一件後佇列空了（玩家走開），過 IDLE 就算停下
+    local E1, E2 = obj(S(112, 115), wallN), obj(S(113, 115), wallN)
+    summary = nil
+    Client.dismantleMany(P, { item3(112, 115, "cs_wall_01_1"), item3(113, 115, "cs_wall_01_1") }, function(s) summary = s end)
+    queued[1]:complete()
+    queued = {}
+    Client.tickUnbuild()
+    nowMs = nowMs + 2000
+    Client.tickUnbuild()
+    check(summary and summary.done == 1 and summary.total == 2 and summary.stopped == true and has(S(113, 115), E2)
+        and not has(S(112, 115), E1), "dismantleMany：佇列空了還沒輪完＝停下（onDone 的 stopped、拆好幾件）")
+    -- 整批被拒（總開關關掉）：清佇列、說原因、onDone 帶 refused
+    nowMs = nowMs + 6000
+    summary, told = nil, {}
+    Client.dismantleMany(P, { item3(113, 115, "cs_wall_01_1") }, function(s) summary = s end)
+    sb.Enabled = false
+    queued[1]:complete()
+    sb.Enabled = nil
+    check(summary and summary.refused == "OFF" and summary.stopped == true and #queued == 0 and #told == 1
+        and told[1].text == "IGUI_MBLD_UnbuildRefuse_OFF" and has(S(113, 115), E2),
+        "dismantleMany：整批被拒（OFF）清掉佇列、通知原因、onDone 帶 refused")
+    -- 拆到一半才被拒（第二件移除出錯 INTERNAL）：說原因之外照停下跳總結（拆了幾件、退了什麼）
+    nowMs = nowMs + 6000
+    told = {}
+    local XS2 = S(111, 113)
+    local baseX2 = XS2.transmitRemoveItemFromSquare
+    local G1, G2 = obj(S(111, 114), wallN), obj(XS2, wallN)
+    function XS2:transmitRemoveItemFromSquare(o, safely)
+        if o == G2 then return -1 end
+        return baseX2(self, o, safely)
+    end
+    Client.dismantleMany(P, { item3(111, 114, "cs_wall_01_1"), item3(111, 113, "cs_wall_01_1") })
+    queued[1]:complete()
+    if queued[2] then queued[2]:complete() end
+    XS2.transmitRemoveItemFromSquare = baseX2
+    check(#told == 2 and told[1].text == "IGUI_MBLD_UnbuildRefuse_INTERNAL" and told[2].title == "IGUI_MBLD_UnbuildStopped"
+        and not has(S(111, 114), G1) and has(XS2, G2),
+        "dismantleMany：拆到一半才被拒（INTERNAL）：先說原因，再照停下跳總結（不吞掉已拆的件數與退料）")
+    XS2.objects = {}
+    -- 右鍵拆一件（沒給 onDone）：Client 自己跳拆除完成的通知
+    nowMs = nowMs + 6000
+    told = {}
+    Client.dismantle(P, E2, "wall", {})
+    queued[1]:complete()
+    check(#told == 1 and told[1].title == "IGUI_MBLD_UnbuildDone" and not has(S(113, 115), E2) and Client.pendingUnbuild == nil,
+        "Client.dismantle＝一件的清單；沒給 onDone 時自己跳「拆除完成」")
+    isServer, sendClientCommand, ISTimedActionQueue, luautils = realIsServer, realSend, realQ, realLu
+    MinidoracatBuilder.Messages.toast = realToast
+    instanceof = realInst
+    sb.MaxCellsPerDrag = nil
+end)()
+
+print("情境三十三：建造作弊（2026-11-01 B 站：debug 開建造作弊還是要材料）：單機也認原版 ISBuildMenu.cheat，多人只認 isBuildCheat")
+;(function()
+    local Dismantle = MinidoracatBuilder.Dismantle
+    local realS, realC, realMenu = isServer, isClient, ISBuildMenu
+    -- 單機：原版 debug 選單「Build Cheat」與管理面板的按鈕只設 ISBuildMenu.cheat（ISGeneralCheats.lua:16、ISAdminPanelUI.lua:255）
+    ISBuildMenu = { cheat = true }
+    isServer, isClient = function() return false end, function() return false end
+    -- 用情境三十二的目錄（cs_wall_01_1：木板 4、鐵鎚）
+    local sq = square(120, 120, 0)
+    local P = player({ id = 3301, x = 120.5, y = 121.5 })
+    xpLog = {}
+    check(Materials.summary(P).cheat == true, "單機開原版建造作弊：材料摘要算作弊（視窗、游標不標缺料）")
+    check(build(P, 3301, "cs_wall_01_1", { 120, 120, 0 }) and #sq.objects == 1 and #xpLog == 0
+        and next(sq.objects[1]:getBuildMaterials()) == nil, "單機開原版建造作弊：背包空的、沒鐵鎚也蓋，不給經驗、不寫退料表")
+    local built = sq.objects[1]
+    if built then built.isObjectNoContainerOrEmpty = function() return true end end
+    check(built ~= nil and Dismantle.check(P, "wall", { remove = { built } }, true) == nil,
+        "單機開原版建造作弊：拆除不查工具（背包沒鐵鎚）")
+    -- 多人：客戶端的 Lua 全域不算，兩端都只認 isBuildCheat（伺服器上要 UseBuildCheat 能力才開得了）
+    isServer = realS
+    local sq2 = square(122, 120, 0)
+    local M = player({ id = 3302, x = 122.5, y = 121.5 })
+    local ok, _, a = build(M, 3302, "cs_wall_01_1", { 122, 120, 0 })
+    check(not ok and a.code == "NO_MATERIAL" and #sq2.objects == 0, "多人伺服器：ISBuildMenu.cheat 不算，沒開 isBuildCheat 照樣要材料")
+    isServer, isClient = function() return false end, function() return true end
+    check(Materials.summary(M).cheat == false, "多人客戶端：預覽也只認 isBuildCheat（和伺服器一致）")
+    isServer, isClient, ISBuildMenu = realS, realC, realMenu
 end)()
 
 print()

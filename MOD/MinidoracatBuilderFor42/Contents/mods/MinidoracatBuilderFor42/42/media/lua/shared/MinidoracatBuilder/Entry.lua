@@ -190,11 +190,53 @@ function Entry.why(name, nested)
     return code or "UNKNOWN", arg, alt
 end
 
--- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W。引擎替同組的每個成員寫「其他面的原點 − 自己」的 Noffset 等，
--- 自己那一面不寫（IsoWorld.java:1283-1325），所以自己的 Facing 就是自己。查不到那一面回 nil。
+-- 配對面（d＝5，矩形建造沿四邊圍一圈用）：原版北牆、西牆是不同項目（目錄不併）。只對佔一條格邊的種類（門、窗不算），
+-- 項目只佔北或西其中一條時，在同一個 tileset 找只佔另一條、同種類的圖，照順序：
+--   1. 編號 xor 1（原版牆多是偶數西、奇數北）；2. xor 1 和自己同一條邊時是兩張一組（4W 5W 6N 7N），改看 ±2；
+--   3. 編號 ±1、±2、±3（先 + 後 −）第一張。都沒有回 nil。
+-- 離線量過原版 4,045 張單邊非門窗的格邊圖：1. 956、2. 726、3. 811、找不到 1,552（2026-11-01）。
+-- 圖塊表在一個 session 裡不變，照項目名稱快取（false＝找不到）
+local pairCache = {}
+local function opposite(entry)
+    local kind = entry.kind
+    if not Entry.EDGE[kind] or kind == "door" or kind == "window" then return nil end
+    local n, w = Entry.edges(kind, entry.spr)
+    if n == w then return nil end
+    local function only(num) -- 這個編號的圖只佔另一條邊、同種類
+        local spr = Entry.sprite(entry.tileset .. "_" .. num)
+        if not spr or Rules.classify(spr) ~= kind then return nil, nil end
+        local n2, w2 = Entry.edges(kind, spr)
+        if n2 == w2 then return nil, nil end
+        return n2 == w and spr or nil, n2 == n
+    end
+    local num = entry.num
+    local x = num % 2 == 0 and num + 1 or num - 1
+    local spr, same = only(x)
+    if spr then return spr end
+    if same then
+        spr = only(num % 4 < 2 and num + 2 or num - 2)
+        if spr then return spr end
+    end
+    for _, d in ipairs({ 1, -1, 2, -2, 3, -3 }) do
+        spr = num + d >= 0 and only(num + d)
+        if spr then return spr end
+    end
+    return nil
+end
+
+-- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W；5＝配對面（上面）。引擎替同組的每個成員寫「其他面的原點 − 自己」的
+-- Noffset 等，自己那一面不寫（IsoWorld.java:1283-1325），所以自己的 Facing 就是自己。查不到那一面回 nil。
 local DIRS = { "N", "E", "S", "W" }
 function Entry.face(entry, d)
     if d == 0 then return entry.spr end
+    if d == 5 then
+        local c = pairCache[entry.name]
+        if c == nil then
+            c = opposite(entry) or false
+            pairCache[entry.name] = c
+        end
+        return c or nil
+    end
     local dir = DIRS[d]
     if not dir then return nil end
     local p = entry.spr:getProperties()

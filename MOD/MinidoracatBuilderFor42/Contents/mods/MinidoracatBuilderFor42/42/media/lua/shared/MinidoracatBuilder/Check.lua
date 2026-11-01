@@ -121,9 +121,16 @@ function Check.near(player, cells, edge, preview)
 end
 
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
---   code＝nil 通過；否則伺服器的拒絕碼。extra＝拒絕附帶的欄位（x, y, z／need, tools）。
---   info＝{ entry, spr, cells = { { x, y, z, spr, sq, yoff, cost }, ... }, sprites, costs, total }，算到哪填到哪。
--- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器）。
+--   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools）。
+--   info＝{ entry, spr, cells = { { x, y, z, spr, sq, yoff, cost }, ... }, sprites, costs, total, replace, pay, back }，
+--   算到哪填到哪。
+-- 原地替換（單格、不是樓梯）：格上有本工具蓋的同一組另一款（Dismantle.replaceable）時，它不算擋（Place.check 的
+-- replacing），info.replace＝{ obj, kind, plan, had, estimated }；舊的不能拆（裡面有東西、框上裝著門窗）回 NOT_EMPTY／ATTACHED。
+-- had＝舊的退料表：伺服器照 Place.refundOf（查不到是 nil，Server.complete 回 NOT_OURS，一樓地板照一般蓋）；預覽照
+-- Dismantle.estimateRefund。地板一律換；其他只在舊的擋住新的時（不帶 replacing 的 Place.check 放不下）才換。
+-- had 有值時 info.pay, info.back＝Check.net(total.items, had)（要補的、會退的）。
+-- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器；
+-- 替換時只查要補的料與新舊工具）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
 -- （錨點離玩家水平各軸 ≤ INTENT_REACH、樓層差 ≤ 1），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查）。
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂格（Place.roofAt），後面的格子可以靠它撐著。
@@ -182,14 +189,34 @@ function Check.item(player, name, d, anchor, opts)
             if sh then return sh, { x = fc.x, y = fc.y, z = fc.z }, info end
         end
     end
+    -- 原地替換：只換單格的（多格、樓梯拆的時候會動到別片）。地板一格只有一片，一律換；其他只在舊的那件擋住新的時才換
+    -- （不帶 replacing 的 Place.check 放不下），放得下就照舊同格共存（不同朝向的掛件、同格的屋頂片、桌上的東西）
+    local Dismantle = MinidoracatBuilder.Dismantle
+    local old, oldKind
+    if #cells == 1 and entry.kind ~= "stairs" and cells[1].sq and Dismantle then
+        local c = cells[1]
+        old, oldKind = Dismantle.replaceable(c.sq, entry.kind, c.spr)
+        if old and entry.kind ~= "floor" then
+            local ok, fits = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned)
+            if ok and fits then old, oldKind = nil, nil end
+        end
+        if old then
+            local plan = Dismantle.plan(old, oldKind)
+            local why = Dismantle.blocked(oldKind, plan)
+            if why then return why, { x = c.x, y = c.y, z = c.z }, info end
+            local had, estimated
+            if preview then had, estimated = Dismantle.estimateRefund(old, oldKind) else had = Place.refundOf(old) end
+            info.replace = { obj = old, kind = oldKind, plan = plan, had = had, estimated = estimated }
+        end
+    end
     for j, c in ipairs(cells) do
         if c.sq then
-            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned)
+            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned, old)
             if not ok then
                 print(LOG .. "check failed e=" .. name .. ": " .. tostring(fine))
                 return "INTERNAL", nil, info
             end
-            if not fine then return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
+            if not fine then return yoff or "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
             c.yoff = yoff
             for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
                 local o = cells[k2]
@@ -206,14 +233,36 @@ function Check.item(player, name, d, anchor, opts)
     for j, c in ipairs(cells) do c.cost = costs[j] end
     local total = Cost.sum(costs)
     info.costs, info.total = costs, total
+    local need = total
+    if info.replace and info.replace.had then
+        info.pay, info.back = Check.net(total.items, info.replace.had)
+        local tools = Cost.sum({ total, { items = {}, tools = Dismantle.tools(oldKind, info.replace.plan) } }).tools
+        need = { items = info.pay, tools = tools }
+    end
     local S = preview and opts.summary
     if S and not S.cheat then
-        local missing, tools = Materials.short(S, total)
+        local missing, tools = Materials.short(S, need)
         if missing or tools then
             return missing and "NO_MATERIAL" or "NO_TOOL", { need = missing, tools = tools }, info
         end
     end
     return nil, nil, info
+end
+
+-- 原地替換的差額：need＝新的要付的、had＝舊的退料表（值可能是字串：伺服器寫的 buildMaterials 是字串）。
+-- 回 pay（新的比舊的多、要補的）, back（舊的比新的多、照拆除退 1..v 的），都是 { [fullType] = 數量 }。
+-- 兩端共用：游標寫字、Server.complete 扣料與退料
+function Check.net(need, had)
+    local pay, back = {}, {}
+    for ft, n in pairs(need) do
+        local v = n - (tonumber(had[ft]) or 0)
+        if v > 0 then pay[ft] = v end
+    end
+    for ft, h in pairs(had) do
+        local v = (tonumber(h) or 0) - (need[ft] or 0)
+        if v > 0 then back[ft] = v end
+    end
+    return pay, back
 end
 
 -- 只看材料與工具（目錄變暗、「只看能蓋的」用）：朝向 0、全部格子。S＝Materials.summary 的結果；

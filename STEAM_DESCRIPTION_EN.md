@@ -18,7 +18,7 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 [olist]
 [*] Click the Build Anything button on the family toolbar to open the build window
 [*] Find what you want with search or the tabs, select it and press Build
-[*] Click the ground to place it; hold the left button and drag to build a row of walls or floors
+[*] Click the ground to place it; hold the left button and drag to build a row or a whole area
 [*] Keep the materials in your bags or on the ground next to you; the details list anything missing
 [/olist]
 
@@ -26,10 +26,10 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 [list]
 [*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, or right-click something on the ground to pick its tile
 [*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building, with no skill level needed and XP for building
-[*] [b]Drag a row[/b]: walls, floors, fences and roofs in one drag, skipping tiles you can't afford
-[*] [b]Switches for the lights you pick[/b]: choose which lights each switch controls, movable lights included
-[*] [b]Auto wiring and two-way switches[/b]: a switch in a closed room wires itself to the lights there, and two switches can share them
-[*] [b]Dismantle[/b]: right-click what you built and choose Dismantle (Build Anything) to get materials back
+[*] [b]Drag rows and areas[/b]: walls and fences go around a rectangle, floors and roofs fill it, skipping tiles you can't afford
+[*] [b]Switches and wiring[/b]: choose which lights each switch controls, or let a switch in a closed room wire itself; two switches can share lights
+[*] [b]Dismantle[/b]: right-click what you built, or drag over an area, to remove it and get materials back (it doesn't replace the vanilla sledgehammer)
+[*] [b]Swap in place[/b]: build another style over a floor or wall you built and pay only the difference
 [*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
 [*] [b]Admin settings[/b]: turn kinds, mods and tilesets on or off in game, and change the building rules
 [/list]

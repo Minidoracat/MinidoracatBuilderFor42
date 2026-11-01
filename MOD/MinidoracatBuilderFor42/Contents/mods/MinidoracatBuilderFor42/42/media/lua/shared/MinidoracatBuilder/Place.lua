@@ -22,13 +22,39 @@ function Place.square(x, y, z)
     return sq
 end
 
--- 同一張圖不重複放（buildRecipeCode.lua:345-353）；農作物上不蓋地板（同處，農作物有 Lua 行為）
-local function hasSprite(sq, name, farming)
+-- 同一張圖不重複放（buildRecipeCode.lua:345-353）
+local function hasSprite(sq, name)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local spr = objects:get(i):getSprite()
+        if spr and spr:getName() == name then return true end
+    end
+    return false
+end
+
+-- 農作物上不蓋地板（同處，農作物有 Lua 行為）
+local function hasCrop(sq)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local spr = objects:get(i):getSprite()
         local s = spr and spr:getName()
-        if s == name or (farming and s and s:sub(1, 18) == "vegetation_farming") then return true end
+        if s and s:sub(1, 18) == "vegetation_farming" then return true end
+    end
+    return false
+end
+
+-- 格子有這個屬性（旗標或字串鍵）。skip＝要被原地替換掉的那件（Check.item 的 info.replace）：格子的屬性是各物件屬性的
+-- 聯集（IsoGridSquare.RecalcProperties，IsoGridSquare.java:7250-7264），所以有 skip 時逐件看、跳過它
+local function has(sq, k, skip)
+    if not sq:has(k) then return false end
+    if not skip then return true end
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        if o ~= skip then
+            local p = o:getProperties()
+            if p and p:has(k) then return true end
+        end
     end
     return false
 end
@@ -52,16 +78,16 @@ local function attachedCount(obj)
 end
 
 -- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
--- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）
-local function edgeTaken(sq, north)
+-- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）。skip 見 has
+local function edgeTaken(sq, north, skip)
     if north then
-        return sq:has(F.WallN) or sq:has(F.WallNTrans) or sq:has(F.WallNW) or sq:has(F.collideN)
-            or sq:has(F.DoorWallN) or sq:has("DoorWallNTrans") or sq:has(F.WindowN) or sq:has(F.HoppableN)
-            or sq:has(F.TallHoppableN) or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
+        return has(sq, F.WallN, skip) or has(sq, F.WallNTrans, skip) or has(sq, F.WallNW, skip) or has(sq, F.collideN, skip)
+            or has(sq, F.DoorWallN, skip) or has(sq, "DoorWallNTrans", skip) or has(sq, F.WindowN, skip)
+            or has(sq, F.HoppableN, skip) or has(sq, F.TallHoppableN, skip) or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
     end
-    return sq:has(F.WallW) or sq:has(F.WallWTrans) or sq:has(F.WallNW) or sq:has(F.collideW)
-        or sq:has(F.DoorWallW) or sq:has("DoorWallWTrans") or sq:has(F.WindowW) or sq:has(F.HoppableW)
-        or sq:has(F.TallHoppableW) or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+    return has(sq, F.WallW, skip) or has(sq, F.WallWTrans, skip) or has(sq, F.WallNW, skip) or has(sq, F.collideW, skip)
+        or has(sq, F.DoorWallW, skip) or has(sq, "DoorWallWTrans", skip) or has(sq, F.WindowW, skip)
+        or has(sq, F.HoppableW, skip) or has(sq, F.TallHoppableW, skip) or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
 end
 
 local function doorFrameAt(sq, north)
@@ -70,10 +96,11 @@ local function doorFrameAt(sq, north)
 end
 
 -- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:388-399）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
-local function splitsGrid(sq, n, w)
+local function splitsGrid(sq, n, w, skip)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
-        local spr = objects:get(i):getSprite()
+        local o = objects:get(i)
+        local spr = o ~= skip and o:getSprite()
         local grid = spr and spr:getSpriteGrid()
         if grid and ((n and grid:getSpriteGridPosY(spr) > 0) or (w and grid:getSpriteGridPosX(spr) > 0)) then
             return true
@@ -105,14 +132,16 @@ local function stairsOk(spr, sq, role)
     if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
     local west = Rules.westStairs(spr:getType())
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
-    if z >= getMaximumWorldLevel() or sq:isVehicleIntersecting() or sq:HasStairs() then return false end
+    if sq:isVehicleIntersecting() then return false, "VEHICLE" end
+    if z >= getMaximumWorldLevel() or sq:HasStairs() then return false end
     if sq:hasModData() and sq:getModData()["ConnectedToStairs" .. tostring(not west)] then return false end
     local above = getCell():getGridSquare(x, y, z + 1)
     if above and above:getFloor() then return false end
     if role == "top" and above and above:getWall(not west) then return false end
     if not floorUnder(sq) or vegetation(sq) or sq:has(F.water) or sq:has(F.taintedWater) then return false end
     if sq:isSolid() or sq:isSolidTrans() or (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved)) then return false end
-    return sq:getMovingObjects():isEmpty() and not buildUtil.stairIsBlockingPlacement(sq, true)
+    if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
+    return not buildUtil.stairIsBlockingPlacement(sq, true)
 end
 
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：從二樓起，正下方不是樓梯（同原版地板的 HasStairsBelow）；
@@ -177,19 +206,30 @@ local function curtainOk(spr, sq)
     return true
 end
 
--- 能不能在 sq 放 spr（種類 kind）。回 ok 與桌面高度（放在桌上的物件要墊高，原版搬家具算的）。
+-- 原版疊箱子的高度上限（ISMoveableSpriteProps.lua:1772-1776）：可疊的桌類放在桌類上，總高加上自己的 Surface 不超過 96
+local STACK_MAX = 96
+
+-- 能不能在 sq 放 spr（種類 kind）。成功回 true 與桌面高度（放在桌上、疊上去的物件要墊高，原版搬家具算的）；
+-- 失敗回 false 與原因碼（游標分原因說；nil＝其他，Check.item 回 BLOCKED）：
+--   SAME_TILE：同一格已經有同一張圖（不是可疊的）。VEHICLE：車子壓著。OCCUPIED：會擋路的東西那格有人、殭屍或動物。
+--   STACK_FULL：可疊的箱子疊到原版的高度上限。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 -- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
-function Place.check(kind, spr, sq, player, role, planned)
+-- replacing：要被原地替換掉的那件（Check.item 的 info.replace.obj）：它佔的格邊、它的實心與擋放置都不算擋；
+-- 同一張圖照樣擋（同一張不算替換）。原版搬家具的判斷（IsMoveAble）不能叫它跳過，照舊看整格。
+function Place.check(kind, spr, sq, player, role, planned, replacing)
     if kind == "stairs" then return stairsOk(spr, sq, role) end
-    if sq:isVehicleIntersecting() or hasSprite(sq, spr:getName(), kind == "floor") then return false end
+    if sq:isVehicleIntersecting() then return false, "VEHICLE" end
+    local p = spr:getProperties()
+    -- 可疊的（IsStackable：軍用箱、紙箱這類）同一張也能疊，高度交給下面原版搬家具的判斷
+    if not p:has("IsStackable") and hasSprite(sq, spr:getName()) then return false, "SAME_TILE" end
+    if kind == "floor" and hasCrop(sq) then return false end
     if Rules.onFloor(kind, spr) then
         -- 掛在地板上（Place.attach）：要有地板、地板上還沒有同一張（地圖原有的也算）、附加圖還沒滿；不蓋在高草、樹上
         local floor = sq:getFloor()
-        return floor ~= nil and attachedAt(floor, spr:getName()) == nil and attachedCount(floor) < MAX_ATTACHED
-            and not vegetation(sq)
+        if floor and attachedAt(floor, spr:getName()) then return false, "SAME_TILE" end
+        return floor ~= nil and attachedCount(floor) < MAX_ATTACHED and not vegetation(sq)
     end
-    local p = spr:getProperties()
     if kind == "floor" then
         -- 原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）
         return not sq:HasStairsBelow() and sq:connectedWithFloor()
@@ -215,27 +255,37 @@ function Place.check(kind, spr, sq, player, role, planned)
             return false
         end
         if not floorUnder(sq) and not sq:hasFloor(n) then return false end -- 樓上的牆要踩在地板上（ISWoodenWall:isValid）
-        if not n and not w then return not sq:has(F.WallSE) end           -- 柱子
-        return not ((n and edgeTaken(sq, true)) or (w and edgeTaken(sq, false)) or splitsGrid(sq, n, w))
+        if not n and not w then return not has(sq, F.WallSE, replacing) end -- 柱子
+        return not ((n and edgeTaken(sq, true, replacing)) or (w and edgeTaken(sq, false, replacing))
+            or splitsGrid(sq, n, w, replacing))
     end
     -- 會擋路的東西：格上有人、殭屍或動物，或會擋到樓梯時不放（原版 isFree(true)、stairIsBlockingPlacement）
-    if (p:has(F.solid) or p:has(F.solidtrans))
-        and (not sq:getMovingObjects():isEmpty() or buildUtil.stairIsBlockingPlacement(sq, true)) then
-        return false
+    if p:has(F.solid) or p:has(F.solidtrans) then
+        if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
+        if buildUtil.stairIsBlockingPlacement(sq, true) then return false end
     end
     if p:has("IsMoveAble") then
-        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊…），伺服器能跑（bt-authority §4.2）。
+        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑（bt-authority §4.2）。
         -- 成功時回的不一定是 true（掛牆時回那面牆），照真假看。
         local props = ISMoveableSpriteProps.new(spr)
         -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
         props.placeTool = nil
-        if not props:canPlaceMoveableInternal(player, sq, nil) then return false end
+        if not props:canPlaceMoveableInternal(player, sq, nil) then
+            -- 疊到頂：照原版疊箱子那一支的條件重算一次，只差高度
+            if props.isStackable and props.isTable and props.surface and sq:has("IsTable") and not sq:has("IsTableTop")
+                and not sq:has("IsHigh") and props:getTotalTableHeight(sq) + props.surface > STACK_MAX then
+                return false, "STACK_FULL"
+            end
+            return false
+        end
         return true, (props.isTableTop or props.isTable) and props.yOffsetCursor or 0
     end
     if not floorUnder(sq) or vegetation(sq) then return false end
     -- 實心或擋放置的東西（含不能搬的實心容器）不疊在已經實心、已經擋放置的格子上
     if kind == "solid" or kind == "container" or p:has(F.solid) or p:has(F.solidtrans) then
-        return not (sq:isSolid() or sq:isSolidTrans()) and not (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved))
+        local solid = replacing and (has(sq, F.solid, replacing) or has(sq, F.solidtrans, replacing))
+            or (not replacing and (sq:isSolid() or sq:isSolidTrans()))
+        return not solid and not (has(sq, "BlocksPlacement", replacing) and not sq:has(F.canBeRemoved))
     end
     return true
 end
@@ -371,13 +421,18 @@ local function thumpable(c, kind, north)
     obj:setIsDismantable(not groundFloor(obj, sq))
     hp = hp or 200
     obj:setMaxHealth(hp)
-    obj:setHealth(hp)
+    -- 原地替換照舊件剩下的耐久比例（c.wear，Server.complete 給）：換一款不能順便修好被打壞的
+    obj:setHealth(c.wear and math.max(1, math.floor(hp * c.wear)) or hp)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上（ISMoveableSpriteProps.lua:2468-2479）
     if not groundFloor(obj, sq) then
         local mats = obj:getBuildMaterials()
         for ft, v in pairs(refundable(c.cost)) do mats[ft] = tostring(v) end
     end
     obj:getModData().builderEntry = spr:getName()
+    -- 名稱一定要有：爬窗框時引擎拿 IsoThumpable 的名稱比 "Barbed Fence"（ClimbThroughWindowState.java:582），null 就
+    -- NullPointerException、每幀一次、角色卡在窗框前（E2E builder-batch-1101rg2）。原版建造一律 setName（ISBuildUtil.lua:371）；
+    -- 這裡用圖名（不是顯示名稱：物件名稱會存檔並同步）
+    obj:setName(spr:getName())
     -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
     if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end
     return obj
@@ -774,6 +829,7 @@ function Place.migrate(obj)
     Place.fitContainers(obj)
     if not instanceof(obj, "IsoThumpable") then return end
     local md = obj:getModData()
+    if obj:getName() == nil then obj:setName(md.builderEntry) end -- 0.3.0 以前蓋的沒有名稱（見 thumpable 的 setName）
     local sq = obj:getSquare()
     if not sq then return end
     local spr = obj:getSprite()

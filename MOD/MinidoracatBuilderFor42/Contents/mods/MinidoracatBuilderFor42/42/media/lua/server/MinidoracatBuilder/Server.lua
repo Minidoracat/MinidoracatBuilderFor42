@@ -125,7 +125,8 @@ local function quietLog(player, msg)
     end
 end
 
--- 客戶端請求：{ n = nonce, e = 項目 ID, d = 朝向 0..4, c = { x1, y1, z1, x2, ... }（各項原點，攤平）, v = Entry.digest() }
+-- 客戶端請求：{ n = nonce, e = 項目 ID, c = { x1, y1, z1, d1, x2, ... }（各項原點與朝向，攤平）, v = Entry.digest() }
+-- 朝向 d：0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面（Entry.face）；每格各帶一個（牆拉長方形圍一圈時四邊不同）。
 -- 收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
 function Server.intent(player, args)
     if type(args) ~= "table" then return end
@@ -137,29 +138,31 @@ function Server.intent(player, args)
     local why = notAllowed(player)
     if why then return Server.refuse(player, n, 0, why) end
     if args.v ~= Entry.digest() then return Server.refuse(player, n, 0, "STALE") end
-    local d = int(args.d, 0, 4)
     local c = args.c
-    if not d or type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
+    if type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
     local near = Check.INTENT_REACH
     local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local anchors = {}
-    for i = 1, maxItems * 3 + 1, 3 do
+    for i = 1, maxItems * 4 + 1, 4 do
         if c[i] == nil then break end
         local x, y, z = int(c[i], 0, 1000000), int(c[i + 1], 0, 1000000), int(c[i + 2], -32, 31)
-        if not (x and y and z) or #anchors >= maxItems or not getWorld():isValidSquare(x, y, z) then
+        local d = int(c[i + 3], 0, 5)
+        if not (x and y and z and d) or #anchors >= maxItems or not getWorld():isValidSquare(x, y, z) then
             return Server.refuse(player, n, 0, "BAD_REQUEST")
         end
         if math.abs(x + 0.5 - px) > near or math.abs(y + 0.5 - py) > near or math.abs(z - pz) > 1 then
             return Server.refuse(player, n, 0, "TOO_FAR", { x = x, y = y, z = z })
         end
-        anchors[#anchors + 1] = { x, y, z }
+        anchors[#anchors + 1] = { x, y, z, d }
     end
     if #anchors == 0 then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local entry, code = Entry.resolve(args.e)
     if not entry then return Server.refuse(player, n, 0, code) end
-    if not Entry.face(entry, d) then return Server.refuse(player, n, 0, "BAD_FACE") end
-    Server.intents[k] = { player = player, n = n, e = entry.name, d = d, c = anchors, done = {}, left = #anchors,
+    for _, a in ipairs(anchors) do
+        if not Entry.face(entry, a[4]) then return Server.refuse(player, n, 0, "BAD_FACE", { x = a[1], y = a[2], z = a[3] }) end
+    end
+    Server.intents[k] = { player = player, n = n, e = entry.name, c = anchors, done = {}, left = #anchors,
         exp = now() + INTENT_TTL_MS, wake = wake(anchors[1][1], anchors[1][2]) }
     -- 收下才回 accepted，客戶端收到才排動作：請求與動作走不同通道，動作不能比請求先到
     Server.send(player, "accepted", { n = n })
@@ -212,114 +215,8 @@ local function giveXp(player, costs)
     return table.concat(parts, ",")
 end
 
--- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
--- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
--- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
-function Server.complete(player, n, i)
-    local it = intentFor(player, n, i)
-    if not it then
-        -- MP 不回覆；單機是本機玩家自己的佇列（例：請求放太久過期），回 refused 讓客戶端清掉後面的動作
-        if not isServer() then return Server.refuse(player, n, i, "NO_INTENT") end
-        quietLog(player, "REFUSE n=" .. tostring(n) .. " code=NO_INTENT")
-        return false
-    end
-    local why = notAllowed(player)
-    if why then return Server.refuse(player, n, i, why) end
-    -- 目錄重算、距離、補格子、安全屋、可放置（和客戶端預覽同一份）
-    local a = it.c[i]
-    local code, extra, info = Check.item(player, it.e, it.d, a)
-    if code then return Server.refuse(player, n, i, code, extra) end
-    local entry, spr, cells, costs, total = info.entry, info.spr, info.cells, info.costs, info.total
-    local plan
-    if not player:isBuildCheat() then -- 伺服器上的這個旗標只有有 UseBuildCheat 能力的人開得了（ExtraInfoPacket.java:274-277）
-        local missing, tools
-        plan, missing, tools = Materials.plan(player, total)
-        if not plan then
-            return Server.refuse(player, n, i, missing and "NO_MATERIAL" or "NO_TOOL", { need = missing, tools = tools })
-        end
-    else
-        -- 沒付料：退料表、燈的帳本都記空的（原版作弊蓋的也沒有退料表，ISBuildUtil.lua:125-129），拆了不退
-        for _, c in ipairs(cells) do c.cost = { items = {}, fee = {} } end
-    end
-    local placed = {}
-    local ok, err = pcall(Place.build, entry.kind, cells, placed)
-    if not ok then
-        Place.undo(placed)
-        print(LOG .. "build failed e=" .. it.e .. ": " .. tostring(err))
-        return Server.refuse(player, n, i, "INTERNAL")
-    end
-    local xp = ""
-    if plan then
-        Materials.consume(player, plan)
-        xp = giveXp(player, costs)
-    end
-    Place.settle(cells)
-    if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
-        local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)
-        if not cok then
-            print(LOG .. "circuit auto-wire failed: " .. tostring(cerr))
-            MinidoracatBuilder.Circuits.send(player, { auto = "switch", code = "INTERNAL", who = player:getOnlineID() })
-        end
-    end
-    print(LOG .. "BUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
-        .. " e=" .. spr:getName() .. " kind=" .. entry.kind .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
-        .. " cost=" .. (plan and costLine(total.items) or "free") .. " xp=" .. xp)
-    it.done[i] = true
-    it.left = it.left - 1
-    it.exp = now() + INTENT_TTL_MS
-    if it.left <= 0 then Server.intents[keyOf(player)] = nil end
-    Server.send(player, "placed", { n = n, i = i })
-    return true
-end
-
--- ---------------------------------------------------------------- 拆除（第五階段）
--- 身分照建造：客戶端先送 dismantle 請求（OnClientCommand 的連線玩家），動作只帶 nonce，完成時照這位玩家自己的請求做。
--- 每人只留一筆，拆一次就刪。
-Server.unbuilds = {}
+-- ---------------------------------------------------------------- 移除與退料（拆除、原地替換共用）
 local DIRT = "blends_natural_01_64" -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:74-81）
-
-local function dismantleRefused(player, n, code, extra)
-    print(LOG .. "UNBUILD REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " code=" .. code)
-    local args = { n = n, code = code }
-    for k, v in pairs(extra or {}) do args[k] = v end
-    Server.send(player, "dismantleRefused", args)
-    return false
-end
-
--- 客戶端請求：{ n = nonce, x, y, z, e = 被點的那件的 sprite 名稱 }。收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
--- 能不能拆在動作完成時才查（玩家要先走過去），這裡只驗格式與大概的距離（和建造請求同一個上限）。
-function Server.dismantleIntent(player, args)
-    if type(args) ~= "table" then return end
-    local n = int(args.n, 1, 2147483647)
-    if not n then return end
-    local k = keyOf(player)
-    if not rateOk(k) then return end
-    sweep(now(), Server.unbuilds)
-    local why = notAllowed(player)
-    if why then return dismantleRefused(player, n, why) end
-    local x, y, z, e = int(args.x, 0, 1000000), int(args.y, 0, 1000000), int(args.z, -32, 31), args.e
-    if not (x and y and z) or type(e) ~= "string" or #e > 128 then return dismantleRefused(player, n, "BAD_REQUEST") end
-    local near = Check.INTENT_REACH
-    if math.abs(x + 0.5 - player:getX()) > near or math.abs(y + 0.5 - player:getY()) > near
-        or math.abs(z - math.floor(player:getZ())) > 1 then
-        return dismantleRefused(player, n, "TOO_FAR", { x = x, y = y, z = z })
-    end
-    Server.unbuilds[k] = { player = player, n = n, x = x, y = y, z = z, e = e, exp = now() + INTENT_TTL_MS }
-    Server.send(player, "dismantleAccepted", { n = n })
-    return true
-end
-
-local function unbuildFor(player, n)
-    local k = keyOf(player)
-    local it = Server.unbuilds[k]
-    if not it then return nil end
-    if it.exp < now() then
-        Server.unbuilds[k] = nil
-        return nil
-    end
-    if it.n ~= n or it.player ~= player then return nil end
-    return it
-end
 
 -- 每項退 1..v 件（原版 ISDismantleAction、ISThumpableSpriteProps 同一算法，ISDismantleAction.lua:55-66）
 local function rollInto(into, mats)
@@ -329,15 +226,12 @@ local function rollInto(into, mats)
     end
 end
 
--- 拆除動作的施工時間：和蓋同一種類一樣（Entry.duration）。找不到請求回 1，讓它馬上進 complete() 被拒。
-function Server.dismantleDuration(player, n)
-    local it = unbuildFor(player, n)
-    if not it then return 1 end
-    if player:isTimedActionInstant() then return 1 end
-    local sq = getCell():getGridSquare(it.x, it.y, it.z)
-    local obj = sq and Dismantle.find(sq, it.e)
-    local kind = obj and Dismantle.kindOf(obj) or (sq and Dismantle.hung(sq, it.e) and "floorOverlay") or nil
-    return Entry.duration(kind, player)
+-- 退的料掉在玩家腳下（屋頂這類在上一層的，拆了也拿得到）；玩家沒有格子時掉在 sq
+local function drop(player, sq, refund)
+    local here = player:getCurrentSquare() or sq
+    for ft, c in pairs(refund) do
+        for _ = 1, c do here:AddWorldInventoryItem(ft, ZombRandFloat(0.1, 0.9), ZombRandFloat(0.1, 0.9), 0) end
+    end
 end
 
 -- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
@@ -374,6 +268,247 @@ local function removeAll(kind, plan)
     end
 end
 
+-- 原地替換：新的蓋好後移除舊的那件。地板的舊片 Place.clearFloor 蓋新的時已經拆了：已不在格子上的片略過。
+local function removeOld(rep)
+    local left = {}
+    for _, o in ipairs(rep.plan.remove) do
+        local s = o:getSquare()
+        if s and s:getObjects():contains(o) then left[#left + 1] = o end
+    end
+    removeAll(rep.kind, { remove = left })
+end
+
+-- 替換失敗、新的已收回時：舊的不在格子上了（地板蓋新的時被 Place.clearFloor 拆掉）就照原圖、原退料表蓋回去。
+-- had＝移除前複製的退料表（移除時 Place.onAboutToBeRemoved 會清掉物件上那一份）。回 true＝舊的在格子上（本來就在或蓋回了）；
+-- 蓋回也出錯時收回蓋到一半的、回 false，呼叫端把 had 整份退給玩家（材料不會跟著舊的一起不見）
+local function restoreOld(rep, sq, spr, had)
+    if sq:getObjects():contains(rep.obj) then return true end
+    local back = {}
+    local ok, err = pcall(Place.build, rep.kind, { { sq = sq, spr = spr, cost = { items = had, fee = {} } } }, back)
+    if ok then return true end
+    print(LOG .. "replace restore failed e=" .. spr:getName() .. ": " .. tostring(err))
+    Place.undo(back)
+    return false
+end
+
+-- 整份退料（不擲 1..v）：替換失敗、東西蓋不回去或掛不回去時，材料不跟著不見
+local function whole(t)
+    local out = {}
+    for ft, v in pairs(t or {}) do
+        local c = math.floor(tonumber(v) or 0)
+        if c >= 1 then out[ft] = c end
+    end
+    return out
+end
+
+-- 換一樓地板時，舊地板上本工具掛的地面覆蓋（換之前 Overlays.at 記下的）：Place.clearFloor 拆掉舊片時帳本整格清掉
+-- （Overlays.dropFloor）。換好、或失敗後蓋回舊地板之後，照記下的圖與退料表掛回去；掛不回去（地板沒了、出錯）就整份退
+local function rehang(player, sq, saved)
+    for name, items in pairs(saved or {}) do
+        if Dismantle.hung(sq, name) then
+            -- 圖還掛著（舊地板沒移掉）：引擎先發移除事件才移除，帳本可能已被 dropFloor 清掉，照記下的補回
+            if not Overlays.get(sq, name) then Overlays.put(sq, name, items) end
+        else
+            local spr = Entry.sprite(name)
+            local rec = {}
+            local ok = sq:getFloor() ~= nil and spr ~= nil and pcall(Place.attach, sq, spr, items, rec)
+            if not ok then
+                Place.undo(rec) -- 掛到一半的拿掉，免得圖還在又退料
+                Overlays.forget(sq, name) -- 照理 Overlays.dropFloor 已清；沒清到也不留一筆退料給掛不上的圖
+                drop(player, sq, whole(items))
+                print(LOG .. "REPLACE OVERLAY LOST user=" .. who(player) .. " e=" .. name .. " refund=" .. costLine(whole(items)))
+            end
+        end
+    end
+end
+
+-- 替換的經驗只照補的料給（舊的料拿回來再用，不算新付的）：新的那格成本複製一份，items 換成 pay；電器費不超過補的件數
+local function paidCost(c, pay)
+    local fee = {}
+    for ft, f in pairs(c.fee or {}) do fee[ft] = math.min(f, pay[ft] or 0) end
+    return { items = pay, tools = c.tools, perkOf = c.perkOf, chanceOf = c.chanceOf, fee = fee, back = c.back,
+        uniform = c.uniform }
+end
+
+-- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
+-- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
+-- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
+-- 原地替換（Check.item 的 info.replace，設計稿 claim 4）：只補新的比舊的多的料（Check.net 的 pay），多的照拆除每項退
+-- 1..v（back）；工具要新舊兩件的聯集。先蓋新的、再移除舊的；任一步失敗就收回新的、舊的不在了就蓋回，不扣料、不退料
+-- （蓋回也失敗時舊的退料表整份退）。舊的一樓地板查不到帳本時照一般蓋。新的耐久照舊的剩下的比例。
+-- 建造作弊照一般建造：不扣、不退，新的退料表記空。經驗只照 pay 給。
+function Server.complete(player, n, i)
+    local it = intentFor(player, n, i)
+    if not it then
+        -- MP 不回覆；單機是本機玩家自己的佇列（例：請求放太久過期），回 refused 讓客戶端清掉後面的動作
+        if not isServer() then return Server.refuse(player, n, i, "NO_INTENT") end
+        quietLog(player, "REFUSE n=" .. tostring(n) .. " code=NO_INTENT")
+        return false
+    end
+    local why = notAllowed(player)
+    if why then return Server.refuse(player, n, i, why) end
+    -- 目錄重算、距離、補格子、安全屋、可放置（和客戶端預覽同一份）
+    local a = it.c[i]
+    local code, extra, info = Check.item(player, it.e, a[4], a)
+    if code then return Server.refuse(player, n, i, code, extra) end
+    local entry, spr, cells, costs, total = info.entry, info.spr, info.cells, info.costs, info.total
+    local rep = info.replace
+    local pay, back, tools, had = total.items, nil, total.tools, nil
+    if rep and not rep.had and entry.kind == "floor" then
+        -- 舊地板查不到退料表（一樓地板帳本對不上）：照改版前蓋新地板（Place.clearFloor 拆掉舊片、不退料），不卡在拆也拆不掉、
+        -- 換也換不了
+        rep = nil
+    end
+    if rep then
+        -- 舊的那件查不到退料表（Place.refundOf 回 nil）：不換，同拆除的 NOT_OURS
+        if not rep.had then return Server.refuse(player, n, i, "NOT_OURS", { x = a[1], y = a[2], z = a[3] }) end
+        pay, back = Check.net(total.items, rep.had)
+        tools = Cost.sum({ total, { items = {}, tools = Dismantle.tools(rep.kind, rep.plan) } }).tools
+        had = {}
+        for ft, v in pairs(rep.had) do had[ft] = tonumber(v) or 0 end
+    end
+    local plan
+    if not Materials.cheat(player) then -- 多人只認 isBuildCheat（要 UseBuildCheat 能力）；單機另認原版 ISBuildMenu.cheat
+        local missing, mtools
+        plan, missing, mtools = Materials.plan(player, { items = pay, tools = tools })
+        if not plan then
+            return Server.refuse(player, n, i, missing and "NO_MATERIAL" or "NO_TOOL", { need = missing, tools = mtools })
+        end
+    else
+        -- 沒付料：退料表、燈的帳本都記空的（原版作弊蓋的也沒有退料表，ISBuildUtil.lua:125-129），拆了不退
+        for _, c in ipairs(cells) do c.cost = { items = {}, fee = {} } end
+    end
+    local oldSq, oldSpr = rep and cells[1].sq, rep and rep.obj:getSprite()
+    if rep and instanceof(rep.obj, "IsoThumpable") and rep.obj:getMaxHealth() > 0 then
+        cells[1].wear = math.min(1, rep.obj:getHealth() / rep.obj:getMaxHealth()) -- Place.thumpable 照比例給新的耐久
+    end
+    -- 換一樓地板：舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）
+    local saved = rep and entry.kind == "floor" and Overlays and Overlays.at(oldSq) or nil
+    local placed = {}
+    local ok, err = pcall(Place.build, entry.kind, cells, placed)
+    if ok and rep then ok, err = pcall(removeOld, rep) end
+    if not ok then
+        Place.undo(placed)
+        if rep and not restoreOld(rep, oldSq, oldSpr, had) then
+            -- 舊的蓋不回去：舊的退料表整份退（不擲 1..v），不扣新的料
+            local all = whole(had)
+            drop(player, oldSq, all)
+            print(LOG .. "REPLACE RESTORE FAIL user=" .. who(player) .. " old=" .. oldSpr:getName() .. " at=" .. a[1] .. ","
+                .. a[2] .. "," .. a[3] .. " refund=" .. costLine(all))
+        end
+        rehang(player, oldSq or cells[1].sq, saved)
+        print(LOG .. (rep and "replace" or "build") .. " failed e=" .. it.e .. ": " .. tostring(err))
+        return Server.refuse(player, n, i, "INTERNAL")
+    end
+    rehang(player, cells[1].sq, saved)
+    local refund = {}
+    if rep and plan then rollInto(refund, back) end
+    local xp = ""
+    if plan then
+        Materials.consume(player, plan)
+        xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
+        drop(player, cells[1].sq, refund)
+    end
+    Place.settle(cells)
+    if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
+        local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)
+        if not cok then
+            print(LOG .. "circuit auto-wire failed: " .. tostring(cerr))
+            MinidoracatBuilder.Circuits.send(player, { auto = "switch", code = "INTERNAL", who = player:getOnlineID() })
+        end
+    end
+    local head = LOG .. (rep and "REPLACE" or "BUILD") .. " user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
+        .. " e=" .. spr:getName() .. (rep and " old=" .. oldSpr:getName() or "") .. " kind=" .. entry.kind
+        .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
+    if rep then
+        print(head .. " pay=" .. (plan and costLine(pay) or "free") .. " back=" .. costLine(refund) .. " xp=" .. xp)
+    else
+        print(head .. " cost=" .. (plan and costLine(total.items) or "free") .. " xp=" .. xp)
+    end
+    it.done[i] = true
+    it.left = it.left - 1
+    it.exp = now() + INTENT_TTL_MS
+    if it.left <= 0 then Server.intents[keyOf(player)] = nil end
+    Server.send(player, "placed", { n = n, i = i, replaced = rep and true or nil })
+    return true
+end
+
+-- ---------------------------------------------------------------- 拆除（第五階段；一區拆除起一次一張清單）
+-- 身分照建造：客戶端先送 dismantle 請求，列出要拆的每一件（照拆的順序），動作只帶 nonce 與第幾件，完成時照這位玩家
+-- 自己的請求做。每人只留一筆；每件只輪一次，拆不了的跳過（回 true，引擎不清後面的動作），這個人整個不能拆時才停。
+Server.unbuilds = {}
+
+-- 這個人整個不能拆（OFF、NOT_ALLOWED、STATE、NO_INTENT）或請求本身被拒（i＝0）
+local function dismantleRefused(player, n, i, code, extra)
+    print(LOG .. "UNBUILD REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " i=" .. tostring(i) .. " code=" .. code)
+    local args = { n = n, i = i, code = code }
+    for k, v in pairs(extra or {}) do args[k] = v end
+    Server.send(player, "dismantleRefused", args)
+    return false
+end
+
+-- 客戶端請求：{ n = nonce, t = { x1, y1, z1, "名稱1", x2, ... }（照拆的順序，攤平；名稱＝那件的 sprite 名稱）}，最多
+-- MaxCellsPerDrag 件（和建造同一個上限）。收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
+-- 能不能拆在動作完成時才查（玩家要先走過去），這裡只驗格式與大概的距離（和建造請求同一個範圍）。
+function Server.dismantleIntent(player, args)
+    if type(args) ~= "table" then return end
+    local n = int(args.n, 1, 2147483647)
+    if not n then return end
+    local k = keyOf(player)
+    if not rateOk(k) then return end
+    sweep(now(), Server.unbuilds)
+    local why = notAllowed(player)
+    if why then return dismantleRefused(player, n, 0, why) end
+    local t = args.t
+    if type(t) ~= "table" then return dismantleRefused(player, n, 0, "BAD_REQUEST") end
+    local maxItems = setting("MaxCellsPerDrag", 32)
+    local near = Check.INTENT_REACH
+    local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
+    local list = {}
+    for i = 1, maxItems * 4 + 1, 4 do
+        if t[i] == nil then break end
+        local x, y, z, e = int(t[i], 0, 1000000), int(t[i + 1], 0, 1000000), int(t[i + 2], -32, 31), t[i + 3]
+        if not (x and y and z) or type(e) ~= "string" or #e > 128 or e:find("%c") or #list >= maxItems then
+            return dismantleRefused(player, n, 0, "BAD_REQUEST")
+        end
+        if math.abs(x + 0.5 - px) > near or math.abs(y + 0.5 - py) > near or math.abs(z - pz) > 1 then
+            return dismantleRefused(player, n, 0, "TOO_FAR", { x = x, y = y, z = z })
+        end
+        list[#list + 1] = { x, y, z, e }
+    end
+    if #list == 0 then return dismantleRefused(player, n, 0, "BAD_REQUEST") end
+    -- 期限照一區最多幾件給：清單只列本工具拆的，一區裡夾著的原版拆解伺服器看不到（不經過這裡、不會延長），每件留一份 TTL
+    local ttl = INTENT_TTL_MS * maxItems
+    Server.unbuilds[k] = { player = player, n = n, list = list, done = {}, left = #list, ttl = ttl, exp = now() + ttl }
+    Server.send(player, "dismantleAccepted", { n = n })
+    return true
+end
+
+-- 這位玩家、這個 nonce、還沒輪過的第 i 件；不符回 nil。過期的順手刪掉。
+local function unbuildFor(player, n, i)
+    local k = keyOf(player)
+    local it = Server.unbuilds[k]
+    if not it then return nil end
+    if it.exp < now() then
+        Server.unbuilds[k] = nil
+        return nil
+    end
+    if it.n ~= n or it.player ~= player or not it.list[i] or it.done[i] then return nil end
+    return it
+end
+
+-- 拆除動作的施工時間：和蓋同一種類一樣（Entry.duration）。找不到請求或那一件回 1，讓它馬上進 complete()（被拒或跳過）。
+function Server.dismantleDuration(player, n, i)
+    local it = unbuildFor(player, n, i)
+    if not it or player:isTimedActionInstant() then return 1 end
+    local a = it.list[i]
+    local sq = getCell():getGridSquare(a[1], a[2], a[3])
+    local obj = sq and Dismantle.find(sq, a[4])
+    local kind = obj and Dismantle.kindOf(obj) or (sq and Dismantle.hung(sq, a[4]) and "floorOverlay") or nil
+    if not kind then return 1 end
+    return Entry.duration(kind, player)
+end
+
 -- 樓梯平台留著的情況：不是本 MOD 補的（帳本沒記：蓋樓梯時那格原本就有地板）、上面還有別的東西、或沒有 BUILD 權限。
 -- 平台不退料，留著只是一塊地板；安全屋照預覽查（只決定留不留，不推通知、不寫稽核）。
 local function keepLanding(player, l)
@@ -382,27 +517,16 @@ local function keepLanding(player, l)
         or Check.safehouse(player, { x = s:getX(), y = s:getY(), z = s:getZ(), sq = s }, true, "dismantle") ~= nil
 end
 
--- MinidoracatBuilderDismantleAction:complete()：照這位玩家的拆除請求，拆那格上 sprite 名稱相同、本 MOD 蓋的那件；
--- 格上沒有那件物件時，找那格地板上掛的那張地面覆蓋（Dismantle.hung，不看記號）。
--- 物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
+-- 拆一件：拆那格上 sprite 名稱相同、本 MOD 蓋的那件；格上沒有那件物件時，找那格地板上掛的那張地面覆蓋
+-- （Dismantle.hung，不看記號）。物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
 -- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈）：同一件被兩個動作拆時，後到的
 -- 找不到物件（GONE），不會再退。燈與平台只認帳本；地面覆蓋只認覆蓋帳本（Overlays）；IsoThumpable 照 Place.refundOf
--- （一樓以下的地板在地板帳本）。查不到退料表的不拆（回 NOT_OURS，平台留著）。
--- 移除出錯時不退料（只會少，不會多）；退的料掉在玩家腳下（屋頂這類在上一層的，拆了也拿得到）。不給經驗。
-function Server.dismantle(player, n)
-    local it = unbuildFor(player, n)
-    if not it then
-        if not isServer() then return dismantleRefused(player, n, "NO_INTENT") end
-        quietLog(player, "UNBUILD REFUSE n=" .. tostring(n) .. " code=NO_INTENT")
-        return false
-    end
-    Server.unbuilds[keyOf(player)] = nil -- 一筆請求只拆一次
-    local why = notAllowed(player)
-    if why then return dismantleRefused(player, n, why) end
-    local x, y, z, name = it.x, it.y, it.z, it.e
+-- （一樓以下的地板在地板帳本）。查不到退料表的不拆（NOT_OURS，平台留著）。移除出錯時不退料（只會少，不會多）。不給經驗。
+-- 拆好回 nil, nil, refund, kind, 片數；拆不了回 code, extra。
+local function unbuildOne(player, x, y, z, name)
     local at = { x = x, y = y, z = z }
     local sq = getCell():getGridSquare(x, y, z)
-    if not sq then return dismantleRefused(player, n, "NOT_LOADED", at) end
+    if not sq then return "NOT_LOADED", at end
     local obj = Dismantle.find(sq, name)
     local kind, plan
     if obj then
@@ -410,15 +534,15 @@ function Server.dismantle(player, n)
         plan = Dismantle.plan(obj, kind)
     else
         local t = Dismantle.hung(sq, name)
-        if not t then return dismantleRefused(player, n, "GONE", at) end
+        if not t then return "GONE", at end
         kind, plan = "floorOverlay", Dismantle.overlayPlan(t)
     end
     local code, extra = Dismantle.check(player, kind, plan)
-    if code then return dismantleRefused(player, n, code, extra) end
+    if code then return code, extra end
     local refund = {}
     if plan.overlay then
         local mats = Overlays.get(sq, name)
-        if not mats then return dismantleRefused(player, n, "NOT_OURS", at) end
+        if not mats then return "NOT_OURS", at end
         rollInto(refund, mats)
     end
     for _, o in ipairs(plan.refund) do
@@ -428,23 +552,58 @@ function Server.dismantle(player, n)
         else
             mats = Place.refundOf(o)
         end
-        if not mats then return dismantleRefused(player, n, "NOT_OURS", at) end
+        if not mats then return "NOT_OURS", at end
         rollInto(refund, mats)
     end
     if plan.landing and keepLanding(player, plan.landing) then plan.landing = nil end
     local ok, err = pcall(removeAll, kind, plan)
     if not ok then
         print(LOG .. "dismantle failed e=" .. name .. ": " .. tostring(err))
-        return dismantleRefused(player, n, "INTERNAL", at)
+        return "INTERNAL", at
     end
-    local here = player:getCurrentSquare() or sq
-    for ft, c in pairs(refund) do
-        for _ = 1, c do here:AddWorldInventoryItem(ft, ZombRandFloat(0.1, 0.9), ZombRandFloat(0.1, 0.9), 0) end
+    drop(player, sq, refund)
+    return nil, nil, refund, kind, #plan.remove
+end
+
+-- MinidoracatBuilderDismantleAction:complete()：照這位玩家的拆除請求拆第 i 件。拆好送 dismantled（帶退了什麼）；
+-- 這一件拆不了送 dismantleSkipped、回 true（佇列照走，下一件照拆）；這個人整個不能拆時清掉請求、送 dismantleRefused、回 false。
+function Server.dismantle(player, n, i)
+    local it = unbuildFor(player, n, i)
+    if not it then
+        if not isServer() then return dismantleRefused(player, n, i, "NO_INTENT") end
+        quietLog(player, "UNBUILD REFUSE n=" .. tostring(n) .. " code=NO_INTENT")
+        return false
+    end
+    local k = keyOf(player)
+    local why = notAllowed(player)
+    if why then
+        Server.unbuilds[k] = nil
+        return dismantleRefused(player, n, i, why)
+    end
+    it.done[i] = true -- 每件只輪一次（拆好、跳過都算）
+    it.left = it.left - 1
+    it.exp = now() + it.ttl
+    if it.left <= 0 then Server.unbuilds[k] = nil end
+    local a = it.list[i]
+    local x, y, z, name = a[1], a[2], a[3], a[4]
+    local code, extra, refund, kind, parts = unbuildOne(player, x, y, z, name)
+    if code == "INTERNAL" then
+        -- 移除出錯（引擎例外被吞掉，多片的可能只拆了一部分）：整批停，不再往下拆，留給玩家與管理員看
+        Server.unbuilds[k] = nil
+        print(LOG .. "UNBUILD FAIL user=" .. who(player) .. " n=" .. n .. " i=" .. i .. " e=" .. name .. " at=" .. x .. ","
+            .. y .. "," .. z)
+        return dismantleRefused(player, n, i, code, extra)
+    end
+    if code then
+        print(LOG .. "UNBUILD SKIP user=" .. who(player) .. " n=" .. n .. " i=" .. i .. " e=" .. name .. " code=" .. code)
+        local args = { n = n, i = i, code = code, x = x, y = y, z = z }
+        for key, v in pairs(extra or {}) do args[key] = v end
+        Server.send(player, "dismantleSkipped", args)
+        return true
     end
     print(LOG .. "UNBUILD user=" .. who(player) .. " id=" .. tostring(player:getOnlineID()) .. " e=" .. name
-        .. " kind=" .. kind .. " at=" .. x .. "," .. y .. "," .. z .. " parts=" .. #plan.remove
-        .. " refund=" .. costLine(refund))
-    Server.send(player, "dismantled", { n = n, x = x, y = y, z = z, e = name })
+        .. " kind=" .. kind .. " at=" .. x .. "," .. y .. "," .. z .. " parts=" .. parts .. " refund=" .. costLine(refund))
+    Server.send(player, "dismantled", { n = n, i = i, x = x, y = y, z = z, e = name, refund = refund })
     return true
 end
 

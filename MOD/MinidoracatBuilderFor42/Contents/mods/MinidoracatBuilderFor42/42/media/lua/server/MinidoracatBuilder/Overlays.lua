@@ -61,6 +61,16 @@ function Overlays.get(sq, name)
     return here and here[name] or nil
 end
 
+-- sq 這一格帳本的複本（{ [圖名] = 退料表 }）；沒有回 nil。原地換一樓地板前先記下來，換好再照它掛回去（Server.complete）
+function Overlays.at(sq)
+    local inst = Overlays.instance
+    local here = inst and inst.overlays[pos(sq)]
+    if not here then return nil end
+    local copy = {}
+    for name, items in pairs(here) do copy[name] = items end
+    return copy
+end
+
 function Overlays.forget(sq, name)
     local inst = Overlays.instance
     local k = inst and pos(sq)

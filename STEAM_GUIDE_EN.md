@@ -98,9 +98,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]The cursor[/h3]
 [list]
 [*] [b]After pressing Build[/b]: the window hides and a ghost appears on the ground.
-[*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square.
+[*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
-[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints.
+[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on.
 [*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
@@ -108,20 +108,36 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Cancel[/b]: right-click to cancel, and the window comes back.
 [*] [b]Pick something else[/b]: while placing you can reopen the window from the toolbar.
 [/list]
-[h3]Dragging a row[/h3]
+[h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them.
-[*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped.
+[*] [b]What you can drag[/b]: floors, floor overlays, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them.
+[*] [b]Drag straight[/b]: builds a row.
+[*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays and roofs fill it; walls and fences go around its edges, switching to the piece for the right direction on the north and south sides and on the west and east sides; posts go on every square of the edges.
+[*] [b]A ring missing two sides[/b]: when the tileset has no piece for the other direction, those two sides turn red and aren't built.
+[*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped, with one line per reason for the skipped ones.
 [*] [b]When short[/b]: the box says what those tiles still need together.
 [*] [b]Materials for only the first few[/b]: only the tiles you can afford are built, and the rest are skipped.
-[*] [b]At most[/b]: 32 items per drag by default, and the admin can change it.
+[*] [b]At most[/b]: 32 items at once by default, and the admin can change it; tiles over the limit turn red and aren't built.
 [/list]
 {{img:06-queued-en.jpg}}
 [list]
 [*] [b]Queued tiles[/b]: after you release, tiles not built yet keep a faint ghost and a blue frame, one fewer each time a tile is done.
 [*] [b]After closing the cursor[/b]: your character keeps building.
 [*] [b]Dragging another row[/b]: cancels the tiles still queued from the last row, and before you release the box tells you how many.
+[/list]
+[h3]Replacing in place[/h3]
+[list]
+[*] [b]How[/b]: build another style of the same kind over a floor, wall, fence, solid furniture or similar that you built with Build Anything, and it's replaced in place, with no need to dismantle first. Dragging a row or area works too; those tiles turn yellow.
+[*] [b]What swaps with what[/b]: things of the same kind; walls, door frames and window frames also swap with each other, so you can put a window in a wall without taking the wall down. They must be on the same edge of the square.
+[*] [b]Materials[/b]: you only pay what the new one needs beyond the old one; whatever the old one had left over comes back like dismantling, between 1 and all of each material, at your feet. Same materials means nothing extra. The box shows what you pay and what comes back.
+[*] [b]XP[/b]: only for the materials you pay.
+[*] [b]Durability[/b]: the new one keeps the old one's remaining durability, so swapping doesn't repair it.
+[*] [b]Swapping floors[/b]: floor overlays you added with Build Anything, such as road markings, stay on the new floor.
+[*] [b]Things that fit together[/b]: when both fit on the square, such as hangings facing different ways, they stay together and nothing is replaced.
+[*] [b]Before replacing[/b]: empty containers, and take doors, windows or boards off frames.
+[*] [b]Not replaced[/b]: lights, stairs, doors, windows, curtains, floor overlays, multi-tile furniture and anything movable.
+[*] [b]Right-click Replace with... (Build Anything)[/b]: opens the build window showing only styles of the same kind that use the same materials and tools; click the filter above the search box to go back to the full catalog.
 [/list]
 [h3]Distance and where you stand[/h3]
 [list]
@@ -201,6 +217,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
 [*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
+[*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
 [*] [b]Container capacity[/b]: the same as the vanilla piece; server owners can set Container capacity multiplier in the sandbox, up to 100.
@@ -224,7 +241,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Movable lights[/b]: 1 extra Light Bulb (in vanilla you can take the bulb out).
 [*] [b]Material multiplier[/b]: every amount is multiplied by the admin's multiplier and rounded up.
 [*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains, and the extra Light Bulb for movable lights still cost at least 1×.
-[*] [b]Admins with the build cheat on[/b]: pay nothing.
+[*] [b]Build cheat[/b]: no materials and no tools. In multiplayer an admin turns on Build Cheat mode in Edit your Admin Powers; in singleplayer the Build Cheat switch in the debug menu and Enable Build Cheat Mode in the admin panel count too.
 [*] [b]Exact amounts[/b]: Materials (have / need) in the details is what counts.
 [/list]
 Tiles without dismantle materials cost this, by material (multiplier 1):
@@ -341,8 +358,9 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [h3]Dismantle (Build Anything)[/h3]
 [list]
 [*] [b]What it removes[/b]: walls, floors, floor overlays, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved.
-[*] [b]What it can't remove[/b]: things built in vanilla or other ways.
-[*] [b]How[/b]: right-click and choose Dismantle (Build Anything), and your character walks over.
+[*] [b]What it can't remove[/b]: things built in vanilla or other ways, and what the map already had. It does not replace the vanilla sledgehammer: pick those up, disassemble them or smash them as in vanilla.
+[*] [b]How[/b]: right-click and choose Dismantle (Build Anything): name. The piece lights up while you hover the option; your character walks over, and a notice says what came back.
+[*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu, greyed out, and hovering says how to remove them.
 [*] [b]Tools[/b]: the same as for building.
 [*] [b]Materials back[/b]: between 1 and all of each material, dropped at your feet.
 [*] [b]XP[/b]: dismantling gives none.
@@ -351,6 +369,17 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
 [*] [b]Built with the build cheat[/b]: no materials back.
+[/list]
+[h3]Dismantle an area[/h3]
+[list]
+[*] [b]How[/b]: right-click and choose Dismantle an area... (Build Anything), hold the left button and drag a rectangle, then release to get a confirmation panel; right-click cancels.
+[*] [b]Range[/b]: the level you stand on, plus the roof right above it.
+[*] [b]Confirmation panel[/b]: lists how many of each kind, with boxes you can untick, how many will be skipped and why, how many go through vanilla Disassemble and how many need vanilla Pick Up. Nothing happens until you press Dismantle (N).
+[*] [b]Vanilla Disassemble[/b]: things you built whose details say "Vanilla dismantle" are queued too, with vanilla tools and vanilla returns.
+[*] [b]Order[/b]: hanging things and furniture first, then walls, then roofs and floors last.
+[*] [b]At most[/b]: the same limit as building (32 by default); select again for the rest.
+[*] [b]What can't be dismantled[/b]: is skipped and the next one goes ahead; the final notice says how many were dismantled, what came back and what was kept and why.
+[*] [b]Stopping[/b]: walking away, pressing Esc or being interrupted stops it, and the notice says how many were done; select the area again to continue.
 [/list]
 [h3]Before you dismantle[/h3]
 [list]
@@ -384,6 +413,7 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Build[/b]: A.
 [*] [b]Cancel[/b]: B.
 [*] [b]Roof level[/b]: X switches between one level up and this level.
+[*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time.
 [/list]
 [h3]Wiring mode[/h3]
 [list]
@@ -404,7 +434,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
-[*] [b]Rules[/b]: the nine rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items per drag, Material cost multiplier, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
+[*] [b]Rules[/b]: the nine rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Material cost multiplier, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
 [/list]
 [h3]Applying[/h3]
 [list]
@@ -432,7 +462,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Who can build[/td][td]Everyone[/td][td]Everyone / Admins only[/td][td]Admins only: only players allowed to use the build cheat can build[/td][/tr]
 [tr][td]Where players can build[/td][td]Like vanilla[/td][td]Like vanilla / Own safehouses only[/td][td]Like vanilla: unclaimed land and safehouses where the player may build. Own safehouses only: only inside safehouses where the player may build[/td][/tr]
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
-[tr][td]Most items per drag[/td][td]32[/td][td]1–64[/td][td]How many items one build request can place, for example a line of walls[/td][/tr]
+[tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area[/td][/tr]
 [tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
 [tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Zombies can't break doors[/td][td]Off[/td][td]On/off[/td][td]Doors built with this mod get very high durability: zombies still bang on them but can't break them. Doors built before this option existed aren't recognized and break like vanilla. Doors already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
@@ -466,7 +496,7 @@ The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes
 [tr][td]Overlay[/td][td]Other overlay pieces[/td][/tr]
 [/table]
 [list]
-[*] [b]Build cheat[/b]: admins with the build cheat on never pay.
+[*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
 [*] [b]After changing settings[/b]: the server checks the current settings on every placement.
 [*] [b]Open windows[/b]: follow the new settings within a few seconds, so there is no need to reopen them.
 [*] [b]With Enable building off[/b]: nobody can wire, but built lights and switches still work.
@@ -617,7 +647,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [/list]
 [h3]Can I dismantle things built in vanilla or other ways?[/h3]
 [list]
-[*] Dismantle (Build Anything) only removes what Build Anything built, and everything else is picked up, disassembled or smashed as in vanilla.
+[*] No. Dismantle (Build Anything) and Dismantle an area only remove what Build Anything built and do not replace the vanilla sledgehammer: things built in vanilla or other ways, and what the map already had, are picked up, disassembled or smashed with a sledgehammer as in vanilla.
 [/list]
 [h3]Can I add it to an existing save?[/h3]
 [list]

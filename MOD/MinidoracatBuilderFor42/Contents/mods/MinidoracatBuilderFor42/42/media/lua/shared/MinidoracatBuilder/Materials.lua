@@ -135,10 +135,19 @@ function Materials.plan(player, cost)
     return { take = take, ground = ground, boxes = boxes, left = left }
 end
 
+-- 建造作弊（不扣料、不要工具）。多人兩端都只認 isBuildCheat：伺服器上要 UseBuildCheat 能力才開得了
+-- （ExtraInfoPacket.java:274-277），客戶端的 Lua 全域伺服器看不到。單機另認原版的 ISBuildMenu.cheat：debug 選單
+-- 「Build Cheat」和管理面板的按鈕只設它（ISGeneralCheats.lua:16、ISAdminPanelUI.lua:255），debug 模式預設開
+-- （ISBuildMenu.lua:2），原版建造也認它（ISBuildingObject.lua:382-385）。
+function Materials.cheat(player)
+    if player:isBuildCheat() then return true end
+    return not isClient() and not isServer() and ISBuildMenu ~= nil and ISBuildMenu.cheat == true
+end
+
 -- 玩家此刻可用材料的摘要（客戶端預覽、目錄變暗用；不動任何東西）。和 plan 同一套找法：背包（含袋子）＋周圍 3×3
 -- 走得到、可拿的地上物品，Base.Nails 另加背包裡的釘子盒每盒 100 根。
 -- S.items[fullType]＝數量、S.tools[ItemTag 欄位名]＝true|false，都是第一次讀到才查（每種一次 Java 查詢，之後讀表），
--- 所以 pairs(S.items) 只列出查過的種類。S.cheat＝建造作弊（伺服器不扣料，Check 看它）。
+-- 所以 pairs(S.items) 只列出查過的種類。S.cheat＝建造作弊（Materials.cheat；伺服器不扣料，Check 看它）。
 -- 背包用 getCountTypeEvalRecurse：和 plan 的 getSomeTypeEvalRecurse 走同一套遞迴、同一個 predicate
 -- （ItemContainer.java:1267-1300,1316-1343,1357-1360,1435-1438）。
 function Materials.summary(player)
@@ -156,7 +165,7 @@ function Materials.summary(player)
         rawset(t, name, v)
         return v
     end })
-    return { items = items, tools = tools, cheat = player:isBuildCheat(), player = player }
+    return { items = items, tools = tools, cheat = Materials.cheat(player), player = player }
 end
 
 -- 兩份摘要對已經查過的東西一樣嗎：只比 a 查過的種類與工具（b 照樣懶查）。介面用它判斷要不要清掉缺料標示。

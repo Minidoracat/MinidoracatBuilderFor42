@@ -28,6 +28,7 @@ local function mine(o)
     end
     return true
 end
+Dismantle.ours = mine
 
 -- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
@@ -43,7 +44,7 @@ function Dismantle.kindOf(obj)
     return kind
 end
 
--- 格上 sprite 名稱是 name、本 MOD 蓋的那件（同一格不放同一張圖，Place 的 hasSprite）
+-- 格上 sprite 名稱是 name、本 MOD 蓋的那件（會疊的箱子能搬，本工具不拆，所以同一張圖只會有一件拆得掉）
 function Dismantle.find(sq, name)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
@@ -173,6 +174,22 @@ local function attached(kind, o, sq, spr)
     return (n and sq:getWindow(NS) ~= nil) or (w and sq:getWindow(EW) ~= nil) or false
 end
 
+-- 原版拆解擋的那兩項（NOT_EMPTY、ATTACHED）：回 code, extra 或 nil。原地替換（Check.item）也照這兩項擋舊的那件
+function Dismantle.blocked(kind, plan)
+    for _, o in ipairs(plan.remove) do
+        local sq = o:getSquare()
+        local at = { x = sq:getX(), y = sq:getY(), z = sq:getZ() }
+        local spr = o:getSprite()
+        local p = spr:getProperties()
+        if not o:isObjectNoContainerOrEmpty() or (p:has("IsTable") and sq:has("IsTableTop"))
+            or (p:has("IsWaterCollector") and o:hasFluid()) then
+            return "NOT_EMPTY", at
+        end
+        if (kind == "doorFrame" or kind == "windowFrame") and attached(kind, o, sq, spr) then return "ATTACHED", at end
+    end
+    return nil
+end
+
 -- 能不能拆，回 code, extra 或 nil。順序：
 --   同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
 --   距離：和蓋一樣（MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆）。preview（右鍵選單）不查：
@@ -204,26 +221,87 @@ function Dismantle.check(player, kind, plan, preview)
         local code = Check.safehouse(player, c, preview, "dismantle")
         if code then return code, { x = c.x, y = c.y, z = c.z } end
     end
-    for i, o in ipairs(plan.remove) do
-        local c = cells[i]
-        local at = { x = c.x, y = c.y, z = c.z }
-        local spr = o:getSprite()
-        local p = spr:getProperties()
-        if not o:isObjectNoContainerOrEmpty() or (p:has("IsTable") and c.sq:has("IsTableTop"))
-            or (p:has("IsWaterCollector") and o:hasFluid()) then
-            return "NOT_EMPTY", at
-        end
-        if (kind == "doorFrame" or kind == "windowFrame") and attached(kind, o, c.sq, spr) then return "ATTACHED", at end
-        if kind == "floor" and c.z > 0 then
-            if stairsTop(c) then return "STAIRS_TOP", at end
-            if c.sq:getObjects():size() > 1 then return "FLOOR_IN_USE", at end
+    local code, at = Dismantle.blocked(kind, plan)
+    if code then return code, at end
+    if kind == "floor" then
+        for _, c in ipairs(cells) do
+            if c.z > 0 then
+                local at2 = { x = c.x, y = c.y, z = c.z }
+                if stairsTop(c) then return "STAIRS_TOP", at2 end
+                if c.sq:getObjects():size() > 1 then return "FLOOR_IN_USE", at2 end
+            end
         end
     end
-    if not player:isBuildCheat() then
+    if not Materials.cheat(player) then
         local missing = Materials.missingTools(player, Dismantle.tools(kind, plan))
         if missing then return "NO_TOOL", { tools = missing } end
     end
     return nil
+end
+
+-- ---------------------------------------------------------------- 原地替換（設計稿 claim 4）
+-- 在本工具蓋的東西上蓋同一組的另一款＝換掉舊的。同一組：牆、柵欄、門框、窗框互換（不必先拆牆就能開窗），其他照種類。
+Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFrame = "edge" }
+-- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是
+-- 本工具拆的（Cost.refund 的 none／sheet）
+Dismantle.NO_REPLACE = { light = true, stairs = true, floorOverlay = true, wallOverlay = true, overlay = true,
+    door = true, window = true, curtain = true }
+
+-- 舊的那件會不會佔住新的要放的位置（佔住才換；不佔的照舊同格共存，Check.item 另用 Place.check 確認）：格邊的同組、
+-- 地板（一格一片）、實心或擋放置的、帶 WallSE 的柱子（Place.check 的柱子只看它）。屋頂不換：同格的舊屋頂算支撐，新的
+-- 一定放得下（Place.roofAt）。右鍵「換成...」與建造視窗的換成清單也照這條，不列換不了的
+local function exclusive(kind, spr)
+    if Dismantle.GROUP[kind] or kind == "floor" then return true end
+    local p = spr:getProperties()
+    return p:has(IsoFlagType.solid) or p:has(IsoFlagType.solidtrans) or p:has("BlocksPlacement")
+        or (kind == "post" and p:has(IsoFlagType.WallSE)) or false
+end
+
+-- 舊的（oldKind、oldSpr）能不能換成新的（kind、spr）：同一組、都能換、舊的佔住位置（exclusive）、佔同一條邊（Entry.edges
+-- 一樣）、不是同一張圖、兩張都是單格。只看圖，不碰世界（建造視窗「換成...」列同款也用）
+function Dismantle.swappable(oldKind, oldSpr, kind, spr)
+    if Dismantle.NO_REPLACE[oldKind] or Dismantle.NO_REPLACE[kind] then return false end
+    if (Dismantle.GROUP[oldKind] or oldKind) ~= (Dismantle.GROUP[kind] or kind) then return false end
+    if oldSpr:getName() == spr:getName() or oldSpr:getSpriteGrid() or spr:getSpriteGrid() then return false end
+    if not exclusive(oldKind, oldSpr) then return false end
+    local n1, w1 = Entry.edges(oldKind, oldSpr)
+    local n2, w2 = Entry.edges(kind, spr)
+    return n1 == n2 and w1 == w2
+end
+
+-- 舊的這一件本身能不能被原地換掉（右鍵「換成...」與 replaceable 共用一份）：種類能換、會佔住位置（exclusive）、
+-- 單格，拆的時候只動它一片（多格、樓梯平台、整組有別人蓋的片都不換）
+function Dismantle.replaceableOld(kind, obj, plan)
+    local spr = obj:getSprite()
+    return not Dismantle.NO_REPLACE[kind] and exclusive(kind, spr) and not spr:getSpriteGrid()
+        and #plan.remove == 1 and not plan.landing and not plan.foreign
+end
+
+-- sq 上能被 spr（種類 kind）原地換掉的那件：本工具拆得掉（kindOf）、swappable、replaceableOld。回 obj, oldKind 或 nil
+function Dismantle.replaceable(sq, kind, spr)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local oldKind = Dismantle.kindOf(o)
+        if oldKind and Dismantle.swappable(oldKind, o:getSprite(), kind, spr)
+            and Dismantle.replaceableOld(oldKind, o, Dismantle.plan(o, oldKind)) then
+            return o, oldKind
+        end
+    end
+    return nil
+end
+
+-- 客戶端預覽用的舊退料（伺服器照 Place.refundOf 算，見 Check.item）：拿得到退料表（buildMaterials）就用；拿不到
+-- （一樓地板記在伺服器帳本）照現在的價（Cost.forCells × 沙盒倍率）扣電器費估。回 had, estimated（true＝估的）
+function Dismantle.estimateRefund(obj, kind)
+    if instanceof(obj, "IsoThumpable") and obj:hasBuildMaterials() then return obj:getBuildMaterials(), false end
+    local cost = Cost.forCells(kind, { obj:getSprite() }, Check.setting("CostMultiplier", 1))[1]
+    local had, fee = {}, cost.fee or {}
+    for ft, n in pairs(cost.items) do
+        local v = n - (fee[ft] or 0)
+        if v > 0 then had[ft] = v end
+    end
+    return had, true
 end
 
 return Dismantle

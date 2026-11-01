@@ -352,7 +352,7 @@ end
 --          改選同一件東西在目錄裡的那一項，listedAlt）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
 -- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出（bt-perf §5.4）。
-function W.filter(st)
+local function listFor(st)
     local q = trim(st.query)
     local ql = string.lower(q)
     if q ~= "" then
@@ -399,6 +399,25 @@ function W.filter(st)
         end
     end
     return out, nil
+end
+
+-- 上面的清單再套「換成」條件（st.replace.match：名稱 → 朝向，W.openReplace）。還在算時列空的（空狀態寫「正在找」），
+-- 不先列整個目錄再跳
+function W.filter(st)
+    local rp = st.replace
+    if rp and not rp.match then return { n = 0 }, nil end
+    local out, jump = listFor(st)
+    local m = rp and rp.match
+    if not m then return out, jump end
+    local kept = { n = 0 }
+    for i = 1, out.n do
+        if m[out[i]] then
+            kept.n = kept.n + 1
+            kept[kept.n] = out[i]
+        end
+    end
+    if jump and not m[jump] then jump = nil end
+    return kept, jump
 end
 
 -- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／圖塊組。數量照目前的頁籤與來源算，不含管理員關掉的；
@@ -592,6 +611,116 @@ function W.tipOf(v, name, short)
     return s
 end
 
+-- ===== 換成：同一組、同一條邊、同材料與工具的款式（W.openReplace，右鍵「換成...」）=====
+
+-- 兩份成本的材料（{ [fullType] = 數量 }）與工具（清單，當集合比）都一樣
+local function sameCost(a, b)
+    for ft, n in pairs(a.items) do
+        if b.items[ft] ~= n then return false end
+    end
+    for ft in pairs(b.items) do
+        if a.items[ft] == nil then return false end
+    end
+    if #a.tools ~= #b.tools then return false end
+    local set = {}
+    for _, t in ipairs(a.tools) do set[t] = true end
+    for _, t in ipairs(b.tools) do
+        if not set[t] then return false end
+    end
+    return true
+end
+
+-- 現在的價：Cost.forCells × 沙盒倍率（和詳情、伺服器同一份）；只收單格，取第一格
+local function priceOf(kind, spr, mult)
+    return Cost.forCells(kind, { spr }, mult)[1]
+end
+
+-- 這一項哪一面換得掉舊的那件：回朝向 0..4，或 nil。先比第 0 面的價：多數項目在這裡就淘汰，比找其他面便宜
+-- （每一面要多查偏移、重算種類）；再找 Dismantle.swappable（同組、同一條邊、不是同一張、都單格）的那一面，
+-- 不是第 0 面時那一面也要同價。
+-- ponytail：第 0 面和舊的不同價、別的面同價的項目會漏掉（同一件各面的材質通常一樣）；要收就每一面都算價
+local function replaceFace(rp, kind, name, mult)
+    local spr = Entry.sprite(name)
+    if not spr or not sameCost(rp.cost, priceOf(kind, spr, mult)) then return nil end
+    local tileset, num = name:match("^(.*)_(%d+)$")
+    local e = { spr = spr, kind = kind, tileset = tileset, num = tonumber(num) }
+    local swappable = B.Dismantle.swappable
+    for d = 0, 4 do
+        local f = Entry.face(e, d)
+        if f and (d == 0 or f ~= spr) and swappable(rp.kind, rp.spr, kind, f)
+            and (d == 0 or sameCost(rp.cost, priceOf(kind, f, mult))) then
+            return d
+        end
+    end
+    return nil
+end
+
+-- 開始算：只掃同一組種類的桶（Dismantle.GROUP；沒列的＝同種類），管理員關掉的種類與圖塊組不掃。結果記在
+-- st.replace.match，留到條件關掉、目錄整理完或沙盒改了（成本倍率）才重算（W.pump、W.syncSettings）
+function W.startReplace(v, rp)
+    local G, s = B.Dismantle.GROUP or EMPTY, Entry.settings()
+    local g = G[rp.kind]
+    local list, kinds = { n = 0 }, {}
+    local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
+    for _, k in ipairs(Entry.KINDS) do
+        local sets, byTs = kindSets[k], bucket[k]
+        if (k == rp.kind or (g and G[k] == g)) and Entry.kindOn(k, s) and sets and byTs then
+            for j = 1, sets.n do
+                local ts = sets[j]
+                if not W.blocked(ts) then
+                    local b = byTs[ts]
+                    for i = 1, b.n do
+                        list.n = list.n + 1
+                        list[list.n] = b[i]
+                        kinds[list.n] = k
+                    end
+                end
+            end
+        end
+    end
+    local mult = s.CostMultiplier or 1
+    rp.cost = priceOf(rp.kind, rp.spr, mult)
+    v.rep = { rp = rp, list = list, kinds = kinds, i = 0, match = {}, n = 0, mult = mult }
+    v.repPct = 0
+end
+
+-- 每幀做一段（同「只看能蓋的」：每項要算成本、找朝向，一次做完會卡）；做完套用並回到頂端
+local function runReplace(v)
+    local job = v.rep
+    local list, i = job.list, job.i
+    local t0 = getTimestampMs()
+    while i < list.n do
+        i = i + 1
+        -- 哪個圖塊的屬性讓成本計算丟錯就當不同材料，不要整個篩選停住（同 isShort）
+        local ok, d = pcall(replaceFace, job.rp, job.kinds[i], list[i], job.mult)
+        if ok and d then
+            job.match[list[i]] = d
+            job.n = job.n + 1
+        end
+        if i % 8 == 0 and getTimestampMs() - t0 >= BUDGET_MS then break end
+    end
+    job.i = i
+    local pct = list.n > 0 and math.floor(i * 100 / list.n) or 100
+    if pct ~= v.repPct then
+        v.repPct = pct
+        W.setStatus(v)
+    end
+    if i >= list.n then
+        v.rep = nil
+        job.rp.match, job.rp.count = job.match, job.n
+        W.refilter(false)
+    end
+end
+
+-- 換成條件的價寫成一行：「木板 2、釘子 4、鐵鎚」（沒有任何一項同材料時說明用）
+local function priceText(cost)
+    local parts = {}
+    for ft, n in pairs(cost.items) do parts[#parts + 1] = getText("IGUI_MBLD_RowItem", getItemName(ft) or ft, tostring(n)) end
+    for _, t in ipairs(cost.tools) do parts[#parts + 1] = getTextOrNull("IGUI_MBLD_Tool_" .. t) or t end
+    if #parts == 0 then return getText("IGUI_MBLD_Detail_NoMaterials") end
+    return table.concat(parts, getText("IGUI_MBLD_ListSep"))
+end
+
 -- ===== 套用篩選 =====
 
 -- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）
@@ -634,8 +763,14 @@ local function prepareEmpty(v)
     local cs = B.Catalog and B.Catalog.state
     local q = trim(st.query)
     local title, hint
+    local rp = st.replace
     if cs == "failed" then
         title = getText("IGUI_MBLD_Catalog_Failed")
+    elseif rp and not rp.match then
+        title = cs == "ready" and getText("IGUI_MBLD_Replace_Finding", rp.label) or getText("IGUI_MBLD_Catalog_Wait")
+    elseif rp and rp.count == 0 then
+        -- 沒有任何一項同材料：寫出比的是哪一份價，玩家才知道為什麼（例：舊的是鐵皮牆，木牆都不列）
+        title, hint = getText("IGUI_MBLD_Replace_None", rp.label), getText("IGUI_MBLD_Replace_NoneHint", priceText(rp.cost))
     elseif q ~= "" then
         title, hint = W.emptyQuery(q)
     elseif cs ~= "ready" then
@@ -670,6 +805,8 @@ function W.setStatus(v)
         v.statusText = getText("IGUI_MBLD_Catalog_Running", tostring(v.catPct or 0))
     elseif v.aff then
         v.statusText = getText("IGUI_MBLD_Status_Checking", tostring(v.affPct or 0))
+    elseif v.rep then
+        v.statusText = getText("IGUI_MBLD_Status_Replacing", tostring(v.repPct or 0))
     else
         local n, off = tostring(#v.grid:getItems()), W.kindsOff()
         v.statusText = off > 0 and getText("IGUI_MBLD_Status_CountOff", n, tostring(off)) or getText("IGUI_MBLD_Status_Count", n)
@@ -855,6 +992,13 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + lh
     end
     y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
+    -- 原版可疊的箱子（IsStackable）同一張也能疊，高度上限照原版搬家具（Place.check 交給 canPlaceMoveableInternal）
+    if e.spr:getProperties():has("IsStackable") then
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Stackable"), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+    end
     -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
     -- （IsoWindow.java:84,744）；打破窗不看這個鎖（:264-306）
     if e.kind == "window" and e.spr:getProperties():has("WindowLocked") then
@@ -994,7 +1138,7 @@ local function prepareDetail(v)
         local code, arg = Entry.why(name)
         local why = code and W.whyText(code, arg) or getText("IGUI_MBLD_Detail_Gone")
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
-        h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning))
+        h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning, math.huge)) -- 詳情會捲動，原因不截
     end
     v.detail:setHeight(h)
     -- 換了項目從頭看（拆除方式、材料在最前面）。選取有兩條路會變：方格點選（W.pump）與搜尋、篩選（applyItems
@@ -1047,6 +1191,7 @@ function W.syncSettings(v)
     if v.digest then
         -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
         v.S, v.dim, v.dimN, v.sumAt = nil, {}, 0, 0
+        W.restartReplace(v) -- 成本倍率、關掉的種類或來源變了：同材料的款式重算
         W.refreshTabs(v)
         W.refreshCatalog(v)
         v.detailDirty = true
@@ -1072,6 +1217,7 @@ function W.pump(panel)
     local cs = C and C.state or "ready"
     if cs ~= v.catState then
         v.catState, v.catAt = cs, now
+        W.restartReplace(v) -- 整理完（或重整）才算得出全部同材料的款式
         W.refreshCatalog(v)
     elseif cs == "running" then
         local i, n = C.progress()
@@ -1119,6 +1265,7 @@ function W.pump(panel)
     v.padPicked = v.pad and W.st.picked or nil
     prepareVisible(v)
     if v.aff then runAffordable(v) end
+    if v.rep then runReplace(v) end
 end
 
 function W.drawStatus(panel)
@@ -1243,6 +1390,57 @@ function W.refreshTabs(v)
             v.tabs:setSelected("all", true)
         end
     end
+end
+
+-- 換成條件重算（開啟、目錄狀態變了、沙盒改了）：還在整理就先等，W.pump 在整理完時再叫一次
+function W.restartReplace(v)
+    local rp = W.st.replace
+    v.rep = nil
+    if not rp then return end
+    rp.match, rp.count = nil, nil
+    if (B.Catalog and B.Catalog.state or "ready") == "ready" then W.startReplace(v, rp) end
+    W.setStatus(v)
+end
+
+-- 右鍵「換成...」（Menu.lua）：開視窗、清搜尋，頁籤切到那件的種類所在的頁籤，分類與來源回「全部」（同材料的款式
+-- 不限來源），清單只列換得掉那件的同材料款式；搜尋列上方出現可關掉的條件鈕（W.clearReplace）。選一項按「建造」照常開
+-- 游標，朝向先轉到換得掉的那一面（W.build）。name＝那件現在的 sprite 名稱
+function W.openReplace(playerNum, name)
+    local spr = Entry.sprite(name)
+    local kind = spr and B.Rules.classify(spr)
+    if not kind or not W.open(playerNum) then return false end
+    local v, st = W.v, W.st
+    st.replace = { name = name, spr = spr, kind = kind, label = Names.of(name, kind) }
+    v.search:setText("") -- 靜默，不觸發 onChange
+    st.query, v.typedAt = "", nil
+    -- 跨頁籤的同組（牆、柵欄在「牆」頁、門框窗框在「門窗」頁，Dismantle.GROUP）停在「全部」，不然窗框被頁籤濾掉
+    local tab = "all"
+    if not B.Dismantle.GROUP[kind] then
+        for i = 2, #W.TABS do
+            for _, k in ipairs(W.TAB_KINDS[W.TABS[i]]) do
+                if k == kind and #tabKinds(W.TABS[i]) > 0 then tab = W.TABS[i] end
+            end
+        end
+    end
+    st.tab, st.cat, st.source = tab, "all", "all"
+    v.tabs:setSelected(tab, true)
+    v.source:setSelected("all", true)
+    v.UI.Dropdown.close(v.win)
+    W.refreshCats(v)
+    W.restartReplace(v)
+    W.layout()
+    W.refilter(false)
+    return true
+end
+
+-- 條件鈕的 ✕：回到一般目錄（頁籤、分類、來源照現在的）
+function W.clearReplace()
+    local v = W.v
+    W.st.replace = nil
+    if not v then return end
+    v.rep = nil
+    W.layout()
+    W.refilter(false)
 end
 
 -- 搜尋欄填這個字（右鍵挑圖塊填完整圖塊名：清單換成它所在的那一桶並選到它，W.filter）
@@ -1392,7 +1590,9 @@ function W.build()
     v.hiddenForBuild = true
     v.win:setVisible(false)
     -- start 回 nil＝沒開游標（項目不能蓋，Cursor 已發通知），不會有 onEnd：收起的視窗要自己回來
-    local ok, res = pcall(C.start, W.playerNum, name, 0)
+    -- 換成條件下，朝向先轉到換得掉那件的那一面（W.startReplace 記的）
+    local rp = W.st.replace
+    local ok, res = pcall(C.start, W.playerNum, name, rp and rp.match and rp.match[name] or 0)
     if not ok then print(LOG .. "Cursor.start failed: " .. tostring(res)) end
     if not (ok and res) then
         W.onCursorEnd(W.playerNum)
@@ -1494,6 +1694,17 @@ function W.layout()
     v.mode = mode
     local inner = ww - 2 * PAD
     local y = win:contentTop() + GAP
+    -- 換成條件鈕（W.openReplace）：搜尋列上方一列；標題照那件的名稱，寬度照標題、放不下就截字（框架自動給提示框）
+    local rp, chip = W.st.replace, v.chip
+    chip:setVisible(rp ~= nil)
+    if rp then
+        chip:setTitle(getText("IGUI_MBLD_Replace_Chip", rp.label))
+        chip:fitWidth()
+        if chip.width > inner then chip:setWidth(inner) end
+        chip:setX(PAD)
+        chip:setY(y)
+        y = y + chip.height + GAP
+    end
     -- 第一列：搜尋＋來源（＋只看能蓋的）
     local rowH = math.max(v.search.height, v.source.height)
     local ddW = math.max(math.floor(140 * s), math.min(math.floor(240 * s), math.floor(inner * 0.3)))
@@ -1706,6 +1917,11 @@ function W.create(UI)
     win:addChild(status)
     v.status = status
 
+    -- 換成條件鈕（排在搜尋前面：焦點順序照畫面由上而下）：chip 樣式選中狀態＋關閉圖示，按了回到一般目錄
+    v.chip = UI.Button.new({ x = PAD, y = 0, title = "", icon = "close", style = "chip", active = true, theme = theme,
+        tooltip = getText("IGUI_MBLD_Replace_ChipTip"), onClick = function() MinidoracatBuilder.Window.clearReplace() end })
+    v.chip:setVisible(false)
+    win:addChild(v.chip)
     v.search = UI.TextField.new({ x = PAD, y = 0, width = 200, text = st.query, placeholder = getText("IGUI_MBLD_Search"),
         clearButton = true, theme = theme, onChange = function(_, t) MinidoracatBuilder.Window.onQuery(t) end })
     win:addChild(v.search)
@@ -1760,15 +1976,16 @@ function W.create(UI)
     v.buildBtn = button(v, getText("IGUI_MBLD_Build"), "primary", function() MinidoracatBuilder.Window.build() end)
     v.buildW = v.buildBtn.width
     v.padHint = getText("IGUI_MBLD_PadHint")
-    -- 「管理」與詳情的管理員快捷鈕：建好先藏著，W.layout 只在管理員時排出來（Admin.lua）
+    -- 「管理」與詳情的管理員快捷鈕：建好先藏著，W.layout 只在管理員時排出來（Admin.lua）。快捷鈕用有框的預設樣式
+    -- （審查 1101 #9：ghost 沒有框，看起來像說明文字）；不 setTitle，W.layout 給的寬度不會被重算
     v.adminBtn = UI.Button.new({ x = 0, y = 0, title = getText("IGUI_MBLD_Admin_Button"), icon = "settings", style = "ghost",
         theme = theme, tooltip = getText("IGUI_MBLD_Admin_ButtonTip"),
         onClick = function() MinidoracatBuilder.Window.openAdmin() end })
     v.adminBtn:fitWidth()
     win:addChild(v.adminBtn)
-    v.qTileset = button(v, getText("IGUI_MBLD_Admin_DisableTileset"), "ghost",
+    v.qTileset = button(v, getText("IGUI_MBLD_Admin_DisableTileset"), nil,
         function() MinidoracatBuilder.Window.quickDisable("tileset") end)
-    v.qSource = button(v, getText("IGUI_MBLD_Admin_DisableSource"), "ghost",
+    v.qSource = button(v, getText("IGUI_MBLD_Admin_DisableSource"), nil,
         function() MinidoracatBuilder.Window.quickDisable("source") end)
     v.qTW, v.qSW = v.qTileset.width, v.qSource.width
 
@@ -1785,6 +2002,7 @@ function W.create(UI)
     W.layout()
     v.catState = B.Catalog and B.Catalog.state or "ready"
     v.catAt = getTimestampMs()
+    W.restartReplace(v) -- 框架換版重建視窗時，留著的換成條件重算
     W.refreshTabs(v)
     W.refreshCatalog(v)
     return v
