@@ -5073,6 +5073,25 @@ print("情境三十五：硬核（需要技能、原版材料）、同一套的�
         "預覽同一個判斷：SKILL")
     local C = player({ id = 3404, x = 131.5, y = 131.5, cheat = true })
     check(build(C, 3404, "hc_brick_01_1", { 131, 130, 0 }) and #squares["131,130,0"].objects == 1, "開建造作弊：不看技能")
+    -- 目錄變暗、「只看能蓋的」（Check.affordable）也看技能（使用者 2026-11-02）；等級變了，摘要比對要看得出來
+    local lvOpts = { id = 3408, x = 133.5, y = 131.5, perks = { ["perk:Masonry"] = 1 } }
+    local LV = player(lvOpts)
+    LV.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
+    give(LV, { ["Base.ClayBrick"] = 4 })
+    local SL = Materials.summary(LV)
+    local am, at, atotal, ask = Check.affordable(SL, "hc_brick_01_1")
+    sb.RequireSkill = nil
+    local _, _, _, askOff = Check.affordable(Materials.summary(LV), "hc_brick_01_1")
+    sb.RequireSkill = true
+    lvOpts.perks["perk:Masonry"] = 2
+    local SL2 = Materials.summary(LV)
+    local _, _, _, ask2 = Check.affordable(SL2, "hc_brick_01_1")
+    local _, _, _, askC = Check.affordable(Materials.summary(C), "hc_brick_01_1")
+    check(am == nil and at == nil and atotal and ask and ask.perk == "Masonry" and ask.level == 2 and ask.have == 1
+        and askOff == nil and ask2 == nil and askC == nil,
+        "affordable 也看技能：料和工具都夠、石工 1 仍回技能不夠（要 2、有 1）；選項關著、升到 2、建造作弊都沒有")
+    check(not Materials.same(SL, SL2) and Materials.same(SL2, Materials.summary(LV)),
+        "技能等級變了摘要比對就不一樣（缺料標示要重算）；沒變照樣一樣")
     sb.RecipeMaterials = true
     local L2 = player({ id = 3405, x = 132.5, y = 131.5, perks = { ["perk:Masonry"] = 2 } })
     L2.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))

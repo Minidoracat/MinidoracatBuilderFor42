@@ -532,14 +532,14 @@ local function itemTexOf(ft)
     return t or nil
 end
 
--- 缺料或缺工具：true；項目解析不了（Check.affordable 回 total nil）也算不能蓋
+-- 缺料、缺工具或技能不夠（硬核「需要技能」，使用者 2026-11-02）：true；項目解析不了（Check.affordable 回 total nil）也算不能蓋
 -- 每幀替看得到的格子補，所以包 pcall：哪個圖塊的屬性讓成本計算丟錯，標成缺料（不能蓋）並只記一次 log，
 -- 不要每幀重丟、整個狀態列停住
 local shortErrLogged = false
 local function isShort(S, name)
     local C = B.Check
     if not (C and C.affordable) then return false end
-    local ok, missing, tools, total = pcall(C.affordable, S, name)
+    local ok, missing, tools, total, skill = pcall(C.affordable, S, name)
     if not ok then
         if not shortErrLogged then
             shortErrLogged = true
@@ -547,7 +547,7 @@ local function isShort(S, name)
         end
         return true
     end
-    return total == nil or missing ~= nil or tools ~= nil
+    return total == nil or missing ~= nil or tools ~= nil or skill ~= nil
 end
 W.isShort = isShort
 
@@ -1176,7 +1176,8 @@ local function prepareDetail(v)
     local h = v.detailBox.height -- 面板高＝內容高（至少可視高）：捲動容器照子元件下緣量捲動範圍
     if e then
         local total, costs, missing, tools = costInfo(v, e)
-        short = v.S ~= nil and (missing ~= nil or tools ~= nil)
+        local _, skillOk = skillInfo(e) -- 技能不夠也算「還缺」，和方格的缺料標示一樣（isShort）
+        short = v.S ~= nil and (missing ~= nil or tools ~= nil or skillOk == false)
         if v.mode == "narrow" then
             detailRow(v, ops, e, total, missing, tools)
         else

@@ -47,12 +47,13 @@ function Check.inReach(player, x, y, z)
 end
 
 -- 硬核「需要技能」（沙盒 RequireSkill）：回 技能 ID, 要的等級, 玩家的等級, 夠不夠；沒打開或這種不要求技能回 nil。
--- 建造作弊（Materials.cheat，同扣料）當夠。Check.item 與建造視窗詳情共用
-function Check.skill(player, kind, spr)
+-- 建造作弊（Materials.cheat，同扣料）當夠。Check.item、建造視窗詳情與 Check.affordable 共用。levels＝Materials.summary
+-- 的 S.levels（技能 ID → 等級，讀到才查並記下），給了就照它讀，摘要比對（Materials.same）才看得出等級變了
+function Check.skill(player, kind, spr, levels)
     if setting("RequireSkill", false) ~= true then return nil end
     local perk, level = Cost.skillOf(kind, spr)
     if not perk then return nil end
-    local have = player and player:getPerkLevel(Perks.FromString(perk)) or 0
+    local have = (levels and levels[perk]) or (player and player:getPerkLevel(Perks.FromString(perk))) or 0
     return perk, level, have, have >= level or (player ~= nil and Materials.cheat(player))
 end
 
@@ -288,8 +289,9 @@ function Check.net(need, had)
     return pay, back
 end
 
--- 只看材料與工具（目錄變暗、「只看能蓋的」用）：朝向 0、全部格子。S＝Materials.summary 的結果；
--- multiplier 省略時用沙盒 CostMultiplier。回 missing, tools, total（同 Materials.short；建造作弊時都夠）。
+-- 目錄變暗、「只看能蓋的」用：材料、工具、耗材，以及硬核技能（使用者 2026-11-02：技能不夠也算不能蓋）。朝向 0、
+-- 全部格子。S＝Materials.summary 的結果；multiplier 省略時用沙盒 CostMultiplier。回 missing, tools, total, skill
+-- （missing、tools 同 Materials.short；skill＝技能不夠時 { perk, level, have }；建造作弊時都夠）。
 -- 項目解析不了（不存在、不能蓋、被管理員關掉）回 nil, nil, nil：total 是 nil 就是不能蓋，不是夠料。
 function Check.affordable(S, name, multiplier)
     local entry = Entry.resolve(name)
@@ -299,7 +301,8 @@ function Check.affordable(S, name, multiplier)
     local total = Cost.sum(Cost.forCells(entry.kind, sprites, multiplier or setting("CostMultiplier", 1)))
     if S.cheat then return nil, nil, total end
     local missing, tools = Materials.short(S, total)
-    return missing, tools, total
+    local perk, level, have, enough = Check.skill(S.player, entry.kind, entry.spr, S.levels)
+    return missing, tools, total, (perk and not enough) and { perk = perk, level = level, have = have } or nil
 end
 
 return Check

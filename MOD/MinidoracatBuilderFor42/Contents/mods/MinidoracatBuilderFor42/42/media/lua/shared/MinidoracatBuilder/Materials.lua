@@ -188,8 +188,9 @@ end
 
 -- 玩家此刻可用材料的摘要（客戶端預覽、目錄變暗用；不動任何東西）。和 plan 同一套找法：背包（含袋子）＋周圍 3×3
 -- 走得到、可拿的地上物品，Base.Nails 另加背包裡的釘子盒每盒 100 根。
--- S.items[fullType]＝數量、S.uses[耗材鍵]＝次數、S.tools[ItemTag 欄位名]＝true|false，都是第一次讀到才查（每種一次
--- Java 查詢，之後讀表），所以 pairs(S.items) 只列出查過的種類。S.cheat＝建造作弊（Materials.cheat；伺服器不扣料，Check 看它）。
+-- S.items[fullType]＝數量、S.uses[耗材鍵]＝次數、S.tools[ItemTag 欄位名]＝true|false、S.levels[技能 ID]＝等級（硬核
+-- 「需要技能」，Check.affordable 讀），都是第一次讀到才查（每種一次 Java 查詢，之後讀表），所以 pairs(S.items) 只列出
+-- 查過的種類。S.cheat＝建造作弊（Materials.cheat；伺服器不扣料，Check 看它）。
 -- 背包用 getCountTypeEvalRecurse：和 plan 的 getSomeTypeEvalRecurse 走同一套遞迴、同一個 predicate
 -- （ItemContainer.java:1267-1300,1316-1343,1357-1360,1435-1438）。
 function Materials.summary(player)
@@ -212,11 +213,16 @@ function Materials.summary(player)
         rawset(t, name, v)
         return v
     end })
-    return { items = items, uses = uses, tools = tools, cheat = Materials.cheat(player), player = player }
+    local levels = setmetatable({}, { __index = function(t, perk)
+        local v = player:getPerkLevel(Perks.FromString(perk))
+        rawset(t, perk, v)
+        return v
+    end })
+    return { items = items, uses = uses, tools = tools, levels = levels, cheat = Materials.cheat(player), player = player }
 end
 
--- 兩份摘要對已經查過的東西一樣嗎：只比 a 查過的種類、耗材與工具（b 照樣懶查）。介面用它判斷要不要清掉缺料標示。
--- 換了角色（死掉重生）不算一樣：懶查表綁著建它的那個角色。
+-- 兩份摘要對已經查過的東西一樣嗎：只比 a 查過的種類、耗材、工具與技能等級（b 照樣懶查）。介面用它判斷要不要清掉
+-- 缺料標示（升級後技能不夠的標示要跟著消）。換了角色（死掉重生）不算一樣：懶查表綁著建它的那個角色。
 function Materials.same(a, b)
     if not a or not b or a.cheat ~= b.cheat or a.player ~= b.player then return false end
     for k, v in pairs(a.items) do
@@ -227,6 +233,9 @@ function Materials.same(a, b)
     end
     for k, v in pairs(a.uses) do
         if b.uses[k] ~= v then return false end
+    end
+    for k, v in pairs(a.levels or {}) do
+        if b.levels[k] ~= v then return false end
     end
     return true
 end
