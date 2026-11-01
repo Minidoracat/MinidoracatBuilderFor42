@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Bu parça yağmuru kesmez (saçak, süs); alttaki kare dış mekân kalır. PgUp/PgDn katı değiştirir; bir sırayı desteklenen uçtan sürükle.",
   "IGUI_MBLD_Note_light": "Yalnızca elektrik varsa yanar: kendi yaptığın evler şebekeye bağlı değildir, jeneratör kullan. Koyduğun düğme aynı kapalı odadaki lambalara kendiliğinden bağlanır; lamba eklemek veya çıkarmak için düğmeye sağ tıklayıp Kablolama... seç.",
   "IGUI_MBLD_Note_lightStreet": "Yalnızca geceleri ve elektrik varsa yanar: kendi yaptığın evler şebekeye bağlı değildir, jeneratör kullan. Koyduğun düğme aynı kapalı odadaki lambalara kendiliğinden bağlanır; lamba eklemek veya çıkarmak için düğmeye sağ tıklayıp Kablolama... seç.",
-  "IGUI_MBLD_WhatsNew": "Yaptığın lavabo, klozet ve küvetler, tesisat kurulunca üst kattaki yağmur depolayıcı fıçıdan su alır.",
+  "IGUI_MBLD_WhatsNew": "Yeni ayarlar: zombiler yapıları ve kapıları kıramaz; daha fazla kapasite. Kapalı gelir, Yönet'ten açılır.",
   "IGUI_MBLD_Note_curtain": "Pencere çerçevesinin iç tarafına asılır. O karenin üstünde çatı veya zemin olmalı.",
   "IGUI_MBLD_Note_plumb": "Şebeke suyu gelmez, kendin taşıdığın bir tesisat gibi. Kapalı bir odada boru anahtarıyla tesisat kurunca üst kattaki yağmur depolayıcı fıçıdan veya başka bir su kabından su alır; kap tam üstünde ya da çevresindeki bir karede olmalı.",
   "IGUI_MBLD_Tool_HAMMER": "Çekiç",

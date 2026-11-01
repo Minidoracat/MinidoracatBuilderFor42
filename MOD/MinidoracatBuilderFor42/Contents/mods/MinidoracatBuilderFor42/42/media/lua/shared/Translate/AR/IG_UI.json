@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Esta pieza no protege de la lluvia (aleros, decoración); la casilla de abajo sigue siendo exterior. PgUp/PgDn cambia el nivel; arrastra una fila desde el extremo con soporte.",
   "IGUI_MBLD_Note_light": "Solo se enciende con electricidad: las casas que construyes no están en la red, así que usa un generador. Un interruptor que colocas se conecta solo a las luces de la misma habitación cerrada; haz clic derecho en él y elige Cableado... para añadir o quitar luces.",
   "IGUI_MBLD_Note_lightStreet": "Solo se enciende de noche y con electricidad: las casas que construyes no están en la red, así que usa un generador. Un interruptor que colocas se conecta solo a las luces de la misma habitación cerrada; haz clic derecho en él y elige Cableado... para añadir o quitar luces.",
-  "IGUI_MBLD_WhatsNew": "Ya instalados, tus lavabos, inodoros y bañeras toman agua de un recolector de lluvia de arriba.",
+  "IGUI_MBLD_WhatsNew": "Opciones nuevas: lo construido y las puertas resisten a los zombis; más capacidad. Actívalas en Administrar.",
   "IGUI_MBLD_Note_curtain": "Se cuelga en el lado interior de un marco de ventana. La casilla necesita un techo o un suelo encima.",
   "IGUI_MBLD_Note_plumb": "No tiene agua corriente, igual que un aparato que mueves tú. Instálalo dentro de una habitación cerrada con una llave para tubos: tomará el agua de un recolector de lluvia u otro recipiente con agua en el piso de arriba, justo encima o en una casilla contigua.",
   "IGUI_MBLD_Tool_HAMMER": "Martillo",

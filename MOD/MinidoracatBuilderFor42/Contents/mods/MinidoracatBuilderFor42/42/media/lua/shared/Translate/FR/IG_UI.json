@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Cet élément ne protège pas de la pluie (avant-toit, décoration) ; la case dessous reste en extérieur. PgUp/PgDn change d'étage ; tracez une rangée depuis le côté soutenu.",
   "IGUI_MBLD_Note_light": "S'allume seulement avec du courant : les maisons construites ne sont pas sur le réseau, utilisez un groupe électrogène. Un interrupteur posé se câble tout seul aux lampes de la même pièce fermée ; faites un clic droit dessus et choisissez Câblage... pour ajouter ou retirer des lampes.",
   "IGUI_MBLD_Note_lightStreet": "S'allume seulement la nuit, et avec du courant : les maisons construites ne sont pas sur le réseau, utilisez un groupe électrogène. Un interrupteur posé se câble tout seul aux lampes de la même pièce fermée ; faites un clic droit dessus et choisissez Câblage... pour ajouter ou retirer des lampes.",
-  "IGUI_MBLD_WhatsNew": "Raccordés, vos éviers, toilettes et baignoires puisent l'eau d'un collecteur de pluie à l'étage.",
+  "IGUI_MBLD_WhatsNew": "Nouveau : constructions et portes incassables par les zombies, plus de capacité. À activer dans Gérer.",
   "IGUI_MBLD_Note_curtain": "Se fixe du côté intérieur d'un cadre de fenêtre. La case doit avoir un toit ou un sol au-dessus.",
   "IGUI_MBLD_Note_plumb": "Pas d'eau courante, comme un équipement que vous déplacez vous-même. Dans une pièce fermée, raccordez la plomberie avec une clé anglaise : il puise alors l'eau d'un collecteur d'eau de pluie ou d'un autre récipient d'eau à l'étage au-dessus, juste au-dessus ou sur une case voisine.",
   "IGUI_MBLD_Tool_HAMMER": "Marteau",
