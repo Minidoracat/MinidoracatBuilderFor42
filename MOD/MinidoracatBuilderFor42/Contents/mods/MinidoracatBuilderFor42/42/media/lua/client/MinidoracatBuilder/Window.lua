@@ -919,13 +919,17 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動），
     -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
     -- hasRainBlockingTile），換一句；路燈與發光招牌（sprite 帶 streetlight）引擎只在夜裡點亮（LightingJNI.java:282-294），
-    -- 本工具接發電機的補亮也照這條（Lights.lua），換一句
+    -- 本工具接發電機的補亮也照這條（Lights.lua），換一句。接水管的（sprite 帶 waterPiped：水槽、馬桶、浴缸、淋浴）
+    -- 照原版搬家具沒有自來水（Place.lua 寫 canBeWaterPiped），原版「接水管」是從上一層 3×3 的裝水容器取水
+    -- （IsoObject.java:2457-2508,2666-2705），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明
     local key = e.kind
+    local p = e.spr:getProperties()
     if key == "roof" then
-        local p = e.spr:getProperties()
         if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
-    elseif key == "light" and e.spr:getProperties():has("streetlight") then
+    elseif key == "light" and p:has("streetlight") then
         key = "lightStreet"
+    elseif p:has(IsoFlagType.waterPiped) then
+        key = "plumb"
     end
     local note = getTextOrNull("IGUI_MBLD_Note_" .. key)
     if note then

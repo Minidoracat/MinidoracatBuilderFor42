@@ -75,6 +75,7 @@
   "IGUI_MBLD_Note_lightStreet": "只在晚上、有電時亮：自建的房子不接市電，要用發電機。開關放下時會自動接上同一個封閉房間的燈；右鍵開關選「接線...」可以增減。",
   "IGUI_MBLD_WhatsNew": "交通標線、路面裂縫這類地面圖改成和地圖一樣貼在地板上，不會再斷成一段一段；已經蓋好的讀檔時自動改好。",
   "IGUI_MBLD_Note_curtain": "掛在窗框靠屋內那一側；那一格要有屋頂或上一層地板。",
+  "IGUI_MBLD_Note_plumb": "沒有自來水，和自己搬動過的設備一樣。在封閉的房間裡用管鉗「連接」後，會從上一層的集雨桶或其他裝水容器取水；容器要在它正上方或周圍一格。",
   "IGUI_MBLD_Tool_HAMMER": "鎚子",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "石工抹刀",
   "IGUI_MBLD_Tool_BLOW_TORCH": "瓦斯噴槍",

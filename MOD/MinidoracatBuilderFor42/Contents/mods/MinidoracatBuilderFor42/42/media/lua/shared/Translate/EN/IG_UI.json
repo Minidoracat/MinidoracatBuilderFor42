@@ -75,6 +75,7 @@
   "IGUI_MBLD_Note_lightStreet": "Lights up only at night, and only with power: self-built houses are not on the grid, so use a generator. A switch you place wires itself to the lights in the same closed room; right-click it and choose Wiring... to add or remove lights.",
   "IGUI_MBLD_WhatsNew": "Traffic lines and road cracks no longer break up; ones you built are fixed on load.",
   "IGUI_MBLD_Note_curtain": "Hangs on the indoor side of a window frame. The square needs a roof or a floor above it.",
+  "IGUI_MBLD_Note_plumb": "No running water, just like a fixture you pick up and move. Plumb it inside a closed room with a pipe wrench; it then draws water from a rain collector barrel or other water container one floor up, right above it or one square around.",
   "IGUI_MBLD_Tool_HAMMER": "Hammer",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Mason's Trowel",
   "IGUI_MBLD_Tool_BLOW_TORCH": "Welding Torch",

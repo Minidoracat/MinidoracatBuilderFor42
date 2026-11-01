@@ -75,6 +75,7 @@
   "IGUI_MBLD_Note_lightStreet": "Leuchtet nur nachts und nur mit Strom: Selbstgebaute Häuser hängen nicht am Stromnetz, nimm also einen Generator. Ein platzierter Lichtschalter verkabelt sich selbst mit den Lampen im selben geschlossenen Raum; Rechtsklick darauf und „Verkabeln...“ wählen, um Lampen hinzuzufügen oder zu entfernen.",
   "IGUI_MBLD_WhatsNew": "Markierungen und Straßenrisse sind jetzt durchgehend; alte werden beim Laden repariert.",
   "IGUI_MBLD_Note_curtain": "Hängt an der Innenseite eines Fensterrahmens. Die Kachel braucht ein Dach oder einen Boden darüber.",
+  "IGUI_MBLD_Note_plumb": "Kein fließendes Wasser, wie bei einem selbst versetzten Objekt. Schließ es in einem geschlossenen Raum mit einer Rohrzange an: Dann nimmt es Wasser aus einer Regentonne oder einem anderen Wasserbehälter ein Stockwerk höher, direkt darüber oder auf einem Nachbarfeld.",
   "IGUI_MBLD_Tool_HAMMER": "Hammer",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Maurerkelle",
   "IGUI_MBLD_Tool_BLOW_TORCH": "Schweißbrenner",

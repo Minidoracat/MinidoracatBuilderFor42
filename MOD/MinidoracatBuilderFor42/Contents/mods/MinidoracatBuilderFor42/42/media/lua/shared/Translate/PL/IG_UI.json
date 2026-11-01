@@ -75,6 +75,7 @@
   "IGUI_MBLD_Note_lightStreet": "Świeci tylko nocą i tylko z zasilaniem: zbudowane przez ciebie domy nie są podłączone do sieci, więc użyj agregatu prądotwórczego. Postawiony przełącznik sam łączy się z lampami w tym samym zamkniętym pokoju; kliknij go PPM i wybierz „Podłączanie…”, by dodać lub usunąć lampy.",
   "IGUI_MBLD_WhatsNew": "Linie drogowe i pęknięcia leżą teraz na podłodze jak te z mapy i nie są już poprzerywane. Zbudowane wcześniej naprawią się przy wczytaniu.",
   "IGUI_MBLD_Note_curtain": "Wisi po wewnętrznej stronie ramy okna. Pole musi mieć nad sobą dach lub podłogę.",
+  "IGUI_MBLD_Note_plumb": "Nie ma bieżącej wody, tak jak sprzęt przeniesiony samodzielnie. W zamkniętym pomieszczeniu podłącz go do rur kluczem do rur: będzie brał wodę z beczki na deszczówkę lub innego pojemnika z wodą piętro wyżej, dokładnie nad nim albo na sąsiednim polu.",
   "IGUI_MBLD_Tool_HAMMER": "Młotek",
   "IGUI_MBLD_Tool_MASONS_TROWEL": "Kielnia",
   "IGUI_MBLD_Tool_BLOW_TORCH": "Palnik gazowy",
