@@ -9,7 +9,7 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 7
+Entry.VERSION = 8
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
@@ -71,7 +71,8 @@ function Entry.digest()
     local bits = {}
     for i, k in ipairs(Entry.KINDS) do bits[i] = Entry.kindOn(k, s) and "1" or "0" end
     local raw = table.concat({ tostring(s.CostMultiplier or 1), tostring(s.WhereCanBuild or 1),
-        s.DisabledSources or "", s.DisabledTilesets or "", table.concat(bits) }, "|")
+        s.DisabledSources or "", s.DisabledTilesets or "", table.concat(bits),
+        tostring(s.RequireSkill == true), tostring(s.RecipeMaterials == true) }, "|")
     if raw ~= lastRaw then
         local h = 5381
         for i = 1, #raw do h = (h * 33 + raw:byte(i)) % 2147483647 end

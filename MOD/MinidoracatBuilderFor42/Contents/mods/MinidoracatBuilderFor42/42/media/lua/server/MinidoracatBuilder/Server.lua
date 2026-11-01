@@ -331,7 +331,8 @@ end
 
 -- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
 -- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
--- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 材料規劃 → 放置 → 扣料 → 收尾（bt-authority §9）。
+-- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）→ 材料規劃 → 放置 → 扣料 → 收尾
+-- （bt-authority §9；技能是本 MOD 加的）。
 -- 原地替換（Check.item 的 info.replace，設計稿 claim 4）：只補新的比舊的多的料（Check.net 的 pay），多的照拆除每項退
 -- 1..v（back）；工具要新舊兩件的聯集。先蓋新的、再移除舊的；任一步失敗就收回新的、舊的不在了就蓋回，不扣料、不退料
 -- （蓋回也失敗時舊的退料表整份退）。舊的一樓地板查不到帳本時照一般蓋。新的耐久照舊的剩下的比例。
@@ -369,7 +370,8 @@ function Server.complete(player, n, i)
     local plan
     if not Materials.cheat(player) then -- 多人只認 isBuildCheat（要 UseBuildCheat 能力）；單機另認原版 ISBuildMenu.cheat
         local missing, mtools
-        plan, missing, mtools = Materials.plan(player, { items = pay, tools = tools })
+        -- 耗材（硬核「原版材料」）不在舊的退料表裡，替換時照樣整份付
+        plan, missing, mtools = Materials.plan(player, { items = pay, tools = tools, uses = total.uses })
         if not plan then
             return Server.refuse(player, n, i, missing and "NO_MATERIAL" or "NO_TOOL", { need = missing, tools = mtools })
         end
@@ -419,10 +421,12 @@ function Server.complete(player, n, i)
     local head = LOG .. (rep and "REPLACE" or "BUILD") .. " user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. (rep and " old=" .. oldSpr:getName() or "") .. " kind=" .. entry.kind
         .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
+    local used = plan and costLine(total.uses) or ""
+    used = used ~= "" and " uses=" .. used or ""
     if rep then
-        print(head .. " pay=" .. (plan and costLine(pay) or "free") .. " back=" .. costLine(refund) .. " xp=" .. xp)
+        print(head .. " pay=" .. (plan and costLine(pay) or "free") .. used .. " back=" .. costLine(refund) .. " xp=" .. xp)
     else
-        print(head .. " cost=" .. (plan and costLine(total.items) or "free") .. " xp=" .. xp)
+        print(head .. " cost=" .. (plan and costLine(total.items) or "free") .. used .. " xp=" .. xp)
     end
     it.done[i] = true
     it.left = it.left - 1

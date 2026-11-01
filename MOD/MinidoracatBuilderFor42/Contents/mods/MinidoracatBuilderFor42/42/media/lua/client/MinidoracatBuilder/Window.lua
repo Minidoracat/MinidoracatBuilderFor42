@@ -15,13 +15,15 @@ require "MinidoracatBuilder/Index"
 require "MinidoracatBuilder/Catalog"
 require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Favorites"
+require "MinidoracatBuilder/Sets"
+require "MinidoracatBuilder/Messages"
 
 local B = MinidoracatBuilder
 local first = B.Window == nil
 local W = B.Window or {}
 B.Window = W
 local Entry, Sources, Cost, Index = B.Entry, B.Sources, B.Cost, B.Index
-local Names, Favorites = B.Names, B.Favorites
+local Names, Favorites, Sets, Messages = B.Names, B.Favorites, B.Sets, B.Messages
 
 local LOG = "[MinidoracatBuilderFor42] "
 W.MIN_REV = 22
@@ -402,8 +404,9 @@ local function listFor(st)
 end
 
 -- 上面的清單再套「換成」條件（st.replace.match：名稱 → 朝向，W.openReplace）。還在算時列空的（空狀態寫「正在找」），
--- 不先列整個目錄再跳
+-- 不先列整個目錄再跳。整套（st.set，W.openSet）時清單就是那一套
 function W.filter(st)
+    if st.set then return st.set.list, nil end
     local rp = st.replace
     if rp and not rp.match then return { n = 0 }, nil end
     local out, jump = listFor(st)
@@ -577,6 +580,15 @@ function W.tileLines(Text, s, w, font)
     return wrapMax(Text, s, w, font, 2)
 end
 
+-- 方格的短名；整套（W.openSet）裡寫套裡的位置（西牆、柱子…）＋編號：種類混在一起，tileset 名都一樣。
+-- 接成一行交給 tileLines 照字斷成兩行（不用換行分段）：位置字長的語言放不下時，方向字斷到第二行，被截的是後面的編號
+function W.tileLabel(name)
+    local set = W.st.set
+    local off = set and set.at and set.at[name]
+    if not off then return Names.short(name) end
+    return getText("IGUI_MBLD_SetRole_" .. Sets.ROLES[off]) .. " " .. getText("IGUI_MBLD_Name_Num", name:match("_(%d+)$"))
+end
+
 -- 看得到的格子：補貼圖、斷好的短名（最多兩行）、缺料標記（有時間預算；沒做完的下一幀繼續）
 local function prepareVisible(v)
     local grid = v.grid
@@ -594,7 +606,7 @@ local function prepareVisible(v)
         texOf(v, name)
         if v.text[name] == nil then
             if v.textN >= CACHE_MAX then v.text, v.textN = {}, 0 end
-            v.text[name] = W.tileLines(v.UI.Text, Names.short(name), tw - 12, v.font)
+            v.text[name] = W.tileLines(v.UI.Text, W.tileLabel(name), tw - 12, v.font)
             v.textN = v.textN + 1
         end
         if v.S and v.dim[name] == nil then setDim(v, name, isShort(v.S, name)) end
@@ -934,6 +946,32 @@ local function toolName(tag)
     return getTextOrNull("IGUI_MBLD_Tool_" .. tag) or tag
 end
 
+-- 材料一列：圖示、名稱（最多兩行）、靠右的「有／要」；缺的整列警告色、數量左邊加警告圖示。回下一行的 y
+local function matRow(v, ops, y, dw, ft, label, qty, short)
+    local c, fh = v.colors, v.fh
+    local col = short and c.warning or c.text
+    local qtyW = getTextManager():MeasureStringX(v.font, qty)
+    local itex = itemTexOf(ft)
+    if itex then add(ops, { t = "tex", tex = itex, x = 0, y = y + math.floor((fh - 16) / 2), w = 16, h = 16 }) end
+    add(ops, { t = "textR", s = qty, x = dw, y = y, c = col, f = v.font })
+    if short then add(ops, { t = "icon", key = "warning", x = dw - qtyW - 20, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
+    return para(v, ops, label, 20, y, dw - 20 - qtyW - (short and 22 or 4), col)
+end
+
+-- 耗材列的圖示：照標籤收的用代表的那種桶子，其他照 fullType
+local USE_ICON = { [Cost.CONCRETE] = "Base.BucketClayCement" }
+
+-- 硬核「需要技能」打開時：回 說明, 夠不夠（Check.skill，伺服器同一個判斷）；不要求技能回 nil
+local function skillInfo(e)
+    local C = B.Check
+    if not (C and C.skill) then return nil end
+    local perk, level, have, enough = C.skill(getSpecificPlayer(W.playerNum), e.kind, e.spr)
+    if not perk then return nil end
+    local name = getText("IGUI_perks_" .. perk)
+    if enough then return getText("IGUI_MBLD_Detail_Skill", name, tostring(level)), true end
+    return getText("IGUI_MBLD_Detail_SkillShort", name, tostring(level), tostring(have)), false
+end
+
 -- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3（上一層的平台不算）
 local function footprint(spr)
     local t = spr:getType()
@@ -1020,16 +1058,15 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     local any = false
     for ft, need in pairs(total.items) do
         any = true
-        local short = missing and missing[ft]
-        local col = short and c.warning or c.text
-        local qty = getText("IGUI_MBLD_HaveNeed", tostring(v.S and v.S.items[ft] or 0), tostring(need))
-        local qtyW = getTextManager():MeasureStringX(v.font, qty)
-        local itex = itemTexOf(ft)
-        if itex then add(ops, { t = "tex", tex = itex, x = 0, y = y + math.floor((fh - 16) / 2), w = 16, h = 16 }) end
-        local nameW = dw - 20 - qtyW - (short and 22 or 4)
-        add(ops, { t = "textR", s = qty, x = dw, y = y, c = col, f = v.font })
-        if short then add(ops, { t = "icon", key = "warning", x = dw - qtyW - 20, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
-        y = para(v, ops, getItemName(ft) or ft, 20, y, nameW, col)
+        y = matRow(v, ops, y, dw, ft, getItemName(ft) or ft,
+            getText("IGUI_MBLD_HaveNeed", tostring(v.S and v.S.items[ft] or 0), tostring(need)), missing and missing[ft])
+    end
+    -- 硬核「原版材料」的耗材寫次數（一桶黏土漿 4 次、噴槍 10 次、焊條 20 次）
+    for key, need in pairs(total.uses or EMPTY) do
+        any = true
+        y = matRow(v, ops, y, dw, USE_ICON[key] or key, Messages.useName(key),
+            getText("IGUI_MBLD_UsesHaveNeed", tostring(v.S and v.S.uses[key] or 0), tostring(need)),
+            missing and missing[B.Materials.USE .. key])
     end
     if not any then
         text(ops, getText("IGUI_MBLD_Detail_NoMaterials"), 0, y, c.text, v.font)
@@ -1046,6 +1083,11 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             if lacking[t] then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
             y = para(v, ops, toolName(t), 20, y, dw - 20, col)
         end
+    end
+    local sk, enough = skillInfo(e)
+    if sk then
+        y = y + 4
+        if enough then y = para(v, ops, sk, 0, y, dw, c.textMuted) else y = warnLines(v, ops, sk, y, dw) end
     end
     y = y + 4
     local parts = {}
@@ -1109,8 +1151,16 @@ local function detailRow(v, ops, e, total, missing, tools)
     for ft, need in pairs(total.items) do
         parts[#parts + 1] = getText("IGUI_MBLD_RowItem", getItemName(ft) or ft, tostring(need))
     end
+    for key, need in pairs(total.uses or EMPTY) do
+        parts[#parts + 1] = getText("IGUI_MBLD_UseCount", Messages.useName(key), tostring(need))
+    end
     for _, t in ipairs(total.tools) do parts[#parts + 1] = toolName(t) end
     local short = missing ~= nil or tools ~= nil
+    local sk, enough = skillInfo(e)
+    if sk and not enough then
+        parts[#parts + 1] = sk
+        short = true
+    end
     local line = getText("IGUI_MBLD_Size", tostring(fw), tostring(fd))
     if #parts > 0 then line = line .. getText("IGUI_MBLD_Sep") .. table.concat(parts, getText("IGUI_MBLD_ListSep")) end
     if short then add(ops, { t = "icon", key = "warning", x = x, y = y + fh + 4 + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
@@ -1154,6 +1204,15 @@ local function prepareDetail(v)
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
     v.favBtn:setWidth(fw)
     v.buildBtn:setEnabled(e ~= nil)
+    -- 「整套」：選著的是牆類而且湊得到兩項才能按，表的排法不同時寫「同一組」（W.setOf）。窄版只有圖示，字在提示框。
+    -- 換了項目、設定或目錄（catAt：整理狀態變了、進度重整）才重算：同一組那條要排整個 tileset，這裡每秒跑
+    local setKey = e and (name .. "|" .. tostring(v.digest) .. "|" .. tostring(v.catAt)) or nil
+    if setKey ~= v.setKey then v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil end
+    local set = v.setInfo
+    local key = set and set.button or "IGUI_MBLD_Set"
+    v.setBtn:setTitle(v.mode == "narrow" and "" or getText(key))
+    v.setBtn:setTooltip(getText(key .. "_Tip"))
+    v.setBtn:setEnabled(set ~= nil)
     -- 管理員快捷鈕（W.layout 只在管理員的寬、中版排出來）：停用這一項的圖塊組；來源是 MOD 才能整個停用
     -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）
     local src = e and W.sourceOf(e.tileset)
@@ -1411,6 +1470,10 @@ function W.openReplace(playerNum, name)
     if not kind or not W.open(playerNum) then return false end
     local v, st = W.v, W.st
     st.replace = { name = name, spr = spr, kind = kind, label = Names.of(name, kind) }
+    if st.set then -- 一次只開一個條件
+        st.set = nil
+        v.text, v.textN = {}, 0
+    end
     v.search:setText("") -- 靜默，不觸發 onChange
     st.query, v.typedAt = "", nil
     -- 跨頁籤的同組（牆、柵欄在「牆」頁、門框窗框在「門窗」頁，Dismantle.GROUP）停在「全部」，不然窗框被頁籤濾掉
@@ -1443,10 +1506,124 @@ function W.clearReplace()
     W.refilter(false)
 end
 
--- 搜尋欄填這個字（右鍵挑圖塊填完整圖塊名：清單換成它所在的那一桶並選到它，W.filter）
+-- ===== 整套（設計稿 builder-hardcore-sets-1101 claim 2，使用者 2026-11-01 選 filter）=====
+
+-- 整套與「同一組」列的種類：牆頁籤的牆類＋門窗頁籤的框。其他種類不能按「整套」
+local SET_KINDS = { "wall", "post", "windowFrame", "doorFrame", "fence", "wallOverlay" }
+local IS_SET_KIND = {}
+for _, k in ipairs(SET_KINDS) do IS_SET_KIND[k] = true end
+
+-- 在目錄裡（Index 那一桶有它）、沒被管理員關掉：回它的種類（Sets.of 對位置）
+local function listedKind(name)
+    local e = Entry.resolve(name)
+    local arr = e and not W.blocked(e.tileset) and Index.bucket and Index.bucket[e.kind] and Index.bucket[e.kind][e.tileset]
+    for i = 1, arr and arr.n or 0 do
+        if arr[i] == name then return e.kind end
+    end
+    return nil
+end
+
+-- 選著的這一項的整套：{ name, list = { n, 名稱… }, at（名稱 → 套裡的位置；同一組沒有）, button（按鈕的翻譯鍵）,
+-- chip（條件鈕標題） }；不是牆類、圖塊組被關、或湊不到兩項回 nil。表的排法不是原版牆的（Sets.of 回 nil）時改列
+-- 同一個 tileset 的牆類，照編號排，按鈕寫「同一組」
+function W.setOf(name)
+    local e = Entry.resolve(name)
+    if not (e and IS_SET_KIND[e.kind]) or W.blocked(e.tileset) then return nil end
+    local list, at = Sets.of(name, listedKind)
+    if list then
+        local _, base = Sets.locate(name)
+        return { name = name, list = list, at = at, button = "IGUI_MBLD_Set", chip = getText("IGUI_MBLD_Set_Chip",
+            Names.tileset(e.tileset) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Name_Num", tostring(base))) }
+    end
+    local rows, s = {}, Entry.settings()
+    for _, k in ipairs(SET_KINDS) do
+        local arr = Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][e.tileset]
+        for i = 1, arr and arr.n or 0 do rows[#rows + 1] = { key = tonumber(arr[i]:match("_(%d+)$")), name = arr[i] } end
+    end
+    if #rows < 2 then return nil end
+    sortByKey(rows)
+    list = { n = #rows }
+    for i, r in ipairs(rows) do list[i] = r.name end
+    return { name = name, list = list, button = "IGUI_MBLD_SetTileset",
+        chip = getText("IGUI_MBLD_SetTileset_Chip", Names.tileset(e.tileset)) }
+end
+
+-- 「整套」：清單換成選著那一項的那一套（prepareDetail 算好的 v.setInfo）；頁籤、分類、來源回「全部」、清搜尋（同
+-- openReplace），按條件鈕的 ✕ 回到開之前的（W.clearSet）。換頁籤、分類、來源或搜尋就離開整套、不回去（leaveSet）。
+-- 一次只開一個條件：換成條件關掉
+function W.openSet()
+    local v, st = W.v, W.st
+    local set = v and v.setInfo
+    if not set then return end
+    set.prev = st.set and st.set.prev or { tab = st.tab, cat = st.cat, source = st.source, query = st.query }
+    st.set, st.replace, v.rep = set, nil, nil
+    st.tab, st.cat, st.source, st.query, v.typedAt = "all", "all", "all", "", nil
+    v.search:setText("") -- 靜默，不觸發 onChange
+    v.tabs:setSelected("all", true)
+    v.source:setSelected("all", true)
+    v.UI.Dropdown.close(v.win)
+    v.text, v.textN = {}, 0 -- 格子改寫套裡的位置
+    W.refreshCats(v)
+    W.layout()
+    W.refilter(false)
+end
+
+-- 條件鈕的 ✕（整套）：回到開整套之前的頁籤、來源、分類與搜尋字（那個頁籤的種類全被關掉了回「全部」，refreshTabs；
+-- 那個分類這個來源沒有了也回「全部」，refreshCats）
+function W.clearSet()
+    local v, st = W.v, W.st
+    local prev = st.set and st.set.prev
+    st.set = nil
+    if not v then return end
+    v.text, v.textN = {}, 0
+    if prev then
+        st.tab, st.source, st.cat, st.query = prev.tab, prev.source, prev.cat, prev.query
+        v.tabs:setSelected(st.tab, true)
+        W.refreshTabs(v) -- 沙盒變了自動退出時（refreshSet），原本的頁籤可能已經被關掉
+        v.source:setSelected(st.source, true)
+        v.search:setText(st.query) -- 靜默
+        W.refreshCats(v)
+    end
+    W.layout()
+    W.refilter(false)
+end
+
+-- 條件鈕按下：關掉開著的那個條件
+function W.clearChip()
+    if W.st.set then W.clearSet() else W.clearReplace() end
+end
+
+-- 玩家自己換了頁籤、分類、來源或搜尋：離開整套（不回原本的），條件鈕收起
+local function leaveSet(v)
+    if not W.st.set then return end
+    W.st.set = nil
+    v.text, v.textN = {}, 0
+    W.layout()
+end
+
+-- 沙盒或目錄變了（W.refreshCatalog）：整套照原本那一項重算，被關掉的成員拿掉、重新打開的補回；湊不成了照 ✕
+-- 回到開整套之前的清單
+local function refreshSet(v)
+    local cur = W.st.set
+    if not cur then return end
+    local set = W.setOf(cur.name)
+    if not set then return W.clearSet() end
+    set.prev = cur.prev
+    W.st.set = set
+    v.text, v.textN = {}, 0
+    if set.chip ~= cur.chip then W.layout() end -- 整套與同一組互換（牆被關掉、又打開）：條件鈕標題跟著換
+end
+
+-- 搜尋欄填這個字（右鍵挑圖塊、吸管填完整圖塊名：清單換成它所在的那一桶並選到它，W.filter）。整套與換成條件
+-- 都關掉：挑的那張不一定在套裡、也不一定換得掉那件
 function W.setQuery(q)
     local v = W.v
     if not v then return end
+    leaveSet(v)
+    if W.st.replace then
+        W.st.replace, v.rep = nil, nil
+        W.layout()
+    end
     v.search:setText(q) -- 靜默，不觸發 onChange
     W.st.query = q
     v.typedAt = nil
@@ -1483,6 +1660,7 @@ function W.refreshSources(v)
 end
 
 function W.refreshCatalog(v)
+    refreshSet(v)
     W.refreshSources(v)
     W.refreshCats(v)
     W.refilter(true)
@@ -1490,6 +1668,7 @@ end
 
 function W.onTab(v, id)
     if id == W.st.tab then return end
+    leaveSet(v)
     W.st.tab = id
     v.UI.Dropdown.close(v.win)
     W.refreshCats(v)
@@ -1499,6 +1678,7 @@ end
 function W.setCat(id)
     local v = W.v
     if not v or id == nil or id == W.st.cat then return end
+    leaveSet(v)
     W.st.cat = id
     v.nav:setSelected(id, true)
     v.cat:setSelected(id, true)
@@ -1507,6 +1687,7 @@ end
 
 function W.setSource(id)
     if id == nil or id == W.st.source then return end
+    if W.v then leaveSet(W.v) end
     W.st.source = id
     if W.v then W.refreshCats(W.v) end -- 分類的數量與圖塊組照來源算；選著的組這個來源沒有就回「全部」
     W.refilter(false)
@@ -1519,12 +1700,16 @@ end
 
 function W.onQuery(text)
     W.st.query = text or ""
-    if W.v then W.v.typedAt = getTimestampMs() end
+    if W.v then
+        leaveSet(W.v)
+        W.v.typedAt = getTimestampMs()
+    end
 end
 
 function W.clearSearch()
     local v = W.v
     if not v then return end
+    leaveSet(v)
     v.search:setText("") -- 靜默，不觸發 onChange
     W.st.query = ""
     v.typedAt = nil
@@ -1614,6 +1799,33 @@ function W.onCursorEnd(playerNum)
     if F and F.takeJoypad and not (F.holdsJoypad and F.holdsJoypad(v.win)) then F.takeJoypad(v.win, playerNum or 0) end
 end
 
+-- 吸管（設計稿 builder-hardcore-sets-1101 claim 3，使用者 2026-11-01 選 button）：視窗收起，點世界裡一格（Menu.pickAt：
+-- 一張能蓋就選到它，好幾張跳出右鍵「挑圖塊」同一份清單），選到或右鍵取消時視窗回來。手把不開（Cursor.startPick 回 nil，
+-- 按鈕也不排出來）
+function W.startPick()
+    local v, C, M = W.v, B.Cursor, B.Menu
+    if not (v and C and C.startPick and M and M.pickAt) then return end
+    local pn = W.playerNum
+    local lines = { getText("IGUI_MBLD_Pick_Label"), getText("IGUI_MBLD_Pick_Many"),
+        getText("IGUI_MBLD_Pick_HintClick") .. getText("IGUI_MBLD_HintSep") .. getText("IGUI_MBLD_HintCancel") }
+    local function back() W.onCursorEnd(pn) end
+    local o
+    o = C.startPick(pn, {
+        preview = function(x, y, _, _, z) return { cells = { { x, y, z } }, lines = lines } end,
+        release = function(x, y, _, _, z)
+            back()
+            M.pickAt(pn, getCell():getGridSquare(x, y, z))
+        end,
+        -- 右鍵、換了別的游標：視窗回來。被建造游標取代（吸管開著時從 Dock 開視窗按「建造」，Cursor.start 設 replaced）
+        -- 時不叫：W.build 剛把視窗收起
+        cancel = function() if not (o and o.replaced) then back() end end,
+    })
+    if not o then return end
+    -- 開游標時舊的建造游標先收掉（它叫 W.onCursorEnd），所以開好才收視窗
+    v.hiddenForBuild = true
+    v.win:setVisible(false)
+end
+
 -- 方格 onPick：滑鼠點、Enter、Space、手把 A（方向鍵只移游標，不觸發；Widgets/TileGrid.lua:26-31）
 function W.onPick(v, name)
     if name == nil then return end
@@ -1694,27 +1906,35 @@ function W.layout()
     v.mode = mode
     local inner = ww - 2 * PAD
     local y = win:contentTop() + GAP
-    -- 換成條件鈕（W.openReplace）：搜尋列上方一列；標題照那件的名稱，寬度照標題、放不下就截字（框架自動給提示框）
-    local rp, chip = W.st.replace, v.chip
-    chip:setVisible(rp ~= nil)
-    if rp then
-        chip:setTitle(getText("IGUI_MBLD_Replace_Chip", rp.label))
+    -- 條件鈕（換成 W.openReplace、整套 W.openSet，一次只開一個）：搜尋列上方一列；寬度照標題、放不下就截字
+    local rp, set, chip = W.st.replace, W.st.set, v.chip
+    chip:setVisible(rp ~= nil or set ~= nil)
+    if rp or set then
+        chip:setTitle(set and set.chip or getText("IGUI_MBLD_Replace_Chip", rp.label))
+        chip:setTooltip(getText(set and "IGUI_MBLD_Set_ChipTip" or "IGUI_MBLD_Replace_ChipTip"))
         chip:fitWidth()
         if chip.width > inner then chip:setWidth(inner) end
         chip:setX(PAD)
         chip:setY(y)
         y = y + chip.height + GAP
     end
-    -- 第一列：搜尋＋來源（＋只看能蓋的）
+    -- 第一列：吸管（手把不排）＋搜尋＋來源（＋只看能蓋的）
     local rowH = math.max(v.search.height, v.source.height)
+    local pick = not W.usingPad()
+    v.pickBtn:setVisible(pick)
+    local pw = pick and (v.pickBtn.width + GAP) or 0
     local ddW = math.max(math.floor(140 * s), math.min(math.floor(240 * s), math.floor(inner * 0.3)))
     local cbW = v.only.width
-    local cbRow1 = mode ~= "narrow" and inner - ddW - cbW - 2 * GAP >= math.floor(200 * s)
-    local searchW = inner - ddW - GAP - (cbRow1 and (cbW + GAP) or 0)
-    v.search:setX(PAD)
+    local cbRow1 = mode ~= "narrow" and inner - pw - ddW - cbW - 2 * GAP >= math.floor(200 * s)
+    local searchW = inner - pw - ddW - GAP - (cbRow1 and (cbW + GAP) or 0)
+    if pick then
+        v.pickBtn:setX(PAD)
+        v.pickBtn:setY(y + math.floor((rowH - v.pickBtn.height) / 2))
+    end
+    v.search:setX(PAD + pw)
     v.search:setY(y)
     v.search:setWidth(searchW)
-    v.source:setX(PAD + searchW + GAP)
+    v.source:setX(PAD + pw + searchW + GAP)
     v.source:setY(y)
     v.source:setWidth(ddW)
     if cbRow1 then
@@ -1803,13 +2023,17 @@ function W.layout()
         gw = gw - dw - GAP
         local dx = PAD + inner - dw
         local by = y + bodyH - btnH
-        -- 管理員快捷鈕排在建造鈕上面：兩顆並排放得下（各自的標題寬）就一列，不然各占一列
+        -- 「整套」排在最愛、建造上面一列；管理員快捷鈕再上面：兩顆並排放得下（各自的標題寬）就一列，不然各占一列
+        local sy = by - btnH - GAP
+        v.setBtn:setX(dx)
+        v.setBtn:setY(sy)
+        v.setBtn:setWidth(dw)
         local qh = 0
         if quick then
             local qT, qS, half = v.qTileset, v.qSource, math.floor((dw - GAP) / 2)
             local one = v.qTW <= half and v.qSW <= half
             qh = one and (btnH + GAP) or 2 * (btnH + GAP)
-            local qy = by - qh
+            local qy = sy - qh
             qT:setX(dx)
             qT:setY(qy)
             qT:setWidth(one and half or dw)
@@ -1820,7 +2044,7 @@ function W.layout()
         v.detailBox:setX(dx)
         v.detailBox:setY(y)
         v.detailBox:setWidth(dw)
-        v.detailBox:setHeight(math.max(btnH, bodyH - btnH - GAP - qh))
+        v.detailBox:setHeight(math.max(btnH, bodyH - 2 * (btnH + GAP) - qh))
         v.detail:setWidth(v.detailBox:contentWidth())
         -- 最愛按鈕至少放得下較長的標題（v.favW），建造按鈕拿剩下的，不小於自己的標題寬
         local bw = math.min(dw - GAP - v.buildW, math.max(math.floor((dw - GAP) / 2), v.favW))
@@ -1842,9 +2066,14 @@ function W.layout()
         v.favBtn:setX(bx - GAP - v.favW)
         v.favBtn:setY(by)
         v.favBtn:setWidth(v.favW)
+        -- 「整套」在最愛左邊，只有圖示（標題在 prepareDetail 清掉）
+        local sx = bx - GAP - v.favW - GAP - btnH
+        v.setBtn:setX(sx)
+        v.setBtn:setY(by)
+        v.setBtn:setWidth(btnH)
         v.detailBox:setX(PAD)
         v.detailBox:setY(ry)
-        v.detailBox:setWidth(math.max(40, bx - 2 * GAP - v.favW - PAD))
+        v.detailBox:setWidth(math.max(40, sx - GAP - PAD))
         v.detailBox:setHeight(rowHt)
         v.detail:setWidth(v.detailBox:contentWidth())
     end
@@ -1917,13 +2146,18 @@ function W.create(UI)
     win:addChild(status)
     v.status = status
 
-    -- 換成條件鈕（排在搜尋前面：焦點順序照畫面由上而下）：chip 樣式選中狀態＋關閉圖示，按了回到一般目錄
+    -- 條件鈕（換成、整套；排在搜尋前面：焦點順序照畫面由上而下）：chip 樣式選中狀態＋關閉圖示，按了關掉那個條件
     v.chip = UI.Button.new({ x = PAD, y = 0, title = "", icon = "close", style = "chip", active = true, theme = theme,
-        tooltip = getText("IGUI_MBLD_Replace_ChipTip"), onClick = function() MinidoracatBuilder.Window.clearReplace() end })
+        tooltip = getText("IGUI_MBLD_Replace_ChipTip"), onClick = function() MinidoracatBuilder.Window.clearChip() end })
     v.chip:setVisible(false)
     win:addChild(v.chip)
     v.search = UI.TextField.new({ x = PAD, y = 0, width = 200, text = st.query, placeholder = getText("IGUI_MBLD_Search"),
         clearButton = true, theme = theme, onChange = function(_, t) MinidoracatBuilder.Window.onQuery(t) end })
+    -- 吸管（W.startPick）：搜尋欄左邊的方形圖示鈕，先加（焦點順序由左而右）；手把不排（W.layout）
+    local sh = v.search.height
+    v.pickBtn = UI.Button.new({ x = PAD, y = 0, width = sh, height = sh, title = "", icon = "locate", theme = theme,
+        tooltip = getText("IGUI_MBLD_Pick_Tip"), onClick = function() MinidoracatBuilder.Window.startPick() end })
+    win:addChild(v.pickBtn)
     win:addChild(v.search)
     v.source = UI.Dropdown.new({ x = 0, y = 0, width = 160, options = { { id = "all", label = getText("IGUI_MBLD_Source_All") } },
         selected = "all", maxRows = 12, theme = theme, target = v,
@@ -1967,6 +2201,12 @@ function W.create(UI)
     detail.render = W.drawDetail
     v.detailBox:addChild(detail)
     v.detail = detail
+    -- 「整套」（W.openSet）：寬、中版在最愛、建造上面一列，窄版是最愛左邊的圖示鈕；標題、提示、能不能按照選著的項目
+    -- （prepareDetail）。給了寬度，setTitle 不會照標題重算寬度
+    v.setBtn = UI.Button.new({ x = 0, y = 0, width = 100, title = getText("IGUI_MBLD_Set"), icon = "layers", theme = theme,
+        tooltip = getText("IGUI_MBLD_Set_Tip"), onClick = function() MinidoracatBuilder.Window.openSet() end })
+    v.setBtn:setEnabled(false)
+    win:addChild(v.setBtn)
     -- 最愛按鈕寬度照兩種標題較長的那個（窄版要固定寬）
     v.favBtn = button(v, getText("IGUI_MBLD_Fav_Remove"), nil, function() MinidoracatBuilder.Window.toggleFavorite() end)
     local favW = v.favBtn.width

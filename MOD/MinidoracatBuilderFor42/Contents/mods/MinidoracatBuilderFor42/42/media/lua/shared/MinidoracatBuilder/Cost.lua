@@ -2,8 +2,10 @@
 -- 再拆換到的；沒有的照種類給基本價（比照原版同類建造配方），再依 MaterialType 換材料。兩端共用：客戶端顯示，伺服器扣料。
 -- 一格的成本＝{ items = { [fullType] = 數量 }, tools = { ItemTag 欄位名, ... }, perkOf = { [fullType] = 技能名或 false },
 -- chanceOf = { [fullType] = 原版拆解定義的 baseChance（照機率退料的材料才有） }, fee = { [fullType] = 拆了不退的數量 }, back,
--- scrap（true＝照原版拆解產出收；false＝照種類基本價） }；多格每格各算一次。
+-- scrap（true＝照原版拆解產出收；false＝照種類基本價）, uses = { [耗材鍵] = 次數 }（硬核「原版材料」，見 USES） }；
+-- 多格每格各算一次。
 require "MinidoracatBuilder/Rules"
+require "MinidoracatBuilder/Sets"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Cost = MinidoracatBuilder.Cost or {}
@@ -27,12 +29,12 @@ local WOOD = {
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
 -- ≤2 公斤 1＋1、≤5 公斤 2＋2、其餘 4＋4。杯子、書這類小東西不跟衣櫃同價。金屬家具、容器照 METAL 不分級（使用者 2026-10-27 確認）。
-local LIGHT, MEDIUM, HEAVY = { [PLANK] = 1, [NAILS] = 1 }, { [PLANK] = 2, [NAILS] = 2 }, { [PLANK] = 4, [NAILS] = 4 }
-local function byWeight(p)
+local BY_WEIGHT = { { [PLANK] = 1, [NAILS] = 1 }, { [PLANK] = 2, [NAILS] = 2 }, { [PLANK] = 4, [NAILS] = 4 } }
+local function weightTier(p)
     local kg = (tonumber(p:get("PickUpWeight")) or 50) / 10
-    if kg <= 2 then return LIGHT end
-    if kg <= 5 then return MEDIUM end
-    return HEAVY
+    if kg <= 2 then return 1 end
+    if kg <= 5 then return 2 end
+    return 3
 end
 local SMALL = { [PLANK] = 1, [NAILS] = 1 } -- 掛牆物、窗上物件、地面覆蓋、牆面疊圖、附著物、疊圖
 local EAVE = { [PLANK] = 1, [NAILS] = 1 }  -- 屋簷：isEave 是旗標（IsoFlagType.java:109），字串鍵查不到
@@ -43,13 +45,13 @@ local BULB = "Base.LightBulb"
 -- 窗簾：床單 1 張，長窗簾（CurtainSound=Long）2 張；不要工具、不給經驗。任何 IsoCurtain 都能用原版「移除窗簾」
 -- 拿回 1 張床單（IsoCurtain.removeSheet；ISWorldObjectContextMenu.lua:2214-2251），所以倍率低於 1 也照 1 收
 local CURTAIN, LONG_CURTAIN = { ["Base.Sheet"] = 1 }, { ["Base.Sheet"] = 2 }
--- 磚石：BrickWall／BrickFloor 等（混凝土是液體容器，ponytail：不收，要收時改用 use: 扣容量）
+-- 磚石：BrickWall／BrickFloor 等。原版另收的黏土漿、混凝土是照次數用的桶子，硬核「原版材料」打開時才收（Cost.USES）
 local MASONRY = {
     floor = { ["Base.ClayTile"] = 4 },
     wall = { ["Base.ClayBrick"] = 4 }, windowFrame = { ["Base.ClayBrick"] = 4 }, doorFrame = { ["Base.ClayBrick"] = 4 },
     fence = { ["Base.ClayBrick"] = 2 }, solid = { ["Base.ClayBrick"] = 2 }, post = { ["Base.ClayBrick"] = 4 },
 }
--- 金屬：MetalWallFrame＋MetalWallLvl1 等（焊條、噴燈燃料是可耗用的，ponytail：只要求帶著噴燈與面罩）
+-- 金屬：MetalWallFrame＋MetalWallLvl1 等。焊條、噴槍燃料照次數用，硬核「原版材料」打開時才收（Cost.USES）
 local METAL = {
     floor = { ["Base.SmallSheetMetal"] = 1 },
     wall = { ["Base.MetalBar"] = 3, ["Base.SmallSheetMetal"] = 3 },
@@ -100,6 +102,42 @@ local ESCRAP = "Base.ElectronicsScrap"
 local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding", electric = "Electricity" }
 local XP_PER_ITEM = 5
 
+-- 硬核「需要技能」（沙盒 RequireSkill，使用者 2026-11-01 選兩個開關）：照原版 42.21 同類配方的技能等級
+-- （scripts/generated/entities/walls、stairs；Wooden_Windows 木工 5、Wood_Stairs 木工 6、Metal_Stairs 焊接 5、
+-- BrickFenceLvl2 石工 5）。屋頂沒有配方，照木牆。種類照「實際照哪一套收」：沒有對應配方、改照木頭收的照木頭。
+local SKILL = {
+    wood = { floor = 1, wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 3, door = 3, window = 5, stairs = 6,
+        roof = 2 },
+    masonry = { wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 5 },
+    metal = { wall = 3, post = 3, windowFrame = 3, doorFrame = 3, door = 3, fence = 3, stairs = 5 },
+}
+-- 家具、容器、實心物件原版沒有對應配方：照搬運重量三級（同 BY_WEIGHT）要 1、3、5 級，金屬的一律焊接 3（原版家具配方木工 1–7）。
+-- 其他種類（掛牆物、疊圖、窗簾、燈、地面覆蓋）不要求
+local WEIGHED = { furniture = true, container = true, solid = true }
+local SKILL_BY_WEIGHT = { 1, 3, 5 }
+-- 硬核「原版材料」（沙盒 RecipeMaterials）：原版配方裡照次數用的耗材，扣次數、不寫進退料表（拆了不退）、不給經驗。
+-- 鍵：tag:base:concrete＝帶 base:concrete 標籤的桶子（黏土漿、混凝土，鐵桶木桶都算，一桶 4 次）；
+-- 噴槍 10 次、焊條 20 次（scripts/generated/items/drainable.txt 的 UseDelta）。
+Cost.CONCRETE, Cost.TORCH, Cost.RODS = "tag:base:concrete", "Base.BlowTorch", "Base.WeldingRods"
+local CONCRETE, TORCH, RODS = Cost.CONCRETE, Cost.TORCH, Cost.RODS
+local USES = {
+    masonry = { wall = { [CONCRETE] = 2 }, post = { [CONCRETE] = 2 }, windowFrame = { [CONCRETE] = 2 },
+        doorFrame = { [CONCRETE] = 2 }, fence = { [CONCRETE] = 1 }, floor = { [CONCRETE] = 1 } },
+    metal = { -- 牆＝MetalWallFrame（噴槍 1、焊條 2）＋MetalWallLvl1（噴槍 4、焊條 4）
+        wall = { [TORCH] = 5, [RODS] = 6 }, post = { [TORCH] = 5, [RODS] = 6 }, windowFrame = { [TORCH] = 5, [RODS] = 2 },
+        doorFrame = { [TORCH] = 4, [RODS] = 4 }, door = { [TORCH] = 4, [RODS] = 4 }, fence = { [TORCH] = 2, [RODS] = 2 },
+        floor = { [TORCH] = 1, [RODS] = 1 }, stairs = { [TORCH] = 4, [RODS] = 4 } },
+}
+-- 石牆（MaterialType=Stone）在「原版材料」打開時照原版 StoneWall 收石磚，不收紅磚
+local STONE = { wall = { ["Base.StoneBlock"] = 6 }, post = { ["Base.StoneBlock"] = 6 },
+    windowFrame = { ["Base.StoneBlock"] = 5 }, doorFrame = { ["Base.StoneBlock"] = 4 } }
+local EMPTY = {}
+
+local function recipeOn()
+    local s = SandboxVars and SandboxVars.MinidoracatBuilder
+    return s ~= nil and s.RecipeMaterials == true
+end
+
 -- 記這種材料的經驗給哪個技能（false＝不給）；已經記了別的技能時改成不給
 local function mark(perkOf, ft, pid)
     local cur = perkOf[ft]
@@ -110,14 +148,47 @@ local function mark(perkOf, ft, pid)
     end
 end
 
--- MaterialType（撞擊與腳步聲用的材質，iso/enums/MaterialType.java）→ wood／masonry／metal／ground
-local function family(kind, p)
-    local mt = p:get("MaterialType")
-    if not mt then return "wood" end
-    if mt:sub(1, 5) == "Metal" then return "metal" end
-    if MASONRY_TYPES[mt] then return "masonry" end
-    if kind == "floor" and GROUND[mt] then return "ground" end
-    return "wood"
+-- MaterialType（撞擊與腳步聲用的材質，iso/enums/MaterialType.java）→ wood／masonry／metal／ground；回 族, MaterialType。
+-- 同一套的柱子、窗框、門框沒有 MaterialType 時照同一套牆的（Sets.wallMaterial；使用者 2026-11-01 選兩種模式都照：
+-- 原版 46 套磚牆、金屬牆的 174 件原本照木頭收）
+local INHERIT = { post = true, windowFrame = true, doorFrame = true }
+local function family(kind, spr)
+    local mt = spr:getProperties():get("MaterialType")
+    if not mt and INHERIT[kind] then mt = MinidoracatBuilder.Sets.wallMaterial(spr:getName()) end
+    if not mt then return "wood", nil end
+    if mt:sub(1, 5) == "Metal" then return "metal", mt end
+    if MASONRY_TYPES[mt] then return "masonry", mt end
+    if kind == "floor" and GROUND[mt] then return "ground", mt end
+    return "wood", mt
+end
+
+-- 照種類的基本價：回 base, 實際照哪一族收（這個材質沒有對應的配方時照木頭，例：磚造家具）
+local function basePrice(kind, p, fam, mt)
+    if kind == "light" then return LIGHT_BASE, "electric" end
+    if kind == "curtain" then return p:get("CurtainSound") == "Long" and LONG_CURTAIN or CURTAIN, "cloth" end
+    local base
+    if fam == "ground" then
+        base = { [GROUND[mt]] = 1 }
+    elseif fam == "metal" then
+        base = METAL[kind]
+    elseif fam == "masonry" then
+        base = (mt == "Stone" and recipeOn() and STONE[kind]) or MASONRY[kind]
+    end
+    if base then return base, fam end
+    if kind == "furniture" or kind == "container" then return BY_WEIGHT[weightTier(p)], "wood" end
+    if kind == "roof" and p:has(IsoFlagType.isEave) then return EAVE, "wood" end
+    return WOOD[kind] or SMALL, "wood"
+end
+
+-- 硬核「需要技能」：回 技能 ID, 等級；不要求的種類回 nil。照基本價那一族（拆解價的也照它：同一件要的技能不看怎麼收料）
+function Cost.skillOf(kind, spr)
+    local p = spr:getProperties()
+    local _, fam = basePrice(kind, p, family(kind, spr))
+    local lv = SKILL[fam] and SKILL[fam][kind]
+    if lv then return PERK[fam], lv end
+    if not WEIGHED[kind] then return nil end
+    if fam == "metal" then return PERK.metal, 3 end
+    return PERK[fam], SKILL_BY_WEIGHT[weightTier(p)]
 end
 
 -- 原版拆解產出的上限（ISMoveableSpriteProps:getScrapItemsList、addScrapItemToList，shared/Moveables）：
@@ -171,10 +242,10 @@ local function copyInto(src, out)
     for k, v in pairs(src) do out[k] = v end
 end
 
--- 一格的成本。multiplier＝沙盒 CostMultiplier（0＝免材料，工具照樣要）。數量無條件進位。
+-- 一格的成本。multiplier＝沙盒 CostMultiplier（0＝免材料，工具照樣要）。數量、耗材次數都無條件進位。
 function Cost.of(kind, spr, multiplier)
     local p = spr:getProperties()
-    local fam = family(kind, p)
+    local fam, mt = family(kind, spr)
     local items, perkOf, chanceOf = {}, {}, {}
     local m = multiplier or 1
     local scrapped, back, first, elec = scrapInto(kind, p, items, perkOf, chanceOf)
@@ -194,29 +265,8 @@ function Cost.of(kind, spr, multiplier)
         toolSet = scrapTools(first)
     else
         local base
-        if kind == "light" then
-            fam, base = "electric", LIGHT_BASE
-        elseif kind == "curtain" then
-            fam = "cloth"
-            base = p:get("CurtainSound") == "Long" and LONG_CURTAIN or CURTAIN
-            if m < 1 then m = 1 end
-        elseif fam == "ground" then
-            base = { [GROUND[p:get("MaterialType")]] = 1 }
-        elseif fam == "metal" then
-            base = METAL[kind]
-        elseif fam == "masonry" then
-            base = MASONRY[kind]
-        end
-        if not base then -- 這個材質沒有對應的配方（例：磚造家具）：照木頭
-            fam = "wood"
-            if kind == "furniture" or kind == "container" then
-                base = byWeight(p)
-            elseif kind == "roof" and p:has(IsoFlagType.isEave) then
-                base = EAVE
-            else
-                base = WOOD[kind] or SMALL
-            end
-        end
+        base, fam = basePrice(kind, p, fam, mt)
+        if kind == "curtain" and m < 1 then m = 1 end
         copyInto(base, items)
         for ft in pairs(base) do perkOf[ft] = PERK[fam] or false end
     end
@@ -239,18 +289,27 @@ function Cost.of(kind, spr, multiplier)
         local f = (out[ESCRAP] or 0) - math.ceil((items[ESCRAP] - 1) * m - 1e-9)
         if f > 0 then fee[ESCRAP] = f end
     end
+    -- 耗材不退料，照原本的倍率（上面「最低照 1 收」只為了退料不多於付的）
+    local uses = {}
+    if recipeOn() then
+        for key, n in pairs(USES[fam] and USES[fam][kind] or EMPTY) do
+            local v = math.ceil(n * (multiplier or 1) - 1e-9)
+            if v > 0 then uses[key] = v end
+        end
+    end
     local tools = {}
     for i, t in ipairs(toolSet or TOOLS[fam]) do tools[i] = t end
     if back then perkOf = {} end
     return { items = out, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back, scrap = scrapped,
-        uniform = builder }
+        uniform = builder, uses = uses }
 end
 
 -- 把多格的成本加總（扣料與顯示用）；tools 取聯集
 function Cost.sum(list)
-    local items, tools, seen = {}, {}, {}
+    local items, tools, seen, uses = {}, {}, {}, {}
     for _, c in ipairs(list) do
         for ft, n in pairs(c.items) do items[ft] = (items[ft] or 0) + n end
+        for key, n in pairs(c.uses or EMPTY) do uses[key] = (uses[key] or 0) + n end
         for _, t in ipairs(c.tools) do
             if not seen[t] then
                 seen[t] = true
@@ -258,7 +317,7 @@ function Cost.sum(list)
             end
         end
     end
-    return { items = items, tools = tools }
+    return { items = items, tools = tools, uses = uses }
 end
 
 -- 一個項目各格的成本（sprites＝各格 sprite，依 Entry.cells 的順序）。原版拆多格物件時每一片都照被點的那片材質給
@@ -276,7 +335,7 @@ function Cost.forCells(kind, sprites, multiplier)
         each[1] = c
         for i = 2, #sprites do
             each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back,
-                uniform = c.uniform }
+                uniform = c.uniform, uses = {} }
         end
         return each
     end
@@ -303,7 +362,7 @@ function Cost.forCells(kind, sprites, multiplier)
         local items = {}
         for ft, n in pairs(top) do items[ft] = n end
         each[i] = { items = items, tools = tools, perkOf = perkOf, chanceOf = chanceOf, fee = fee, back = back,
-            uniform = uniform }
+            uniform = uniform, uses = each[i].uses } -- 耗材不退，每格照自己的收
     end
     return each
 end

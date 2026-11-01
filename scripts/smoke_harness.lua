@@ -322,9 +322,9 @@ IsoThumpable = { new = function(_, sq, name, north)
     function o:getName() return self.set.setName end
     return o
 end }
--- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）
+-- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）。耗材：it.uses＝剩幾次
 ItemTag = { HAMMER = "HAMMER", MASONS_TROWEL = "MASONS_TROWEL", BLOW_TORCH = "BLOW_TORCH", WELDING_MASK = "WELDING_MASK",
-    SCREWDRIVER = "SCREWDRIVER" }
+    SCREWDRIVER = "SCREWDRIVER", CONCRETE = "CONCRETE" }
 function instanceof() return false end
 -- 拆除退料的亂數：ZombRand(n) 回 0..n−1；HARNESS_ROLL＝"max"（全退）／"min"（只退 1）切換（拆除情境用）。
 -- 主程式的區域變數快到 200 個上限，這幾個用全域
@@ -357,6 +357,8 @@ local function item(ft, tags)
     function it:getFullType() return ft end
     function it:isBroken() return false end
     function it:getContainer() return self.box end
+    function it:getCurrentUses() return self.uses or 0 end
+    function it:hasTag(t) return self.tags[t] == true end
     return it
 end
 local function inventory()
@@ -389,6 +391,16 @@ local function inventory()
             if #out >= n then break end
             if v.ft == ft and pred(v) then out[#out + 1] = v end
         end
+        return javaList(out)
+    end
+    function inv:getAllTypeRecurse(ft) -- 只收完整型別（Materials 的耗材鍵都是 fullType）
+        local out = {}
+        for _, v in ipairs(self.items) do if v.ft == ft then out[#out + 1] = v end end
+        return javaList(out)
+    end
+    function inv:getAllTagRecurse(tag)
+        local out = {}
+        for _, v in ipairs(self.items) do if v.tags[tag] then out[#out + 1] = v end end
         return javaList(out)
     end
     function inv:getCountTypeEvalRecurse(ft, pred)
@@ -4945,6 +4957,168 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     end
     MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
     isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
+end)()
+
+print("情境三十五：硬核（需要技能、原版材料）、同一套的材質繼承、整套（2026-11-01 設計稿 builder-hardcore-sets-1101）")
+;(function()
+    nowMs = nowMs + 180000
+    local Sets, Messages = MinidoracatBuilder.Sets, MinidoracatBuilder.Messages
+    local USE, CONCRETE, TORCH, RODS = Materials.USE, Cost.CONCRETE, Cost.TORCH, Cost.RODS
+    local function sp(name, id, flags, keys)
+        keys = keys or {}
+        for _, f in ipairs(flags) do if keys[f] == nil and f:match("^[A-Z]") then keys[f] = "" end end
+        return sprite(name, id, { flags = flags, keys = keys })
+    end
+    -- 原版排法的牆套：左半套（0–3、8–11）是磚牆，柱子 3、門框 10 沒有 MaterialType；右半套（4–7、12–15）是金屬牆
+    local bW = sp("hc_brick_01_0", 3401, { "WallW" }, { MaterialType = "Brick" })
+    local bN = sp("hc_brick_01_1", 3402, { "WallN" }, { MaterialType = "Brick" })
+    local bPost, bDoor = sp("hc_brick_01_3", 3403, { "WallSE" }), sp("hc_brick_01_10", 3404, { "DoorWallW" })
+    local mW = sp("hc_brick_01_4", 3405, { "WallW" }, { MaterialType = "Metal" })
+    local mPost = sp("hc_brick_01_7", 3406, { "WallSE" })
+    local pW, pPost = sp("hc_plain_01_0", 3407, { "WallW" }), sp("hc_plain_01_3", 3408, { "WallSE" })
+    local stoneN = sp("hc_stone_01_1", 3409, { "WallN" }, { MaterialType = "Stone" })
+    local f1 = sp("hc_furn_01_0", 3410, { "solid" }, { PickUpWeight = "15" })
+    local f2 = sp("hc_furn_01_1", 3411, { "solid" }, { PickUpWeight = "40" })
+    local f3 = sp("hc_furn_01_2", 3412, { "solid" }, { PickUpWeight = "100" })
+    local fM = sp("hc_furn_01_3", 3413, { "solid" }, { MaterialType = "Metal", PickUpWeight = "15" })
+    local doorB = sp("hc_door_01_0", 3414, { "doorW" }, { MaterialType = "Brick" })
+    local stairsM = sp("hc_stairs_01_0", 3415, {}, { MaterialType = "Metal" })
+    world({ bW, bN, bPost, bDoor, mW, mPost, pW, pPost, stoneN, f1, f2, f3, fM, doorB, stairsM })
+
+    local ts, base, off = Sets.locate("hc_brick_01_13")
+    check(ts == "hc_brick_01" and base == 4 and off == 9 and select(2, Sets.locate("x_27")) == 16
+        and select(3, Sets.locate("x_27")) == 11, "Sets.locate：一列 8 格、兩列一組、左右各一套（13 是右半套的窗框北、27 是門框北）")
+    check(Sets.wallMaterial("hc_brick_01_3") == "Brick" and Sets.wallMaterial("hc_brick_01_15") == "Metal"
+        and Sets.wallMaterial("hc_plain_01_3") == nil, "同一套的牆的材質：左半套磚、右半套金屬，牆沒有材質的回 nil")
+    local post, door, mpost, ppost = Cost.of("post", bPost, 1), Cost.of("doorFrame", bDoor, 1), Cost.of("post", mPost, 1),
+        Cost.of("post", pPost, 1)
+    check(post.items["Base.ClayBrick"] == 4 and post.items["Base.Plank"] == nil and post.tools[1] == "MASONS_TROWEL"
+        and door.items["Base.ClayBrick"] == 4 and mpost.items["Base.MetalBar"] == 3 and ppost.items["Base.Plank"] == 4,
+        "沒有材質的柱子、門框照同一套的牆收（磚、金屬，兩種模式都照）；牆也沒有材質的照木頭")
+
+    local function sk(kind, spr) local p, l = Cost.skillOf(kind, spr) return tostring(p) .. tostring(l) end
+    check(sk("wall", pW) == "Woodwork2" and sk("post", bPost) == "Masonry2" and sk("doorFrame", bDoor) == "Masonry2"
+        and sk("door", doorB) == "Woodwork3" and sk("stairs", stairsM) == "MetalWelding5" and sk("fence", mW) == "MetalWelding3",
+        "技能照原版配方：木牆木工 2、磚柱子與磚門框石工 2（繼承）、磚門沒有配方照木門 3、金屬樓梯金工 5、金屬柵欄 3")
+    check(sk("furniture", f1) == "Woodwork1" and sk("container", f2) == "Woodwork3" and sk("solid", f3) == "Woodwork5"
+        and sk("furniture", fM) == "MetalWelding3" and sk("light", f1) == "nilnil" and sk("wallObject", f1) == "nilnil",
+        "家具、容器、實心照搬運重量 1、3、5 級，金屬的金工 3；燈、掛牆物不要求")
+
+    local sb = SandboxVars.MinidoracatBuilder
+    sb.RecipeMaterials = true
+    local stone, brick, metal = Cost.of("wall", stoneN, 1), Cost.of("wall", bN, 1), Cost.of("wall", mW, 1)
+    local half, free, wood = Cost.of("wall", mW, 0.5), Cost.of("wall", mW, 0), Cost.of("wall", pW, 1)
+    check(stone.items["Base.StoneBlock"] == 6 and stone.items["Base.ClayBrick"] == nil and stone.uses[CONCRETE] == 2
+        and brick.items["Base.ClayBrick"] == 4 and brick.uses[CONCRETE] == 2 and Cost.of("post", bPost, 1).uses[CONCRETE] == 2,
+        "原版材料：石牆收石磚 6、磚牆收紅磚 4，都另收黏土漿或混凝土 2 次；繼承成磚的柱子也收")
+    check(metal.uses[TORCH] == 5 and metal.uses[RODS] == 6 and half.uses[TORCH] == 3 and half.uses[RODS] == 3
+        and next(free.uses) == nil and next(wood.uses) == nil,
+        "金屬牆噴槍 5 次、焊條 6 次，照倍率無條件進位（0.5 → 3、3），倍率 0 不收；木牆沒有耗材")
+    local scrapM = sp("hc_mscrap_01_0", 3416, { "WallN" }, { MaterialType = "Metal", CanScrap = "", Material = "MetalBars" })
+    local sHalf, sFree = Cost.of("wall", scrapM, 0.5), Cost.of("wall", scrapM, 0)
+    check(sHalf.scrap and sHalf.items["Base.MetalBar"] == 2 and sHalf.uses[TORCH] == 3 and sHalf.uses[RODS] == 3
+        and sFree.items["Base.MetalBar"] == 2 and next(sFree.uses) == nil,
+        "有拆解材質的金屬牆：材料最低照 1 收（退料不多於付的），耗材照原本的倍率（0.5 → 3、3，倍率 0 不收）")
+    local sum = Cost.sum({ metal, brick })
+    check(sum.uses[TORCH] == 5 and sum.uses[CONCRETE] == 2, "Cost.sum 加總耗材")
+    sb.RecipeMaterials = nil
+    local stoneOff = Cost.of("wall", stoneN, 1)
+    check(stoneOff.items["Base.ClayBrick"] == 4 and stoneOff.items["Base.StoneBlock"] == nil and next(stoneOff.uses) == nil,
+        "原版材料關著：石牆照舊收紅磚、沒有耗材")
+
+    -- 耗材：照標籤或型別數次數，背包先、地上後；plan 與摘要判斷相同；用掉照 buildUtil.useDrainable
+    local realUse = buildUtil.useDrainable
+    buildUtil.useDrainable = function(it, n)
+        local k = math.min(n, it.uses)
+        it.uses = it.uses - k
+        return k
+    end
+    local P = player({ id = 3401 })
+    local b1 = P.inv:add(item("Base.BucketClayCement", { CONCRETE = true }))
+    local b2 = P.inv:add(item("Base.BucketConcreteFull", { CONCRETE = true }))
+    b1.uses, b2.uses = 1, 4
+    local need6 = { items = {}, tools = {}, uses = { [CONCRETE] = 6 } }
+    local S = Materials.summary(P)
+    local m6 = Materials.short(S, need6)
+    local plan6, pm6 = Materials.plan(P, need6)
+    check(S.uses[CONCRETE] == 5 and m6 and m6[USE .. CONCRETE] == 1 and plan6 == nil and pm6[USE .. CONCRETE] == 1,
+        "耗材照標籤數次數（黏土漿 1＋混凝土 4）；要 6 次時摘要與 plan 都報缺 1 次（鍵是 use:耗材鍵）")
+    local plan3 = Materials.plan(P, { items = {}, tools = {}, uses = { [CONCRETE] = 3 } })
+    Materials.consume(P, plan3)
+    check(plan3 and #plan3.uses == 2 and b1.uses == 0 and b2.uses == 2, "要 3 次：第一桶用 1 次、第二桶用 2 次")
+    local here = square(140, 140, 0)
+    drop(here, "Base.WeldingRods", 1)
+    here.world[#here.world].it.uses = 7
+    local P2 = player({ id = 3402, x = 140.5, y = 140.5, here = here })
+    local r2 = P2.inv:add(item("Base.WeldingRods"))
+    r2.uses = 2
+    local S2 = Materials.summary(P2)
+    local plan2 = Materials.plan(P2, { items = {}, tools = {}, uses = { [RODS] = 5 } })
+    check(S2.uses[RODS] == 9 and plan2 and plan2.uses[1].item == r2 and plan2.uses[1].n == 2 and plan2.uses[2].n == 3,
+        "焊條照型別數：背包 2＋身邊地上 7；要 5 次時先用背包的 2 次、再用地上的 3 次")
+    check(Messages.refusal("SKILL", { perk = "Masonry", level = 2, have = 1 }) == "IGUI_MBLD_Refuse_SKILL"
+        and Messages.items({ [USE .. CONCRETE] = 2 }) == "IGUI_MBLD_UseCount", "SKILL 有自己的訊息；缺的耗材寫次數（UseCount）")
+
+    -- 伺服器與預覽：需要技能、原版材料
+    sb.RequireSkill = true
+    for x = 130, 134 do square(x, 130, 0) end
+    local L = player({ id = 3403, x = 130.5, y = 131.5, perks = { ["perk:Masonry"] = 1 } })
+    L.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
+    give(L, { ["Base.ClayBrick"] = 4 })
+    local ok, _, a = build(L, 3403, "hc_brick_01_1", { 130, 130, 0 })
+    check(not ok and a.code == "SKILL" and a.perk == "Masonry" and a.level == 2 and a.have == 1
+        and #squares["130,130,0"].objects == 0 and L.inv:count("Base.ClayBrick") == 4,
+        "需要技能：石工 1 蓋磚牆被擋（SKILL 帶技能、要幾級、現在幾級），不放、不扣")
+    check(Check.item(L, "hc_brick_01_1", 0, { 130, 130, 0 }, { preview = true, summary = Materials.summary(L) }) == "SKILL",
+        "預覽同一個判斷：SKILL")
+    local C = player({ id = 3404, x = 131.5, y = 131.5, cheat = true })
+    check(build(C, 3404, "hc_brick_01_1", { 131, 130, 0 }) and #squares["131,130,0"].objects == 1, "開建造作弊：不看技能")
+    sb.RecipeMaterials = true
+    local L2 = player({ id = 3405, x = 132.5, y = 131.5, perks = { ["perk:Masonry"] = 2 } })
+    L2.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
+    give(L2, { ["Base.ClayBrick"] = 4 })
+    ok, _, a = build(L2, 3405, "hc_brick_01_1", { 132, 130, 0 })
+    check(not ok and a.code == "NO_MATERIAL" and a.need[USE .. CONCRETE] == 2 and a.need["Base.ClayBrick"] == nil,
+        "石工 2 過了技能；原版材料缺黏土漿或混凝土：NO_MATERIAL 報缺 2 次")
+    local bk = L2.inv:add(item("Base.BucketClayCement", { CONCRETE = true }))
+    bk.uses = 4
+    xpLog = {}
+    ok = build(L2, 3406, "hc_brick_01_1", { 132, 130, 0 })
+    local w = squares["132,130,0"].objects[1]
+    check(ok and bk.uses == 2 and L2.inv:count("Base.ClayBrick") == 0 and w and w.mats["Base.ClayBrick"] == "4"
+        and w.mats[CONCRETE] == nil and w.mats[USE .. CONCRETE] == nil, "放好才扣：紅磚 4、黏土漿 2 次；退料表只寫紅磚（耗材不退）")
+    check(#xpLog == 1 and xpLog[1].perk == "perk:Masonry", "經驗只照紅磚給石工，耗材不給")
+    -- 游標拖兩格：耗材只夠一格，第二格缺料；摘要本身不被扣
+    local L3 = player({ id = 3407, x = 133.5, y = 131.5, perks = { ["perk:Masonry"] = 2 } })
+    L3.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
+    give(L3, { ["Base.ClayBrick"] = 8 })
+    local bk3 = L3.inv:add(item("Base.BucketClayCement", { CONCRETE = true }))
+    bk3.uses = 2
+    require "MinidoracatBuilder/Cursor"
+    local S3 = Materials.summary(L3)
+    local res, okN, shortN = MinidoracatBuilder.Cursor.preview(L3, "hc_brick_01_1", 0, { { 133, 130, 0, 0 }, { 134, 130, 0, 0 } }, S3)
+    check(okN == 1 and shortN == 1 and res[2].code == "NO_MATERIAL" and res[2].extra.need[USE .. CONCRETE] == 2
+        and S3.uses[CONCRETE] == 2, "游標逐格扣耗材：第一格用掉 2 次，第二格缺 2 次；摘要本身不動")
+    -- 原地替換的游標標籤：耗材不在舊的退料表裡、照整份付，材料不用補時也要寫在要補的那行（不寫「材料相同」）
+    local function swapLabel(uses)
+        local info = { replace = {}, pay = {}, back = {}, total = { uses = uses } }
+        return setmetatable({ swapN = 1, S = {}, res = { { info = info } } }, { __index = MinidoracatBuilder.Cursor }):swapText()
+    end
+    check(swapLabel({ [CONCRETE] = 2 }) == "IGUI_MBLD_SwapPay" and swapLabel({}) == "IGUI_MBLD_SwapSame",
+        "原地換同材料：材料不用補、耗材照付時標籤寫要補；耗材也沒有才寫「材料相同」")
+    sb.RequireSkill, sb.RecipeMaterials = nil, nil
+    buildUtil.useDrainable = realUse
+
+    local kinds = { hc_brick_01_0 = "wall", hc_brick_01_1 = "wall", hc_brick_01_3 = "post", hc_brick_01_10 = "doorFrame" }
+    local list, at = Sets.of("hc_brick_01_10", function(n) return kinds[n] end)
+    check(list and list.n == 4 and list[1] == "hc_brick_01_0" and list[3] == "hc_brick_01_3" and list[4] == "hc_brick_01_10"
+        and at.hc_brick_01_3 == 3 and at.hc_brick_01_10 == 10, "整套：同一套照位置排（牆西、牆北、柱子、門框），記下每張的位置")
+    check(Sets.of("hc_brick_01_3", function(n) return ({ hc_brick_01_3 = "post", hc_brick_01_10 = "doorFrame" })[n] end) == nil,
+        "只有柱子和門框、沒有牆：不算一套（視窗改列同一組）")
+    local fences = { f_01_0 = "post", f_01_1 = "wall", f_01_8 = "fence", f_01_9 = "fence", f_01_10 = "fence", f_01_11 = "fence" }
+    local walls8 = { g_01_0 = "wall", g_01_1 = "wall", g_01_8 = "fence" }
+    check(Sets.of("f_01_8", function(n) return fences[n] end) == nil and Sets.of("g_01_0", function(n) return walls8[n] end) == nil,
+        "位置的種類不合（柵欄表 0 是柱子、8–11 是柵欄；牆後面的 8 是柵欄）：不是原版牆的排法，不算一套")
 end)()
 
 print()

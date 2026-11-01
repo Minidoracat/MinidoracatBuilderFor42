@@ -1,5 +1,5 @@
 -- 一項能不能蓋：伺服器 complete() 與客戶端預覽共用同一份判斷（從 Server.complete 抽出）。
--- 伺服器：照 bt-authority §9 的順序（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置），通過後材料、放置、扣料、
+-- 伺服器：照 bt-authority §9 的順序（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）），通過後材料、放置、扣料、
 -- 經驗仍在 Server.complete。客戶端 preview：不補格子、不寫任何東西，格子不存在就略過要格子的檢查（交給伺服器），
 -- 材料用 Materials.summary 的摘要估。客戶端的結果只給畫面看，伺服器照樣每格重算。
 require "MinidoracatBuilder/Entry"
@@ -44,6 +44,16 @@ function Check.inReach(player, x, y, z)
     local near = Check.INTENT_REACH
     return math.abs(x + 0.5 - player:getX()) <= near and math.abs(y + 0.5 - player:getY()) <= near
         and math.abs(z - math.floor(player:getZ())) <= 1
+end
+
+-- 硬核「需要技能」（沙盒 RequireSkill）：回 技能 ID, 要的等級, 玩家的等級, 夠不夠；沒打開或這種不要求技能回 nil。
+-- 建造作弊（Materials.cheat，同扣料）當夠。Check.item 與建造視窗詳情共用
+function Check.skill(player, kind, spr)
+    if setting("RequireSkill", false) ~= true then return nil end
+    local perk, level = Cost.skillOf(kind, spr)
+    if not perk then return nil end
+    local have = player and player:getPerkLevel(Perks.FromString(perk)) or 0
+    return perk, level, have, have >= level or (player ~= nil and Materials.cheat(player))
 end
 
 -- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格。樓梯的平台不算（在上一層，靠近它不等於靠近樓梯）。
@@ -133,7 +143,8 @@ function Check.near(player, cells, edge, preview)
 end
 
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
---   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools）。
+--   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools
+--   ／SKILL 的 perk, level, have）。
 --   info＝{ entry, spr, cells = { { x, y, z, spr, sq, yoff, cost }, ... }, sprites, costs, total, replace, pay, back }，
 --   算到哪填到哪。
 -- 原地替換（單格、不是樓梯）：格上有本工具蓋的同一組另一款（Dismantle.replaceable）時，它不算擋（Place.check 的
@@ -239,6 +250,8 @@ function Check.item(player, name, d, anchor, opts)
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end
+    local perk, level, have, enough = Check.skill(player, entry.kind, spr)
+    if perk and not enough then return "SKILL", { perk = perk, level = level, have = have }, info end
     local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
     for j, c in ipairs(cells) do c.cost = costs[j] end
     local total = Cost.sum(costs)
@@ -247,7 +260,7 @@ function Check.item(player, name, d, anchor, opts)
     if info.replace and info.replace.had then
         info.pay, info.back = Check.net(total.items, info.replace.had)
         local tools = Cost.sum({ total, { items = {}, tools = Dismantle.tools(oldKind, info.replace.plan) } }).tools
-        need = { items = info.pay, tools = tools }
+        need = { items = info.pay, tools = tools, uses = total.uses } -- 耗材不在舊的退料表裡：照付
     end
     local S = preview and opts.summary
     if S and not S.cheat then

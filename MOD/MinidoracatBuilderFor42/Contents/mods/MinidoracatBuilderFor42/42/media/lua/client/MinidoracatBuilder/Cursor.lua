@@ -144,8 +144,8 @@ function Cursor.nextFace(faces, d, step)
 end
 
 -- 各格的預覽：照順序每格 Check.item（朝向照錨點的第 4 欄，沒有用 d），可蓋的從摘要副本扣掉成本（Materials.take；替換的
--- 格子只扣要補的 info.pay），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
--- 副本的 items 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個
+-- 格子扣要補的 info.pay 與耗材），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
+-- 副本的 items、uses 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個
 -- 順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
 -- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、OVER_MAX）的不跑 Check.item，照那個碼。
@@ -156,6 +156,7 @@ function Cursor.preview(player, name, d, anchors, S)
         work = {}
         for k, v in pairs(S) do work[k] = v end
         work.items = setmetatable({}, { __index = S.items })
+        work.uses = setmetatable({}, { __index = S.uses })
     end
     local out, ok, short, planned = {}, 0, 0, {}
     for i, a in ipairs(anchors) do
@@ -174,7 +175,7 @@ function Cursor.preview(player, name, d, anchors, S)
             ok = ok + 1
             if work and info then
                 if info.replace then
-                    Materials.take(work, { items = info.pay or {} })
+                    Materials.take(work, { items = info.pay or {}, uses = info.total and info.total.uses })
                 elseif info.total then
                     Materials.take(work, info.total)
                 end
@@ -277,6 +278,15 @@ function Cursor.startArea(playerNum, cb)
     local o = base(player)
     o.area, o.canDrag = cb, true
     getCell():setDrag(o, playerNum) -- 舊的建造游標照常 deactivate（視窗回來）
+    return o
+end
+
+-- 吸管（設計稿 builder-hardcore-sets-1101 claim 3，使用者 2026-11-01 選 button）：一區拆除模式只框一格（滑鼠那格、
+-- 換到玩家那層），格子畫可蓋的綠框；cb 同 startArea（preview 回 { cells, lines }，放開左鍵 cb.release(x, y, x, y, z)、
+-- 右鍵或換了別的游標 cb.cancel()）。手把回 nil，同 startArea。
+function Cursor.startPick(playerNum, cb)
+    local o = Cursor.startArea(playerNum, cb)
+    if o then o.one = true end
     return o
 end
 
@@ -510,7 +520,8 @@ local function stackLevel(r)
     return nil
 end
 
--- 替換格要補、會退的料加總成一兩行；都空寫「材料相同，不用補料」。建造作弊不扣也不退，不寫
+-- 替換格要補、會退的料加總成一兩行；都空寫「材料相同，不用補料」。建造作弊不扣也不退，不寫。
+-- 硬核耗材不在舊的退料表裡，照整份付（Check.item 的 need.uses），寫在要補的那行
 function Cursor:swapText()
     if self.swapN == 0 or (self.S and self.S.cheat) then return nil end
     local pay, back, anyPay, anyBack = {}, {}, false, false
@@ -519,6 +530,11 @@ function Cursor:swapText()
         if info and info.replace then
             for ft, k in pairs(info.pay or {}) do
                 pay[ft] = (pay[ft] or 0) + (tonumber(k) or 0)
+                anyPay = true
+            end
+            for key, k in pairs(info.total and info.total.uses or {}) do
+                local ft = Materials.USE .. key
+                pay[ft] = (pay[ft] or 0) + k
                 anyPay = true
             end
             for ft, k in pairs(info.back or {}) do
@@ -650,13 +666,14 @@ end
 -- ---------------------------------------------------------------- 一區拆除模式
 
 -- 一區拆除的 isValid（滑鼠在介面上的判斷已在 isValid 做完）：按下那格到滑鼠那格的長方形，換到玩家那層
--- （畫面同一點，每差一層 x、y 各差 3 格，IsoUtils.XToIso／YToIso），每邊最多 AREA_SIDE 格。範圍變了或每秒一次重問 Area。
--- 放開就算確認，所以一直回 true。
+-- （畫面同一點，每差一層 x、y 各差 3 格，IsoUtils.XToIso／YToIso），每邊最多 AREA_SIDE 格；吸管（self.one）只框滑鼠那格。
+-- 範圍變了或每秒一次重問 Area。放開就算確認，所以一直回 true。
 function Cursor:areaValid(square)
     local z = math.floor(self.character:getZ())
     local s = 3 * (z - square:getZ())
     local ax, ay = square:getX() + s, square:getY() + s
     local ex, ey = (self.lineX or square:getX()) + s, (self.lineY or square:getY()) + s
+    if self.one then ex, ey = ax, ay end
     ex = math.max(ax - AREA_SIDE + 1, math.min(ax + AREA_SIDE - 1, ex))
     ey = math.max(ay - AREA_SIDE + 1, math.min(ay + AREA_SIDE - 1, ey))
     local x1, y1, x2, y2 = math.min(ax, ex), math.min(ay, ey), math.max(ax, ex), math.max(ay, ey)
@@ -675,7 +692,8 @@ function Cursor:areaRefresh(x1, y1, x2, y2, z)
     if not fine then print(LOG .. "area preview failed: " .. tostring(res)) end
     if not (fine and type(res) == "table") then res = {} end
     local g, seen = newGhosts(), {}
-    local _, bad = coreColors()
+    local good, bad = coreColors()
+    if self.one then bad = good end -- 吸管：點得下去的格子，不是要拆的
     for _, c in ipairs(res.cells or {}) do
         local x, y, cz, skip = c.x or c[1], c.y or c[2], c.z or c[3], c.bad
         if skip == nil then skip = c[4] end

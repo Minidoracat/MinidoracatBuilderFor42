@@ -44,6 +44,8 @@ Admin.RULES = {
     { key = "MaxDistance", kind = "number", min = 2, max = 8, step = 1, default = 3 },
     { key = "MaxCellsPerDrag", kind = "number", min = 1, max = 64, step = 1, default = 32 },
     { key = "CostMultiplier", kind = "number", min = 0, max = 10, step = 0.05, default = 1 },
+    { key = "RequireSkill", kind = "bool", default = false },
+    { key = "RecipeMaterials", kind = "bool", default = false },
     { key = "ZombieProof", kind = "bool", default = false },
     { key = "ZombieProofDoors", kind = "bool", default = false },
     { key = "ContainerCapacityMultiplier", kind = "number", min = 1, max = 10, step = 0.1, default = 1 },

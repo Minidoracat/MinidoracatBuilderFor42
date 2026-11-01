@@ -4,7 +4,7 @@
 -- 不歸本工具拆的（能搬、原版拆解、只能砸、窗簾）也列，變灰並寫該用原版哪個動作（審查 1101 #5）。
 -- 右鍵「拆除一區...（建造工坊）」（Area.start，只用滑鼠）與「換成...（建造工坊）」（Window.openReplace）：設計稿 claim 3、4。
 -- 右鍵「挑圖塊（建造工坊）」（使用者 2026-10-31 定案）：點到的格子上每一張圖，選了就打開建造視窗、用完整圖塊名搜尋，
--- 選到那一項；不能蓋的照樣列出、變紅並寫原因（Entry.why）。
+-- 選到那一項；不能蓋的照樣列出、變紅並寫原因（Entry.why）。建造視窗的吸管（Window.startPick → Menu.pickAt）用同一份清單。
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Messages"
@@ -109,35 +109,39 @@ function Menu.replace(playerNum, name)
     if W and W.openReplace then W.openReplace(playerNum, name) end
 end
 
--- 點到的格子上每一張圖：物件本身、掛在它上面的疊圖（地圖的地面與牆面疊圖讀地圖時掛到地板或牆上，
+-- 一個格子上每一張圖：物件本身、掛在它上面的疊圖（地圖的地面與牆面疊圖讀地圖時掛到地板或牆上，
 -- CellLoader.java:201-264；IsoObject.getAttachedAnimSprite :1824、IsoSpriteInstance.getName :86）、overlaySprite
--- （IsoObject.getOverlaySprite :4904）。只收「名稱_編號」的 tiledef 圖，同一張只列一次，不設上限（比畫面高時原版選單會捲動，
--- ISContextMenu.lua:603-607）。回 { 名稱, ... }
-function Menu.tiles(worldobjects)
-    local out, seen, done = {}, {}, {}
+-- （IsoObject.getOverlaySprite :4904）。只收「名稱_編號」的 tiledef 圖，同一張只列一次（seen），加進 out
+local function squareTiles(sq, out, seen)
     local function add(name)
         if name and not seen[name] and name:find("_%d+$") then
             seen[name] = true
             out[#out + 1] = name
         end
     end
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local spr = o:getSprite()
+        add(spr and spr:getName())
+        local att = o:getAttachedAnimSprite()
+        for j = 0, att and att:size() - 1 or -1 do
+            local a = att:get(j)
+            add(a and a:getName())
+        end
+        local ov = o:getOverlaySprite()
+        add(ov and ov:getName())
+    end
+end
+
+-- 點到的格子上每一張圖（squareTiles），不設上限（比畫面高時原版選單會捲動，ISContextMenu.lua:603-607）。回 { 名稱, ... }
+function Menu.tiles(worldobjects)
+    local out, seen, done = {}, {}, {}
     for _, w in ipairs(worldobjects) do
         local sq = w:getSquare()
         if sq and not done[sq] then
             done[sq] = true
-            local objects = sq:getObjects()
-            for i = 0, objects:size() - 1 do
-                local o = objects:get(i)
-                local spr = o:getSprite()
-                add(spr and spr:getName())
-                local att = o:getAttachedAnimSprite()
-                for j = 0, att and att:size() - 1 or -1 do
-                    local a = att:get(j)
-                    add(a and a:getName())
-                end
-                local ov = o:getOverlaySprite()
-                add(ov and ov:getName())
-            end
+            squareTiles(sq, out, seen)
         end
     end
     return out
@@ -167,6 +171,39 @@ local function addPick(sub, playerNum, name)
         tip.description = MinidoracatBuilder.Window.whyText(code, arg)
         opt.toolTip = tip
     end
+end
+
+-- 選單接下來兩個 tick 再置頂一次（開著才做）。吸管放開時視窗同一幀回來（框架 setVisible → Focus.onFocus 置頂），
+-- 同一批置頂的介面照它們在 UIManager 裡原本的先後排（UIManager.java:546-560），視窗建得比玩家的右鍵選單晚，
+-- 會蓋在選單上面（E2E hardcore-mp builder-hardcore-1102b）。放開跟 OnTick 誰先跑不一定，所以做兩次
+local function keepOnTop(menu)
+    local left = 2
+    local function tick()
+        left = left - 1
+        if left <= 0 then Events.OnTick.Remove(tick) end
+        if menu:getIsVisible() then menu:bringToTop() end
+    end
+    Events.OnTick.Add(tick)
+end
+
+-- 吸管（Window.startPick）點了一格：只有一張能蓋（或同一件東西有能蓋的那一項）就直接選；好幾張就在滑鼠旁跳出和右鍵
+-- 「挑圖塊」子選單同一份清單（addPick）；格子上沒有圖就說一聲
+function Menu.pickAt(playerNum, sq)
+    local tiles = {}
+    if sq then squareTiles(sq, tiles, {}) end
+    if #tiles == 0 then
+        Messages.toast(getSpecificPlayer(playerNum), getText("IGUI_MBLD_Pick_None"), getText("IGUI_MBLD_Title"))
+        return
+    end
+    local only, n = nil, 0
+    for _, name in ipairs(tiles) do
+        local code, _, alt = Entry.why(name) -- 能蓋的回 nil
+        if not code or alt then only, n = name, n + 1 end
+    end
+    if n == 1 then return Menu.pickTile(playerNum, only) end
+    local menu = ISContextMenu.get(playerNum, getMouseX(), getMouseY())
+    for _, name in ipairs(tiles) do addPick(menu, playerNum, name) end
+    keepOnTop(menu)
 end
 
 -- 拆除：一件直接列「拆除（建造工坊）：名稱」，好幾件時展開成子選單、每件寫名稱（不歸本工具拆的排在後面、變灰）。

@@ -26,6 +26,14 @@ option MinidoracatBuilder.MaxCellsPerDrag
 option MinidoracatBuilder.CostMultiplier
 {type = double, min = 0, max = 10, default = 1.0, page = MinidoracatBuilder, translation = MinidoracatBuilder_CostMultiplier,}
 
+/* 硬核：需要原版技能等級（Steam、B 站許願，使用者 2026-11-01 選兩個開關）：照原版同類配方的技能等級（Cost.skillOf），伺服器與預覽同一個判斷，建造作弊略過。鍵名上線後不能改 */
+option MinidoracatBuilder.RequireSkill
+{type = boolean, default = false, page = MinidoracatBuilder, translation = MinidoracatBuilder_RequireSkill,}
+
+/* 硬核：照原版配方的材料：磚石另收黏土漿或混凝土、金屬另收噴槍燃料與焊條（照次數，不退、不給經驗），石牆改收石磚。鍵名上線後不能改 */
+option MinidoracatBuilder.RecipeMaterials
+{type = boolean, default = false, page = MinidoracatBuilder, translation = MinidoracatBuilder_RecipeMaterials,}
+
 /* 殭屍打不壞（使用者 2026-11-01 選「不打，也不找路穿過」）：本 MOD 蓋的 IsoThumpable 不給殭屍打、thumpDmg 調到最大（爬行殭屍照樣打低柵欄），擋路的燈不設 movedThumpable。建造時與讀檔時（Place.migrate，兩端）照目前的值套用，關掉就還原 */
 option MinidoracatBuilder.ZombieProof
 {type = boolean, default = false, page = MinidoracatBuilder, translation = MinidoracatBuilder_ZombieProof,}

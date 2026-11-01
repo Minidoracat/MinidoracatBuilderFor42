@@ -1,14 +1,16 @@
 -- 拒絕碼 → 玩家看得懂的一句話＋補救。伺服器只送碼與欄位（need、tools、x,y,z），字在客戶端組：
 -- 伺服器的語言不是玩家的語言（pz-family-docs pitfalls「伺服器組好的文字是伺服器的語言」）。
 require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Materials"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Messages = MinidoracatBuilder.Messages or {}
 MinidoracatBuilder.Messages = Messages
-local Entry = MinidoracatBuilder.Entry
+local Entry, USE = MinidoracatBuilder.Entry, MinidoracatBuilder.Materials.USE
 
 -- 每個碼一個翻譯鍵 IGUI_MBLD_Refuse_<碼>：伺服器的拒絕碼（Server.intent／Check.item，含 Place.check 的放不下原因
--- SAME_TILE、VEHICLE、OCCUPIED、STACK_FULL，原地替換時舊的那件的 NOT_EMPTY、ATTACHED、NOT_OURS），加上客戶端自己判斷的
+-- SAME_TILE、VEHICLE、OCCUPIED、STACK_FULL，原地替換時舊的那件的 NOT_EMPTY、ATTACHED、NOT_OURS，硬核「需要技能」的
+-- SKILL），加上客戶端自己判斷的
 -- WALK（一格都還沒蓋就停下）、NO_ROOM（第 i 格旁邊沒有空位可站，Client.lua 的 queue）、游標的 OVER_MAX（超過一次拖曳
 -- 最多幾項，extra.max）與 NO_FACE（長方形那一邊這款沒有對應的朝向）。
 -- 不在表裡的碼退回 IGUI_MBLD_Refuse_Other 並附上碼，玩家回報時看得到。
@@ -17,14 +19,25 @@ Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, R
     TOO_FAR = true, UNREACHABLE = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true,
     OUTSIDE_SAFEHOUSE = true, BLOCKED = true, NO_MATERIAL = true, NO_TOOL = true, INTERNAL = true, WALK = true,
     NO_ROOM = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, OVER_MAX = true, NO_FACE = true,
-    NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true }
+    NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true, SKILL = true }
+
+-- 耗材鍵（Cost 的 uses）→ 名稱：tag:base:concrete 照標籤收（黏土漿、混凝土的桶子都算），寫通稱；其他是 fullType
+function Messages.useName(key)
+    if key == "tag:base:concrete" then return getText("IGUI_MBLD_Use_Concrete") end
+    return getItemName(key) or key
+end
 
 -- need＝{ [fullType] = 數量 } → 「木板 ×2、釘子 ×4」。物品名照玩家語言（getItemName，LuaManager.java:8749；verify_mod 規定用它）。
+-- 缺的耗材（鍵是 Materials.USE＋耗材鍵）寫次數：「焊條 2 次」
 function Messages.items(need)
     local parts, n = {}, 0
     for ft, count in pairs(need or {}) do
         n = n + 1
-        parts[n] = getText("IGUI_MBLD_ItemCount", getItemName(ft), tostring(count))
+        if ft:sub(1, #USE) == USE then
+            parts[n] = getText("IGUI_MBLD_UseCount", Messages.useName(ft:sub(#USE + 1)), tostring(count))
+        else
+            parts[n] = getText("IGUI_MBLD_ItemCount", getItemName(ft), tostring(count))
+        end
     end
     return table.concat(parts, getText("IGUI_MBLD_ListSep"))
 end
@@ -54,6 +67,11 @@ function Messages.refusal(code, extra)
     if code == "NO_TOOL" then return getText(key, Messages.tools(extra and extra.tools)) end
     if code == "TOO_FAR" then return getText(key, tostring(Entry.settings().MaxDistance or 3)) end
     if code == "OVER_MAX" then return getText(key, tostring(extra and extra.max or "")) end
+    if code == "SKILL" then -- Check.item 的 { perk, level, have }
+        local perk = extra and extra.perk
+        return getText(key, perk and getText("IGUI_perks_" .. perk) or "?", tostring(extra and extra.level or ""),
+            tostring(extra and extra.have or 0))
+    end
     if code == "NO_ROOM" then -- 只送一格時不寫「第 1 格」
         if extra and extra.n == 1 then return getText("IGUI_MBLD_Refuse_NO_ROOM_One") end
         return getText(key, tostring(extra and extra.i or 1))
