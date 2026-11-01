@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "This piece does not keep rain out (eaves, decoration); the square below stays outdoors. PgUp/PgDn changes the level; drag a row from the supported end.",
   "IGUI_MBLD_Note_light": "Lights up only with power: self-built houses are not on the grid, so use a generator. A switch you place wires itself to the lights in the same closed room; right-click it and choose Wiring... to add or remove lights.",
   "IGUI_MBLD_Note_lightStreet": "Lights up only at night, and only with power: self-built houses are not on the grid, so use a generator. A switch you place wires itself to the lights in the same closed room; right-click it and choose Wiring... to add or remove lights.",
-  "IGUI_MBLD_WhatsNew": "Traffic lines and road cracks no longer break up; ones you built are fixed on load.",
+  "IGUI_MBLD_WhatsNew": "Sinks, toilets and bathtubs you build get water from a rain collector one floor up once plumbed.",
   "IGUI_MBLD_Note_curtain": "Hangs on the indoor side of a window frame. The square needs a roof or a floor above it.",
   "IGUI_MBLD_Note_plumb": "No running water, just like a fixture you pick up and move. Plumb it inside a closed room with a pipe wrench; it then draws water from a rain collector barrel or other water container one floor up, right above it or one square around.",
   "IGUI_MBLD_Tool_HAMMER": "Hammer",

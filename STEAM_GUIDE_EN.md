@@ -201,7 +201,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
 [*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
-[*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they need plumbing again to get water.
+[*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
 [/list]
 [h3]Lights[/h3]

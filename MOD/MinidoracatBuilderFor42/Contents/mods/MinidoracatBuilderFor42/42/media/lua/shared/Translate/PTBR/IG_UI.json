@@ -73,7 +73,7 @@
   "IGUI_MBLD_Note_roofOpen": "Esta peça não protege da chuva (beiral, decoração); o quadrado abaixo continua ao ar livre. PgUp/PgDn muda o andar; arraste uma linha a partir da ponta apoiada.",
   "IGUI_MBLD_Note_light": "Só acende com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
   "IGUI_MBLD_Note_lightStreet": "Só acende à noite e com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
-  "IGUI_MBLD_WhatsNew": "Faixas e rachaduras no chão não aparecem mais cortadas; as antigas se corrigem ao carregar.",
+  "IGUI_MBLD_WhatsNew": "Suas pias, vasos e banheiras, depois de encanados, usam a água de um coletor de chuva no andar de cima.",
   "IGUI_MBLD_Note_curtain": "Fica no lado interno de um batente de janela. O quadrado precisa de telhado ou de piso acima.",
   "IGUI_MBLD_Note_plumb": "Não tem água encanada, como um equipamento que você mesmo move. Encane-o dentro de um cômodo fechado com uma chave de cano: ele passa a usar a água de um barril coletor de chuva ou outro recipiente com água no andar de cima, logo acima ou em um quadrado vizinho.",
   "IGUI_MBLD_Tool_HAMMER": "Martelo",
