@@ -145,6 +145,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Your character walks over[/b]: it walks next to each tile before building.
 [*] [b]Things on a square's edge[/b]: walls, doors, windows and fences sit on the edge of a square and can be built from either side.
 [*] [b]Places you can't reach[/b]: through a wall or a closed door or window, furniture and the like can't be placed.
+[*] [b]With the build cheat on[/b]: like vanilla, your character doesn't walk over. It builds and dismantles where it stands, at any distance, even places it can't reach. Actions still take their usual time. Things in an area dismantle that go through vanilla Disassemble are still walked to, as in vanilla.
 [*] [b]Someone standing there[/b]: things that block movement are not placed on a square where a player or zombie stands.
 [*] [b]When you can't build[/b]: in a vehicle or dead.
 [/list]
@@ -496,7 +497,7 @@ The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes
 [tr][td]Overlay[/td][td]Other overlay pieces[/td][/tr]
 [/table]
 [list]
-[*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
+[*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools, and like vanilla your character doesn't walk over and there is no distance limit. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
 [*] [b]After changing settings[/b]: the server checks the current settings on every placement.
 [*] [b]Open windows[/b]: follow the new settings within a few seconds, so there is no need to reopen them.
 [*] [b]With Enable building off[/b]: nobody can wire, but built lights and switches still work.

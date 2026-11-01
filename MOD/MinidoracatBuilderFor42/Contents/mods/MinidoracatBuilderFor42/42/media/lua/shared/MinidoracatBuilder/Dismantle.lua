@@ -192,8 +192,8 @@ end
 
 -- 能不能拆，回 code, extra 或 nil。順序：
 --   同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
---   距離：和蓋一樣（MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆）。preview（右鍵選單）不查：
---     選了會先走過去，伺服器完成時照樣查。
+--   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆；建造作弊不查）。
+--     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
 --   原版拆解擋的（canScrapObjectInternal，ISMoveableSpriteProps.lua:3905-3939）：
 --     容器要空（isObjectNoContainerOrEmpty；伺服器的移除不倒出內容，IsoObject.java:4545-4553）、桌子上有桌上物件、

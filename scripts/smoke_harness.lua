@@ -4811,6 +4811,142 @@ print("情境三十三：建造作弊（2026-11-01 B 站：debug 開建造作弊
     isServer, isClient, ISBuildMenu = realS, realC, realMenu
 end)()
 
+print("情境三十四：建造作弊照原版不走過去、不限距離（使用者 2026-11-02 選）：MaxDistance、走得到、收請求的範圍都不查，客戶端不排走路")
+;(function()
+    local Dismantle = MinidoracatBuilder.Dismantle
+    local realS, realC, realMenu, realQ, realLu = isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils
+    -- 多人伺服器：只認 isBuildCheat（伺服器上要 UseBuildCheat 能力才開得了），原版的 Lua 全域不算
+    isServer, isClient = function() return true end, function() return false end
+    ISBuildMenu = { cheat = true }
+    local wallSq, wayOff = square(140, 130, 0), square(300, 130, 0)
+    local A = player({ id = 3401, x = 130.5, y = 130.5, cheat = true })
+    local N = player({ id = 3402, x = 130.5, y = 130.5 })
+    local ok, _, a = build(N, 3401, "cs_wall_01_1", { 140, 130, 0 })
+    check(not ok and a.code == "TOO_FAR" and #wallSq.objects == 0, "沒開作弊：10 格外的牆 TOO_FAR（伺服器上 ISBuildMenu.cheat 不算）")
+    ok, _, a = build(N, 3402, "cs_wall_01_1", { 300, 130, 0 })
+    check(not ok and a.code == "TOO_FAR" and #wayOff.objects == 0, "沒開作弊：170 格外收請求時就 TOO_FAR（INTENT_REACH）")
+    check(build(A, 3403, "cs_wall_01_1", { 140, 130, 0 }) and #wallSq.objects == 1, "建造作弊：10 格外照樣蓋（不查 MaxDistance）")
+    check(build(A, 3404, "cs_wall_01_1", { 300, 130, 0 }) and #wayOff.objects == 1,
+        "建造作弊：170 格外照收請求、照樣蓋（不查 INTENT_REACH）")
+    local fl = square(152, 150, 0) -- 玩家站的那格不存在：從玩家走不到
+    A.pos.x, A.pos.y, N.pos.x, N.pos.y = 150.5, 150.5, 150.5, 150.5
+    ok, _, a = build(N, 3405, "cs_floor_01_1", { 152, 150, 0 })
+    check(not ok and a.code == "UNREACHABLE" and #fl.objects == 0, "沒開作弊：2 格內但走不到的地板 UNREACHABLE")
+    check(build(A, 3406, "cs_floor_01_1", { 152, 150, 0 }) and #fl.objects == 1, "建造作弊：走不到的地板照樣蓋（不查走得到）")
+    -- 安全屋照查：作弊只略過距離與走得到（有 UseBuildCheat、沒有 CanGoInsideSafehouses 的人照樣擋）
+    local owned = square(170, 150, 0, { owner = "someone" })
+    ok, _, a = build(A, 3407, "cs_wall_01_1", { 170, 150, 0 })
+    check(not ok and a.code == "SAFEHOUSE" and #owned.objects == 0, "建造作弊：20 格外別人的安全屋照樣 SAFEHOUSE")
+    -- 拆：伺服器完成時的距離同樣不查，收拆除請求也不限範圍；安全屋照查
+    local instReal = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local function ours(sq) -- 本工具蓋的牆（同情境三十二的 obj，作弊蓋的不退料）
+        local spr = spriteMap["cs_wall_01_1"]
+        local x = { class = "IsoThumpable", md = { builderEntry = spr:getName() } }
+        function x:getSprite() return spr end
+        function x:getProperties() return spr:getProperties() end
+        function x:getSquare() return sq end
+        function x:hasModData() return true end
+        function x:getModData() return self.md end
+        function x:isDismantable() return true end
+        function x:getBuildMaterials() return {} end
+        function x:hasBuildMaterials() return false end
+        function x:isFloor() return false end
+        function x:getRenderYOffset() return 0 end
+        function x:getTextureName() return spr:getName() end
+        function x:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function x:isConnectedSpriteGridObject(y) return y == self end
+        function x:isObjectNoContainerOrEmpty() return true end
+        function x:hasFluid() return false end
+        function x:isBarricaded() return false end
+        function x:isStairsObject() return false end
+        function x:getHealth() return 450 end
+        function x:getMaxHealth() return 450 end
+        sq.objects[#sq.objects + 1] = x
+        return x
+    end
+    local function has(sq, o) for _, v in ipairs(sq.objects) do if v == o then return true end end return false end
+    local function unbuild(p, n, t)
+        sent = {}
+        Server.dismantleIntent(p, { n = n, t = t })
+        local c = sent[1] and sent[1].cmd
+        if c ~= "dismantleAccepted" then return c, sent[1] and sent[1].args or {} end
+        sent = {}
+        Server.dismantle(p, n, 1)
+        return sent[1] and sent[1].cmd, sent[1] and sent[1].args or {}
+    end
+    local d10, d150 = ours(square(160, 151, 0)), ours(square(300, 151, 0))
+    local dOwned = ours(square(171, 150, 0, { owner = "someone" }))
+    local cmd
+    cmd, a = unbuild(N, 3408, { 160, 151, 0, "cs_wall_01_1" })
+    check(cmd == "dismantleSkipped" and a.code == "TOO_FAR" and has(d10:getSquare(), d10),
+        "拆：沒開作弊 10 格外照收請求，做完動作時 TOO_FAR、牆還在")
+    cmd, a = unbuild(N, 3409, { 300, 151, 0, "cs_wall_01_1" })
+    check(cmd == "dismantleRefused" and a.code == "TOO_FAR", "拆除請求：沒開作弊 150 格外 TOO_FAR")
+    cmd = unbuild(A, 3410, { 160, 151, 0, "cs_wall_01_1" })
+    check(cmd == "dismantled" and not has(d10:getSquare(), d10), "拆：建造作弊 10 格外照拆（不查 MaxDistance）")
+    cmd = unbuild(A, 3411, { 300, 151, 0, "cs_wall_01_1" })
+    check(cmd == "dismantled" and not has(d150:getSquare(), d150), "拆：建造作弊 150 格外照收請求、照拆（不查 INTENT_REACH）")
+    cmd, a = unbuild(A, 3412, { 171, 150, 0, "cs_wall_01_1" })
+    check(cmd == "dismantleSkipped" and a.code == "SAFEHOUSE" and has(dOwned:getSquare(), dOwned),
+        "拆：建造作弊 20 格外別人的安全屋照樣 SAFEHOUSE、牆還在")
+    -- Safehouse MOD 的細分權限照查（作弊只略過距離）
+    local asked = {}
+    MinidoracatSafehouse = { v1 = { API_MAJOR = 1, CAPABILITIES = { denies = true }, BITS = { BUILD = 4, USE = 1 },
+        denies = function(_, x, y, _, bit, opts)
+            asked[#asked + 1] = { bit = bit, label = opts and opts.label }
+            return x == 175 and y == 150
+        end } }
+    local permSq = square(175, 150, 0)
+    ok, _, a = build(A, 3413, "cs_wall_01_1", { 175, 150, 0 })
+    check(not ok and a.code == "PERM_DENIED" and #permSq.objects == 0 and asked[1] and asked[1].bit == 4
+        and asked[1].label == "MinidoracatBuilder:build", "建造作弊：Safehouse MOD 不准建造的地方照樣 PERM_DENIED（25 格外）")
+    local dPerm = ours(permSq)
+    asked = {}
+    cmd, a = unbuild(A, 3414, { 175, 150, 0, "cs_wall_01_1" })
+    check(cmd == "dismantleSkipped" and a.code == "PERM_DENIED" and has(permSq, dPerm) and asked[1]
+        and asked[1].label == "MinidoracatBuilder:dismantle", "拆：建造作弊在 Safehouse MOD 不准的地方照樣 PERM_DENIED、牆還在")
+    MinidoracatSafehouse = nil
+    instanceof = instReal
+    Server.unbuilds = {}
+    -- 游標預覽（walk）：作弊不限收請求的範圍，和伺服器一致
+    square(301, 140, 0)
+    check(Check.item(A, "cs_wall_01_1", 0, { 301, 140, 0 }, { preview = true, walk = true }) == nil
+        and Check.item(N, "cs_wall_01_1", 0, { 301, 140, 0 }, { preview = true, walk = true }) == "TOO_FAR",
+        "游標預覽：建造作弊 150 格外可蓋，沒開作弊 TOO_FAR")
+
+    -- 客戶端（單機開原版建造作弊）：Client.build／Client.dismantle 不排走路，動作原地做
+    isServer, isClient = function() return false end, function() return false end
+    local queued, walks = {}, 0
+    ISTimedActionQueue = { clear = function() queued = {} end, add = function(x) queued[#queued + 1] = x end,
+        isPlayerDoingAction = function() return false end }
+    local function walked() walks = walks + 1 return true end
+    luautils = { walkAdjWall = walked, walkAdj = walked }
+    local far2, near2 = square(160, 130, 0), square(131, 130, 0)
+    local P = player({ id = 3409, x = 130.5, y = 130.5 })
+    MinidoracatBuilder.Client.build(P, "cs_wall_01_1", { { 160, 130, 0, 0 } })
+    check(walks == 0 and #queued == 1 and queued[1].i == 1, "單機建造作弊：Client.build 不排走路，原地排動作")
+    if queued[1] then queued[1]:complete() end
+    local w2 = far2.objects[1]
+    check(w2 ~= nil, "單機建造作弊：原地做完動作，30 格外的牆就蓋好")
+    if w2 then -- 拆完的結果由伺服器那段（Dismantle.check 不查距離）驗；這裡只驗不排走路
+        nowMs = nowMs + 6000
+        MinidoracatBuilder.Client.dismantle(P, w2, "wall", {})
+        check(walks == 0 and #queued == 1, "單機建造作弊：本工具拆的不排走路")
+    end
+    ISBuildMenu.cheat = false
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.build(P, "cs_wall_01_1", { { 131, 130, 0, 0 } })
+    check(walks == 1 and #queued == 1 and #near2.objects == 0, "作弊關：照舊先走過去再排動作")
+    if w2 then
+        nowMs = nowMs + 6000
+        MinidoracatBuilder.Client.dismantle(P, w2, "wall", {})
+        check(walks == 2 and #queued == 1, "作弊關：本工具拆的照舊先走過去")
+    end
+    MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
+    isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")

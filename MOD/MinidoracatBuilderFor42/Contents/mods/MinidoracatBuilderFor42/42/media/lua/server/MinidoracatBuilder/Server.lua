@@ -23,7 +23,7 @@ MinidoracatBuilder.Server = Server
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
-local INTENT_TTL_MS = 180000          -- 收下後要先走過去（INTENT_REACH 100 格，繞路也夠）；每做完一項再延長
+local INTENT_TTL_MS = 180000          -- 收下後要先走過去（INTENT_REACH 100 格，繞路也夠；建造作弊不走）；每做完一項再延長
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
@@ -83,7 +83,8 @@ end
 
 -- 區域系統第一次看到一個 chunk 時會讀周圍 7×7 chunk 的快照，同一批晚到的牆會漏存（pitfalls「伺服器端蓋自建建築，
 -- 要先讓區域系統發現那一帶」）。收到請求就對錨點那一帶有地板的一格重推一次，回那一帶的喚醒時間；沒推成（格子沒載入、
--- 沒地板）不記，下次再試。ponytail：表每 24×24 格一筆、不清；只記玩家附近的錨點（intent 先查距離），量跟著蓋過的範圍走。
+-- 沒地板）不記，下次再試。ponytail：表每 24×24 格一筆、不清；只記伺服器已載入的格子（一般玩家另受 Check.inReach 限在
+-- 身邊，開建造作弊的只有管理員），量跟著蓋過的範圍走。
 local function wake(x, y)
     local k = math.floor(x / WAKE_SPAN) .. "," .. math.floor(y / WAKE_SPAN)
     local t = woken[k]
@@ -141,8 +142,6 @@ function Server.intent(player, args)
     local c = args.c
     if type(c) ~= "table" then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
-    local near = Check.INTENT_REACH
-    local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local anchors = {}
     for i = 1, maxItems * 4 + 1, 4 do
         if c[i] == nil then break end
@@ -151,7 +150,7 @@ function Server.intent(player, args)
         if not (x and y and z and d) or #anchors >= maxItems or not getWorld():isValidSquare(x, y, z) then
             return Server.refuse(player, n, 0, "BAD_REQUEST")
         end
-        if math.abs(x + 0.5 - px) > near or math.abs(y + 0.5 - py) > near or math.abs(z - pz) > 1 then
+        if not Check.inReach(player, x, y, z) then
             return Server.refuse(player, n, 0, "TOO_FAR", { x = x, y = y, z = z })
         end
         anchors[#anchors + 1] = { x, y, z, d }
@@ -449,7 +448,7 @@ end
 
 -- 客戶端請求：{ n = nonce, t = { x1, y1, z1, "名稱1", x2, ... }（照拆的順序，攤平；名稱＝那件的 sprite 名稱）}，最多
 -- MaxCellsPerDrag 件（和建造同一個上限）。收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
--- 能不能拆在動作完成時才查（玩家要先走過去），這裡只驗格式與大概的距離（和建造請求同一個範圍）。
+-- 能不能拆在動作完成時才查（玩家要先走過去，建造作弊不走），這裡只驗格式與大概的距離（和建造請求同一個範圍，Check.inReach）。
 function Server.dismantleIntent(player, args)
     if type(args) ~= "table" then return end
     local n = int(args.n, 1, 2147483647)
@@ -462,8 +461,6 @@ function Server.dismantleIntent(player, args)
     local t = args.t
     if type(t) ~= "table" then return dismantleRefused(player, n, 0, "BAD_REQUEST") end
     local maxItems = setting("MaxCellsPerDrag", 32)
-    local near = Check.INTENT_REACH
-    local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
     local list = {}
     for i = 1, maxItems * 4 + 1, 4 do
         if t[i] == nil then break end
@@ -471,7 +468,7 @@ function Server.dismantleIntent(player, args)
         if not (x and y and z) or type(e) ~= "string" or #e > 128 or e:find("%c") or #list >= maxItems then
             return dismantleRefused(player, n, 0, "BAD_REQUEST")
         end
-        if math.abs(x + 0.5 - px) > near or math.abs(y + 0.5 - py) > near or math.abs(z - pz) > 1 then
+        if not Check.inReach(player, x, y, z) then
             return dismantleRefused(player, n, 0, "TOO_FAR", { x = x, y = y, z = z })
         end
         list[#list + 1] = { x, y, z, e }

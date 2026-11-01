@@ -146,8 +146,8 @@ end
 -- 各格的預覽：照順序每格 Check.item（朝向照錨點的第 4 欄，沒有用 d），可蓋的從摘要副本扣掉成本（Materials.take；替換的
 -- 格子只扣要補的 info.pay），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
 -- 副本的 items 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個
--- 順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去，所以距離只照 Server.intent 的範圍，
--- 不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
+-- 順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
+-- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、OVER_MAX）的不跑 Check.item，照那個碼。
 -- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
 function Cursor.preview(player, name, d, anchors, S)

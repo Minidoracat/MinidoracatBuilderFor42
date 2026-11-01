@@ -22,7 +22,7 @@ local DENY = {
         [true] = { label = "MinidoracatBuilder:dismantle", preview = true } },
     wire = { [false] = { label = "MinidoracatBuilder:wire" }, [true] = { label = "MinidoracatBuilder:wire", preview = true } },
 }
--- 請求的錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）。Server.intent 與游標預覽共用
+-- 請求的錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）。Check.inReach 用
 Check.INTENT_REACH = 100
 -- 線路（第六階段，設計稿）：一條最多幾個開關、幾片燈；燈和每個開關、接線的人和目標：水平各軸幾格內、樓層差幾層內。
 -- 伺服器 Circuits 照它判斷，客戶端 Wiring 照它寫說明
@@ -35,6 +35,16 @@ function Check.setting(name, default)
     return v
 end
 local setting = Check.setting
+
+-- 請求的錨點 (x, y, z) 在收請求的範圍內：水平各軸 INTENT_REACH 格內、樓層差 ≤ 1。Server.intent、Server.dismantleIntent
+-- 與游標預覽共用。建造作弊不限（使用者 2026-11-02 選照原版：作弊時不走過去、點哪裡蓋哪裡，ISBuildingObject.lua:208、
+-- 拆的 ISDestroyCursor.lua:24）。
+function Check.inReach(player, x, y, z)
+    if Materials.cheat(player) then return true end
+    local near = Check.INTENT_REACH
+    return math.abs(x + 0.5 - player:getX()) <= near and math.abs(y + 0.5 - player:getY()) <= near
+        and math.abs(z - math.floor(player:getZ())) <= 1
+end
 
 -- 玩家到佔地最近一格的水平距離（格中心）、樓層差、最近的那一格。樓梯的平台不算（在上一層，靠近它不等於靠近樓梯）。
 local function reach(player, cells)
@@ -107,7 +117,9 @@ local safehouseCode = Check.safehouse
 
 -- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝格邊種類，
 -- 從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
+-- 建造作弊不查（同 Check.inReach：角色不走過去，原地蓋、原地拆）。
 function Check.near(player, cells, edge, preview)
+    if Materials.cheat(player) then return nil end
     local dist, dz, nearest = reach(player, cells)
     if not nearest or dist > setting("MaxDistance", 3) or dz > 1 then
         local c = nearest or cells[1]
@@ -132,7 +144,7 @@ end
 -- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器；
 -- 替換時只查要補的料與新舊工具）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
--- （錨點離玩家水平各軸 ≤ INTENT_REACH、樓層差 ≤ 1），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查）。
+-- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）。
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂格（Place.roofAt），後面的格子可以靠它撐著。
 -- 伺服器（opts 為 nil）不查材料：Server.complete 自己 plan。
 function Check.item(player, name, d, anchor, opts)
@@ -154,9 +166,7 @@ function Check.item(player, name, d, anchor, opts)
     info.cells, info.sprites = cells, sprites
     -- 先用座標驗距離，通過才補格子（補格子會改世界）
     if walk then
-        local px, py, pz = player:getX(), player:getY(), math.floor(player:getZ())
-        local near = Check.INTENT_REACH
-        if math.abs(anchor[1] + 0.5 - px) > near or math.abs(anchor[2] + 0.5 - py) > near or math.abs(anchor[3] - pz) > 1 then
+        if not Check.inReach(player, anchor[1], anchor[2], anchor[3]) then
             return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
         end
     else

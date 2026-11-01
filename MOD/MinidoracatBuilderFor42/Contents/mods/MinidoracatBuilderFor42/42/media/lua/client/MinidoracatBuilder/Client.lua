@@ -3,13 +3,14 @@
 -- 能不能拆、退什麼料都由伺服器重算（Server.intent／Server.complete、Server.dismantleIntent／Server.dismantle）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Materials"
 require "TimedActions/MinidoracatBuilderPlaceAction"
 require "TimedActions/MinidoracatBuilderDismantleAction"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
 MinidoracatBuilder.Client = Client
-local Entry, Messages = MinidoracatBuilder.Entry, MinidoracatBuilder.Messages
+local Entry, Messages, Materials = MinidoracatBuilder.Entry, MinidoracatBuilder.Messages, MinidoracatBuilder.Materials
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
@@ -81,11 +82,13 @@ end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
--- 佇列空了以後 Cursor.tick 照它提示
+-- 佇列空了以後 Cursor.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:208；伺服器也不限距離，
+-- Check.near）
 local function queue(b)
     b.queued = true
+    local walk = not Materials.cheat(b.player)
     for i, c in ipairs(b.cells) do
-        if walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) == false then
+        if walk and walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
             b.noRoom = i
             return
@@ -227,14 +230,16 @@ local function finish(b, refused)
 end
 
 -- 伺服器收下才走過去、照 items 的順序排動作（同 Client.build）。旁邊沒空位、原版拆解現在不能拆的那一件跳過，照排下一件。
+-- 建造作弊時本工具拆的不走過去（同 queue；原版 ISDestroyCursor.lua:24），原版拆解的照原版走（它看搬運作弊，不看建造作弊）。
 local function queueUnbuild(b)
     b.queued = true
+    local walk = not Materials.cheat(b.player)
     for _, it in ipairs(b.items) do
         local code
         if it.route == "scrap" then
             code = queueScrap(b.player, it.obj)
             if code then settle(b, code, { code = code }) else b.scrapping[#b.scrapping + 1] = it end
-        elseif walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
+        elseif walk and walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
             code = "NO_ROOM"
             resolve(b, b.index[it], code, { code = code })
         else
