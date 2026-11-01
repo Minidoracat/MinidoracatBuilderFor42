@@ -12,7 +12,7 @@ Project Zomboid Build 42 MOD。
 - **開關與燈**：開關放進封好的房間會自動接上同一間的燈，再放一個就變成雙切；也能手動接線。和原版一樣要有電才會亮。
 - **拆除**：右鍵選「拆除（建造工坊）」拆掉用建造工坊蓋的東西，每種材料退回 1 件到全部。
 - **伺服器把關**：材料、距離、走不走得到和安全屋權限都由伺服器檢查；裝了 Minidoracat Safehouse 時照它的權限。
-- **管理員設定**：在建造工坊的「管理」面板或沙盒設定開關能蓋的種類、MOD 與圖塊組，也能調誰能蓋、在哪裡蓋、最遠距離、一次拖曳最多幾項、材料倍率。
+- **管理員設定**：在建造工坊的「管理」面板或沙盒設定開關能蓋的種類、MOD 與圖塊組，也能調誰能蓋、在哪裡蓋、最遠距離、一次拖曳最多幾項、材料倍率，以及蓋的東西殭屍打不打得壞、門敲不敲得破、容器容量倍率。
 
 完整說明與常見問題見 Steam 指南：[繁體中文](https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491)／[English](https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545)（稿源 [STEAM_GUIDE.md](STEAM_GUIDE.md)、[STEAM_GUIDE_EN.md](STEAM_GUIDE_EN.md)）。
 

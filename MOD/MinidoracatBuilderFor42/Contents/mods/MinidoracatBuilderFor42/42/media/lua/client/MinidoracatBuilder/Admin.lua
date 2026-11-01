@@ -1,4 +1,4 @@
--- 管理面板（設計稿 builder-feedback-1031 第 1、2 節）：管理員開關種類、來源、圖塊組，改六個規則沙盒值。
+-- 管理面板（設計稿 builder-feedback-1031 第 1、2 節）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
 -- 改開關只改面板裡的草稿；按「套用」才寫沙盒，走原版沙盒封包（不新增網路指令）：
 --   多人：當下從 getSandboxOptions() 複製一份、只改本 MOD 的鍵、sendToServer。伺服器先驗 Capability.SandboxOptions
 --   （PacketTypes.java:300-305,421），再存檔、轉送給每個連線（GameServer.java:1710-1728），客戶端收到後 toLua 更新
@@ -44,6 +44,9 @@ Admin.RULES = {
     { key = "MaxDistance", kind = "number", min = 2, max = 8, step = 1, default = 3 },
     { key = "MaxCellsPerDrag", kind = "number", min = 1, max = 64, step = 1, default = 32 },
     { key = "CostMultiplier", kind = "number", min = 0, max = 10, step = 0.05, default = 1 },
+    { key = "ZombieProof", kind = "bool", default = false },
+    { key = "ZombieProofDoors", kind = "bool", default = false },
+    { key = "ContainerCapacityMultiplier", kind = "number", min = 1, max = 10, step = 0.1, default = 1 },
 }
 local TABS = { "kinds", "sources", "tilesets", "rules" }
 

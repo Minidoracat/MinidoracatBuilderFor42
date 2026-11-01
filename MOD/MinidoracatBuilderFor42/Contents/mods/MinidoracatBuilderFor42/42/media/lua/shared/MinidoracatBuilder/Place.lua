@@ -244,6 +244,7 @@ end
 local function finish(sq, obj, index)
     sq:AddSpecialObject(obj, index or -1) -- 會呼叫 addToWorld，照 sprite 的 container 屬性建容器（IsoObject.java:4502-4504）
     obj:setExplored(true) -- 所以排在這之後：蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:736-737）
+    Place.fitContainers(obj) -- 容器也是 addToWorld 建的；容量跟著下一行送給玩家
     obj:transmitCompleteItemToClients()
 end
 
@@ -321,11 +322,29 @@ local function solidHealth(p)
     local m = mat and ISMoveableDefinitions:getInstance().getHealthDefinition(mat) or 1
     return (tonumber(p:get("PickUpWeight")) or 50) * m, 1
 end
+-- 照種類與圖塊算耐久與 thumpDmg（hp 是 nil＝照原版不打：門框、地板、不擋路的東西；dmg 是 nil＝不改預設）
+local function isSolid(kind, p) return not Entry.EDGE[kind] and (p:has(F.solid) or p:has(F.solidtrans)) end
+local function durability(kind, p)
+    if isSolid(kind, p) then return solidHealth(p) end
+    return HEALTH[kind], nil
+end
+-- 沙盒「殭屍打不壞」（ZombieProof，使用者 2026-11-01 選「不打，也不找路穿過」）：IsoThumpable 不給打，原生尋路把它當一般的牆
+-- （getThumpableFor 看 isThumpable，IsoThumpable.java:1093-1126；nativeCode/SquareUpdateTask.java:334-381），玩家武器也打不到
+-- （:1148-1157,1564），大錘不看它（ISDestroyCursor.lua:293-361）。爬行殭屍對低柵欄不看 isThumpable（:1111-1117），所以 thumpDmg
+-- 也調到最大：每下只扣「圍著打的殭屍數 ÷ thumpDmg」（:1029-1041）。PROOF_DMG 減 0..3 同時是「照選項改過」的記號（引擎欄位、
+-- 隨存檔，不靠 modData），減的數記改之前的樣子：1＝原本可打，2＝原本 thumpDmg 是 1（不然是預設 8）。關掉時照它還原，
+-- 不重新分類（Rules 改版、圖塊換成損壞圖時分類會變）
+local PROOF_DMG = 2147483647
+local function proofDmg(thump, dmg) return PROOF_DMG - (thump and 1 or 0) - (dmg == 1 and 2 or 0) end
+-- 沙盒「殭屍敲不破門」（ZombieProofDoors，使用者 2026-11-01 要求和上面分開）：門沒有不給打的旗標（IsoDoor.java:1246-1260），
+-- 只能把耐久調高；maxHealth 沒有 setter（:2401,2639），關掉時夾回 maxHealth（建構子照圖塊設的，:807-821）
+local DOOR_HP = 1000000000
+local function proof(key) return Entry.settings()[key] == true end
 local function thumpable(c, kind, north)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
-    local solid = not Entry.EDGE[kind] and (p:has(F.solid) or p:has(F.solidtrans))
+    local solid = isSolid(kind, p)
     -- 柱子照原版補的轉角柱（ISBuildUtil.lua:89-93）：轉角、不可穿過（IsoThumpable 預設 false，IsoThumpable.java:107）。
     --   不設轉角的話 north＝false 的柱子會被當成這一格的西牆，殭屍走過西邊那條線時把它當目標打（IsoGridSquare.java:3816
     --   getSpecialWall、:4027 testCollideSpecialObjects、IsoZombie.java:3681）。可穿過的話原生尋路找格邊能不能打時，
@@ -341,10 +360,14 @@ local function thumpable(c, kind, north)
     obj:setCorner(corner)
     obj:setCanBarricade(kind == "windowFrame")
     obj:setIsFloor(kind == "floor")
-    local hp, dmg = HEALTH[kind], nil
-    if solid then hp, dmg = solidHealth(p) end
-    if dmg then obj:setThumpDmg(dmg) end
-    obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的東西照原版不打
+    local hp, dmg = durability(kind, p)
+    if proof("ZombieProof") then
+        obj:setThumpDmg(proofDmg(hp ~= nil, dmg))
+        obj:setIsThumpable(false)
+    else
+        if dmg then obj:setThumpDmg(dmg) end
+        obj:setIsThumpable(hp ~= nil) -- 門框、地板、不擋路的東西照原版不打
+    end
     obj:setIsDismantable(not groundFloor(obj, sq))
     hp = hp or 200
     obj:setMaxHealth(hp)
@@ -459,7 +482,7 @@ end
 -- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
 -- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，原版只控制地圖房間的燈（IsoLightSwitch.java:73-99），線路上的燈由
 -- 伺服器 Circuits 切（放好後 Server.complete 呼叫 Circuits.placed 自動接線）。
--- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）。
+-- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）；沙盒「殭屍打不壞」打開時不設。
 -- IsoLightSwitch 沒有 buildMaterials：拆了退什麼記在伺服器帳本（server/MinidoracatBuilder/Ledger.lua）。
 local function newLight(c)
     local sq, spr = c.sq, c.spr
@@ -471,7 +494,7 @@ local function newLight(c)
     -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開
     if p:has("lightR") or not sq:getRoom() then obj:setActivated(true) end
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
-    if p:has(F.solid) or p:has(F.solidtrans) then obj:setMovedThumpable(true) end
+    if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = spr:getName()
     return obj
 end
@@ -574,6 +597,8 @@ function Place.build(kind, cells, placed)
         local obj
         if kind == "door" then
             obj = IsoDoor.new(getCell(), sq, spr:getName(), north)
+            obj:getModData().builderEntry = spr:getName() -- 讀檔時認得出來（Place.harden）；拆除不認門（Dismantle.mine）
+            if proof("ZombieProofDoors") then obj:setHealth(DOOR_HP) end
             placed[#placed + 1] = obj
             finish(sq, obj)
         elseif kind == "window" then
@@ -659,6 +684,12 @@ Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAbo
 --     現在歸柱子或不列（BLOCKS_EDGE 這類）的照原版轉角柱改；現在歸柵欄這類的不動。
 --   地面覆蓋（0.2.0 以前是獨立物件，Rules.onFloor）：只在伺服器排隊，帳本建好之後的下一個 tick 改掛到地板
 --     （Place.relink）。讀檔回呼裡不移除物件：這時正在列這一格的物件，單機的帳本也還沒建（同上）。
+--   本 MOD 蓋的（含門、燈）：「殭屍打不壞」「殭屍敲不破門」「容器容量倍率」照目前的沙盒值重設（Place.harden、
+--     Place.fitContainers）。LoadGridsquare 早於註冊原生尋路（IsoChunk.java:3835,3865），尋路吃得到改過的值。兩端各自照
+--     載入時的沙盒值算、不另外同步：多人中途改了選項，伺服器還載入著的那一帶照舊，送給客戶端的是記憶體裡的物件
+--     （PlayerDownloadServer.java:230-234），客戶端重新載入時卻照新值算，兩端不一致到伺服器也重新載入那一帶為止（重開服，或附近
+--     沒人、伺服器卸載那一格後再載入，ServerMap.java:540-563）。
+--     改了選項後要重新載入才套用（使用者 2026-11-01 選）。
 local relinkQueue, relinking = {}, false
 local function relinkTick()
     local Overlays = MinidoracatBuilder.Overlays
@@ -672,10 +703,78 @@ local function relinkTick()
     end
 end
 
+-- 改之前可不可打：isThumpable() 在同一條邊有木板時一律回 true（IsoThumpable.java:1677-1679；isBarricaded 只比方向，
+-- :1615-1622），門框旁的門釘了木板也算，沒有讀原本欄位的方法。有木板時改照種類算（和建造時的 thumpable 同一份
+-- durability），分類不到的當作不打：記成可打的話，關掉時門框這類會變成殭屍要打的牆（getSpecialWall，IsoGridSquare.java:3809,3816）
+local function wasThumpable(obj)
+    if not obj:isBarricaded() then return obj:isThumpable() end
+    local spr = obj:getSprite()
+    local kind = spr and Rules.classify(spr)
+    return kind ~= nil and durability(kind, spr:getProperties()) ~= nil
+end
+
+-- 讀檔時照目前的沙盒值重設「殭屍打不壞」「殭屍敲不破門」（建造時已照當下的值設好）。只改和設定不一致的：兩個選項都關、
+-- 沒改過的物件什麼都不動
+function Place.harden(obj)
+    if instanceof(obj, "IsoThumpable") then
+        local on = proof("ZombieProof")
+        if on == (obj:getThumpDmg() >= PROOF_DMG - 3) then return end
+        if on then
+            obj:setThumpDmg(proofDmg(wasThumpable(obj), obj:getThumpDmg()))
+            obj:setIsThumpable(false)
+        else
+            local k = PROOF_DMG - obj:getThumpDmg()
+            obj:setIsThumpable(k % 2 == 1)
+            obj:setThumpDmg(k >= 2 and 1 or 8) -- 8＝IsoThumpable 的預設（IsoThumpable.java:101）
+        end
+    elseif instanceof(obj, "IsoLightSwitch") then
+        local p = obj:getSprite() and obj:getSprite():getProperties()
+        if not p then return end
+        local want = (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof")
+        if obj:isMovedThumpable() ~= want then obj:setMovedThumpable(want) end
+    elseif instanceof(obj, "IsoDoor") then
+        if proof("ZombieProofDoors") then
+            if obj:getHealth() ~= DOOR_HP then obj:setHealth(DOOR_HP) end
+        elseif obj:getHealth() > obj:getMaxHealth() then
+            obj:setHealth(obj:getMaxHealth())
+        end
+    end
+end
+
+-- 沙盒「容器容量倍率」（ContainerCapacityMultiplier）：圖塊寫的容量 × 倍率（四捨五入），最多 100：世界容器的 getCapacity 夾在
+-- 100（ItemContainer.java:168），伺服器搬東西照它檢查（TransactionManager.java:269-275,294-300），設更大也放不進去。原本的容量
+-- 照引擎建容器的算法（IsoObject.java:5283-5302；沒寫時一般 50、冷凍庫 15，ItemContainer.java:91）；認不出來的不動，本來就 ≥100 的
+-- 算出來也是 100，和 getCapacity 一樣，不動。容量隨存檔（ItemContainer.java:2439,2458）。建造時在送給玩家之前設，讀檔時兩端照目前的值重設
+function Place.fitContainers(obj)
+    local n = obj:getContainerCount()
+    if n == 0 then return end
+    local spr = obj:getSprite()
+    local p = spr and spr:getProperties()
+    if not p then return end
+    -- 倍率照百分之一取整、再用整數算四捨五入：二進位存不準的倍率直接乘，會在 .5 邊界少一格（50×1.15、15×4.1；滑桿一格 0.1 也會碰到）
+    local m = math.floor((tonumber(Entry.settings().ContainerCapacityMultiplier) or 1) * 100 + 0.5)
+    for i = 0, n - 1 do
+        local c = obj:getContainerByIndex(i)
+        local base
+        if c and i == 0 and p:has(F.container) then
+            base = tonumber(p:get("ContainerCapacity")) or 50
+        elseif c and c:getType() == "freezer" then
+            base = tonumber(p:get("FreezerCapacity")) or 15
+        end
+        if base then
+            local want = math.min(100, math.floor((base * m + 50) / 100))
+            if c:getCapacity() ~= want then c:setCapacity(want) end
+        end
+    end
+end
+
 function Place.migrate(obj)
-    if not (instanceof(obj, "IsoThumpable") and obj:hasModData()) then return end
+    if not (obj:hasModData() and obj:getModData().builderEntry) then return end
+    Place.harden(obj)
+    Place.fitContainers(obj)
+    if not instanceof(obj, "IsoThumpable") then return end
     local md = obj:getModData()
-    local sq = md.builderEntry and obj:getSquare()
+    local sq = obj:getSquare()
     if not sq then return end
     local spr = obj:getSprite()
     if groundFloor(obj, sq) then

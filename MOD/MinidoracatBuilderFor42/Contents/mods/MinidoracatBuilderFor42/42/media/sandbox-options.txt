@@ -26,6 +26,18 @@ option MinidoracatBuilder.MaxCellsPerDrag
 option MinidoracatBuilder.CostMultiplier
 {type = double, min = 0, max = 10, default = 1.0, page = MinidoracatBuilder, translation = MinidoracatBuilder_CostMultiplier,}
 
+/* 殭屍打不壞（使用者 2026-11-01 選「不打，也不找路穿過」）：本 MOD 蓋的 IsoThumpable 不給殭屍打、thumpDmg 調到最大（爬行殭屍照樣打低柵欄），擋路的燈不設 movedThumpable。建造時與讀檔時（Place.migrate，兩端）照目前的值套用，關掉就還原 */
+option MinidoracatBuilder.ZombieProof
+{type = boolean, default = false, page = MinidoracatBuilder, translation = MinidoracatBuilder_ZombieProof,}
+
+/* 殭屍敲不破門（使用者 2026-11-01 要求和上面分開）：本 MOD 蓋的門耐久調到 10 億（門沒有不給打的旗標）。只認得有這個選項之後蓋的門（modData builderEntry）。建造時與讀檔時照目前的值套用，關掉就夾回原本的上限 */
+option MinidoracatBuilder.ZombieProofDoors
+{type = boolean, default = false, page = MinidoracatBuilder, translation = MinidoracatBuilder_ZombieProofDoors,}
+
+/* 容器容量倍率：本 MOD 蓋的容器（含冷凍庫）容量＝圖塊寫的容量 × 倍率，四捨五入，最多 100（世界容器的上限，伺服器搬東西也照它檢查）。建造時與讀檔時照目前的值套用 */
+option MinidoracatBuilder.ContainerCapacityMultiplier
+{type = double, min = 1, max = 10, default = 1.0, page = MinidoracatBuilder, translation = MinidoracatBuilder_ContainerCapacityMultiplier,}
+
 /* 關掉的來源：MOD ID，以分號分隔（不能用逗號：ScriptParser 拿它當欄位分隔）。預設關家族 MOD 與 entity 來源（設計稿） */
 option MinidoracatBuilder.DisabledSources
 {type = string, default = MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns, page = MinidoracatBuilder, translation = MinidoracatBuilder_DisabledSources,}

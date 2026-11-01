@@ -315,6 +315,10 @@ IsoThumpable = { new = function(_, sq, name, north)
     function o:getModData() return self.md end
     function o:isFloor() return self.set.setIsFloor == true end
     function o:getSquare() return sq end
+    -- 容器（boxes）、thumpDmg 預設 8：Place.fitContainers／Place.harden 用
+    function o:getContainerCount() return #(self.boxes or {}) end
+    function o:getContainerByIndex(i) return (self.boxes or {})[i + 1] end
+    function o:getThumpDmg() return self.set.setThumpDmg or 8 end
     return o
 end }
 -- 假物品與背包（getSomeTypeEvalRecurse／getFirstTagEvalRecurse 照原版：最多 n 個、過 predicate）
@@ -2032,6 +2036,7 @@ local function newKinds()
         function o:transmitCompleteItemToClients() self.sent = true end
         function o:getSquare() return sq end
         function o:getSprite() return spr end
+        function o:getContainerCount() return 0 end
         made[#made + 1] = o
         return o
     end }
@@ -2104,6 +2109,7 @@ local function newKinds()
         function o:transmitCompleteItemToClients() end
         function o:getSquare() return sq end
         function o:getSprite() return spriteMap[name] end
+        function o:getContainerCount() return 0 end
         function o:getProperties() return spriteMap[name]:getProperties() end
         function o:getType() return spriteMap[name]:getType() end
         return o
@@ -2212,6 +2218,8 @@ local function dismantleScenario()
         function o:getProperties() return spr:getProperties() end
         function o:getTextureName() return spr:getName() end
         function o:getType() return spr:getType() end
+        function o:getThumpDmg() return self.dmg or 8 end
+        function o:getContainerCount() return 0 end
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -3779,6 +3787,8 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         -- 舊版地面覆蓋建的時候伺服器設的欄位（Place 的 thumpable）：不是地板、殭屍不打、可穿過；三項各自翻
         function o:isThumpable() return self.thump == true end
         function o:isCanPassThrough() return self.pass ~= false end
+        function o:getThumpDmg() return 8 end
+        function o:getContainerCount() return 0 end
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -3864,6 +3874,236 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         "建造作弊：照掛、帳本是空表；拆得掉、什麼都不退")
     instanceof = realInst
     scrapDefs.OvMetal = nil
+end)()
+
+print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「容器容量倍率」（2026-11-01 B 站許願）：建造與讀檔照目前的值，關掉還原，都關時不動")
+;(function()
+    nowMs = nowMs + 180000
+    local Place = MinidoracatBuilder.Place
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local PROOF, DOOR = 2147483647, 1000000000
+    for x = 90, 97 do for y = 90, 97 do square(x, y, 0) end end
+    square(96, 96, 1) -- 讀檔情境的物件放二樓：不走一樓地板帳本那條
+    -- 引擎的容器（世界容器 getCapacity 夾在 100，ItemContainer.java:168）
+    local function box(t, cap)
+        local c = { t = t, cap = cap }
+        function c:getType() return self.t end
+        function c:getCapacity() return math.min(self.cap, 100) end
+        function c:setCapacity(v) self.cap = v end
+        return c
+    end
+    -- 照引擎 addToWorld 建容器（IsoObject.java:5283-5302）：container 旗標 → 主容器、Freezer → 冷凍庫；
+    -- 送給玩家時記下當下的容量（驗「先設容量才送」）
+    local function engineSq(x, y)
+        local sq = squares[x .. "," .. y .. ",0"]
+        local orig = sq.AddSpecialObject
+        function sq:AddSpecialObject(obj, index)
+            orig(self, obj, index)
+            local p = obj:getSprite():getProperties()
+            obj.boxes = {}
+            if p:has(F.container) then obj.boxes[1] = box(p:get("container"), tonumber(p:get("ContainerCapacity")) or 50) end
+            if p:has("Freezer") then obj.boxes[#obj.boxes + 1] = box("freezer", tonumber(p:get("FreezerCapacity")) or 15) end
+            function obj:transmitCompleteItemToClients()
+                self.sentCaps = {}
+                for i, b in ipairs(self.boxes) do self.sentCaps[i] = b.cap end
+            end
+        end
+        return sq
+    end
+    local wallS = sprite("zp_wall_01_0", 2701, { flags = { "WallN" }, keys = { WallN = "" } })
+    local sinkS = sprite("zp_sink_01_0", 2702, { flags = { "solid" } })
+    local fenceS = sprite("zp_fence_01_0", 2703, { flags = { "HoppableW" } })
+    local crateS = sprite("zp_crate_01_0", 2704, { flags = { "container", "solid" },
+        keys = { container = "crate", ContainerCapacity = "50" } })
+    local fridgeS = sprite("zp_fridge_01_0", 2705, { flags = { "container", "solid" },
+        keys = { container = "fridge", ContainerCapacity = "40", Freezer = "", FreezerCapacity = "15" } })
+    local bigS = sprite("zp_big_01_0", 2706, { flags = { "container", "solid" }, keys = { container = "crate", ContainerCapacity = "120" } })
+    local doorS = sprite("zp_door_01_0", 2707)
+    local floorS = sprite("zp_floor_01_0", 2708, { flags = { "solidfloor" } })
+    local lampS = sprite("zp_lamp_01_0", 2709, { flags = { "solid" } })
+    local dimS = sprite("zp_lamp_01_1", 2710)
+    local otherS = sprite("zp_other_01_0", 2711, { flags = { "solid" }, keys = { container = "crate" } }) -- 有容器但沒有 container 旗標
+    -- 0.1.0／0.1.1 當成牆蓋、現在不列的牆角片（WallSE＋collideN：BLOCKS_EDGE）：還原不能靠重新分類
+    local edgeS = sprite("zp_edge_01_0", 2712, { flags = { "WallSE", "collideN" } })
+    local frameS = sprite("zp_frame_01_0", 2713, { flags = { "DoorWallW" }, keys = { DoorWallW = "" } })
+    local postS = sprite("zp_post_01_0", 2714, { flags = { "WallSE" } })
+    world({ wallS, sinkS, fenceS, crateS, fridgeS, bigS, doorS, floorS, lampS, dimS, otherS, edgeS, frameS, postS })
+    check(Rules.classify(wallS) == "wall" and Rules.classify(fenceS) == "fence" and Rules.classify(floorS) == "floor"
+        and Rules.classify(edgeS) == nil and Rules.classify(frameS) == "doorFrame" and Rules.classify(postS) == "post",
+        "測試圖塊的種類：牆、柵欄、地板、門框、柱子，牆角片不列")
+    local P = player({ id = 2701, x = 93.5, y = 93.5, here = squares["93,93,0"], cheat = true })
+    local function put(n, name, x, y)
+        local ok = build(P, n, name, { x, y, 0 })
+        return ok and squares[x .. "," .. y .. ",0"].objects[1] or nil
+    end
+
+    -- 建造：打開時牆、會擋路的家具、柵欄都不給打，thumpDmg 調到最大（爬行殭屍照樣打低柵欄）；耐久照舊
+    sb.ZombieProof = true
+    local W, S, Fe = put(1, "zp_wall_01_0", 91, 91), put(2, "zp_sink_01_0", 92, 95), put(3, "zp_fence_01_0", 95, 91)
+    -- 記號＝PROOF 減「原本可打 1＋原本 thumpDmg 是 1 再加 2」：牆、柵欄 PROOF−1，家具 PROOF−3
+    check(W and W.set.setIsThumpable == false and W.set.setThumpDmg == PROOF - 1 and W.set.setMaxHealth == 450
+        and S and S.set.setIsThumpable == false and S.set.setThumpDmg == PROOF - 3 and S.set.setMaxHealth == 50
+        and Fe and Fe.set.setIsThumpable == false and Fe.set.setThumpDmg == PROOF - 1 and Fe.set.setMaxHealth == 300,
+        "殭屍打不壞（建造）：牆、會擋路的家具、柵欄不給打、thumpDmg 最大（記下原本的樣子）；耐久照舊（450、50、300）")
+    sb.ZombieProof = nil
+    local W2, S2 = put(4, "zp_wall_01_0", 92, 91), put(5, "zp_sink_01_0", 94, 95)
+    check(W2 and W2.set.setIsThumpable == true and W2.set.setThumpDmg == nil
+        and S2 and S2.set.setIsThumpable == true and S2.set.setThumpDmg == 1,
+        "關掉後新蓋的照原版：牆打得壞、thumpDmg 不改；家具一隻殭屍就能打（thumpDmg 1）")
+
+    -- 門：記號一律寫；「殭屍敲不破門」打開時耐久 10 億，關著不改
+    local doors = {}
+    IsoDoor = { new = function(_, sq, name, north)
+        local d = { class = "IsoDoor", name = name, north = north, md = {}, hp = 500, max = 500 }
+        function d:getModData() return self.md end
+        function d:hasModData() return next(self.md) ~= nil end
+        function d:setHealth(v) self.hp = v end
+        function d:getHealth() return self.hp end
+        function d:getMaxHealth() return self.max end
+        function d:setExplored() end
+        function d:transmitCompleteItemToClients() self.sentHp = self.hp end
+        function d:getContainerCount() return 0 end
+        function d:getSquare() return sq end
+        function d:getSprite() return spriteMap[name] end
+        doors[#doors + 1] = d
+        return d
+    end }
+    sb.ZombieProofDoors = true
+    Place.build("door", { { sq = squares["96,91,0"], spr = doorS, cost = {} } }, {})
+    sb.ZombieProofDoors = nil
+    Place.build("door", { { sq = squares["96,92,0"], spr = doorS, cost = {} } }, {})
+    local D1, D2 = doors[1], doors[2]
+    check(D1 and D1.md.builderEntry == "zp_door_01_0" and D1.sentHp == DOOR
+        and D2 and D2.md.builderEntry == "zp_door_01_0" and D2.sentHp == 500,
+        "門（建造）：一律寫記號；打開時送出前耐久就是 10 億，關著照圖塊的 500")
+
+    -- 容器（建造）：容量 × 倍率（四捨五入），冷凍庫照 FreezerCapacity；本來就 ≥100 的不動；送給玩家之前就設好
+    sb.ContainerCapacityMultiplier = 2
+    engineSq(91, 94)
+    engineSq(91, 95)
+    local C = put(6, "zp_crate_01_0", 91, 94)
+    local B = put(7, "zp_big_01_0", 91, 95)
+    sb.ContainerCapacityMultiplier = 1.5
+    engineSq(93, 95)
+    local R = put(8, "zp_fridge_01_0", 93, 95)
+    check(C and C.sentCaps and C.sentCaps[1] == 100 and C.boxes[1].cap == 100
+        and B and B.sentCaps and B.sentCaps[1] == 120
+        and R and R.sentCaps and R.sentCaps[1] == 60 and R.sentCaps[2] == 23,
+        "容器（建造）：倍率 2 時 50 → 100、送出前就設好；120 的不動；倍率 1.5 時冰箱 40 → 60、冷凍庫 15 → 23（四捨五入）")
+    sb.ContainerCapacityMultiplier = nil
+
+    -- 讀檔（Place.migrate，兩端都跑）
+    local up = squares["96,96,1"]
+    local function loaded(class, spr, o)
+        o = o or {}
+        local x = { class = class, spr = spr, md = {}, thump = o.thump, dmg = o.dmg or 8, moved = o.moved, hp = o.hp,
+            max = o.max or 500, boxes = o.boxes or {} }
+        if o.entry ~= false then x.md.builderEntry = spr:getName() end
+        function x:getSprite() return self.spr end
+        function x:hasModData() return next(self.md) ~= nil end
+        function x:getModData() return self.md end
+        function x:getSquare() return up end
+        function x:getThumpDmg() return self.dmg end
+        function x:setThumpDmg(v) self.dmg = v end
+        function x:isThumpable() return self.barricaded == true or self.thump == true end -- 引擎：有木板一律 true
+        function x:isBarricaded() return self.barricaded == true end
+        function x:setIsThumpable(v) self.thump = v end
+        function x:setCorner(v) self.corner = v end
+        function x:setCanPassThrough(v) self.pass = v end
+        function x:isMovedThumpable() return self.moved == true end
+        function x:setMovedThumpable(v) self.moved = v end
+        function x:getHealth() return self.hp end
+        function x:setHealth(v) self.hp = v end
+        function x:getMaxHealth() return self.max end
+        function x:getContainerCount() return #self.boxes end
+        function x:getContainerByIndex(i) return self.boxes[i + 1] end
+        function x:isFloor() return false end
+        function x:isCorner() return false end
+        return x
+    end
+    local function load(list) for _, o in ipairs(list) do Place.migrate(o) end end
+    local lw = loaded("IsoThumpable", wallS, { thump = true })
+    local odd = loaded("IsoThumpable", wallS, { thump = false }) -- 舊版或別處改過的：選項都關時不重算
+    local ls = loaded("IsoThumpable", sinkS, { thump = true, dmg = 1 })
+    local lf = loaded("IsoThumpable", floorS, { thump = false })
+    local nw = loaded("IsoThumpable", wallS, { thump = true, entry = false }) -- 不是本 MOD 蓋的
+    local le = loaded("IsoThumpable", edgeS, { thump = true }) -- 現在分類是 nil
+    local lamp = loaded("IsoLightSwitch", lampS, { moved = true })
+    local dim = loaded("IsoLightSwitch", dimS, { moved = false })
+    local all = { lw, odd, ls, lf, nw, le, lamp, dim }
+    load(all)
+    check(lw.thump == true and lw.dmg == 8 and odd.thump == false and odd.dmg == 8 and ls.thump == true and ls.dmg == 1
+        and le.thump == true and le.dmg == 8 and lamp.moved == true and dim.moved == false,
+        "讀檔、選項都關：什麼都不動（沒改過的不照現在的規則重算）")
+    sb.ZombieProof = true
+    load(all)
+    load(all) -- 重複跑結果一樣
+    check(lw.thump == false and lw.dmg == PROOF - 1 and odd.thump == false and odd.dmg == PROOF and ls.thump == false
+        and ls.dmg == PROOF - 3 and lf.thump == false and lf.dmg == PROOF and le.thump == false and le.dmg == PROOF - 1
+        and nw.thump == true and nw.dmg == 8 and lamp.moved == false and dim.moved == false,
+        "讀檔、打開：本 MOD 蓋的都不給打、記下原本的樣子（擋路的燈不設 movedThumpable）；不是本 MOD 蓋的不動")
+    sb.ZombieProof = nil
+    load(all)
+    check(lw.thump == true and lw.dmg == 8 and odd.thump == false and odd.dmg == 8 and ls.thump == true and ls.dmg == 1
+        and lf.thump == false and lf.dmg == 8 and le.thump == true and le.dmg == 8 and nw.thump == true
+        and lamp.moved == true and dim.moved == false,
+        "讀檔、關掉：照記號還原成打開前的樣子（牆 thumpDmg 8、家具 1、地板與原本不打的照舊不打、現在分類不到的牆角片照樣打得壞、"
+            .. "擋路的燈打得壞、不擋路的燈照舊）")
+    -- 同一條邊有木板時 isThumpable() 一律回 true（IsoThumpable.java:1677-1679），門框旁的門釘了木板也算：記號照種類算
+    local lfr = loaded("IsoThumpable", frameS, { thump = false })
+    local lpo = loaded("IsoThumpable", postS, { thump = true })
+    lfr.barricaded, lpo.barricaded = true, true
+    sb.ZombieProof = true
+    load({ lfr, lpo })
+    local barDmg = { lfr.dmg, lpo.dmg }
+    sb.ZombieProof = nil
+    load({ lfr, lpo })
+    check(barDmg[1] == PROOF and barDmg[2] == PROOF - 1 and lfr.thump == false and lpo.thump == true,
+        "讀檔、旁邊的門窗釘了木板：門框記成原本不打、柱子記成原本可打；關掉後門框照舊不打、柱子打得壞")
+
+    local ld = loaded("IsoDoor", doorS, { hp = 500 })
+    local hurt = loaded("IsoDoor", doorS, { hp = 300 })
+    local nd = loaded("IsoDoor", doorS, { hp = 500, entry = false }) -- 有這個選項之前蓋的門：沒有記號
+    sb.ZombieProofDoors = true
+    load({ ld, hurt, nd })
+    local onHp = { ld.hp, hurt.hp, nd.hp }
+    sb.ZombieProofDoors = nil
+    hurt.hp = 300
+    load({ ld, hurt, nd })
+    check(onHp[1] == DOOR and onHp[2] == DOOR and onHp[3] == 500 and ld.hp == 500 and hurt.hp == 300 and nd.hp == 500,
+        "讀檔、門：打開時耐久 10 億、認不出來的門不動；關掉時夾回原本的上限，本來就不到上限的不動")
+
+    local lc = loaded("IsoThumpable", crateS, { thump = true, boxes = { box("crate", 50) } })
+    local lr = loaded("IsoThumpable", fridgeS, { thump = true, boxes = { box("fridge", 40), box("freezer", 15) } })
+    local lb = loaded("IsoThumpable", bigS, { thump = true, boxes = { box("crate", 120) } })
+    local lo = loaded("IsoThumpable", otherS, { thump = true, boxes = { box("crate", 30) } })
+    local nc = loaded("IsoThumpable", crateS, { thump = true, boxes = { box("crate", 50) }, entry = false })
+    local cs = { lc, lr, lb, lo, nc }
+    sb.ContainerCapacityMultiplier = 2
+    load(cs)
+    local at2 = { lc.boxes[1].cap, lr.boxes[1].cap, lr.boxes[2].cap, lb.boxes[1].cap, lo.boxes[1].cap, nc.boxes[1].cap }
+    sb.ContainerCapacityMultiplier = 10
+    load(cs)
+    local at10 = lc.boxes[1].cap
+    sb.ContainerCapacityMultiplier = nil
+    load(cs)
+    check(at2[1] == 100 and at2[2] == 80 and at2[3] == 30 and at2[4] == 120 and at2[5] == 30 and at2[6] == 50
+        and at10 == 100 and lc.boxes[1].cap == 50 and lr.boxes[1].cap == 40 and lr.boxes[2].cap == 15,
+        "讀檔、容器：倍率 2 照算（≥100、認不出來的、不是本 MOD 蓋的不動），倍率 10 最多 100，改回 1 還原")
+    -- 二進位存不準的倍率：50×1.15＝57.5、冷凍庫 15×4.1＝61.5（滑桿一格 0.1 也會碰到），直接乘會少一格（57、61）
+    sb.ContainerCapacityMultiplier = 1.15
+    load({ lc })
+    local at115 = lc.boxes[1].cap
+    sb.ContainerCapacityMultiplier = 4.1
+    load({ lr })
+    local at41 = { lr.boxes[1].cap, lr.boxes[2].cap }
+    sb.ContainerCapacityMultiplier = nil
+    load({ lc, lr })
+    check(at115 == 58 and at41[1] == 100 and at41[2] == 62 and lc.boxes[1].cap == 50 and lr.boxes[2].cap == 15,
+        "讀檔、容器：.5 邊界照四捨五入進位（50×1.15＝58、冷凍庫 15×4.1＝62）")
+    instanceof = realInst
+    IsoDoor = nil
 end)()
 
 print()

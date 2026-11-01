@@ -145,7 +145,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 === 🧰 Rules for each kind
 [h3]Walls, floors and fences[/h3]
 [list]
-[*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300.
+[*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300. Server owners can turn on Zombies can't break builds in the sandbox.
 [*] [b]Stair openings[/b]: walls, fences and door frames can't block the way onto or off stairs.
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use.
@@ -196,13 +196,14 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [/list]
 [h3]Furniture and containers[/h3]
 [list]
-[*] [b]Zombies can break them[/b]: everything that blocks movement can be broken, including furniture, crates, rocks, and blocking wall-mounted objects, rugs and tabletop items.
+[*] [b]Zombies can break them[/b]: everything that blocks movement can be broken, including furniture, crates, rocks, and blocking wall-mounted objects, rugs and tabletop items. Server owners can turn on Zombies can't break builds in the sandbox.
 [*] [b]Ordinary furniture durability[/b]: the same as when moved and placed in vanilla, tougher the heavier it is and the harder its material.
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
 [*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
+[*] [b]Container capacity[/b]: the same as the vanilla piece; server owners can set Container capacity multiplier in the sandbox, up to 100.
 [/list]
 [h3]Lights[/h3]
 [list]
@@ -403,7 +404,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
-[*] [b]Rules[/b]: the six rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items per drag and Material cost multiplier.
+[*] [b]Rules[/b]: the nine rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items per drag, Material cost multiplier, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
 [/list]
 [h3]Applying[/h3]
 [list]
@@ -433,6 +434,9 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
 [tr][td]Most items per drag[/td][td]32[/td][td]1–64[/td][td]How many items one build request can place, for example a line of walls[/td][/tr]
 [tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
+[tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
+[tr][td]Zombies can't break doors[/td][td]Off[/td][td]On/off[/td][td]Doors built with this mod get very high durability: zombies still bang on them but can't break them. Doors built before this option existed aren't recognized and break like vanilla. Doors already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
+[tr][td]Container capacity multiplier[/td][td]1.0[/td][td]1–10[/td][td]Multiplies the capacity of containers built with this mod, rounded, up to 100 (the game's limit), fridge freezers too. When it goes down, the items inside stay, but no more fit. Containers already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods and mods whose tiles belong to their own build menus are off[/td][/tr]
 [tr][td]Disabled tilesets[/td][td]Empty[/td][td]Tileset names separated by semicolons[/td][td]Tiles from these tilesets can't be built, for example walls_exterior_house_01[/td][/tr]
 [/table]
@@ -542,15 +546,16 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove floor overlays you don't want[/b]: road markings, cracks and similar overlays built with Build Anything can't be removed after removal.
+[*] [b]Zombie-proof builds and container capacity[/b]: to turn what you built back to vanilla, switch off Zombies can't break builds and Zombies can't break doors, set Container capacity multiplier back to 1, restart the server (reload the save in singleplayer), then visit every place you built so the area loads again. This can't be changed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
 [*] [b]Singleplayer[/b]: back up the save, remove this mod from that save's mod list, then load it.
 [/olist]
 [h3]What you built, after removal[/h3]
 [list]
 [*] [b]Walls, fences and stairs[/b]: walls still block, fences can be climbed over as in vanilla, and stairs can be climbed.
-[*] [b]Zombies[/b]: can still break walls and fences.
+[*] [b]Zombies[/b]: can still break walls and fences; what had become zombie-proof before removal stays that way.
 [*] [b]Doors, windows and curtains[/b]: open and close as in vanilla.
-[*] [b]Containers[/b]: the items inside are still there.
+[*] [b]Containers[/b]: the items inside are still there, and the capacity stays as it was before removal.
 [*] [b]Movable lights[/b]: switch them on and off directly, or pick them up as in vanilla.
 [*] [b]Loading[/b]: the save loads without errors.
 [/list]
