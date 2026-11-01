@@ -60,6 +60,9 @@
                          `x:setName(x:getScriptItem():getDisplayName())` 是設回原名、不存不送，不列（Bags bags-names-1030a）；
                          本來就要改名的 repo（翻譯包）寫進 verify_ignore.txt 並註明理由。抓不到原版程式寫進的名字
                          （ISClothingExtraAction:createItemNew 換穿時把帶磨損、染血字樣的 getName() 當成改名，:76-79）
+ 19. repo 專屬檢查        — scripts/verify_local.py（選用）：只有單一 MOD 用得到的靜態檢查放那裡，不改本檔
+                          （本檔是家族模板的副本，照模板更新時整份覆寫）。它照本檔格式印 PASS／FAIL 行，結束碼非零＝FAIL
+                          （Builder 管理面板規則頁的標籤寬：ES、PT 的譯文從 0.2.0 起被截，2026-11-01 才由 E2E 看到）
 
 新增檢查時：同步把對應的坑記進 AGENTS.md 踩坑錄，並依「踩坑進化協議」回流到
 pz-mod-template（見 AGENTS.md）。
@@ -1008,6 +1011,15 @@ for f in LUA_FILES:
         if _DISPLAY_NAME.search(arg):
             server_names.append(f"setName in {lua_rel}:{code.count(chr(10), 0, mm.end()) + 1}")
 warn("server／shared 不用顯示名稱 setName（名稱存檔並照原樣送給所有客戶端）", server_names)
+
+# ---- 19. repo 專屬檢查（scripts/verify_local.py，選用）----
+# 只有單一 MOD 用得到的檢查放那個檔，本檔照模板整份更新時才不會蓋掉它（Builder 2026-11-01：管理面板規則頁的標籤寬）。
+_local = os.path.join(REPO, "scripts", "verify_local.py")
+if os.path.isfile(_local):
+    _p = subprocess.run([sys.executable, _local], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    _out = [line.strip() for line in (_p.stdout + _p.stderr).splitlines() if line.strip()]
+    _t = "repo 專屬檢查（scripts/verify_local.py）"
+    fail(_t, _out or [f"結束碼 {_p.returncode}，沒有輸出"]) if _p.returncode else ok(f"{_t}：" + " ／ ".join(_out))
 
 # ---- 總結 ----
 print()
