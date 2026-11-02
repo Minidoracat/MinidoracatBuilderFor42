@@ -30,17 +30,32 @@ local function mine(o)
 end
 Dismantle.ours = mine
 
+-- 圖的種類與拆除方式（Rules.classify、Cost.refund；種類是 nil 時兩個都 nil）。兩個都只看圖，memo（選填，一次掃描用的空表）
+-- 照 sprite 名稱記住，一區拆除的預覽整區幾千件同一張圖只算一次。
+function Dismantle.classOf(spr, memo)
+    local name = memo and spr:getName()
+    local m = memo and memo[name]
+    if not m then
+        local kind = Rules.classify(spr)
+        m = { kind or false, kind and Cost.refund(kind, spr) or false }
+        if memo then memo[name] = m end
+    end
+    return m[1] or nil, m[2] or nil
+end
+
 -- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
-function Dismantle.kindOf(obj)
+-- memo 見 Dismantle.classOf。
+function Dismantle.kindOf(obj, memo)
     if not mine(obj) then return nil end
     if instanceof(obj, "IsoThumpable") and not obj:isDismantable() then
         local sq = obj:getSquare()
         if not (sq and Place.groundFloor(obj, sq)) then return nil end
     end
     local spr = obj:getSprite()
-    local kind = spr and Rules.classify(spr)
-    if not kind or Cost.refund(kind, spr) ~= "builder" then return nil end
+    if not spr then return nil end
+    local kind, refund = Dismantle.classOf(spr, memo)
+    if refund ~= "builder" then return nil end
     return kind
 end
 
@@ -190,6 +205,22 @@ function Dismantle.blocked(kind, plan)
     return nil
 end
 
+-- 缺的工具（Dismantle.tools 對背包，Materials.missingTools）。memo（選填，一次 collect 用的空表）：照「種類＋各片圖名」
+-- 記住結果。工具只看圖，同一次預覽背包不變；沒帶工具時整區每件都查到這裡，不必每件重算一次
+local function missingTools(player, kind, plan, memo)
+    if not memo then return Materials.missingTools(player, Dismantle.tools(kind, plan)) end
+    local parts = { kind }
+    for i, o in ipairs(plan.remove) do parts[i + 1] = o:getSprite():getName() end
+    if plan.overlay then parts[#parts + 1] = plan.overlay.name end
+    local key = table.concat(parts, "|")
+    local m = memo[key]
+    if m == nil then
+        m = Materials.missingTools(player, Dismantle.tools(kind, plan)) or false
+        memo[key] = m
+    end
+    return m or nil
+end
+
 -- 能不能拆，回 code, extra 或 nil。順序：
 --   同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
 --   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆；建造作弊不查）。
@@ -200,8 +231,8 @@ end
 --     集水的（IsWaterCollector）裡面有水：NOT_EMPTY。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
---   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。
-function Dismantle.check(player, kind, plan, preview)
+--   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
+function Dismantle.check(player, kind, plan, preview, toolMemo)
     local cells = {}
     for i, o in ipairs(plan.remove) do
         local sq = o:getSquare()
@@ -233,7 +264,7 @@ function Dismantle.check(player, kind, plan, preview)
         end
     end
     if not Materials.cheat(player) then
-        local missing = Materials.missingTools(player, Dismantle.tools(kind, plan))
+        local missing = missingTools(player, kind, plan, toolMemo)
         if missing then return "NO_TOOL", { tools = missing } end
     end
     return nil

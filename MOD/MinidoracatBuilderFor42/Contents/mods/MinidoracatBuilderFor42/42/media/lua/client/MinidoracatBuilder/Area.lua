@@ -3,9 +3,8 @@
 -- 輪完或停下跳總結通知。範圍是玩家那一層，另收正上方那層的屋頂（從屋裡框地板拆得到頭上那片，同 Menu.targets）。
 -- 這裡的判斷只給畫面用：能不能拆、退什麼料由伺服器照清單一件一件重查（Server.dismantle）；原版拆解照原版動作自己查。
 require "MinidoracatBuilder/Entry"
-require "MinidoracatBuilder/Rules"
-require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Dismantle"
+require "MinidoracatBuilder/Materials"
 require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Client"
@@ -13,12 +12,12 @@ require "MinidoracatBuilder/Client"
 local B = MinidoracatBuilder
 local Area = B.Area or {}
 B.Area = Area
-local Entry, Rules, Cost, Dismantle = B.Entry, B.Rules, B.Cost, B.Dismantle
+local Entry, Dismantle = B.Entry, B.Dismantle
 local Names, Messages, Client = B.Names, B.Messages, B.Client
 
 local LOG = "[MinidoracatBuilderFor42] "
 local PAD, GAP = 8, 6
-local PREVIEW_MS = 500 -- 同一個範圍的預覽多久重算一次（世界變了也看得到；游標每幀都問）
+-- 一區拆除的預覽不再照時間過期：同一個範圍、世界戳記（Area.stamp）沒變就回同一份（游標拖曳中停住才問、按住不動每秒問一次）
 
 -- 拆的順序（設計稿 3.4）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板；同一順位由上層往下。
 -- 二樓地板上有東西時不給拆（FLOOR_IN_USE），照這個順序拆到它時上面已經空了。表外的種類算 2
@@ -33,29 +32,30 @@ Area.ORDER = ORDER
 -- 本 MOD 蓋的這件怎麼拆（照 Cost.refund）：回 route, kind 或 nil（地圖原有的、原版蓋的不碰）。
 --   builder＝本工具拆（Dismantle.kindOf）；scrap＝原版拆解；pickup＝能搬，要原版撿起；none＝只能大錘砸；sheet＝原版移除窗簾。
 -- 門、窗簾是 IsoDoor／IsoCurtain（Place.build），不是 Dismantle.ours 認的物件，照 builderEntry 記號認：只拿來列在選單與
--- 面板上（說明該用原版哪個動作），不拆，記號被改了也沒關係
-function Area.route(obj)
-    local kind = Dismantle.kindOf(obj)
+-- 面板上（說明該用原版哪個動作），不拆，記號被改了也沒關係。memo 見 Dismantle.classOf
+function Area.route(obj, memo)
+    local kind = Dismantle.kindOf(obj, memo)
     if kind then return "builder", kind end
     if not (Dismantle.ours(obj) or ((instanceof(obj, "IsoDoor") or instanceof(obj, "IsoCurtain"))
         and obj:hasModData() and obj:getModData().builderEntry)) then
         return nil
     end
     local spr = obj:getSprite()
-    local k = spr and Rules.classify(spr)
+    if not spr then return nil end
+    local k, refund = Dismantle.classOf(spr, memo)
     if not k then return nil end
-    return Cost.refund(k, spr), k
+    return refund, k
 end
 
 -- sq 上本 MOD 蓋的每一件 → out：{ obj 或 overlay, kind, route, name＝sprite 名稱, plan（builder 才有） }。
--- 同一件（多格、樓梯三片）只收一次（seen）。roof＝true：正上方那層，只收本工具拆的屋頂
-function Area.scan(sq, seen, out, roof)
+-- 同一件（多格、樓梯三片）只收一次（seen）。roof＝true：正上方那層，只收本工具拆的屋頂。memo 見 Dismantle.classOf
+function Area.scan(sq, seen, out, roof, memo)
     if not sq then return end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         if not seen[o] then
-            local route, kind = Area.route(o)
+            local route, kind = Area.route(o, memo)
             if route and (not roof or (route == "builder" and kind == "roof")) then
                 local t = { obj = o, kind = kind, route = route, name = o:getSprite():getName() }
                 if route == "builder" then
@@ -113,15 +113,17 @@ Area.sendable = sendable
 -- 範圍內（玩家那一層，含正上方那層的屋頂）本 MOD 蓋的每一件，照 ORDER 與 z 由上往下排（同一順位照掃到的順序；
 -- 照順位、層分桶再接起來，不用 table.sort，家族規則）。每件另有 x, y, z（那件所在的格子）、tab、code／extra（預覽就知道
 -- 拆不了的：builder 照 Dismantle.check 的 preview，scrap 照原版 canScrapObject）。
--- limit：照順序查到這麼多件能送的就停，後面的不查（反正一次只送前 limit 件；游標拖曳時每秒重算，大範圍不必每件都查）
+-- limit：照順序查到這麼多件能送的就停，後面的不查（反正一次只送前 limit 件；游標預覽大範圍不必每件都查）。
+-- 一次 collect 內照圖名記住種類與拆除方式、照圖名組合記住缺的工具（Dismantle.classOf、Dismantle.check 的 toolMemo）：
+-- 結果和每件重算一樣，下一次 collect 重新開始（背包、沙盒變了照新的算）
 function Area.collect(x1, y1, x2, y2, z, player, limit)
     if x1 > x2 then x1, x2 = x2, x1 end
     if y1 > y2 then y1, y2 = y2, y1 end
-    local cell, seen, found = getCell(), {}, {}
+    local cell, seen, found, memo, tools = getCell(), {}, {}, {}, {}
     for x = x1, x2 do
         for y = y1, y2 do
-            Area.scan(cell:getGridSquare(x, y, z), seen, found, false)
-            Area.scan(cell:getGridSquare(x, y, z + 1), seen, found, true)
+            Area.scan(cell:getGridSquare(x, y, z), seen, found, false, memo)
+            Area.scan(cell:getGridSquare(x, y, z + 1), seen, found, true, memo)
         end
     end
     local buckets = {} -- [順位 * 2 + (上一層 0／這一層 1)] = 件
@@ -142,7 +144,7 @@ function Area.collect(x1, y1, x2, y2, z, player, limit)
         for _, t in ipairs(buckets[b] or {}) do
             if not limit or ok < limit then
                 if t.route == "builder" then
-                    t.code, t.extra = Dismantle.check(player, t.kind, t.plan, true)
+                    t.code, t.extra = Dismantle.check(player, t.kind, t.plan, true, tools)
                 elseif t.route == "scrap" then
                     t.code = scrapCode(player, t.obj)
                 end
@@ -205,28 +207,62 @@ local function eachCell(t, fn)
     end
 end
 
-local cache = { key = nil, at = 0, out = nil }
+local cache = { key = nil, stamp = nil, out = nil }
 
--- Cursor.startArea 的 preview：要拆的格子（bad＝false，游標畫紅）與只有拆不了、不拆的東西的格子（bad＝true），標籤三行
+-- 世界戳記：範圍（玩家那層與上一層）每格的物件數、每件容器裡的件數、地板掛的覆蓋張數，加上玩家背包件數與建造作弊。
+-- 拆完、別人蓋了或拆了、容器放進拿出、工具進出背包都會變，預覽照它決定要不要重算。整區 3,200 格約幾毫秒，比重算便宜。
+-- ponytail：同一格的東西原地換成別款（件數不變）認不出來，要等範圍變了才重算；放開時一律重新 collect、伺服器也一件一件重查
+function Area.stamp(x1, y1, x2, y2, z, player)
+    local cell, s = getCell(), 0
+    for x = x1, x2 do
+        for y = y1, y2 do
+            for dz = 0, 1 do
+                local sq = cell:getGridSquare(x, y, z + dz)
+                local n = -1
+                if sq then
+                    local objects = sq:getObjects()
+                    n = objects:size()
+                    for i = 0, n - 1 do
+                        local c = objects:get(i):getContainer()
+                        if c then n = n + 64 * (c:getItems():size() + 1) end
+                    end
+                    local floor = sq:getFloor()
+                    local list = floor and floor:getAttachedAnimSprite()
+                    if list then n = n + 4096 * list:size() end
+                end
+                s = (s * 31 + n) % 2147483629
+            end
+        end
+    end
+    local inv = player and player:getInventory()
+    return s .. ":" .. (inv and inv:getItems():size() or -1) .. ":" .. tostring(B.Materials.cheat(player))
+end
+
+-- Cursor.startArea 的 preview：要拆的格子（bad＝false，游標畫紅）與不拆的東西的格子（bad＝true）；只是超過一次上限
+-- （MaxCellsPerDrag）的另帶 over＝true（游標畫淡灰框、不畫警告三角：它們能拆，只是這次不送）。標籤三行。
+-- 同一個範圍、Area.stamp 沒變就回上一份（同一個表，游標看到同一份就不重排）
 function Area.preview(player, x1, y1, x2, y2, z)
     local key = x1 .. "," .. y1 .. "," .. x2 .. "," .. y2 .. "," .. z
-    local now = getTimestampMs()
-    if cache.key == key and now - cache.at < PREVIEW_MS then return cache.out end
+    local stamp = Area.stamp(math.min(x1, x2), math.min(y1, y2), math.max(x1, x2), math.max(y1, y2), z, player)
+    if cache.key == key and cache.stamp == stamp then return cache.out end
     local max = maxItems()
     local list = Area.collect(x1, y1, x2, y2, z, player, max)
-    local cells, at, go = {}, {}, 0
+    local cells, at, go, PlaceKey = {}, {}, 0, B.Place.key
     for _, t in ipairs(list) do
         local send = sendable(t) and go < max
+        local over = not send and sendable(t)
         if send then go = go + 1 end
         eachCell(t, function(x, y, cz)
-            local k = x .. "," .. y .. "," .. cz
+            local k = PlaceKey(x, y, cz)
             local c = at[k]
             if not c then
-                c = { x = x, y = y, z = cz, bad = not send }
+                c = { x = x, y = y, z = cz, bad = not send, over = over }
                 at[k] = c
                 cells[#cells + 1] = c
             elseif send then
-                c.bad = false
+                c.bad, c.over = false, false
+            elseif c.bad and not over then
+                c.over = false -- 同一格還有真的拆不了的：照舊標三角
             end
         end)
     end
@@ -236,8 +272,17 @@ function Area.preview(player, x1, y1, x2, y2, z)
         getText("IGUI_MBLD_Area_Count", tostring(go), tostring(#list - go)),
         getText("IGUI_MBLD_Area_HintRelease") .. sep .. getText("IGUI_MBLD_HintCancel"),
     } }
-    cache.key, cache.at, cache.out = key, now, out
+    cache.key, cache.stamp, cache.out = key, stamp, out
     return out
+end
+
+-- 拖曳中範圍還沒停住時游標只畫外框（Cursor.areaValid 的 outline）：標籤只寫大小與按鍵，件數停住才算
+function Area.outline(x1, y1, x2, y2)
+    local sep = getText("IGUI_MBLD_HintSep")
+    return { cells = {}, lines = {
+        getText("IGUI_MBLD_Area_Label", tostring(math.abs(x2 - x1) + 1), tostring(math.abs(y2 - y1) + 1)),
+        getText("IGUI_MBLD_Area_HintRelease") .. sep .. getText("IGUI_MBLD_HintCancel"),
+    } }
 end
 
 -- 右鍵「拆除一區...（建造工坊）」：開長方形游標（Cursor.startArea，C7），放開跳確認面板
@@ -248,6 +293,7 @@ function Area.start(playerNum)
     cache.key = nil
     Cursor.startArea(playerNum, {
         preview = function(x1, y1, x2, y2, z) return Area.preview(player, x1, y1, x2, y2, z) end,
+        outline = function(x1, y1, x2, y2) return Area.outline(x1, y1, x2, y2) end,
         release = function(x1, y1, x2, y2, z)
             cache.key = nil
             Area.confirm(playerNum, Area.collect(x1, y1, x2, y2, z, player),

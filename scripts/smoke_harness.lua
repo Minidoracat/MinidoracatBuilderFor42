@@ -1722,6 +1722,9 @@ do
             "最多兩行：放得下照斷，放不下第二行接上剩下的字、截掉處有省略號")
         local tl = W.tileLines(T, "fixtures bathroom 01\n#64", 8, nil)
         check(#tl == 2 and tl[1] == "fixtu..." and tl[2] == "#64", "方格名稱：圖塊組太長只截第一行，編號照樣在第二行")
+        local de = W.wrapMax(T, "Dunkelgrauer Teppich", 8, nil, 2)
+        check(#de == 2 and de[1] == "Dunke..." and de[2] == "Teppich",
+            "最多兩行：比行寬長的單字截短加省略號，不在字中間斷（DE「Dunkelgraue／r Teppich」）")
         local realReader = getFileReader
         local function perRow(content)
             getFileReader = function()
@@ -2680,6 +2683,139 @@ local function dismantleScenario()
     buildUtil.getStairObjects = realStairs
     check(#tg == 1 and tg[1].obj == R and tg[1].kind == "roof" and #ts == 1,
         "右鍵選單：點地板列出正上方的屋頂（從底下點不到）；樓梯兩片只列一項")
+
+    -- 一區拆除預覽的快取與防抖（temp/area-perf：40×40 大基地拖曳時幀時間 29 ms、移動時 100 ms）
+    require "MinidoracatBuilder/Area"
+    local Area, Cursor, Rules, Materials = MinidoracatBuilder.Area, MinidoracatBuilder.Cursor, MinidoracatBuilder.Rules,
+        MinidoracatBuilder.Materials
+    local function withBox(o, items) -- 容器（stamp 讀 getContainer）；非容器也要有 getContainer
+        o.cont = items and { list = items } or nil
+        function o:getContainer()
+            local c = self.cont
+            return c and { getItems = function() return javaList(c.list) end } or nil
+        end
+        return o
+    end
+    for x = 90, 93 do engineSq(x, 90, 0) end
+    local AW = {}
+    for i = 1, 4 do AW[i] = withBox(ours(at(89 + i, 90, 0), wallS, { ["Base.Plank"] = "4" })) end
+    local AB = withBox(ours(engineSq(94, 90, 0), boxS, { ["Base.Plank"] = "2" }), { "Base.Nails" })
+    AB.full = true
+    local AP = player({ id = 2290, x = 92.5, y = 91.5, here = at(92, 90, 0) })
+    function AP.inv:getItems() return javaList(self.items) end
+    local function codes(list)
+        local out = {}
+        for i, t in ipairs(list) do out[i] = t.kind .. ":" .. tostring(t.code) end
+        return table.concat(out, ",")
+    end
+    -- 種類照圖名記住：同一張圖整區只分類一次，結果和不記一樣
+    local realClassify, nClassify = Rules.classify, 0
+    Rules.classify = function(spr) nClassify = nClassify + 1 return realClassify(spr) end
+    local list = Area.collect(90, 90, 94, 90, 0, AP)
+    local memoN = nClassify
+    nClassify = 0
+    local same = true
+    for _, t in ipairs(list) do
+        if t.obj and Area.route(t.obj) ~= t.route then same = false end
+    end
+    Rules.classify = realClassify
+    check(#list == 5 and memoN == 2 and nClassify == 5 and same,
+        "一區拆除 collect：同一張圖只分類一次（牆 4 件＋容器＝2 次；不記時 5 次），結果和不記一樣（" .. memoN .. "／" .. nClassify .. "）")
+    -- 缺的工具：同一次 collect 照圖名記住，工具進背包後下一次重算
+    local realMissing, nMissing = Materials.missingTools, 0
+    Materials.missingTools = function(...) nMissing = nMissing + 1 return realMissing(...) end
+    local bare = codes(Area.collect(90, 90, 94, 90, 0, AP))
+    local missN = nMissing
+    local function toolsFresh(collect)
+        local hammer = AP.inv:add(item("Base.Hammer", { HAMMER = true }))
+        local after = codes(collect())
+        AP.inv:Remove(hammer)
+        return after == "container:NOT_EMPTY,wall:nil,wall:nil,wall:nil,wall:nil"
+    end
+    check(bare == "container:NOT_EMPTY,wall:NO_TOOL,wall:NO_TOOL,wall:NO_TOOL,wall:NO_TOOL" and missN == 1
+        and toolsFresh(function() return Area.collect(90, 90, 94, 90, 0, AP) end),
+        "沒帶鐵鎚：4 面牆都 NO_TOOL、缺的工具只算一次（" .. missN .. "）；帶了之後下一次 collect 重算、都能拆（" .. bare .. "）")
+    local realCheck, shared = Dismantle.check, {} -- 植入違規：缺工具的結果跨 collect 沿用
+    Dismantle.check = function(p, k, pl, pv) return realCheck(p, k, pl, pv, shared) end
+    Area.collect(90, 90, 94, 90, 0, AP)
+    local planted = toolsFresh(function() return Area.collect(90, 90, 94, 90, 0, AP) end)
+    Dismantle.check = realCheck
+    Materials.missingTools = realMissing
+    check(planted == false, "植入違規（缺工具跨 collect 沿用）：帶了鐵鎚仍是 NO_TOOL，上一條抓得到")
+    -- 預覽照世界戳記重算：範圍、世界都沒變回同一份；多一件、容器放東西、背包變了都重算。超過上限的帶 over
+    AP.inv:add(item("Base.Hammer", { HAMMER = true }))
+    local realMax = sb.MaxCellsPerDrag
+    sb.MaxCellsPerDrag = 2
+    local realCollect, nCollect = Area.collect, 0
+    Area.collect = function(...) nCollect = nCollect + 1 return realCollect(...) end
+    local function previewTracks(stamp)
+        local realStamp = Area.stamp
+        if stamp then Area.stamp = stamp end
+        nCollect = 0
+        local p1 = Area.preview(AP, 90, 90, 94, 90, 0)
+        local p2 = Area.preview(AP, 90, 90, 94, 90, 0)
+        local W5 = withBox(ours(engineSq(91, 91, 0), wallS, {}))
+        local p3 = Area.preview(AP, 90, 90, 94, 91, 0)
+        local p4 = Area.preview(AP, 90, 90, 94, 91, 0)
+        at(91, 91, 0).removeHere(W5) -- 別人拆掉了
+        local p5 = Area.preview(AP, 90, 90, 94, 91, 0)
+        AB.cont.list[#AB.cont.list + 1] = "Base.Nails"
+        local p6 = Area.preview(AP, 90, 90, 94, 91, 0)
+        local hammer = AP.inv.items[#AP.inv.items]
+        AP.inv:Remove(hammer)
+        local p7 = Area.preview(AP, 90, 90, 94, 91, 0)
+        AP.inv:add(hammer)
+        Area.stamp = realStamp
+        return p1 == p2 and p3 == p4 and p4 ~= p5 and p5 ~= p6 and p6 ~= p7 and nCollect == 5, p1
+    end
+    local tracks, p1 = previewTracks()
+    local over, sendN, marked = 0, 0, 0
+    for _, c in ipairs(p1.cells) do
+        if not c.bad then sendN = sendN + 1 elseif c.over then over = over + 1 else marked = marked + 1 end
+    end
+    check(tracks, "預覽：範圍、世界都沒變回同一份不重算；牆被拆、容器放東西、背包變了都重算（collect " .. nCollect .. " 次）")
+    check(sendN == 2 and over == 2 and marked == 1,
+        "預覽：上限 2 時兩格要拆、超過上限的兩格 over（不畫三角）、不空的容器照舊標（" .. sendN .. "／" .. over .. "／" .. marked .. "）")
+    check(previewTracks(function() return "same" end) == false, "植入違規（世界戳記不變）：拆掉、放東西都不重算，上一條抓得到")
+    Area.collect = realCollect
+    sb.MaxCellsPerDrag = realMax
+    -- 游標：範圍變了只畫外框、停住 200 ms 才問預覽、不動時每秒問一次；吸管（沒有 outline）馬上問；三角最多 128 個
+    local realCore = getCore
+    local color = { getR = function() return 1 end, getG = function() return 0 end, getB = function() return 0 end }
+    getCore = function() return { getGoodHighlitedColor = function() return color end,
+        getBadHighlitedColor = function() return color end } end
+    local function debounced(clock)
+        local asked = 0
+        local c = setmetatable({ character = { getZ = function() return 0 end }, colors = {}, lineX = 13, lineY = 12,
+            area = { preview = function() asked = asked + 1 return { cells = {}, lines = { "p" } } end,
+                outline = function() return { cells = {}, lines = { "o" } } end } }, { __index = Cursor })
+        local sq = { getX = function() return 10 end, getY = function() return 10 end, getZ = function() return 0 end }
+        local t0, seen = nowMs, {}
+        local function at2(ms) nowMs = clock and t0 or t0 + ms c:areaValid(sq) seen[#seen + 1] = asked end
+        at2(0); at2(100)
+        c.lineX = 14
+        at2(150); at2(300); at2(360); at2(800); at2(1400)
+        nowMs = t0 + 1400
+        return table.concat(seen, ","), c.src and c.src[1]
+    end
+    local seq, label = debounced(false)
+    check(seq == "0,0,0,0,1,1,2" and label == "p", "游標：拖曳中只畫外框、範圍停住 200 ms 才算一次，不動時每秒再問一次（" .. seq .. "）")
+    check(debounced(true) == "0,0,0,0,0,0,0", "植入違規（時鐘不走、永遠不停住）：上一條抓得到")
+    local pick = setmetatable({ character = { getZ = function() return 0 end }, colors = {}, one = true,
+        area = { preview = function() return { cells = { { 10, 10, 0, false } }, lines = {} } end } }, { __index = Cursor })
+    pick:areaValid({ getX = function() return 10 end, getY = function() return 10 end, getZ = function() return 0 end })
+    local cells = {}
+    for i = 1, 200 do cells[i] = { x = 100 + i, y = 0, z = 0, bad = true } end
+    for i = 201, 260 do cells[i] = { x = 100 + i, y = 0, z = 0, bad = true, over = true } end
+    local shown = setmetatable({ colors = {} }, { __index = Cursor })
+    shown:areaShow({ cells = cells, lines = {} }, 101, 0, 360, 0, 0)
+    local m = 0
+    for i = 1, shown.g.n do if shown.g.m[i] ~= 0 then m = m + 1 end end
+    local overMarked = false
+    for i = 1, shown.g.n do if shown.g.x[i] > 300 and shown.g.m[i] ~= 0 then overMarked = true end end
+    getCore = realCore
+    check(pick.g and pick.g.n >= 1 and pick.src ~= nil and m == 128 and not overMarked,
+        "吸管沒有外框階段、馬上預覽；三角最多 128 個、超過上限的格子不畫三角（" .. m .. "）")
     instanceof = realInst
 end
 dismantleScenario()

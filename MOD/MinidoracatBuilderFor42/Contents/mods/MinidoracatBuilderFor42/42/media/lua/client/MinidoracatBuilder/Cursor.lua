@@ -28,7 +28,9 @@ local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", wall = "rin
 local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64，再遠的都是 OVER_MAX）
 local DRAW_MAX = 512  -- ponytail：一次最多畫 512 格（超過上限的照畫紅），量到卡頓再縮
 local AREA_SIDE = 40  -- 一區拆除每邊最多幾格（Area 每次預覽掃整區）
-local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；同時整個預覽重算一次（世界變了也看得到）
+local AREA_SETTLE_MS = 200 -- 一區拆除：範圍停住這麼久才算預覽，拖曳中只畫外框
+local AREA_MARKS = 128 -- ponytail：一區拆除最多畫幾個警告三角（每個每幀約 6 µs），玩家嫌少再加
+local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；一區拆除同時再問一次預覽（Area.preview 世界沒變就不重算）
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算停下（MP 的 placed 比客戶端動作結束晚到）
 local QR, QG, QB = 0.45, 0.75, 1 -- 已送出、還沒蓋好的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
@@ -269,8 +271,9 @@ end
 
 -- 一區拆除模式（契約 C7）：拖一個長方形，畫法、按下判斷（介面上按下不算）、右鍵取消、標籤框沿用建造游標。只用滑鼠：
 -- 手把玩家回 nil、不開（使用者 2026-11-01 選 no）。z＝玩家那層。cb.preview(x1, y1, x2, y2, z) 回
--- { cells = { { x, y, z, bad }, ... }, lines = { 字串, ... } }：要拆的格子畫紅框，bad 的灰框加警告三角，範圍外圈沒東西的
--- 格子淡灰；lines 一行一行畫在標籤框，最後一行當按鍵說明（淡色）。放開左鍵：游標先關掉再呼叫 cb.release(x1, y1, x2, y2, z)；
+-- { cells = { { x, y, z, bad }, ... }, lines = { 字串, ... } }：要拆的格子畫紅框，bad 的灰框加警告三角（over＝true 的不加，
+-- 見 areaShow），範圍外圈沒東西的格子淡灰；lines 一行一行畫在標籤框，最後一行當按鍵說明（淡色）。cb.outline（選填）同格式，
+-- 拖曳中範圍還沒停住時用（areaValid）。放開左鍵：游標先關掉再呼叫 cb.release(x1, y1, x2, y2, z)；
 -- 其他原因關掉（右鍵、換了別的游標）呼叫 cb.cancel()。
 function Cursor.startArea(playerNum, cb)
     local player = getSpecificPlayer(playerNum)
@@ -667,7 +670,9 @@ end
 
 -- 一區拆除的 isValid（滑鼠在介面上的判斷已在 isValid 做完）：按下那格到滑鼠那格的長方形，換到玩家那層
 -- （畫面同一點，每差一層 x、y 各差 3 格，IsoUtils.XToIso／YToIso），每邊最多 AREA_SIDE 格；吸管（self.one）只框滑鼠那格。
--- 範圍變了或每秒一次重問 Area。放開就算確認，所以一直回 true。
+-- 範圍變了：有 cb.outline 的先只畫外框，停住 AREA_SETTLE_MS 才問 cb.preview（40×40 的大基地一次要幾十毫秒，拖曳中每變一格
+-- 就算會掉到 10 FPS，temp/area-perf 實測）；沒有 outline 的（吸管）照舊馬上問。範圍沒變時每秒再問一次：Area.preview 照
+-- 世界戳記決定要不要重算，沒變回同一份、這裡不重排。放開就算確認，所以一直回 true。
 function Cursor:areaValid(square)
     local z = math.floor(self.character:getZ())
     local s = 3 * (z - square:getZ())
@@ -678,27 +683,61 @@ function Cursor:areaValid(square)
     ey = math.max(ay - AREA_SIDE + 1, math.min(ay + AREA_SIDE - 1, ey))
     local x1, y1, x2, y2 = math.min(ax, ex), math.min(ay, ey), math.max(ax, ex), math.max(ay, ey)
     local now = getTimestampMs()
-    if x1 ~= self.kx or y1 ~= self.ky or x2 ~= self.kex or y2 ~= self.key or z ~= self.kz or now - self.sAt >= SUMMARY_MS then
-        self.sAt, self.kx, self.ky, self.kex, self.key, self.kz = now, x1, y1, x2, y2, z
+    if x1 ~= self.kx or y1 ~= self.ky or x2 ~= self.kex or y2 ~= self.key or z ~= self.kz then
+        self.kx, self.ky, self.kex, self.key, self.kz, self.kAt = x1, y1, x2, y2, z, now
         self.rect = { x1, y1, x2, y2, z }
+        local outline = self.area.outline
+        if outline then
+            self.settled = false
+            local fine, res = pcall(outline, x1, y1, x2, y2, z)
+            if not fine then print(LOG .. "area outline failed: " .. tostring(res)) end
+            self.areaRes = nil
+            self:areaShow(fine and type(res) == "table" and res or {}, x1, y1, x2, y2, z)
+            return true
+        end
+        self.settled = true
+        self.sAt = now
+        self:areaRefresh(x1, y1, x2, y2, z)
+    elseif not self.settled then
+        if now - self.kAt >= AREA_SETTLE_MS then
+            self.settled, self.sAt = true, now
+            self:areaRefresh(x1, y1, x2, y2, z)
+        end
+    elseif now - self.sAt >= SUMMARY_MS then
+        self.sAt = now
         self:areaRefresh(x1, y1, x2, y2, z)
     end
     return true
 end
 
--- Area 的 cells 每格接受 { x, y, z, bad } 或 { x = , y = , z = , bad = }
+-- 問 cb.preview 並照它重排；拿到和上次同一份（Area.preview 沒重算）就照畫原本的
 function Cursor:areaRefresh(x1, y1, x2, y2, z)
     local fine, res = pcall(self.area.preview, x1, y1, x2, y2, z)
     if not fine then print(LOG .. "area preview failed: " .. tostring(res)) end
     if not (fine and type(res) == "table") then res = {} end
-    local g, seen = newGhosts(), {}
+    if res == self.areaRes then return end
+    self.areaRes = res
+    self:areaShow(res, x1, y1, x2, y2, z)
+end
+
+-- Area 的 cells 每格接受 { x, y, z, bad } 或 { x = , y = , z = , bad = , over = }：bad＝灰框，bad 而且不是 over（只是超過
+-- 一次上限）的加警告三角，最多 AREA_MARKS 個（記號層每幀每個三角都要畫，整區 3,000 多個時一幀 20 ms，temp/area-perf 實測）
+function Cursor:areaShow(res, x1, y1, x2, y2, z)
+    local g, seen, marks = newGhosts(), {}, 0
     local good, bad = coreColors()
     if self.one then bad = good end -- 吸管：點得下去的格子，不是要拆的
     for _, c in ipairs(res.cells or {}) do
         local x, y, cz, skip = c.x or c[1], c.y or c[2], c.z or c[3], c.bad
         if skip == nil then skip = c[4] end
         seen[B.Place.key(x, y, cz)] = true
-        if skip then ghost(g, x, y, cz, nil, 0, WHITE, NEUTRAL, MARK_BAD) else ghost(g, x, y, cz, nil, 0, WHITE, bad) end
+        if not skip then
+            ghost(g, x, y, cz, nil, 0, WHITE, bad)
+        elseif not c.over and marks < AREA_MARKS then
+            marks = marks + 1
+            ghost(g, x, y, cz, nil, 0, WHITE, NEUTRAL, MARK_BAD)
+        else
+            ghost(g, x, y, cz, nil, 0, WHITE, NEUTRAL)
+        end
     end
     -- 範圍外圈沒東西的格子也畫淡灰，看得出框到哪裡
     for _, a in ipairs(Cursor.shape(x1, y1, z, x2, y2, "edge", DRAW_MAX)) do
@@ -797,7 +836,7 @@ function Cursor:showUI()
     self:layout()
 end
 
--- 文字變了才排：self.src（文字、顏色交錯，texts／areaRefresh 組）每段照框架斷行（Text.wrap，rev 16；視窗要 rev 22 才開）
+-- 文字變了才排：self.src（文字、顏色交錯，texts／areaShow 組）每段照框架斷行（Text.wrap，rev 16；視窗要 rev 22 才開）
 -- 拆成行、配好色，量出標籤框寬高
 function Cursor:layout()
     local o, src = self.tooltip, self.src

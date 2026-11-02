@@ -557,8 +557,32 @@ local function setDim(v, name, d)
     v.dimN = v.dimN + 1
 end
 
+-- 字裡有中日文字（Kahlua 字串是 UTF-16 code unit：表意字、假名、全形字、補充平面字的 surrogate；諺文不算）
+local function ideographic(word)
+    for i = 1, #word do
+        local c = word:byte(i)
+        if (c >= 0x2E80 and c <= 0x9FFF) or (c >= 0xD800 and c <= 0xDFFF) or (c >= 0xF900 and c <= 0xFAFF)
+            or (c >= 0xFE30 and c <= 0xFE4F) or (c >= 0xFF00 and c <= 0xFFEF) then
+            return true
+        end
+    end
+    return false
+end
+
+-- 框架 Text.wrap 遇到比行寬長的單字會在中間硬切（TextWrap.cut 沒有斷點時），方格的德文名斷成「Dunkelgraue／r Teppich」：
+-- 先把放不下的單字截短加省略號（拉丁、西里爾、韓文詞）；有中日文字的字照框架逐字斷
+local function fitWords(Text, s, w, font)
+    if Text.fit(s, w, font) == s then return s end
+    return (s:gsub("%S+", function(word)
+        if ideographic(word) then return nil end
+        local f = Text.fit(word, w, font)
+        if f ~= word then return f end
+    end))
+end
+
 -- s 斷成最多 max 行（框架 Text.wrap，rev 16）；斷不完時最後一行接上原文剩下的部分再 Text.fit，截掉的地方有省略號
 function W.wrapMax(Text, s, w, font, max)
+    s = fitWords(Text, s, w, font)
     local lines = Text.wrap(s, w, font)
     if #lines <= max then return lines end
     local out, pos = {}, 1
