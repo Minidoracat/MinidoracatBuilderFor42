@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, picking a tile with a right-click, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
@@ -10,7 +10,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:01-overview-en.jpg}}
 [olist]
 [*] [b]Open the window[/b]: click the Build Anything button on the family toolbar (a hammer and a handsaw).
-[*] [b]Find something[/b]: search by name, narrow it down with the tabs, kinds, tilesets and sources, or right-click the ground and choose Pick tile (Build Anything).
+[*] [b]Find something[/b]: search by name, narrow it down with the tabs, kinds, tilesets and sources, or use the eyedropper left of the search bar to click something in the world.
 [*] [b]Check the details[/b]: select an item, and the right side lists materials, tools, XP and how it is removed.
 [*] [b]Place it[/b]: press Build, then click the ground.
 [*] [b]Drag a row[/b]: hold the left button and drag to build a row of walls, posts, floors, fences or roofs.
@@ -53,14 +53,17 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected.
 [*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
 [/list]
-[h3]Pick tile with a right-click[/h3]
+[h3]Eyedropper and Pick tile[/h3]
 {{img:15-pick-en.jpg}}
 [list]
-[*] [b]How[/b]: right-click the ground and choose Pick tile (Build Anything).
+[*] [b]Eyedropper[/b]: press the eyedropper button left of the search bar (Pick from the world), the window hides, and clicking something in the world selects it.
+[*] [b]Several images on one square[/b]: a list pops up to choose from.
+[*] [b]Cancel the eyedropper[/b]: right-click, and the window comes back.
+[*] [b]Pick tile with a right-click[/b]: right-click the ground and choose Pick tile (Build Anything).
 [*] [b]What it lists[/b]: every image on that square, including overlays on the floor and on walls.
 [*] [b]Pick one[/b]: Build Anything opens with that item selected.
 [*] [b]Tiles you can't build[/b]: shown in red, and hovering one tells you why.
-[*] [b]Gamepad[/b]: works too.
+[*] [b]Gamepad[/b]: there is no eyedropper button, so use Pick tile from the right-click menu as before.
 [/list]
 [h3]Sources[/h3]
 {{img:13-mods-en.jpg}}
@@ -75,6 +78,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Window size[/b]: widen the window and the cells widen with it.
 [*] [b]Names[/b]: up to two lines, showing the tileset and number.
 [*] [b]Items you can't afford[/b]: the name is dimmed with a warning in the top right, and you can still select and build them.
+[*] [b]Items your skill is too low for[/b]: when the server turns on Require vanilla skill levels, they are dimmed with a warning too, and you can build them once you reach that level.
 [*] [b]Favorites[/b]: select an item and press Add to favorites, saved on your computer and kept across servers.
 [*] [b]Recently used[/b]: items you pressed Build on are listed under Recently used.
 [/list]
@@ -88,10 +92,23 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Removal[/b]: how it is removed later and what you get back, see Dismantling.
 [*] [b]Materials (have / need)[/b]: how many of each material you have and need.
 [*] [b]Tools (carry them)[/b]: tools you must carry while building, which don't wear out.
+[*] [b]Skill[/b]: when the server turns on Require vanilla skill levels, an extra line such as Skill: Carpentry 2, with your level and a warning when it's too low.
+[*] [b]Consumables[/b]: when the server turns on Vanilla recipe materials, clay cement, torch fuel and welding rods are shown as have / need uses.
 [*] [b]Experience[/b]: which skill gets how much XP, or Experience: none.
 [*] [b]Notes[/b]: kinds with extra rules, such as stairs, roofs, lights and curtains, get a note.
 [*] [b]Scrolling[/b]: when the details are taller than the window, scroll with the mouse wheel or the scroll bar.
 [*] [b]Admin shortcuts[/b]: see Admin panel.
+[/list]
+[h3]Full set[/h3]
+{{img:16-set-en.jpg}}
+[list]
+[*] [b]How[/b]: select a wall, post, window frame or door frame, and press Full set above Build in the details.
+[*] [b]What it lists[/b]: only the walls, posts, window frames and door frames of the same set.
+[*] [b]Cells show the position[/b]: for example Wall W, Wall N, Corner, Post, Window W, Door N.
+[*] [b]Back to your list[/b]: press the ✕ on the filter button above the search bar.
+[*] [b]Changing tab, source or search[/b]: leaves the set.
+[*] [b]Same tileset[/b]: when the tile sheet isn't laid out like vanilla walls, the button reads Same tileset and lists the walls, posts, frames, fences and wall overlays of that tileset.
+[*] [b]When it can't be pressed[/b]: the item isn't a wall piece, or the set has fewer than two items.
 [/list]
 === 🧰 Placing and dragging
 {{img:04-cursor-en.jpg}}
@@ -100,7 +117,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]After pressing Build[/b]: the window hides and a ghost appears on the ground.
 [*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
-[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on.
+[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; when your skill is too low, which skill and level you need.
 [*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
@@ -152,7 +169,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Refusals and stops[/h3]
 {{img:11-refused-en.jpg}}
 [list]
-[*] [b]The server tells you why[/b]: missing materials, a missing tool, too far, unreachable, blocked, or inside someone else's safehouse, with a notice saying what to do.
+[*] [b]The server tells you why[/b]: missing materials, a missing tool, too low a skill, too far, unreachable, blocked, or inside someone else's safehouse, with a notice saying what to do.
 [*] [b]Stopping halfway[/b]: when interrupted or the way is blocked, a notice says how many tiles were built.
 [*] [b]Tiles not built[/b]: used no materials, so drag again to continue.
 [*] [b]No room to stand[/b]: when a tile has no free square beside it, the notice says which one.
@@ -243,6 +260,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Material multiplier[/b]: every amount is multiplied by the admin's multiplier and rounded up.
 [*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains, and the extra Light Bulb for movable lights still cost at least 1×.
 [*] [b]Build cheat[/b]: no materials and no tools. In multiplayer an admin turns on Build Cheat mode in Edit your Admin Powers; in singleplayer the Build Cheat switch in the debug menu and Enable Build Cheat Mode in the admin panel count too.
+[*] [b]Consumables[/b]: when the server turns on Vanilla recipe materials, clay cement, torch fuel and welding rods are also used, see Hardcore options.
 [*] [b]Exact amounts[/b]: Materials (have / need) in the details is what counts.
 [/list]
 Tiles without dismantle materials cost this, by material (multiplier 1):
@@ -289,11 +307,11 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]The details decide[/b]: Tools (carry them) in the details lists exactly what to carry.
 [*] [b]Furniture-style tiles[/b]: don't need the tools vanilla needs to move them.
 [*] [b]Nothing wears out[/b]: tools only need to be on you.
-[*] [b]Welding Torch[/b]: uses no fuel.
+[*] [b]Welding Torch[/b]: uses no fuel, unless the server turns on Vanilla recipe materials.
 [/list]
 [h3]XP[/h3]
 [list]
-[*] [b]No skill needed[/b]: nothing requires a skill level.
+[*] [b]Skill levels[/b]: none needed by default; only when the server turns on Require vanilla skill levels, see Hardcore options.
 [*] [b]5 XP per item[/b]: each material used gives 5 XP, then the vanilla XP multiplier applies.
 [*] [b]Things that dismantle into parts[/b]: XP goes to the skill that decides in vanilla whether that material comes back.
 [*] [b]Examples[/b]: Scrap Electronics and Electrical Wire give Electrical, Steel Sheet - Small gives Welding, Brick gives Masonry, Stone gives Strength, Plank and Nails give Carpentry.
@@ -307,6 +325,56 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Materials two skills share[/b]: a material that two skills share in vanilla dismantling gives no XP.
 [*] [b]Nothing paid[/b]: no XP for materials you didn't actually pay, for example with the build cheat on.
 [/list]
+=== 🧰 Hardcore options
+Two sandbox options, both off by default, and you can turn on just one. Change them on the Minidoracat Build Anything page of the sandbox settings, or in game on the Rules page of the Manage panel.
+[h3]Require vanilla skill levels[/h3]
+[list]
+[*] [b]Which level[/b]: each item needs the skill level of the matching vanilla recipe, see the table.
+[*] [b]Which skill[/b]: follows the kind of material it is costed as, so anything costed as wood needs Carpentry.
+[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights and floor overlays.
+[*] [b]Skill too low[/b]: the cursor square turns red, and the box by the mouse and the notice say which skill and level you need.
+[*] [b]Details[/b]: an extra line such as Skill: Carpentry 2, with your level and a warning when it's too low.
+[*] [b]The grid[/b]: items your skill is too low for are dimmed with a warning, like items you can't afford.
+[*] [b]Only what I can build[/b]: hides them too.
+[*] [b]After you level up[/b]: the window updates, so there is no need to reopen it.
+[*] [b]Build cheat[/b]: not affected.
+[*] [b]Dismantling[/b]: still needs no skill.
+[/list]
+[table]
+[tr][th]Kind[/th][th]Wood[/th][th]Masonry[/th][th]Metal[/th][/tr]
+[tr][td]Floor[/td][td]Carpentry 1[/td][td]None[/td][td]None[/td][/tr]
+[tr][td]Wall, post, window frame, door frame[/td][td]Carpentry 2[/td][td]Masonry 2[/td][td]Welding 3[/td][/tr]
+[tr][td]Fence[/td][td]Carpentry 3[/td][td]Masonry 5[/td][td]Welding 3[/td][/tr]
+[tr][td]Door[/td][td]Carpentry 3[/td][td]As wood[/td][td]Welding 3[/td][/tr]
+[tr][td]Window[/td][td]Carpentry 5[/td][td]As wood[/td][td]As wood[/td][/tr]
+[tr][td]Stairs (whole set)[/td][td]Carpentry 6[/td][td]As wood[/td][td]Welding 5[/td][/tr]
+[tr][td]Roof[/td][td]Carpentry 2[/td][td]As wood[/td][td]As wood[/td][/tr]
+[tr][td]Furniture, containers[/td][td]By carry weight: up to 2 kg Carpentry 1, up to 5 kg 3, heavier 5[/td][td]As wood[/td][td]Welding 3[/td][/tr]
+[tr][td]Solid objects[/td][td]By carry weight, Carpentry 1, 3 or 5[/td][td]By carry weight, Masonry 1, 3 or 5[/td][td]Welding 3[/td][/tr]
+[/table]
+[h3]Vanilla recipe materials[/h3]
+[list]
+[*] [b]Extra consumables[/b]: items also use up the consumables of the matching vanilla recipe, counted in uses, see the table; wood needs none.
+[*] [b]Masonry[/b]: clay cement or concrete, 4 uses per bucket.
+[*] [b]Metal[/b]: Welding Torch fuel (10 uses per torch) and Welding Rods (20 uses per pack).
+[*] [b]Stone walls[/b]: take Stone Block instead of Brick: 6 for a wall or post, 5 for a window frame, 4 for a door frame.
+[*] [b]Where they come from[/b]: your inventory first, then the ground next to you.
+[*] [b]Empty buckets[/b]: turn back into empty buckets as in vanilla.
+[*] [b]Details[/b]: consumables are shown as have / need uses.
+[*] [b]Material multiplier[/b]: applies to uses too, rounded up.
+[*] [b]Not refunded[/b]: consumables don't come back when dismantled and give no extra XP.
+[*] [b]Build cheat[/b]: nothing to pay.
+[/list]
+[table]
+[tr][th]Kind[/th][th]Masonry: clay cement or concrete[/th][th]Metal: torch fuel + welding rods[/th][/tr]
+[tr][td]Floor[/td][td]1 use[/td][td]1 + 1 uses[/td][/tr]
+[tr][td]Wall, post[/td][td]2 uses[/td][td]5 + 6 uses[/td][/tr]
+[tr][td]Window frame[/td][td]2 uses[/td][td]5 + 2 uses[/td][/tr]
+[tr][td]Door frame[/td][td]2 uses[/td][td]4 + 4 uses[/td][/tr]
+[tr][td]Fence[/td][td]1 use[/td][td]2 + 2 uses[/td][/tr]
+[tr][td]Door[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
+[tr][td]Stairs (whole set)[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
+[/table]
 === 🧰 Switches and wiring
 [h3]Automatic wiring[/h3]
 [list]
@@ -364,6 +432,8 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu, greyed out, and hovering says how to remove them.
 [*] [b]Tools[/b]: the same as for building.
 [*] [b]Materials back[/b]: between 1 and all of each material, dropped at your feet.
+[*] [b]Consumables[/b]: clay cement, torch fuel and welding rods used by Vanilla recipe materials don't come back.
+[*] [b]Skill[/b]: dismantling needs no skill, even with Require vanilla skill levels on.
 [*] [b]XP[/b]: dismantling gives none.
 [*] [b]Stairs[/b]: all three steps go together, and materials come back once.
 [*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it.
@@ -435,7 +505,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
-[*] [b]Rules[/b]: the nine rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Material cost multiplier, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
+[*] [b]Rules[/b]: the eleven rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
 [/list]
 [h3]Applying[/h3]
 [list]
@@ -465,6 +535,8 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
 [tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area[/td][/tr]
 [tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
+[tr][td]Require vanilla skill levels[/td][td]Off[/td][td]On/off[/td][td]Each item needs the skill level of the matching vanilla recipe, for example a wooden wall needs Carpentry 2, a wooden window Carpentry 5, wooden stairs Carpentry 6, a brick wall Masonry 2 and a metal wall Welding 3. Furniture and containers have no vanilla recipe, so they need Carpentry 1, 3 or 5 by carry weight, or Welding 3 if metal. Wall hangings, overlays, curtains and lights need no skill. The build cheat isn't affected, and dismantling still needs no skill. See Hardcore options[/td][/tr]
+[tr][td]Vanilla recipe materials[/td][td]Off[/td][td]On/off[/td][td]Items also use up the consumables of the matching vanilla recipe: masonry uses clay cement or concrete (4 uses per bucket), metal uses Welding Torch fuel (10 uses per torch) and Welding Rods (20 uses per pack). Stone walls take Stone Block instead of Brick. Consumables come from your inventory and the ground next to you, aren't refunded when dismantled and give no extra XP. The material cost multiplier applies to uses too. See Hardcore options[/td][/tr]
 [tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Zombies can't break doors[/td][td]Off[/td][td]On/off[/td][td]Doors built with this mod get very high durability: zombies still bang on them but can't break them. Doors built before this option existed aren't recognized and break like vanilla. Doors already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Container capacity multiplier[/td][td]1.0[/td][td]1–10[/td][td]Multiplies the capacity of containers built with this mod, rounded, up to 100 (the game's limit), fridge freezers too. When it goes down, the items inside stay, but no more fit. Containers already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
@@ -613,13 +685,14 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]I can't find what I want to build[/h3]
 [list]
 [*] Set the source back to All sources, the tab to All, and untick Only what I can build.
-[*] Search its full tile name, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
+[*] Search its full tile name, use the eyedropper to click it in the world, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
 [*] Some things are never in the catalog, see For server admins: other mods' facilities.
 [/list]
 [h3]An item is dimmed. Can I still build it?[/h3]
 [list]
 [*] Yes, you can select and build it, and dimmed means you lack materials or tools.
 [*] Materials (have / need) in the details shows how many.
+[*] When the server turns on Require vanilla skill levels, a skill that's too low dims it too, and you can build it once you reach the level in the details.
 [*] When dragging a row, only the tiles you can afford are built.
 [/list]
 [h3]Why doesn't my light turn on?[/h3]
