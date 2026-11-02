@@ -37,6 +37,7 @@ function getText(key) return key end
 function getTextOrNull() return nil end
 function getRecipeDisplayName(name) return "R:" .. name end -- 標出有翻成配方顯示名稱
 
+function table.isempty(t) return next(t) == nil end -- Kahlua TableLib 有（TableLib.java:76-78），標準 Lua 沒有
 local handlers = {}
 Events = setmetatable({}, {
     __index = function(t, name)
@@ -189,10 +190,14 @@ function getCell()
             return nil
         end,
         createNewGridSquare = function() created = created + 1 return nil end,
-        -- 那一格在（讀進來了）就回它那一塊（引擎照座標找已讀進來的塊，IsoCell.java:333-357）
-        getChunkForGridSquare = function(_, x, y, z)
-            local sq = squares[x .. "," .. y .. "," .. z]
-            return sq and sq:getChunk() or nil
+        -- 照引擎：只照 x、y 找已讀進來的塊，不看那一格在不在、不看 z（IsoCell.java:333-357）；這一塊 z=0 有任一格就算讀進來
+        getChunkForGridSquare = function(_, x, y)
+            local x0, y0 = math.floor(x / 8) * 8, math.floor(y / 8) * 8
+            for i = 0, 63 do
+                local sq = squares[(x0 + i % 8) .. "," .. (y0 + math.floor(i / 8)) .. ",0"]
+                if sq then return sq:getChunk() end
+            end
+            return nil
         end,
         checkHaveRoof = function() HARNESS_ROOF = (HARNESS_ROOF or 0) + 1 end, -- 全域：記呼叫次數（屋頂情境驗）
     }
@@ -346,7 +351,7 @@ HARNESS_ROLL = "max"
 function ZombRand(n) if HARNESS_ROLL == "min" then return 0 end return n - 1 end
 function ZombRandFloat(a) return a end
 -- 假 GOS（原版 server/Map/SGlobalObjectSystem.lua 用到的部分）：系統的 modData 就是系統表本身；存檔只存 setModDataKeys
--- 白名單裡的鍵（HARNESS_GOS_KEYS 記下來給情境驗）。RegisterSystemClass 當場建 instance（原版在 OnSGlobalObjectSystemInit）。
+-- 白名單裡的鍵（HARNESS_GOS_KEYS 記下來給情境驗）。require 跑完那個檔案才建 instance（原版在 OnSGlobalObjectSystemInit，所有 Lua 載完之後）。
 HARNESS_GOS_KEYS = {}
 SGlobalObjectSystem = {}
 SGlobalObjectSystem.__index = SGlobalObjectSystem
@@ -5430,6 +5435,7 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     inst.built["144,144,0,kl_01_1"] = { ["Base.ElectricWire"] = 3 }
     inst.built["145,145,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 } -- 燈已不在
     inst.built["142,144,0,kl_01_0"] = { ["Base.ElectricWire"] = 5 }
+    inst.built["200,200,0,kl_01_0"] = { ["Base.ElectricWire"] = 1 } -- 這一段都不讀那一塊：讀塊事件一直掛著（同正式服）
     inst:initSystem()
     local before = Ledger.legacy
     inst.built[landKey] = {}
@@ -5456,10 +5462,12 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("LoadChunk", S(147, 140):getChunk())
     check(onLanding.keyId == -1 and inst.built[landKey] ~= nil, "樓梯平台的紀錄不搬")
     fire("LoadChunk", sqA:getChunk())
-    check(inst.lamps.e[A1.keyId] == a1 and Ledger.legacy == before - 4, "同一塊再讀一次：已定案，不再動")
+    check(inst.lamps.e[A1.keyId] == a1 and Ledger.legacy == before - 4 and count("LoadChunk") == 1,
+        "同一塊再讀一次（還有別塊沒讀到、事件還掛著）：已定案，不再動")
     c = unbuild(sqA, "kl_01_1")
     check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and inst.lamps.e[A2.keyId] == nil,
         "搬過的燈：本工具照搬過去的那筆退料")
+    inst.built["200,200,0,kl_01_0"] = nil
 
     -- 當機回溯：搬過的燈帶著編號存進 chunk、帳本回到搬之前，重開後照樣搬給它；同一格另有一盞帳本認不得的同款燈時兩盞都不搬
     local W = lamp(at(152, 152), lampA, "mark")
@@ -5475,14 +5483,19 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
         and X3.keyId == -1 and inst.built["153,152,0,kl_01_0"] == nil,
         "舊紀錄那格的燈帶著帳本沒有的編號（當機回溯）：照樣搬過去；同一格另有一盞帳本認不得的同款燈：兩盞都不搬")
 
-    -- 單機：帳本建好前就讀進來的塊，建好後第一個 tick 照舊鍵的位置找到就定案；那時還沒讀進來的塊讀進來再定案
+    -- 單機：帳本建好前就讀進來的塊，建好後第一個 tick 照舊鍵的位置找到就定案；那時還沒讀進來的塊讀進來再定案。
+    -- 同一塊有一筆舊鍵的格子已經不在（例：上一層拆掉了）、另一筆有燈：照座標找得到那一塊，兩筆都定案
     local R = lamp(S(140, 140), lampA, "mark")
+    local G = lamp(at(171, 170), lampA, "mark")
     inst.built["140,140,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
+    inst.built["170,170,1,kl_01_0"] = { ["Base.ElectricWire"] = 2 }
+    inst.built["171,170,0,kl_01_0"] = { ["Base.ElectricWire"] = 3 }
     inst.built["160,160,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 } -- 那一塊還沒讀進來
     inst:initSystem()
     local ticks = count("OnTick") -- 含剛掛上的那一個 tick
     fire("OnTick")
     local onTick = R.keyId > 0 and inst.lamps.e[R.keyId].i["Base.ElectricWire"] == 7 and count("OnTick") == ticks - 1
+        and G.keyId > 0 and inst.lamps.e[G.keyId].i["Base.ElectricWire"] == 3 and inst.built["170,170,1,kl_01_0"] == nil
         and inst.built["160,160,0,kl_01_0"] ~= nil and count("LoadChunk") == 1
     local F = lamp(at(160, 160), lampA, "mark")
     fire("LoadChunk", S(160, 160):getChunk())
@@ -5490,6 +5503,20 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
         "單機讀檔：帳本建好前讀進來的塊在建好後第一個 tick 定案、摘掉 tick 事件；還沒讀進來的塊讀進來時定案，都定案後摘掉讀塊事件")
     inst:initSystem()
     check(count("LoadChunk") == 0 and count("OnTick") == ticks - 1, "沒有舊燈：開服不掛讀塊與 tick 事件（每塊、每格都不多花）")
+
+    -- 定案出錯：那一塊的舊鍵留在 built、這一場不再試（讀塊事件照樣摘掉），下次開服重新分組照樣搬
+    local E = lamp(at(180, 180), lampA, "mark")
+    local hasMD = E.hasModData
+    E.hasModData = function() error("harness: broken object") end
+    inst.built["180,180,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 }
+    inst:initSystem()
+    fire("LoadChunk", S(180, 180):getChunk())
+    local kept = inst.built["180,180,0,kl_01_0"] ~= nil and E.keyId == -1 and Ledger.legacy == 1 and count("LoadChunk") == 0
+    E.hasModData = hasMD
+    inst:initSystem()
+    fire("LoadChunk", S(180, 180):getChunk())
+    check(kept and E.keyId > 0 and inst.lamps.e[E.keyId].i["Base.ElectricWire"] == 4 and count("LoadChunk") == 0,
+        "定案出錯：舊鍵留著、這一場摘掉事件，下次開服照樣搬")
     instanceof = realInst
 end)()
 

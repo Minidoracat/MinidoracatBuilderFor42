@@ -156,8 +156,8 @@ end)
 -- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、把那一筆搬進 lamps；沒有或有兩盞以上（分不出是哪一盞）就刪掉
 -- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。
 -- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3969），物件在那之前就從存檔讀進來（IsoChunk.java:2325,3800-3838），所以用
--- getObjects 找整塊的燈。只在還有舊鍵時掛著，都定案就摘掉：舊寫法逐格掛 LoadGridsquare、到 0 也不摘，沒人去的那幾塊不讀就
--- 一直掛著，2026-11-02 正式服晚峰 Lua 取樣占主執行緒約 0.7%。
+-- getObjects 找整塊的燈。只在還有舊鍵時掛 LoadChunk：舊鍵所在的塊沒人去就一直掛著，但每塊只取一格、查一次表；
+-- 全部定案（或出錯、留到下次開服）就摘掉。不掛逐格的 LoadGridsquare：那是每讀一格都跑一次。
 local function candidate(inst, o, name)
     if not (instanceof(o, "IsoLightSwitch") and o:hasModData() and o:getModData().builderEntry) then return false end
     local spr = o:getSprite()
@@ -195,7 +195,8 @@ local function settleChunk(inst, ck, chunk)
     byChunk[ck] = nil
     local ok, err = pcall(settle, inst, chunk, keys)
     if not ok then print(LOG .. "light ledger adopt failed: " .. tostring(err)) end
-    for _ in pairs(byChunk) do return end -- 還有塊沒讀到（Kahlua 沒有 next）
+    -- 還有塊沒讀到。不用 pairs 判空：Kahlua 的 pairs 先把整張表的鍵複製一份（KahluaTableImpl.java:152-154）
+    if not table.isempty(byChunk) then return end
     watchLegacy(false)
     print(LOG .. "LEDGER legacy lights done, unsettled=" .. Ledger.legacy)
 end
