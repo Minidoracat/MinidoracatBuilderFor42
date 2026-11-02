@@ -5484,18 +5484,17 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
         "舊紀錄那格的燈帶著帳本沒有的編號（當機回溯）：照樣搬過去；同一格另有一盞帳本認不得的同款燈：兩盞都不搬")
 
     -- 單機：帳本建好前就讀進來的塊，建好後第一個 tick 照舊鍵的位置找到就定案；那時還沒讀進來的塊讀進來再定案。
-    -- 同一塊有一筆舊鍵的格子已經不在（例：上一層拆掉了）、另一筆有燈：照座標找得到那一塊，兩筆都定案
+    -- 那一塊只有一筆舊鍵、它的格子已經不在（例：上一層拆掉了），塊本身讀進來了：照座標找得到那一塊，那一筆照樣定案（刪掉）
     local R = lamp(S(140, 140), lampA, "mark")
-    local G = lamp(at(171, 170), lampA, "mark")
+    at(171, 170) -- 第 21,21 塊讀進來了（只有這一格，沒有舊鍵）
     inst.built["140,140,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
     inst.built["170,170,1,kl_01_0"] = { ["Base.ElectricWire"] = 2 }
-    inst.built["171,170,0,kl_01_0"] = { ["Base.ElectricWire"] = 3 }
     inst.built["160,160,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 } -- 那一塊還沒讀進來
     inst:initSystem()
     local ticks = count("OnTick") -- 含剛掛上的那一個 tick
     fire("OnTick")
     local onTick = R.keyId > 0 and inst.lamps.e[R.keyId].i["Base.ElectricWire"] == 7 and count("OnTick") == ticks - 1
-        and G.keyId > 0 and inst.lamps.e[G.keyId].i["Base.ElectricWire"] == 3 and inst.built["170,170,1,kl_01_0"] == nil
+        and inst.built["170,170,1,kl_01_0"] == nil
         and inst.built["160,160,0,kl_01_0"] ~= nil and count("LoadChunk") == 1
     local F = lamp(at(160, 160), lampA, "mark")
     fire("LoadChunk", S(160, 160):getChunk())
