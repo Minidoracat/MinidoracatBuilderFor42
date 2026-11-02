@@ -25,6 +25,7 @@ local function isLanding(k) return k:sub(-#LANDING) == LANDING end
 local CHUNK = 8 -- IsoChunk 一邊幾格（IsoChunk.java:3763,3801）
 local function chunkOf(x, y) return math.floor(x / CHUNK) * 100000 + math.floor(y / CHUNK) end
 local byChunk = {} -- 還沒定案的 0.3.0 舊燈鍵，照所在的 chunk 分（檔尾）
+local watchLegacy -- 檔尾：還有舊鍵時才掛讀 chunk 的事件
 
 local function parseKey(k)
     local x, y, z, name = string.match(k, "^(%-?%d+),(%-?%d+),(%-?%d+),(.+)$")
@@ -59,6 +60,8 @@ function Ledger:initSystem()
     end
     Ledger.legacy = n
     Ledger.instance = self
+    if n > 0 then print(LOG .. "LEDGER legacy lights waiting: " .. n) end
+    watchLegacy(n > 0)
 end
 
 -- GOS 會對系統表呼叫這幾個（SGlobalObjectSystem.java:111-162）；本系統不持有全域物件、不收客戶端指令
@@ -149,11 +152,12 @@ Events.OnObjectAboutToBeRemoved.Add(function(obj)
 end)
 
 -- ---------------------------------------------------------------- 0.3.0 以前的燈（0.4.0 起發編號）
--- built 照「位置＋圖名」記。升版後每個 chunk 第一次讀到時，那一塊的舊鍵全部定案：那一格帳本還認不得（keyId -1，或當機回溯後
+-- built 照「位置＋圖名」記。升版後每個 chunk 第一次讀進來時，那一塊的舊鍵全部定案：那一格帳本還認不得（keyId -1，或當機回溯後
 -- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、把那一筆搬進 lamps；沒有或有兩盞以上（分不出是哪一盞）就刪掉
--- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。整塊一起定案：沒有物件的格子不觸發
--- LoadGridsquare（IsoChunk.java:3804）。物件在逐格觸發之前就從存檔讀進來（IsoChunk.java:2325,3800-3838），所以用
--- getObjects 找整塊的燈。
+-- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。
+-- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3969），物件在那之前就從存檔讀進來（IsoChunk.java:2325,3800-3838），所以用
+-- getObjects 找整塊的燈。只在還有舊鍵時掛著，都定案就摘掉：舊寫法逐格掛 LoadGridsquare、到 0 也不摘，沒人去的那幾塊不讀就
+-- 一直掛著，2026-11-02 正式服晚峰 Lua 取樣占主執行緒約 0.7%。
 local function candidate(inst, o, name)
     if not (instanceof(o, "IsoLightSwitch") and o:hasModData() and o:getModData().builderEntry) then return false end
     local spr = o:getSprite()
@@ -191,38 +195,49 @@ local function settleChunk(inst, ck, chunk)
     byChunk[ck] = nil
     local ok, err = pcall(settle, inst, chunk, keys)
     if not ok then print(LOG .. "light ledger adopt failed: " .. tostring(err)) end
+    for _ in pairs(byChunk) do return end -- 還有塊沒讀到（Kahlua 沒有 next）
+    watchLegacy(false)
+    print(LOG .. "LEDGER legacy lights done, unsettled=" .. Ledger.legacy)
 end
 
--- 單機讀檔先讀格子、後建帳本（GameLoadingState.java:305,313）：帳本建好之前每一塊記下讀到的一格，建好後的 tick 一次定案
--- （那一格已被卸載、或格子物件被重用到別處的不管：重載時再定案）。專用伺服器先建帳本再讀格子，當場定案。
-local pending, draining = {}, false
-local function drain()
-    local inst = Ledger.instance
-    if not inst then return end
-    Events.OnTick.Remove(drain)
-    local list = pending
-    pending, draining = {}, false
-    local cell = getCell()
-    for ck, sq in pairs(list) do
-        if cell:getGridSquare(sq:getX(), sq:getY(), sq:getZ()) == sq and chunkOf(sq:getX(), sq:getY()) == ck then
-            settleChunk(inst, ck, sq:getChunk())
+-- 這一塊的任一格（定位用）：原點那格幾乎都有，沒有時逐格找
+local function anySquare(chunk)
+    local sq = chunk:getGridSquare(0, 0, 0)
+    if sq then return sq end
+    for z = chunk:getMinLevel(), chunk:getMaxLevel() do
+        for i = 0, CHUNK * CHUNK - 1 do
+            sq = chunk:getGridSquare(i % CHUNK, math.floor(i / CHUNK), z)
+            if sq then return sq end
         end
     end
+    return nil
 end
 
-Events.LoadGridsquare.Add(function(sq)
-    local inst = Ledger.instance
-    if inst and Ledger.legacy <= 0 then return end
-    local ck = chunkOf(sq:getX(), sq:getY())
-    if inst then
-        if byChunk[ck] then settleChunk(inst, ck, sq:getChunk()) end
-        return
+local function onLoadChunk(chunk)
+    local sq = anySquare(chunk)
+    local ck = sq and chunkOf(sq:getX(), sq:getY())
+    if ck and byChunk[ck] then settleChunk(Ledger.instance, ck, chunk) end
+end
+
+-- 帳本建好之前就讀進來的塊（單機讀檔先讀格子、後建帳本，GameLoadingState.java:305,313）：建好後的第一個 tick 照舊鍵的位置找，
+-- 那一塊在就定案，不在的等它讀進來。專用伺服器先建帳本再讀格子，這時一塊都還沒有。
+local function settleLoaded()
+    Events.OnTick.Remove(settleLoaded)
+    local inst, cell, found = Ledger.instance, getCell(), {}
+    for ck, keys in pairs(byChunk) do
+        local x, y, z = parseKey(keys[1])
+        found[ck] = cell:getChunkForGridSquare(x, y, z)
     end
-    pending[ck] = sq
-    if not draining then
-        draining = true
-        Events.OnTick.Add(drain)
+    for ck, chunk in pairs(found) do settleChunk(inst, ck, chunk) end
+end
+
+watchLegacy = function(on)
+    Events.LoadChunk.Remove(onLoadChunk)
+    Events.OnTick.Remove(settleLoaded)
+    if on then
+        Events.LoadChunk.Add(onLoadChunk)
+        Events.OnTick.Add(settleLoaded)
     end
-end)
+end
 
 return Ledger

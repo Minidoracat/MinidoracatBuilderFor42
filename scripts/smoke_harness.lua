@@ -189,6 +189,11 @@ function getCell()
             return nil
         end,
         createNewGridSquare = function() created = created + 1 return nil end,
+        -- 那一格在（讀進來了）就回它那一塊（引擎照座標找已讀進來的塊，IsoCell.java:333-357）
+        getChunkForGridSquare = function(_, x, y, z)
+            local sq = squares[x .. "," .. y .. "," .. z]
+            return sq and sq:getChunk() or nil
+        end,
         checkHaveRoof = function() HARNESS_ROOF = (HARNESS_ROOF or 0) + 1 end, -- 全域：記呼叫次數（屋頂情境驗）
     }
 end
@@ -283,7 +288,11 @@ square = function(x, y, z, o)
     -- 照引擎：一塊 8×8，getGridSquare 收這一塊裡的座標（IsoChunk.java:3157-3160）；格子沒建過回 nil
     function sq:getChunk()
         local x0, y0 = math.floor(x / 8) * 8, math.floor(y / 8) * 8
-        return { getGridSquare = function(_, lx, ly, lz) return squares[(x0 + lx) .. "," .. (y0 + ly) .. "," .. lz] end }
+        return {
+            getGridSquare = function(_, lx, ly, lz) return squares[(x0 + lx) .. "," .. (y0 + ly) .. "," .. lz] end,
+            getMinLevel = function() return 0 end,
+            getMaxLevel = function() return 0 end,
+        }
     end
     function sq:canReachTo(other) return not other.noReach end
     squares[x .. "," .. y .. "," .. z] = sq
@@ -354,7 +363,9 @@ function SGlobalObjectSystem.new(cls, name)
     return o
 end
 function SGlobalObjectSystem:initSystem() end
-function SGlobalObjectSystem.RegisterSystemClass(cls) cls:new() end
+-- 照引擎：系統等檔案載入完才建（原版 RegisterSystemClass 掛 OnSGlobalObjectSystemInit），不在登記當下；require 跑完檔案後建
+HARNESS_PENDING_SYSTEMS = {} -- 全域：主程式區塊的 local 已到 200 個上限
+function SGlobalObjectSystem.RegisterSystemClass(cls) table.insert(HARNESS_PENDING_SYSTEMS, cls) end
 function sendRemoveItemFromContainer() end
 function sendAddItemsToContainer() end
 local function item(ft, tags)
@@ -464,7 +475,11 @@ function require(name)
     loaded[name] = true
     for _, dir in ipairs({ "shared", "server", "client" }) do
         local chunk = loadfile(MEDIA .. "/" .. dir .. "/" .. name .. ".lua")
-        if chunk then chunk() return true end
+        if chunk then
+            chunk()
+            while #HARNESS_PENDING_SYSTEMS > 0 do table.remove(HARNESS_PENDING_SYSTEMS, 1):new() end
+            return true
+        end
     end
     error("require 找不到: " .. name)
 end
@@ -5404,7 +5419,7 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(Circuits.isSwitch(SW) and not Circuits.isSwitch(SM) and Circuits.isLamp(M) and not Circuits.isLamp(LM),
         "線路：帳本有的開關與燈才算本 MOD 的")
 
-    -- 0.3.0 以前的燈：built 照「位置＋圖名」記，升版後讀到那一塊（8×8）時整塊定案
+    -- 0.3.0 以前的燈：built 照「位置＋圖名」記，升版後讀到那一塊（8×8，LoadChunk 每塊一次）時整塊定案
     local sqA, sqQ = S(144, 144), S(142, 144)
     local V = lamp(sqA, lampA)
     local A1, A2 = lamp(sqA, lampA, "mark"), lamp(sqA, lampB, "mark")
@@ -5413,34 +5428,34 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     local onLanding = lamp(S(147, 140), sprite(Entry.STAIR_FLOOR, 3605, { flags = { "solidfloor" } }), "mark")
     inst.built["144,144,0,kl_01_0"] = { ["Base.ElectricWire"] = 1 }
     inst.built["144,144,0,kl_01_1"] = { ["Base.ElectricWire"] = 3 }
-    inst.built["145,145,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 } -- 燈已不在；那一格沒有物件，不觸發讀格子
+    inst.built["145,145,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 } -- 燈已不在
     inst.built["142,144,0,kl_01_0"] = { ["Base.ElectricWire"] = 5 }
     inst:initSystem()
     local before = Ledger.legacy
     inst.built[landKey] = {}
     inst:initSystem()
     check(before >= 4 and Ledger.legacy == before, "重開時數還沒定案的舊燈：樓梯平台不算")
-    fire("LoadGridsquare", sqA)
+    fire("LoadChunk", sqA:getChunk())
     local a1, a2 = inst.lamps.e[A1.keyId], inst.lamps.e[A2.keyId]
     check(a1 ~= nil and a2 ~= nil and A1.keyId ~= A2.keyId and a1.s == "kl_01_0" and a1.p == "144,144,0"
         and a1.i["Base.ElectricWire"] == 1 and a2.i["Base.ElectricWire"] == 3 and inst.built["144,144,0,kl_01_0"] == nil
         and inst.built["144,144,0,kl_01_1"] == nil and V.keyId == -1,
         "讀到那一塊：舊紀錄照格上那盞本 MOD 的燈搬成編號，退料照舊、舊紀錄刪掉；原版燈不算")
     check(inst.built["145,145,0,kl_01_0"] == nil and Ledger.legacy == before - 3,
-        "同一塊裡燈已不在的舊鍵（沒有物件的格子不觸發讀格子）一起刪掉")
+        "同一塊裡燈已不在的舊鍵一起刪掉")
     local forged = lamp(S(145, 145), lampA, "mark")
-    fire("LoadGridsquare", S(145, 145))
+    fire("LoadChunk", S(145, 145):getChunk())
     check(forged.keyId == -1 and Ledger.get(forged) == nil, "定案後那一格的燈不再搬")
-    fire("LoadGridsquare", sqQ)
+    fire("LoadChunk", sqQ:getChunk()) -- 那一塊的原點那格不存在：照其他格定位
     local neither = Q1.keyId == -1 and Q2.keyId == -1
     sqQ:transmitRemoveItemFromSquare(Q2)
-    fire("LoadGridsquare", sqQ)
+    fire("LoadChunk", sqQ:getChunk())
     check(neither and Q1.keyId == -1 and inst.built["142,144,0,kl_01_0"] == nil and Ledger.get(Q1) == nil
         and Ledger.legacy == before - 4,
         "同一格兩盞同款的舊燈：分不出是哪一盞，舊紀錄刪掉（本工具拆不了）；砸掉一盞再讀也不搬")
-    fire("LoadGridsquare", S(147, 140))
+    fire("LoadChunk", S(147, 140):getChunk())
     check(onLanding.keyId == -1 and inst.built[landKey] ~= nil, "樓梯平台的紀錄不搬")
-    fire("LoadGridsquare", sqA)
+    fire("LoadChunk", sqA:getChunk())
     check(inst.lamps.e[A1.keyId] == a1 and Ledger.legacy == before - 4, "同一塊再讀一次：已定案，不再動")
     c = unbuild(sqA, "kl_01_1")
     check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and inst.lamps.e[A2.keyId] == nil,
@@ -5455,32 +5470,26 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     inst.built["152,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 6 }
     inst.built["153,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 8 }
     inst:initSystem()
-    fire("LoadGridsquare", S(152, 152))
+    fire("LoadChunk", S(152, 152):getChunk())
     check(W.keyId > 0 and W.keyId ~= 999 and inst.lamps.e[W.keyId].i["Base.ElectricWire"] == 6 and W2.keyId == 998
         and X3.keyId == -1 and inst.built["153,152,0,kl_01_0"] == nil,
         "舊紀錄那格的燈帶著帳本沒有的編號（當機回溯）：照樣搬過去；同一格另有一盞帳本認不得的同款燈：兩盞都不搬")
 
-    -- 單機：帳本建好前每一塊記下讀到的一格，建好後的 tick 定案；那一塊已重載成另一份的不管，重載時再定案
-    local sqR, sqZ = S(140, 140), S(144, 141)
-    local R = lamp(sqR, lampA, "mark")
-    lamp(sqZ, lampA, "mark")
+    -- 單機：帳本建好前就讀進來的塊，建好後第一個 tick 照舊鍵的位置找到就定案；那時還沒讀進來的塊讀進來再定案
+    local R = lamp(S(140, 140), lampA, "mark")
     inst.built["140,140,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
-    inst.built["144,141,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 }
+    inst.built["160,160,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 } -- 那一塊還沒讀進來
     inst:initSystem()
-    local ticks = count("OnTick")
-    Ledger.instance = nil
-    fire("LoadGridsquare", sqR)
-    fire("LoadGridsquare", sqZ)
+    local ticks = count("OnTick") -- 含剛掛上的那一個 tick
     fire("OnTick")
-    local waited = R.keyId == -1 and inst.built["140,140,0,kl_01_0"] ~= nil and count("OnTick") == ticks + 1
-    local Z2 = lamp(at(144, 141), lampA, "mark")
-    Ledger.instance = inst
-    fire("OnTick")
-    local reloadWaits = Z2.keyId == -1 and inst.built["144,141,0,kl_01_0"] ~= nil
-    fire("LoadGridsquare", S(144, 141))
-    check(waited and R.keyId > 0 and inst.lamps.e[R.keyId].i["Base.ElectricWire"] == 7 and reloadWaits
-        and Z2.keyId > 0 and inst.lamps.e[Z2.keyId].i["Base.ElectricWire"] == 9 and count("OnTick") == ticks,
-        "單機讀檔：帳本建好前讀到的塊先記著，建好後的 tick 定案、摘掉 tick 事件；已重載成另一份的不管，重載時再定案")
+    local onTick = R.keyId > 0 and inst.lamps.e[R.keyId].i["Base.ElectricWire"] == 7 and count("OnTick") == ticks - 1
+        and inst.built["160,160,0,kl_01_0"] ~= nil and count("LoadChunk") == 1
+    local F = lamp(at(160, 160), lampA, "mark")
+    fire("LoadChunk", S(160, 160):getChunk())
+    check(onTick and F.keyId > 0 and inst.lamps.e[F.keyId].i["Base.ElectricWire"] == 9 and count("LoadChunk") == 0,
+        "單機讀檔：帳本建好前讀進來的塊在建好後第一個 tick 定案、摘掉 tick 事件；還沒讀進來的塊讀進來時定案，都定案後摘掉讀塊事件")
+    inst:initSystem()
+    check(count("LoadChunk") == 0 and count("OnTick") == ticks - 1, "沒有舊燈：開服不掛讀塊與 tick 事件（每塊、每格都不多花）")
     instanceof = realInst
 end)()
 
