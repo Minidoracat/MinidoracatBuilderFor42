@@ -280,6 +280,11 @@ square = function(x, y, z, o)
     function sq:RecalcAllWithNeighbours() end
     function sq:getWorldObjects() return javaList(self.world) end
     function sq:getSpecialObjects() return javaList(self.objects) end
+    -- 照引擎：一塊 8×8，getGridSquare 收這一塊裡的座標（IsoChunk.java:3157-3160）；格子沒建過回 nil
+    function sq:getChunk()
+        local x0, y0 = math.floor(x / 8) * 8, math.floor(y / 8) * 8
+        return { getGridSquare = function(_, lx, ly, lz) return squares[(x0 + lx) .. "," .. (y0 + ly) .. "," .. lz] end }
+    end
     function sq:canReachTo(other) return not other.noReach end
     squares[x .. "," .. y .. "," .. z] = sq
     return sq
@@ -2042,7 +2047,9 @@ local function newKinds()
     -- 燈：IsoLightSwitch；可搬又帶 lightR 的另收燈泡（拿得下來），燈泡不給經驗
     local made = {}
     IsoLightSwitch = { new = function(_, sq, spr, room)
-        local o = { spr = spr, room = room, md = {}, lights = 0 }
+        local o = { spr = spr, room = room, md = {}, lights = 0, keyId = -1 }
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
         function o:addLightSourceFromSprite() if spr:getProperties():has("lightR") then self.lights = self.lights + 1 end end
         function o:setActivated(v) self.on = v end
         function o:setRenderYOffset(v) self.yoff = v end
@@ -2211,7 +2218,7 @@ local function dismantleScenario()
     -- 本 MOD 蓋的物件（modData 有 builderEntry）；mats＝退料表（字串，照 Java 欄位）。多格：group＝同一組（同一個原點），
     -- cands＝引擎 getSpriteGridObjectsIncludingSelf 收到的（同一張 sprite grid、不看原點，可能混到別組）
     local function ours(sq, spr, mats, class)
-        local o = { class = class or "IsoThumpable", mats = mats or {}, md = { builderEntry = spr:getName() },
+        local o = { class = class or "IsoThumpable", mats = mats or {}, md = { builderEntry = spr:getName() }, keyId = -1,
             floor = spr:getProperties():has(IsoFlagType.solidfloor) } -- isFloor 是建的時候設的欄位，換圖不變
         function o:getSprite() return spr end
         function o:getSquare() return sq end
@@ -2238,6 +2245,8 @@ local function dismantleScenario()
         function o:getContainerCount() return 0 end
         function o:getName() return self.name end
         function o:setName(v) self.name = v end
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -2724,12 +2733,14 @@ local function circuitScenario()
     -- IsoLightSwitch：ours＝本 MOD 蓋的（modData 記號＋帳本），mark＝只有 modData 記號、帳本沒記
     local function light(x, y, spr, how)
         local sq = at(x, y)
-        local o = { class = "IsoLightSwitch", md = {}, on = true, synced = 0, sq = sq,
+        local o = { class = "IsoLightSwitch", md = {}, on = true, synced = 0, sq = sq, keyId = -1,
             isLit = spr:getProperties():has("lightR") }
         function o:getSprite() return spr end
         function o:getSquare() return sq end
         function o:hasModData() return true end
         function o:getModData() return self.md end
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
         function o:isActivated() return self.on end
         function o:setActivated(v) self.on = v end
         function o:hasLightBulb() return self.bulb ~= false end
@@ -5138,6 +5149,203 @@ print("情境三十五：硬核（需要技能、原版材料）、同一套的�
     local walls8 = { g_01_0 = "wall", g_01_1 = "wall", g_01_8 = "fence" }
     check(Sets.of("f_01_8", function(n) return fences[n] end) == nil and Sets.of("g_01_0", function(n) return walls8[n] end) == nil,
         "位置的種類不合（柵欄表 0 是柱子、8–11 是柵欄；牆後面的 8 是柵欄）：不是原版牆的排法，不算一套")
+end)()
+
+print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）：同一格的燈各認各的、移除只清自己那筆、線路照帳本認、0.3.0 以前的燈讀到那一塊時定案")
+;(function()
+    nowMs = nowMs + 180000
+    local Ledger, Circuits = MinidoracatBuilder.Ledger, MinidoracatBuilder.Circuits
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local inst = Ledger.instance
+    local LAMP_KEYS = { lightR = "200", lightG = "180", lightB = "150" }
+    local lampA = sprite("kl_01_0", 3601, { type = T.lightswitch, keys = LAMP_KEYS })
+    local lampB = sprite("kl_01_1", 3602, { type = T.lightswitch, keys = LAMP_KEYS })
+    local swS = sprite("ks_01_0", 3603, { type = T.lightswitch })
+    local floorK = sprite("kf_01_0", 3604, { flags = { "solidfloor" } })
+    -- 一塊 140..147 的空地：移除時照引擎先觸發 OnObjectAboutToBeRemoved，退料掉在這裡時記件數
+    local function at(x, y)
+        local sq = square(x, y, 0)
+        sq.dropped = {}
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        return sq
+    end
+    for x = 140, 147 do for y = 140, 147 do at(x, y) end end
+    local function S(x, y) return squares[x .. "," .. y .. ",0"] end
+    local function has(sq, o) for _, v in ipairs(sq.objects) do if v == o then return true end end return false end
+    -- 燈（IsoLightSwitch）：how＝"ours" 本工具蓋的（帳本發編號）、"mark" 有本 MOD 記號但帳本沒有、nil 原版的
+    local function lamp(sq, spr, how)
+        local o = { class = "IsoLightSwitch", md = {}, keyId = -1, spr = spr }
+        if how then o.md.builderEntry = spr:getName() end
+        function o:getSprite() return self.spr end
+        function o:getSquare() return sq end
+        function o:hasModData() return next(self.md) ~= nil end
+        function o:getModData() return self.md end
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
+        function o:getProperties() return self.spr:getProperties() end
+        function o:getTextureName() return self.spr:getName() end
+        function o:getType() return self.spr:getType() end
+        function o:isObjectNoContainerOrEmpty() return true end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function o:isConnectedSpriteGridObject(x) return x == self end
+        function o:isStairsObject() return false end
+        function o:hasFluid() return false end
+        function o:isBarricaded() return false end
+        function o:getContainerCount() return 0 end
+        function o:isMovedThumpable() return self.moved == true end
+        function o:setMovedThumpable(v) self.moved = v end
+        sq.objects[#sq.objects + 1] = o
+        if how == "ours" then Ledger.put(o, { ["Base.ElectricWire"] = 2, ["Base.ElectronicsScrap"] = 1 }) end
+        return o
+    end
+    local here = S(143, 143)
+    local P = player({ id = 3601, x = 143.5, y = 143.5, here = here })
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    P.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    local nonce = 3600
+    local function unbuild(sq, name)
+        nonce = nonce + 1
+        sent = {}
+        here.dropped = {}
+        Server.dismantleIntent(P, { n = nonce, t = { sq:getX(), sq:getY(), 0, name } })
+        Server.dismantle(P, nonce, 1)
+        return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {}
+    end
+    HARNESS_ROLL = "max"
+
+    -- 蓋燈：伺服器發編號寫進 keyId，帳本照編號記位置、蓋的圖與退料
+    local saved = false
+    for _, k in ipairs(HARNESS_GOS_KEYS.MinidoracatBuilder or {}) do saved = saved or k == "lamps" end
+    check(saved, "帳本存檔白名單有 lamps（漏了重開後燈的帳本消失、每盞燈都拆不了）")
+    local sq1 = S(144, 143)
+    local L = lamp(sq1, lampA, "ours")
+    local M = lamp(sq1, lampB, "ours")
+    local eL, eM = inst.lamps.e[L.keyId], inst.lamps.e[M.keyId]
+    check(L.keyId > 0 and M.keyId > 0 and L.keyId ~= M.keyId and eL ~= nil and eL.p == "144,143,0" and eL.s == "kl_01_0"
+        and eL.i["Base.ElectricWire"] == 2 and eM ~= nil and eM.s == "kl_01_1" and inst.built["144,143,0,kl_01_0"] == nil
+        and inst.lamps.next > math.max(L.keyId, M.keyId),
+        "蓋燈：發編號寫進 keyId，帳本照編號記位置、蓋的圖與退料（不寫 built）；同一格兩盞各一個編號")
+
+    -- 同一格的燈：照圖名找到的是帳本沒有的那盞時不退料
+    local X = lamp(sq1, lampB, "mark")
+    L.spr = lampB
+    X.spr, X.md.builderEntry = lampA, "kl_01_0"
+    local c, a = unbuild(sq1, "kl_01_0")
+    check(c == "dismantleSkipped" and a.code == "NOT_OURS" and next(here.dropped) == nil and has(sq1, X)
+        and inst.lamps.e[L.keyId] ~= nil, "照圖名找到同一格帳本沒有的那盞：NOT_OURS、不拆不退，L 的帳本還在")
+    local X2 = lamp(sq1, lampA, "mark")
+    sq1:transmitRemoveItemFromSquare(X2)
+    check(inst.lamps.e[L.keyId] ~= nil and inst.lamps.e[M.keyId] ~= nil,
+        "帳本沒有的燈移出世界：同一格別盞的帳本不動")
+    L.spr, X.spr = lampA, lampB
+    c = unbuild(sq1, "kl_01_0")
+    check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 2 and here.dropped["Base.ElectronicsScrap"] == 1
+        and not has(sq1, L) and inst.lamps.e[L.keyId] == nil and inst.lamps.e[M.keyId] ~= nil,
+        "L 照自己那筆退料，移除時只清 L 那筆（同一格的 M 還在）")
+    M.spr = floorK
+    local changed = Ledger.get(M)
+    M.spr = lampB
+    check(changed == nil and Ledger.get(M) ~= nil, "圖和蓋的時候不同就不認（拆除照現在的圖分種類），相同時照常認")
+    local Y = lamp(S(146, 146), lampB)
+    Y.keyId = M.keyId
+    local moved = Ledger.get(Y)
+    S(146, 146):transmitRemoveItemFromSquare(Y)
+    check(moved == nil and inst.lamps.e[M.keyId] ~= nil, "編號相同、不在帳本記的位置：不認，移出世界也不清那一筆")
+    local old = lamp(sq1, lampA)
+    old.keyId = M.keyId
+    local reused = Ledger.get(old)
+    sq1:transmitRemoveItemFromSquare(old)
+    check(reused == nil and inst.lamps.e[M.keyId] ~= nil,
+        "同一格留著同編號、圖不同的燈（當機回溯後編號重發）：不認，移出世界也不清那一筆")
+    local SW, SM = lamp(S(140, 146), swS, "ours"), lamp(S(141, 146), swS, "mark")
+    local LM = lamp(S(142, 146), lampA, "mark")
+    check(Circuits.isSwitch(SW) and not Circuits.isSwitch(SM) and Circuits.isLamp(M) and not Circuits.isLamp(LM),
+        "線路：帳本有的開關與燈才算本 MOD 的")
+
+    -- 0.3.0 以前的燈：built 照「位置＋圖名」記，升版後讀到那一塊（8×8）時整塊定案
+    local sqA, sqQ = S(144, 144), S(142, 144)
+    local V = lamp(sqA, lampA)
+    local A1, A2 = lamp(sqA, lampA, "mark"), lamp(sqA, lampB, "mark")
+    local Q1, Q2 = lamp(sqQ, lampA, "mark"), lamp(sqQ, lampA, "mark")
+    local landKey = "147,140,0," .. Entry.STAIR_FLOOR
+    local onLanding = lamp(S(147, 140), sprite(Entry.STAIR_FLOOR, 3605, { flags = { "solidfloor" } }), "mark")
+    inst.built["144,144,0,kl_01_0"] = { ["Base.ElectricWire"] = 1 }
+    inst.built["144,144,0,kl_01_1"] = { ["Base.ElectricWire"] = 3 }
+    inst.built["145,145,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 } -- 燈已不在；那一格沒有物件，不觸發讀格子
+    inst.built["142,144,0,kl_01_0"] = { ["Base.ElectricWire"] = 5 }
+    inst:initSystem()
+    local before = Ledger.legacy
+    inst.built[landKey] = {}
+    inst:initSystem()
+    check(before >= 4 and Ledger.legacy == before, "重開時數還沒定案的舊燈：樓梯平台不算")
+    fire("LoadGridsquare", sqA)
+    local a1, a2 = inst.lamps.e[A1.keyId], inst.lamps.e[A2.keyId]
+    check(a1 ~= nil and a2 ~= nil and A1.keyId ~= A2.keyId and a1.s == "kl_01_0" and a1.p == "144,144,0"
+        and a1.i["Base.ElectricWire"] == 1 and a2.i["Base.ElectricWire"] == 3 and inst.built["144,144,0,kl_01_0"] == nil
+        and inst.built["144,144,0,kl_01_1"] == nil and V.keyId == -1,
+        "讀到那一塊：舊紀錄照格上那盞本 MOD 的燈搬成編號，退料照舊、舊紀錄刪掉；原版燈不算")
+    check(inst.built["145,145,0,kl_01_0"] == nil and Ledger.legacy == before - 3,
+        "同一塊裡燈已不在的舊鍵（沒有物件的格子不觸發讀格子）一起刪掉")
+    local forged = lamp(S(145, 145), lampA, "mark")
+    fire("LoadGridsquare", S(145, 145))
+    check(forged.keyId == -1 and Ledger.get(forged) == nil, "定案後那一格的燈不再搬")
+    fire("LoadGridsquare", sqQ)
+    local neither = Q1.keyId == -1 and Q2.keyId == -1
+    sqQ:transmitRemoveItemFromSquare(Q2)
+    fire("LoadGridsquare", sqQ)
+    check(neither and Q1.keyId == -1 and inst.built["142,144,0,kl_01_0"] == nil and Ledger.get(Q1) == nil
+        and Ledger.legacy == before - 4,
+        "同一格兩盞同款的舊燈：分不出是哪一盞，舊紀錄刪掉（本工具拆不了）；砸掉一盞再讀也不搬")
+    fire("LoadGridsquare", S(147, 140))
+    check(onLanding.keyId == -1 and inst.built[landKey] ~= nil, "樓梯平台的紀錄不搬")
+    fire("LoadGridsquare", sqA)
+    check(inst.lamps.e[A1.keyId] == a1 and Ledger.legacy == before - 4, "同一塊再讀一次：已定案，不再動")
+    c = unbuild(sqA, "kl_01_1")
+    check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and inst.lamps.e[A2.keyId] == nil,
+        "搬過的燈：本工具照搬過去的那筆退料")
+
+    -- 當機回溯：搬過的燈帶著編號存進 chunk、帳本回到搬之前，重開後照樣搬給它；同一格另有一盞帳本認不得的同款燈時兩盞都不搬
+    local W = lamp(at(152, 152), lampA, "mark")
+    W.keyId = 999
+    local W2 = lamp(at(153, 152), lampA, "mark")
+    W2.keyId = 998
+    local X3 = lamp(S(153, 152), lampA, "mark")
+    inst.built["152,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 6 }
+    inst.built["153,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 8 }
+    inst:initSystem()
+    fire("LoadGridsquare", S(152, 152))
+    check(W.keyId > 0 and W.keyId ~= 999 and inst.lamps.e[W.keyId].i["Base.ElectricWire"] == 6 and W2.keyId == 998
+        and X3.keyId == -1 and inst.built["153,152,0,kl_01_0"] == nil,
+        "舊紀錄那格的燈帶著帳本沒有的編號（當機回溯）：照樣搬過去；同一格另有一盞帳本認不得的同款燈：兩盞都不搬")
+
+    -- 單機：帳本建好前每一塊記下讀到的一格，建好後的 tick 定案；那一塊已重載成另一份的不管，重載時再定案
+    local sqR, sqZ = S(140, 140), S(144, 141)
+    local R = lamp(sqR, lampA, "mark")
+    lamp(sqZ, lampA, "mark")
+    inst.built["140,140,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
+    inst.built["144,141,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 }
+    inst:initSystem()
+    local ticks = count("OnTick")
+    Ledger.instance = nil
+    fire("LoadGridsquare", sqR)
+    fire("LoadGridsquare", sqZ)
+    fire("OnTick")
+    local waited = R.keyId == -1 and inst.built["140,140,0,kl_01_0"] ~= nil and count("OnTick") == ticks + 1
+    local Z2 = lamp(at(144, 141), lampA, "mark")
+    Ledger.instance = inst
+    fire("OnTick")
+    local reloadWaits = Z2.keyId == -1 and inst.built["144,141,0,kl_01_0"] ~= nil
+    fire("LoadGridsquare", S(144, 141))
+    check(waited and R.keyId > 0 and inst.lamps.e[R.keyId].i["Base.ElectricWire"] == 7 and reloadWaits
+        and Z2.keyId > 0 and inst.lamps.e[Z2.keyId].i["Base.ElectricWire"] == 9 and count("OnTick") == ticks,
+        "單機讀檔：帳本建好前讀到的塊先記著，建好後的 tick 定案、摘掉 tick 事件；已重載成另一份的不管，重載時再定案")
+    instanceof = realInst
 end)()
 
 print()
