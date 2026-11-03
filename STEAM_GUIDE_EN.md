@@ -12,7 +12,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Open the window[/b]: click the Build Anything button on the family toolbar (a hammer and a handsaw).
 [*] [b]Find something[/b]: search by name, narrow it down with the tabs, kinds, tilesets and sources, or use the eyedropper left of the search bar to click something in the world.
 [*] [b]Check the details[/b]: select an item, and the right side lists materials, tools, XP and how it is removed.
-[*] [b]Place it[/b]: press Build, then click the ground.
+[*] [b]Place it[/b]: press Build or double-click the item, then click the ground.
 [*] [b]Drag a row[/b]: hold the left button and drag to build a row of walls, posts, floors, fences or roofs.
 [*] [b]Pay for it[/b]: keep the materials in your bags or on the ground next to you, and your character walks over and builds.
 [/olist]
@@ -41,6 +41,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Search[/b]: by name, tileset, source mod or full tile name.
 [*] [b]Full tile names[/b]: search a full name (blends_street_01_101, for example), and if it is in the list, that item is selected.
+[*] [b]Leaving a full-name search[/b]: switching to another tab, kind, tileset or source clears the full name from the search bar and lists by the new choice.
 [*] [b]Other looks of a tile[/b]: an open door, a smashed window, a closed curtain, one square of a multi-square object and the like select the item they belong to.
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
@@ -48,6 +49,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]One item per object[/b]: the facings of one object are one item.
 [*] [b]Different objects with the same name[/b]: each is listed separately.
+[*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
 [*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
 [*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected.
@@ -77,6 +79,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tiles per row[/b]: the Per row slider under the search bar sets 2 to 10, saved on your computer.
 [*] [b]Window size[/b]: widen the window and the cells widen with it.
 [*] [b]Names[/b]: up to two lines, showing the tileset and number.
+[*] [b]Double-click[/b]: double-clicking an item starts placing it, the same as selecting it and pressing Build; a single click only selects it and shows the details.
 [*] [b]Items you can't afford[/b]: the name is dimmed with a warning in the top right, and you can still select and build them.
 [*] [b]Items your skill is too low for[/b]: when the server turns on Require vanilla skill levels, they are dimmed with a warning too, and you can build them once you reach that level.
 [*] [b]Favorites[/b]: select an item and press Add to favorites, saved on your computer and kept across servers.
@@ -118,7 +121,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
 [*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; when your skill is too low, which skill and level you need.
-[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has.
+[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things).
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
 [*] [b]Keep building[/b]: the cursor stays after you build.
@@ -186,6 +189,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
 [*] [b]Railing ends[/b]: railing ends that block only one side of a square are not listed (zombies would not come to break them), and a search tells you why.
+[*] [b]Mall shutters[/b]: on the Walls tab, and what you build is a regular wall. As in vanilla, a window on the same square can't be opened, closed or climbed through with the interact key.
 [*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too.
 [*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
 [*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
@@ -196,7 +200,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
 [*] [b]Double doors and garage doors[/b]: not supported yet.
 [*] [b]Windows[/b]: open, smashed and glass-removed tiles are not listed, so you always place a whole window.
-[*] [b]Unbreakable windows[/b]: not in the catalog.
+[*] [b]Unbreakable windows[/b]: not in the catalog, and neither are window frames, posts and wall overlays that make a window unbreakable (walls such as mall shutters are listed).
 [*] [b]Permanently locked windows[/b]: listed, and the details say Permanently locked.
 [*] [b]What permanently locked means[/b]: it can't be opened but can be smashed, so it works as a fixed window.
 [/list]
@@ -235,7 +239,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
 [*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
-[*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla.
+[*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
 [*] [b]Container capacity[/b]: the same as the vanilla piece; server owners can set Container capacity multiplier in the sandbox, up to 100.
@@ -634,6 +638,7 @@ end)
 [*] [b]Lights built with Build Anything[/b]: are not affected by the previous point.
 [*] [b]Double doors and garage doors[/b]: not supported yet.
 [*] [b]No dragging rows with a gamepad[/b]: a gamepad places one item at a time.
+[*] [b]Some furniture can't rotate[/b]: when the game doesn't link the facings into one object, and the tiles share a name with several versions or are pieces the game doesn't group into one object (the vanilla office desk, for example), each tile is its own item with one facing; pick the item with the facing you want.
 [*] [b]Split screen[/b]: only the first player can open Build Anything.
 [*] [b]Disassembling containers the vanilla way[/b]: vanilla Disassemble on a container that can't be moved loses what is inside, the same for vanilla-built ones.
 [*] [b]Before removing a container[/b]: empty it first, or use Dismantle (Build Anything), which asks you to empty it.
