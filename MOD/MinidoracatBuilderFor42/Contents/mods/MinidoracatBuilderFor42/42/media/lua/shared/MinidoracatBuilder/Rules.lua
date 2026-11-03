@@ -322,9 +322,11 @@ local function kindOfProps(name, p, t)
         return "door"
     end
     -- 打不破的窗不列：窗自己帶 makeWindowInvincible，或同一格同方向帶 cutN/W 的物件帶它，窗就打不破、爬不過，
-    -- 殭屍也不開（IsoWindow.java:1150-1172,436,1111-1135,1314）。原版 tiledef 帶它的 10 張（8 扇窗、2 片商場鐵捲門）
-    -- 都搬不動，玩家拿不到。2026-10-27 傾印的目錄（正式服 13 個 tiledef MOD）也只有這 10 張，所以只在窗、窗框、牆、
-    -- 柱子、牆面疊圖查，不每格多一次 Java 呼叫。
+    -- 殭屍也不開（IsoWindow.java:1150-1172,436,1111-1135,1314）。原版 tiledef 帶它的 10 張是 8 扇窗與 2 片商場鐵捲門
+    -- （location_shop_mall_01_18／19）。旗標只影響窗：牆帶它照列（使用者 2026-11-03 選列鐵捲門），本工具蓋的牆是
+    -- IsoThumpable，殭屍打得壞；副作用只有同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5231-5234）。同一條邊的
+    -- 窗洞早就被牆占走，引擎也只替 WallN 加 cutN、WallW 加 cutW（IsoWorld.java:894-927）。只在窗、窗框、柱子、
+    -- 牆面疊圖查（不每格多一次 Java 呼叫），別的種類帶它由 catalog-sp audit 抓。
     if p:has(windowN) or p:has(windowW) then -- 窗一定也帶 WindowN/W，所以先判斷
         if p:has(invincible) then return nil, "INVINCIBLE" end
         return "window"
@@ -341,7 +343,7 @@ local function kindOfProps(name, p, t)
     end
     if p:has("WallN") or p:has("WallW") or p:has("WallNW") or p:has("WallNTrans") or p:has("WallWTrans")
         or p:has("WallNWTrans") then
-        if p:has(invincible) then return nil, "INVINCIBLE" end
+        -- 帶 makeWindowInvincible 的照列（商場鐵捲門，見上面窗那段）
         return "wall"
     end
     -- 牆角補洞的柱子（WallSE）：使用者 2026-10-31 選新增「柱子」種類，照原版補的轉角柱放（Place.thumpable）

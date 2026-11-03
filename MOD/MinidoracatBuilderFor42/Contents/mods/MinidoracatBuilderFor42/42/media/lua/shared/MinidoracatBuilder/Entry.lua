@@ -9,7 +9,7 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 8
+Entry.VERSION = 9
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
@@ -225,33 +225,120 @@ local function opposite(entry)
     return nil
 end
 
+-- 引擎沒連起來的同名家具（Entry.face 的後備）。引擎只替能搬、有 GroupName、同組最多 4 張且每面一張的圖寫朝向偏移
+-- （IsoWorld.java:1064-1101,1304-1326），其他同名的圖原版搬家具也轉不了。這裡把 SIBLING 種類裡同一 tileset、同種類、
+-- 同 GroupName＋CustomName、單格、沒有引擎偏移的圖配起來：每張都有 Facing、每個朝向剛好一張才配。同名好幾款照編號配
+-- 會配錯（2026-11-03 稽核 1031c：這樣配得到的 187 張全部看圖）；NO_PAIR 是看圖確認的同名不同物，鍵＝
+-- tileset|GroupName|CustomName。第一次碰到一個 tileset 時從 _0 往上掃到第一個沒有的編號（引擎照 nTiles 連號建，
+-- IsoWorld.java:700-716），結果照 tileset 快取：sibCache[tileset][名稱]＝{ N = 圖, … }，不配的不記。
+local SIBLING = { furniture = true, container = true, solid = true, light = true, wallObject = true, attached = true,
+    overlay = true }
+local NO_PAIR = { ["AuthenticZ_Store||Wall Piece"] = true, ["DylansRandomFurniture02||Safe"] = true,
+    ["Ekron01||Cartoon Poster"] = true }
+local ENGINE_OFFSETS = { "Noffset", "Eoffset", "Soffset", "Woffset" }
+local sibCache = {}
+
+-- 能參加配對的圖回名稱鍵「GroupName|CustomName」：單格、沒有引擎偏移、有名稱；否則 nil
+local function siblingKey(spr, p)
+    if spr:getSpriteGrid() or p:has("SpriteGridPos") then return nil end
+    for i = 1, 4 do
+        if p:has(ENGINE_OFFSETS[i]) then return nil end
+    end
+    local group, custom = p:get("GroupName") or "", p:get("CustomName") or ""
+    if group == "" and custom == "" then return nil end
+    return group .. "|" .. custom
+end
+
+local function scanSiblings(tileset)
+    local named, byKey, i = IsoSpriteManager.instance:getNamedMap(), {}, 0
+    local name = tileset .. "_0"
+    while named:containsKey(name) do
+        local spr = named:get(name)
+        local key = siblingKey(spr, spr:getProperties())
+        if key then
+            local list = byKey[key]
+            if not list then
+                list = {}
+                byKey[key] = list
+            end
+            list[#list + 1] = spr
+        end
+        i = i + 1
+        name = tileset .. "_" .. i
+    end
+    local out = {}
+    for key, list in pairs(byKey) do
+        if #list >= 2 and not NO_PAIR[tileset .. "|" .. key] then
+            local kinds, sets = {}, {} -- 種類 → { n, N = 圖, … }；有一張沒有 Facing 或朝向重複時 false
+            for j, spr in ipairs(list) do
+                local kind = Rules.classify(spr)
+                if kind and SIBLING[kind] and sets[kind] ~= false then
+                    kinds[j] = kind
+                    local set = sets[kind] or { n = 0 }
+                    local f = spr:getProperties():get("Facing")
+                    if (f == "N" or f == "E" or f == "S" or f == "W") and not set[f] then
+                        set[f], set.n = spr, set.n + 1
+                        sets[kind] = set
+                    else
+                        sets[kind] = false
+                    end
+                end
+            end
+            for j, spr in ipairs(list) do
+                local set = kinds[j] and sets[kinds[j]]
+                if set and set.n >= 2 then out[spr:getName()] = set end
+            end
+        end
+    end
+    return out
+end
+
+-- 朝向 dir（"N" 等）的同名圖；項目不在配得起來的一組時 nil
+local function siblingFace(entry, dir, p)
+    if not SIBLING[entry.kind] or not siblingKey(entry.spr, p) then return nil end
+    local t = sibCache[entry.tileset]
+    if not t then
+        t = scanSiblings(entry.tileset)
+        sibCache[entry.tileset] = t
+    end
+    local set = t[entry.name]
+    return set and set[dir] or nil
+end
+
 -- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W；5＝配對面（上面）。引擎替同組的每個成員寫「其他面的原點 − 自己」的
--- Noffset 等，自己那一面不寫（IsoWorld.java:1283-1325），所以自己的 Facing 就是自己。查不到那一面回 nil。
+-- Noffset 等，自己那一面不寫（IsoWorld.java:1283-1325），所以自己的 Facing 就是自己；引擎沒連起來的同名家具照
+-- siblingFace 配。查不到那一面回 nil。
 local DIRS = { "N", "E", "S", "W" }
 function Entry.face(entry, d)
     if d == 0 then return entry.spr end
+    local spr
     if d == 5 then
         local c = pairCache[entry.name]
         if c == nil then
             c = opposite(entry) or false
             pairCache[entry.name] = c
         end
-        return c or nil
+        spr = c or nil
+    else
+        local dir = DIRS[d]
+        if not dir then return nil end
+        local p = entry.spr:getProperties()
+        local off = tonumber(p:get(dir .. "offset"))
+        if off then
+            spr = Entry.sprite(entry.tileset .. "_" .. (entry.num + off))
+        elseif p:get("Facing") == dir then
+            spr = entry.spr
+        else
+            spr = siblingFace(entry, dir, p)
+        end
     end
-    local dir = DIRS[d]
-    if not dir then return nil end
-    local p = entry.spr:getProperties()
-    local off = tonumber(p:get(dir .. "offset"))
-    local spr
-    if off then
-        spr = Entry.sprite(entry.tileset .. "_" .. (entry.num + off))
-    elseif p:get("Facing") == dir then
-        spr = entry.spr
-    end
-    if not spr or Rules.classify(spr) ~= entry.kind then return nil end -- 另一面也要是同一種類（排除條件一起重算）
-    -- 樓梯的另一面是另一組，也要湊得成三格（Entry.resolve 只驗項目自己那組）
-    if entry.kind == "stairs" and spr ~= entry.spr
-        and not Rules.stairsSet(IsoSpriteManager.instance:getNamedMap(), spr:getName()) then return nil end
+    if not spr then return nil end
+    if spr == entry.spr then return spr end
+    -- 另一面也要自己能蓋、同一種類：來源、圖塊組、種類開關照 Entry.resolve 重算（同一個 tileset 的圖可能來自不同
+    -- tiledef 檔，那個來源被停用時要擋，審查 1103 Codex；配對面也一樣，Claude 第 2 輪）。開關執行中會變，所以不快取
+    -- 這一步。樓梯的另一面是另一組，resolve 也驗它湊得成三格
+    local other = Entry.resolve(spr:getName())
+    if not other or other.kind ~= entry.kind then return nil end
     return spr
 end
 

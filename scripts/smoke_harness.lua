@@ -559,9 +559,10 @@ check(kind({}) == nil, "沒有任何分類屬性：不列")
 do -- 主程式區域變數上限 200
     check(kind({ flags = { "windowW", "makeWindowInvincible" }, keys = { WindowW = "" } }) == nil
         and kind({ flags = { "makeWindowInvincible" }, keys = { WindowW = "" } }) == nil
-        and kind({ flags = { "cutW", "makeWindowInvincible" }, keys = { WallW = "" } }) == nil
         and kind({ flags = { "cutW", "makeWindowInvincible" } }) == nil,
-        "讓窗打不破的旗標（窗、窗框、牆、牆面疊圖帶 makeWindowInvincible）：不列")
+        "讓窗打不破的旗標（窗、窗框、牆面疊圖帶 makeWindowInvincible）：不列")
+    check(kind({ flags = { "cutW", "makeWindowInvincible" }, keys = { WallW = "" } }) == "wall",
+        "牆帶 makeWindowInvincible（商場鐵捲門）：照牆列，旗標只影響窗（使用者 2026-11-03 選列）")
     check(kind({ keys = { container = "crate", StackReplaceTileOffset = "-1" } }) == nil
         and kind({ flags = { "solidtrans" }, keys = { StackReplaceTileOffset = "-2" } }) == nil
         and kind({ keys = { container = "crate", StackReplaceTileOffset = "0" } }) == "container"
@@ -870,6 +871,51 @@ check(tN and not tW and Entry.north("doorFrame", tdf), "透明門框：只有字
 local tnw = sprite("walls_test_01_10", 5010, { keys = { WallNWTrans = "" } })
 local twN, twW = Entry.edges("wall", tnw)
 check(twN and twW, "透明牆角：兩條邊都佔")
+-- 引擎沒連起來的同名家具（Entry.face 的 siblingFace；2026-11-03 Workshop 回報轉不了）。包在函式裡：主程式的 local 接近上限
+;(function()
+    local keepMap, keepOrder = spriteMap, spriteOrder
+    local list = {}
+    for i, k in ipairs({
+        { CustomName = "Desk", Facing = "S" }, { CustomName = "Desk", Facing = "E" }, { CustomName = "Desk", Facing = "N" },
+        { CustomName = "Shelf", Facing = "S" }, { CustomName = "Shelf", Facing = "S" }, { CustomName = "Shelf", Facing = "E" },
+        { CustomName = "Lamp" }, { CustomName = "Lamp", Facing = "E" }, { CustomName = "Lamp", Facing = "S" },
+        { CustomName = "Desk", Facing = "W", Noffset = "-7" }, -- 9：引擎連過的（有偏移）
+        { CustomName = "Desk", Facing = "W" },                  -- 10：多格的一格
+    }) do
+        k.IsMoveAble = ""
+        list[i] = sprite("sib_01_" .. (i - 1), 9100 + i, { keys = k })
+    end
+    list[11].grid = {}
+    list[12] = sprite("sib_01_11", 9112, { flags = { "WallW" }, keys = { WallW = "", CustomName = "Desk", Facing = "W" } }) -- 同名的牆
+    list[13] = sprite("Ekron01_0", 9120, { keys = { IsMoveAble = "", CustomName = "Cartoon Poster", Facing = "S" } })
+    list[14] = sprite("Ekron01_1", 9121, { keys = { IsMoveAble = "", CustomName = "Cartoon Poster", Facing = "E" } })
+    -- 同一個 tileset 跨兩個 tiledef 檔：東面那張來自 MOD 檔 7001（UMCTP）
+    list[15] = sprite("sib_02_0", 9130, { keys = { IsMoveAble = "", CustomName = "Cabinet", Facing = "S" } })
+    list[16] = sprite("sib_02_1", MOD_ID_BASE + 7, { keys = { IsMoveAble = "", CustomName = "Cabinet", Facing = "E" } })
+    -- 牆的配對面（d＝5）也一樣：北牆那張來自 MOD 檔 7001
+    list[17] = sprite("sib_03_0", 9140, { flags = { "WallW" }, keys = { WallW = "" } })
+    list[18] = sprite("sib_03_1", MOD_ID_BASE + 8, { flags = { "WallN" }, keys = { WallN = "" } })
+    world(list)
+    local function face(name, d)
+        local f = Entry.face(Entry.resolve(name), d)
+        return f and f:getName() or nil
+    end
+    check(face("sib_01_0", 2) == "sib_01_1" and face("sib_01_0", 1) == "sib_01_2" and face("sib_01_0", 3) == "sib_01_0"
+        and face("sib_01_1", 3) == "sib_01_0" and face("sib_01_2", 2) == "sib_01_1",
+        "同名家具（引擎沒寫偏移）：同 tileset、同種類、同名、每個朝向一張的配起來，每一張都轉得到其他面")
+    check(face("sib_01_0", 4) == nil, "同名家具：引擎連過的、多格的、別的種類的同名圖不算進這一組（西面沒有）")
+    check(face("sib_01_5", 3) == nil and face("sib_01_7", 3) == nil and face("Ekron01_0", 2) == nil,
+        "同名家具不配：同一個朝向有兩張、有一張沒寫朝向、看圖確認的同名不同物（NO_PAIR）")
+    check(face("sib_01_9", 1) == "sib_01_2" and face("sib_01_9", 2) == nil, "引擎連過的項目照偏移，不另外配同名圖")
+    local sbs = SandboxVars.MinidoracatBuilder
+    local keepSrc, east, pair = sbs.DisabledSources, face("sib_02_0", 2), face("sib_03_0", 5)
+    sbs.DisabledSources = "UMCTP"
+    local eastOff, pairOff = face("sib_02_0", 2), face("sib_03_0", 5)
+    sbs.DisabledSources = keepSrc
+    check(east == "sib_02_1" and eastOff == nil and pair == "sib_03_1" and pairOff == nil,
+        "另一面（同名配對、牆的配對面）來自停用的來源（同一個 tileset 跨 tiledef 檔）：那一面不給轉，伺服器照樣回 BAD_FACE")
+    spriteMap, spriteOrder = keepMap, keepOrder
+end)()
 
 print("情境十：成本")
 local function cost(kind, o, mult) return Cost.of(kind, sprite("c_01_0", 900, o), mult) end
@@ -1758,6 +1804,133 @@ do
         getFileReader = realReader
     end
     gridNames()
+    -- 挑圖塊之後換頁籤、分類、來源（2026-11-03 Workshop 回報清單卡在挑的那一桶），與雙擊建造。
+    -- 假的視窗只放這幾支用到的欄位；包在函式裡：主程式的 local 接近上限
+    ;(function()
+        local noop, searchText = function() end, nil
+        local grid = { items = { n = 0 }, width = 300, height = 300 }
+        function grid:setItems(l) self.items = l end
+        function grid:getItems() return self.items end
+        function grid:setSelectedIndex(i) self.sel = i end
+        function grid:getSelectedIndex() return self.sel end
+        function grid:scrollToIndex(i) self.scrolled = i end
+        function grid:setScrollOffset(o) self.offset = o end
+        local v = { grid = grid, dim = {}, fh = 10, status = { width = 100 },
+            search = { setText = function(_, t) searchText = t end },
+            UI = { Dropdown = { close = noop }, Text = { wrap = function(s) return { s } end, fit = function(s) return s end } },
+            nav = { setGroups = noop, setSelected = noop }, cat = { setOptions = noop, setSelected = noop },
+            clearBtn = { setVisible = noop, setX = noop, setY = noop, width = 10 } }
+        local function idx(name)
+            for i = 1, grid.items.n do if grid.items[i] == name then return i end end
+        end
+        W.v = v
+        W.setQuery("floors_interior_01_1")
+        local jumped = v.selName == "floors_interior_01_1" and grid.items.n == 2
+        -- 玩家點了同一桶的另一格（W.pump 照方格的選取更新 selName）；之後的重算（keep）不跳回挑的那張、不捲動
+        grid.sel, v.selName, grid.scrolled = idx("floors_interior_01_0"), "floors_interior_01_0", nil
+        W.refilter(true)
+        check(jumped and v.selName == "floors_interior_01_0" and grid.sel == idx("floors_interior_01_0") and grid.scrolled == nil,
+            "挑圖塊後點同一桶的別格：重算時留住玩家選的、不捲動，不跳回挑的那張")
+        W.onTab(v, "furniture")
+        check(W.st.query == "" and searchText == "" and grid.items.n == 4 and not has(grid.items, "floors_interior_01_0"),
+            "挑圖塊後換頁籤：清掉完整圖塊名，清單照新頁籤列（之前停在挑的那一桶）")
+        W.onTab(v, "all")
+        W.setQuery("floors_interior_01_1")
+        W.setCat("k:furniture")
+        local catOk = W.st.query == "" and grid.items.n == 4
+        W.setCat("all")
+        W.setQuery("floors_interior_01_1")
+        W.setSource("UMCTP")
+        check(catOk and W.st.query == "" and grid.items.n == 1 and grid.items[1] == "umctp_boxes_01_0",
+            "挑圖塊後換分類、換來源：一樣清掉完整圖塊名，照新條件列")
+        W.setSource("all")
+        W.setQuery("red chair")
+        W.onTab(v, "furniture")
+        check(W.st.query == "red chair" and grid.items.n == 1, "一般搜尋字（不是完整圖塊名）換頁籤照樣留著")
+        -- 「只看能蓋的」：挑圖塊那一批（keep＝false）還沒做完，就被每秒的重算（keep）換掉時，仍照換了條件套；
+        -- 不然 applyItems 留住舊的選取，挑的那張選不到（2026-11-03 審查 Claude lane）
+        W.st.only, v.S = true, {}
+        W.setQuery("floors_interior_01_1")
+        W.refilter(true)
+        local affKeep = v.aff and v.aff.keep
+        W.st.only, v.S, v.aff = false, nil, nil
+        check(affKeep == false, "只看能蓋的：挑圖塊那一批沒做完就被重算換掉，仍照換了條件套")
+        -- 雙擊：同一格 DOUBLE_MS（500 ms）內兩次＝按「建造」。pump 每幀把方格的選取同步到 selName（這裡手動同步）
+        local builds, realBuild, keepStep = 0, W.build, clockStep
+        W.build, clockStep = function() builds = builds + 1 end, 0
+        local A, B = "furniture_seat_01_0", "furniture_seat_01_1"
+        local function click(name, synced)
+            W.onPick(v, name)
+            if synced ~= false then v.selName = name end
+        end
+        W.resetPick(v)
+        click(A)
+        nowMs = nowMs + 400
+        click(A)
+        local fast = builds
+        W.resetPick(v)
+        click(A)
+        nowMs = nowMs + 600
+        click(A)
+        nowMs = nowMs + 100
+        click(B)
+        local slowOrOther = builds
+        -- 選著 A 時快點兩下 B，第二下時 pump 還沒把 selName 換成 B：只當選取，不蓋 A（審查 1103 Codex）
+        W.resetPick(v)
+        v.selName = A
+        click(B, false)
+        nowMs = nowMs + 100
+        click(B, false)
+        local unsynced = builds
+        -- 點了 A、換了條件（W.refilter(false)），再點 A：只是選取
+        W.resetPick(v)
+        click(A)
+        W.refilter(false)
+        v.selName = A
+        nowMs = nowMs + 100
+        click(A)
+        local afterChange = builds
+        -- 時鐘往回調：差值是負的，不算雙擊（家族 pitfalls「X 毫秒內」；審查 1103 Claude 第 2 輪）
+        W.resetPick(v)
+        click(A)
+        nowMs = nowMs - 5000
+        click(A)
+        nowMs = nowMs + 5100
+        local rollback = builds
+        -- 點了 A、關了又開視窗（W.open），再點 A：只是選取
+        local realUi, realSync = W.ui, W.syncSettings
+        W.ui, W.syncSettings = function() return v.UI end, noop
+        v.win = { setVisible = noop, bringToTop = noop }
+        W.resetPick(v)
+        click(A)
+        W.open(0)
+        nowMs = nowMs + 100
+        click(A)
+        local afterOpen = builds
+        W.ui, W.syncSettings, v.win = realUi, realSync, nil
+        -- 指派了手把：手把同一格再按 A 不限時間；滑鼠點（左鍵按著）照 0.5 秒算（審查 1103 Grok 第 2 輪）
+        local realPad, realMouse, mouseDown = W.usingPad, isMouseButtonDown, false
+        W.usingPad, isMouseButtonDown = function() return true end, function() return mouseDown end
+        W.resetPick(v)
+        click(A)
+        nowMs = nowMs + 3000
+        click(A)
+        local padAgain = builds
+        mouseDown = true
+        W.resetPick(v)
+        click(A)
+        nowMs = nowMs + 3000
+        click(A)
+        local mouseLate = builds
+        W.usingPad, isMouseButtonDown = realPad, realMouse
+        W.build, clockStep = realBuild, keepStep
+        check(fast == 1 and slowOrOther == 1, "同一格 0.5 秒內點兩次＝建造；隔超過 0.5 秒或換了一格只是選取")
+        check(unsynced == 1 and afterChange == 1, "雙擊：第二下時選取還沒同步、或兩下之間換了條件，只是選取（不蓋上一個選的）")
+        check(rollback == 1 and afterOpen == 1, "雙擊：時鐘往回調、或兩下之間關了又開視窗，只是選取")
+        check(padAgain == 2 and mouseLate == 2, "雙擊：指派了手把時，手把同一格再按 A 不限時間；滑鼠點同一格照 0.5 秒算")
+        W.v, W.st.picked = nil, nil
+        W.st.query, W.st.tab, W.st.cat, W.st.source = "", "all", "all", "all"
+    end)()
     sb.DisabledTilesets = ""
     getText = realGetText
     Names.reset()
@@ -4425,7 +4598,7 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
             return 0
         end
         function s:canPlaceMoveableInternal(_, sq)
-            if not sq:has("IsTable") then return true end
+            if not sq:has("IsTable") then return not sq:has("solid") end -- 原版 isFreeTile：格上有實心的東西就放不下
             if self.isStackable and self.isTable and self.surface and not sq:has("IsTableTop") and not sq:has("IsHigh") then
                 local h = self:getTotalTableHeight(sq)
                 self.yOffsetCursor = h
@@ -4433,6 +4606,7 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
             end
             return false
         end
+        function s:isSquareAtTopOfStairs() return false end
         return s
     end }
     local s1 = at(101, 101)
@@ -4463,6 +4637,22 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     local ok7b = Place.check("floor", floorA, s5b, P) -- 不擋路的照舊不看格上有沒有人
     check(ok6 == false and c6 == "OCCUPIED" and ok7 == false and c7 == "VEHICLE" and ok7b == true,
         "擋路的東西那格有人：OCCUPIED；車子壓著：VEHICLE；地板不看人")
+    -- 疊在可疊、卻不是桌面的箱子上（UMCTP 畫好高度的半箱 industry_ddd_02_32）：說下面那件撐不住，不叫玩家清空。
+    -- 只在原版疊放那一支走得到時說（自己是可疊的桌類、有地板）；半箱自己疊上去、沒有地板都照舊沒有原因碼
+    local half = sp("rp_half_01_0", 2824, { "solid" }, { IsMoveAble = "", IsStackable = "" })
+    local s6 = at(101, 107, { flags = { IsStackable = true, solid = true }, floor = {} })
+    obj(s6, half)
+    local ok8, c8 = Place.check("furniture", crate, s6, P)
+    local _, c8b = Place.check("furniture", half, s6, P)
+    local s6b = at(101, 108, { flags = { IsStackable = true, solid = true } })
+    obj(s6b, half)
+    local _, c8c = Place.check("furniture", crate, s6b, P)
+    local s7 = at(101, 100, { flags = { solid = true }, floor = {} })
+    obj(s7, chair)
+    local ok9, c9 = Place.check("furniture", crate, s7, P)
+    check(ok8 == false and c8 == "NOT_SURFACE" and ok9 == false and c9 == nil,
+        "疊放：下面那件可疊卻不是桌面（UMCTP 的半箱）回 NOT_SURFACE；下面不是可疊的箱子照舊沒有原因碼（BLOCKED）")
+    check(c8b == nil and c8c == nil, "疊放：半箱自己（不是桌類）疊上去、或那格沒有地板，不說 NOT_SURFACE")
     ISMoveableSpriteProps = realProps
 
     -- 原地替換

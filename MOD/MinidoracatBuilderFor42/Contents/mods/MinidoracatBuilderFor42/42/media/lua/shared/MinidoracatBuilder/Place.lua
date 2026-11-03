@@ -206,13 +206,15 @@ local function curtainOk(spr, sq)
     return true
 end
 
--- 原版疊箱子的高度上限（ISMoveableSpriteProps.lua:1772-1776）：可疊的桌類放在桌類上，總高加上自己的 Surface 不超過 96
-local STACK_MAX = 96
+-- 原版疊箱子的高度上限（ISMoveableSpriteProps.lua:1772-1776）：可疊的桌類放在桌類上，總高加上自己的 Surface 不超過 96。
+-- 建造視窗的詳情照它算能疊幾層
+Place.STACK_MAX = 96
+local STACK_MAX = Place.STACK_MAX
 
 -- 能不能在 sq 放 spr（種類 kind）。成功回 true 與桌面高度（放在桌上、疊上去的物件要墊高，原版搬家具算的）；
 -- 失敗回 false 與原因碼（游標分原因說；nil＝其他，Check.item 回 BLOCKED）：
 --   SAME_TILE：同一格已經有同一張圖（不是可疊的）。VEHICLE：車子壓著。OCCUPIED：會擋路的東西那格有人、殭屍或動物。
---   STACK_FULL：可疊的箱子疊到原版的高度上限。
+--   STACK_FULL：可疊的箱子疊到原版的高度上限。NOT_SURFACE：可疊的箱子放在可疊、卻不是桌面的箱子上。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 -- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
 -- replacing：要被原地替換掉的那件（Check.item 的 info.replace.obj）：它佔的格邊、它的實心與擋放置都不算擋；
@@ -275,6 +277,14 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
             if props.isStackable and props.isTable and props.surface and sq:has("IsTable") and not sq:has("IsTableTop")
                 and not sq:has("IsHigh") and props:getTotalTableHeight(sq) + props.surface > STACK_MAX then
                 return false, "STACK_FULL"
+            end
+            -- 下面那件可疊卻不是桌面（例：UMCTP 畫好高度的半箱 industry_ddd_02_32）：說下面那件撐不住東西，不叫玩家清空。
+            -- 只在原版疊放那一支本來走得到時才這樣說：自己可疊、是桌面、有 Surface，有地板、不在樓梯頂
+            -- （ISMoveableSpriteProps.lua:1743-1745,1772,1779）；自己不是桌面的（半箱本身）放在哪都疊不上，照舊沒有原因碼。
+            -- 原地替換（replacing）時也不說：擋住的可能是要換掉的那件
+            if props.isStackable and props.isTable and props.surface and not replacing and sq:getFloor()
+                and not props:isSquareAtTopOfStairs(sq) and sq:has("IsStackable") and not sq:has("IsTable") then
+                return false, "NOT_SURFACE"
             end
             return false
         end

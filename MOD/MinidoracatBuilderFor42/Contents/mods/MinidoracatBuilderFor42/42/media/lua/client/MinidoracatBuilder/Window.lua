@@ -17,6 +17,7 @@ require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Favorites"
 require "MinidoracatBuilder/Sets"
 require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Place"
 
 local B = MinidoracatBuilder
 local first = B.Window == nil
@@ -679,7 +680,7 @@ local function replaceFace(rp, kind, name, mult)
     local spr = Entry.sprite(name)
     if not spr or not sameCost(rp.cost, priceOf(kind, spr, mult)) then return nil end
     local tileset, num = name:match("^(.*)_(%d+)$")
-    local e = { spr = spr, kind = kind, tileset = tileset, num = tonumber(num) }
+    local e = { name = name, spr = spr, kind = kind, tileset = tileset, num = tonumber(num) }
     local swappable = B.Dismantle.swappable
     for d = 0, 4 do
         local f = Entry.face(e, d)
@@ -852,7 +853,8 @@ end
 local function applyItems(v, list, jump, keep)
     local grid = v.grid
     grid:setItems(list)
-    local want = jump or v.selName
+    -- 重算（keep：整理進度、材料、最愛）留住玩家選的那格；換了條件，或還沒選時，才選完整圖塊名那一張（jump）
+    local want = keep and v.selName or jump or v.selName
     local idx
     if want then
         for i = 1, #list do
@@ -863,7 +865,7 @@ local function applyItems(v, list, jump, keep)
         end
     end
     grid:setSelectedIndex(idx)
-    if idx and (jump or not keep) then
+    if idx and (not keep or want ~= v.selName) then
         grid:scrollToIndex(idx)
     elseif not keep then
         grid:setScrollOffset(0)
@@ -878,9 +880,13 @@ end
 function W.refilter(keep)
     local v = W.v
     if not v then return end
+    if not keep then W.resetPick(v) end -- 換了條件：之後點同一格只是選取，不接著上一下算雙擊
     local st = W.st
     st.fav = Favorites.list
     local out, jump = W.filter(st)
+    -- 「只看能蓋的」還沒做完的那一批是換了條件（keep＝false，例：挑圖塊要選到那張）時，這次也照換了條件套，不然
+    -- applyItems 會留住舊的選取
+    if v.aff and not v.aff.keep then keep = false end
     if st.only and v.S then
         -- 「只看能蓋的」：逐項查材料很貴（每項要解析與算成本），分批做，做完才換方格內容
         v.aff = { list = out, i = 0, out = { n = 0 }, jump = jump, keep = keep }
@@ -1054,9 +1060,16 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + lh
     end
     y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
-    -- 原版可疊的箱子（IsStackable）同一張也能疊，高度上限照原版搬家具（Place.check 交給 canPlaceMoveableInternal）
-    if e.spr:getProperties():has("IsStackable") then
-        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Stackable"), dw, v.font)) do
+    -- 疊放上限照原版疊箱子：自己可疊又是桌面，下面那件也是桌面，總高 ≤ 96（Place.STACK_MAX；
+    -- ISMoveableSpriteProps.lua:1772-1776），第 N 層要 N × Surface ≤ 96。疊兩個就超過、或自己不是桌面的（例：UMCTP
+    -- 畫好高度的半箱）疊不上，不寫。自己帶 IsTableTop 的走前面放桌上那一支（:1751-1763，同格只放一件），自己帶 IsHigh
+    -- 的放下後那格就有 IsHigh（疊放那支要沒有，:1772），也不寫
+    local p = e.spr:getProperties()
+    local surf = tonumber(p:get("Surface")) or 0
+    if p:has("IsStackable") and p:has("IsTable") and not p:has("IsTableTop") and not p:has("IsHigh") and surf > 0
+        and surf * 2 <= B.Place.STACK_MAX then
+        local layers = tostring(math.floor(B.Place.STACK_MAX / surf))
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Stackable", layers), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
             y = y + lh
         end
@@ -1131,13 +1144,15 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     -- hasRainBlockingTile），換一句；路燈與發光招牌（sprite 帶 streetlight）引擎只在夜裡點亮（LightingJNI.java:282-294），
     -- 本工具接發電機的補亮也照這條（Lights.lua），換一句。接水管的（sprite 帶 waterPiped：水槽、馬桶、浴缸、淋浴）
     -- 照原版搬家具沒有自來水（Place.lua 寫 canBeWaterPiped），原版「接水管」是從上一層 3×3 的裝水容器取水
-    -- （IsoObject.java:2457-2508,2666-2705），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明
+    -- （IsoObject.java:2457-2508,2666-2705），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明。帶
+    -- makeWindowInvincible 的牆（商場鐵捲門）同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5231-5234），寫出來
     local key = e.kind
-    local p = e.spr:getProperties()
     if key == "roof" then
         if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
     elseif key == "light" and p:has("streetlight") then
         key = "lightStreet"
+    elseif key == "wall" and p:has(IsoFlagType.makeWindowInvincible) then
+        key = "shutter"
     elseif p:has(IsoFlagType.waterPiped) then
         key = "plumb"
     end
@@ -1451,8 +1466,10 @@ function W.focusLabel(v, name)
     return nil
 end
 
+-- 滑鼠停在格子上的提示：「名稱 · 材料夠不夠 · 雙擊直接建造」（手把、鍵盤的焦點說明另外是 W.focusLabel）
 function W.tileTip(v, name)
-    return name and W.tipOf(v, name) or nil
+    if not name then return nil end
+    return W.tipOf(v, name) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Tip_DoubleClick")
 end
 
 -- ===== 動作 =====
@@ -1626,6 +1643,16 @@ local function leaveSet(v)
     W.layout()
 end
 
+-- 搜尋字是完整圖塊名（右鍵挑圖塊、吸管填的，或玩家自己打的）時，清單停在那張圖所在的一桶（listFor 不看頁籤、分類、
+-- 來源）。玩家換頁籤、分類或來源就是要看別的：清掉它，清單照新的條件列；選著的那格在新清單裡就留著（applyItems）。
+-- 2026-11-03 Workshop 回報：挑圖塊之後換什麼清單都不動
+local function leaveJump(v)
+    local q = trim(W.st.query)
+    if not (exactBucket(q) or (q:find("_%d+$") and listedAlt(q))) then return end
+    v.search:setText("") -- 靜默，不觸發 onChange
+    W.st.query, v.typedAt = "", nil
+end
+
 -- 沙盒或目錄變了（W.refreshCatalog）：整套照原本那一項重算，被關掉的成員拿掉、重新打開的補回；湊不成了照 ✕
 -- 回到開整套之前的清單
 local function refreshSet(v)
@@ -1694,6 +1721,7 @@ end
 function W.onTab(v, id)
     if id == W.st.tab then return end
     leaveSet(v)
+    leaveJump(v)
     W.st.tab = id
     v.UI.Dropdown.close(v.win)
     W.refreshCats(v)
@@ -1704,6 +1732,7 @@ function W.setCat(id)
     local v = W.v
     if not v or id == nil or id == W.st.cat then return end
     leaveSet(v)
+    leaveJump(v)
     W.st.cat = id
     v.nav:setSelected(id, true)
     v.cat:setSelected(id, true)
@@ -1712,7 +1741,10 @@ end
 
 function W.setSource(id)
     if id == nil or id == W.st.source then return end
-    if W.v then leaveSet(W.v) end
+    if W.v then
+        leaveSet(W.v)
+        leaveJump(W.v)
+    end
     W.st.source = id
     if W.v then W.refreshCats(W.v) end -- 分類的數量與圖塊組照來源算；選著的組這個來源沒有就回「全部」
     W.refilter(false)
@@ -1851,14 +1883,31 @@ function W.startPick()
     v.win:setVisible(false)
 end
 
--- 方格 onPick：滑鼠點、Enter、Space、手把 A（方向鍵只移游標，不觸發；Widgets/TileGrid.lua:26-31）
+-- 方格 onPick：滑鼠點、Enter、Space、手把 A（方向鍵只移游標，不觸發；Widgets/TileGrid.lua:26-31）。同一格再一次＝建造：
+-- 手把再按一次 A（設計稿 DD:371）；滑鼠、鍵盤在 DOUBLE_MS 內（使用者 2026-11-03 選雙擊）。第二下按在方格上，放開時
+-- 建造鍵不算按過（Mouse.isButtonDownUICheck，Mouse.java:94-107），不會在視窗收起後的位置蓋下去，同按「建造」鈕。
+-- W.build 照 selName 蓋，selName 要等 pump 才跟上方格的選取：第二下時還沒跟上（兩下在同一幀之間）就只當選取，
+-- 不蓋上一個選的（審查 1103 Codex）。換了條件（W.refilter 的 keep＝false）、開關視窗時重新數（W.resetPick）
+local DOUBLE_MS = 500 -- 照引擎的雙擊間隔（UIManager.getDoubleClickInterval，UIManager.java:1304）
 function W.onPick(v, name)
     if name == nil then return end
-    if W.usingPad() and W.st.picked == name then
-        W.build() -- 同一格再按一次 A＝建造（設計稿 DD:371）
+    local now, last = getTimestampMs(), v.pickedAt
+    -- 時鐘往回調時差值是負的：照家族 pitfalls「X 毫秒內」的寫法要 now >= last（審查 1103 Claude 第 2 輪）
+    local quick = last ~= nil and now >= last and now - last <= DOUBLE_MS
+    -- 手把再按一次 A 不限時間；指派了手把卻用滑鼠點的照雙擊算：滑鼠按下時左鍵是按著的（Mouse.update 在 UIManager
+    -- 分派 onMouseDown 之前更新，isMouseButtonDown＝Mouse.isButtonDown，LuaManager.java:8030-8032；審查 1103 Grok 第 2 輪）。
+    -- 有手把又用鍵盤 Enter 的照手把算
+    local pad = W.usingPad() and not isMouseButtonDown(0)
+    if W.st.picked == name and v.selName == name and (pad or quick) then
+        W.build()
         return
     end
-    W.st.picked = name
+    W.st.picked, v.pickedAt = name, now
+end
+
+function W.resetPick(v)
+    W.st.picked = nil
+    if v then v.pickedAt = nil end
 end
 
 -- 手把 Y：加入／移除最愛（框架 Focus 不處理 X、Y，Focus.lua:1113）；其他鍵照框架
@@ -2310,6 +2359,7 @@ function W.open(playerNum)
     end
     v.hiddenForBuild = false
     v.sumAt = 0 -- 下一幀就重算材料
+    W.resetPick(v) -- 關了又開：第一下只是選取（審查 1103 Codex）
     W.syncSettings(v)
     v.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）
     v.win:bringToTop()
