@@ -179,7 +179,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Building settings have changed[/b]: the admin changed a sandbox option, so reopen the window, and no materials were used.
 [*] [b]When you pay[/b]: the server checks everything before placing and takes the materials only once it is placed, so a failure costs nothing.
 [/list]
-=== 🧰 Rules for each kind
+=== 🧰 Rules for each kind: walls, windows, stairs and roofs
 [h3]Walls, floors and fences[/h3]
 [list]
 [*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300. Server owners can turn on Zombies can't break builds in the sandbox.
@@ -189,11 +189,24 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
 [*] [b]Railing ends[/b]: railing ends that block only one side of a square are not listed (zombies would not come to break them), and a search tells you why.
+[*] [b]Fences that alternate[/b]: the tall wooden fence with a slanted top, the low wooden fence and the black iron railing (both directions) alternate between their two tiles by square position (ABAB), as on the map.
+[*] [b]How they alternate[/b]: dragging a row, going around a rectangle and placing a single square all go by position, so a square always gets the same tile, whichever of the two you pick.
+[*] [b]Other fences[/b]: chain-link fences and tile-pack fences still use the tile you picked.
 [*] [b]Mall shutters[/b]: on the Walls tab, and what you build is a regular wall. As in vanilla, a window on the same square can't be opened, closed or climbed through with the interact key.
 [*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too.
 [*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
 [*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
+[*] [b]Tile-pack rugs[/b]: some tile packs (UMCTP and Constown, for example) also mark their rugs as floors. These rugs are laid on top of the floor as in vanilla and don't replace it.
+[*] [b]Where those rugs are listed[/b]: movable ones under Furniture, the others under Floor overlay.
+[*] [b]Swapping the floor under them[/b]: those rugs stay.
+[*] [b]Rugs built as floors in 0.5.0 or earlier[/b]: dismantle them like floors, with Dismantle (Build Anything).
 [*] [b]Other recipe pieces[/b]: walls, fences and anything else with its own functions are still built from the vanilla build menu or that mod's menu.
+[/list]
+[h3]With Basement Building[/h3]
+[list]
+[*] [b]Walls on the dirt wall edge[/b]: with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3806513504]Basement Building[/url] installed, you can build a wall on the edge of a basement's outer dirt wall.
+[*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
+[*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
 [/list]
 [h3]Doors and windows[/h3]
 [list]
@@ -203,6 +216,12 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Unbreakable windows[/b]: not in the catalog, and neither are window frames, posts and wall overlays that make a window unbreakable (walls such as mall shutters are listed).
 [*] [b]Permanently locked windows[/b]: listed, and the details say Permanently locked.
 [*] [b]What permanently locked means[/b]: it can't be opened but can be smashed, so it works as a fixed window.
+[*] [b]Windows drawn together with their frame[/b]: such as the large glass windows of shops and diners, go straight on an empty wall edge, with no window frame first.
+[*] [b]When the edge is taken[/b]: they can't go where there is already a window frame, wall or window.
+[*] [b]Locking[/b]: they are all permanently locked, so they can't be opened but can be smashed.
+[*] [b]Their cost[/b]: a window frame plus a window, see Materials, tools and XP.
+[*] [b]Removing and replacing[/b]: like windows, they can only be smashed, and they can't be replaced in place.
+[*] [b]Ordinary windows[/b]: still go into a window frame.
 [/list]
 [h3]Curtains[/h3]
 [list]
@@ -232,6 +251,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Counting as indoors (temperature)[/b]: the level above also needs a floor.
 [*] [b]Roof pieces that let rain in[/b]: eaves and many roof pieces never kept rain out, and the details point them out.
 [/list]
+=== 🧰 Rules for each kind: furniture, containers and lights
 [h3]Furniture and containers[/h3]
 [list]
 [*] [b]Zombies can break them[/b]: everything that blocks movement can be broken, including furniture, crates, rocks, and blocking wall-mounted objects, rugs and tabletop items. Server owners can turn on Zombies can't break builds in the sandbox.
@@ -239,6 +259,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
 [*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
+[*] [b]Cots and gurneys[/b]: listed under Furniture by their vanilla tile names, Cot and Single Bed with Green Metal Frame; once built they are ordinary beds.
+[*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like are still not listed.
 [*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
@@ -260,9 +282,10 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tiles with vanilla dismantle materials[/b]: cost what dismantling them gives, never less than you could get back.
 [*] [b]Tiles without[/b]: cost the same as the matching vanilla build, see the table below.
 [*] [b]Electrical things[/b]: 1 extra Scrap Electronics (one per tile for multi-tile ones), which you don't get back when dismantling.
-[*] [b]Movable lights[/b]: 1 extra Light Bulb (in vanilla you can take the bulb out).
+[*] [b]Light bulbs[/b]: every light costs 1 extra Light Bulb, with no XP.
+[*] [b]Street lights that can't be moved[/b]: 2 extra Iron Pipe (tilesets lighting_outdoor_01 and lighting_outdoor_tk_01).
 [*] [b]Material multiplier[/b]: every amount is multiplied by the admin's multiplier and rounded up.
-[*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains, and the extra Light Bulb for movable lights still cost at least 1×.
+[*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains and light bulbs still cost at least 1×.
 [*] [b]Build cheat[/b]: no materials and no tools. In multiplayer an admin turns on Build Cheat mode in Edit your Admin Powers; in singleplayer the Build Cheat switch in the debug menu and Enable Build Cheat Mode in the admin panel count too.
 [*] [b]Consumables[/b]: when the server turns on Vanilla recipe materials, clay cement, torch fuel and welding rods are also used, see Hardcore options.
 [*] [b]Exact amounts[/b]: Materials (have / need) in the details is what counts.
@@ -275,7 +298,7 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [tr][td]Door frame[/td][td]4 Plank + 4 Nails[/td][td]4 Brick[/td][td]4 Steel Rod[/td][/tr]
 [tr][td]Fence[/td][td]2 Plank + 2 Nails[/td][td]2 Brick[/td][td]2 Steel Rod[/td][/tr]
 [tr][td]Door[/td][td]4 Plank + 4 Nails + 2 Door Hinge + 1 Doorknob[/td][td]As wood[/td][td]3 Steel Sheet - Small + 2 Door Hinge + 1 Doorknob[/td][/tr]
-[tr][td]Window[/td][td]4 Glass Pane + 2 Plank + 4 Nails[/td][td]As wood[/td][td]As wood[/td][/tr]
+[tr][td]Window[/td][td]4 Glass Pane + 2 Plank + 4 Nails. A window drawn together with its frame costs the frame plus the window: 4 Glass Pane + 6 Plank + 10 Nails in wood[/td][td]As wood[/td][td]As wood[/td][/tr]
 [tr][td]Stairs (whole set)[/td][td]13 Plank + 8 Nails[/td][td]As wood[/td][td]4 Steel Rod + 6 Steel Sheet - Small[/td][/tr]
 [tr][td]Roof[/td][td]1 Plank + 2 Nails per tile, eaves 1 + 1[/td][td]As wood[/td][td]As wood[/td][/tr]
 [tr][td]Furniture, containers[/td][td]By vanilla carry weight: up to 2 kg 1 Plank + 1 Nails, up to 5 kg 2 + 2, heavier 4 + 4[/td][td]As wood[/td][td]2 Steel Sheet - Small[/td][/tr]
@@ -286,6 +309,23 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Lights[/b]: 1 Scrap Electronics + 1 Electrical Wire.
 [*] [b]Curtains[/b]: 1 Sheet, 2 for long curtains.
 [*] [b]Dirt, gravel and sand floors[/b]: 1 Sack of Dirt, Sack of Gravel or Sack of Sand, no tools.
+[/list]
+[h3]Material read from the tile name[/h3]
+These tiles don't say what they are made of. They used to cost as wood, and now cost by the material their tile name shows (multiplier 1):
+[table]
+[tr][th]What[/th][th]Materials[/th][th]Tools[/th][th]Skill (when required)[/th][/tr]
+[tr][td]Glass roofs: all of roofs_30_04, and the glass roofs in roofs_02 and roofs_shallow_01[/td][td]1 Glass Pane + 2 Nails per tile, eaves and the flat piece 1 Glass Pane + 1 Nails[/td][td]Hammer[/td][td]Carpentry 2[/td][/tr]
+[tr][td]Street light poles: the 5 metal poles without a lamp in lighting_outdoor_01[/td][td]2 Steel Sheet - Small[/td][td]Welding Torch + Welder Mask[/td][td]Welding 3[/td][/tr]
+[tr][td]Mall (location_shop_mall_01) glass railings[/td][td]1 Glass Pane + 1 Steel Rod[/td][td]Welding Torch + Welder Mask[/td][td]Welding 3[/td][/tr]
+[tr][td]Mall brick low walls and planters[/td][td]2 Brick[/td][td]Mason's Trowel[/td][td]Masonry 5 for low walls, Masonry 3 for planters[/td][/tr]
+[tr][td]Mall door frames[/td][td]4 Brick[/td][td]Mason's Trowel[/td][td]Masonry 2[/td][/tr]
+[tr][td]Shopfront and escalator glass walls (30 tiles)[/td][td]3 Steel Rod + 4 Glass Pane[/td][td]Welding Torch + Welder Mask[/td][td]Welding 3[/td][/tr]
+[tr][td]Log wall gables (36 tiles in walls_logs)[/td][td]4 Log[/td][td]Hammer[/td][td]None[/td][/tr]
+[tr][td]All-metal railings (7 tiles in fixtures_railings_01)[/td][td]2 Steel Rod[/td][td]Welding Torch + Welder Mask[/td][td]Welding 3[/td][/tr]
+[/table]
+[list]
+[*] [b]Unchanged[/b]: log window frames and door frames, wooden and painted railings, and posts such as railing posts and mall glass posts (costed as walls).
+[*] [b]Already built[/b]: dismantling them also needs the new tools, a Welding Torch and Welder Mask for metal and a Mason's Trowel for brick; what comes back follows what was paid.
 [/list]
 [h3]Where to keep materials[/h3]
 [list]
@@ -378,6 +418,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [tr][td]Fence[/td][td]1 use[/td][td]2 + 2 uses[/td][/tr]
 [tr][td]Door[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
 [tr][td]Stairs (whole set)[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
+[tr][td]Shopfront and escalator glass walls[/td][td]None[/td][td]1 + 2 uses[/td][/tr]
 [/table]
 === 🧰 Switches and wiring
 [h3]Automatic wiring[/h3]
@@ -444,6 +485,9 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
 [*] [b]Built with the build cheat[/b]: no materials back.
+[*] [b]Light bulbs[/b]: dismantling an immovable light with Build Anything returns the bulb only if it is still in the light.
+[*] [b]Lights built in 0.5.0 or earlier[/b]: no bulb was charged then, so none comes back.
+[*] [b]Lights taken apart with vanilla Disassemble[/b]: as in vanilla, the bulb doesn't come back.
 [/list]
 [h3]Dismantle an area[/h3]
 [list]
@@ -544,7 +588,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Zombies can't break doors[/td][td]Off[/td][td]On/off[/td][td]Doors built with this mod get very high durability: zombies still bang on them but can't break them. Doors built before this option existed aren't recognized and break like vanilla. Doors already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Container capacity multiplier[/td][td]1.0[/td][td]1–10[/td][td]Multiplies the capacity of containers built with this mod, rounded, up to 100 (the game's limit), fridge freezers too. When it goes down, the items inside stay, but no more fit. Containers already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
-[tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods and mods whose tiles belong to their own build menus are off[/td][/tr]
+[tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns;LifestyleHobbies[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods, mods whose tiles belong to their own build menus, and Lifestyle: Hobbies, which gives hobby functions by tile name, are off. The default only applies to new worlds, and existing worlds keep the setting in their save[/td][/tr]
 [tr][td]Disabled tilesets[/td][td]Empty[/td][td]Tileset names separated by semicolons[/td][td]Tiles from these tilesets can't be built, for example walls_exterior_house_01[/td][/tr]
 [/table]
 The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes, all on by default. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
@@ -557,7 +601,7 @@ The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes
 [tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
 [tr][td]Wall overlay[/td][td]Decorative pieces laid over a wall[/td][/tr]
 [tr][td]Door[/td][td]Doors. They go into a door frame[/td][/tr]
-[tr][td]Window[/td][td]Windows. They go into a window frame[/td][/tr]
+[tr][td]Window[/td][td]Windows. They go into a window frame; windows drawn together with their frame go straight on a wall edge[/td][/tr]
 [tr][td]Door frame[/td][td]Door frames[/td][/tr]
 [tr][td]Window frame[/td][td]Window frames[/td][/tr]
 [tr][td]Window fitting[/td][td]Blinds, shutters and other fittings hung on a window[/td][/tr]
@@ -590,13 +634,19 @@ Some mods give a tile its function by name (an ATM or a propane refill station, 
 [tr][td]ATMs[/td][td]Minidoracat Economy[/td][td]When that mod is installed[/td][/tr]
 [tr][td]Elevators[/td][td]Elevators[/td][td]When that mod is installed[/td][/tr]
 [tr][td]Hydraulic presses[/td][td]Machinery[/td][td]When that mod is installed[/td][/tr]
+[tr][td]Hobby facilities: easels, carving stations, invention workbenches, over a thousand paintings and the like[/td][td]Lifestyle: Hobbies[/td][td]Off by default in new worlds[/td][/tr]
 [/table]
+[list]
+[*] [b]Lifestyle: Hobbies[/b]: it gives hobby functions by tile name, so building those tiles directly would skip hobby progress. That's why Disabled sources (mod IDs) includes LifestyleHobbies by default in new worlds.
+[*] [b]Existing worlds[/b]: keep the setting in their save, and admins can turn it on or off on the Sources page of the Manage panel.
+[/list]
 These are not in the catalog either:
 [list]
 [*] [b]Tiles vanilla rewrites[/b]: tiles vanilla Lua changes when the map loads, for example feeding troughs and traps.
 [*] [b]Vanilla build menu facilities[/b]: facility tiles meant to be built from the vanilla build menu.
 [*] [b]Tiles that never run dry[/b]: natural water, wells and the like.
 [*] [b]Others[/b]: unbreakable windows, stacked crate tiles (the game swaps them for another tile when a save loads), and the hidden floors and underground blocks the game uses internally.
+[*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like (cots and gurneys are the exception, listed under Furniture).
 [/list]
 [h3]When another mod on your server has such facilities[/h3]
 [olist]
@@ -691,7 +741,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Set the source back to All sources, the tab to All, and untick Only what I can build.
 [*] Search its full tile name, use the eyedropper to click it in the world, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
-[*] Some things are never in the catalog, see For server admins: other mods' facilities.
+[*] Some things are never in the catalog, such as tents, sleeping bags and other things that turn into a special item when picked up, and Lifestyle: Hobbies tiles are off by default in new worlds; see For server admins: other mods' facilities.
 [/list]
 [h3]An item is dimmed. Can I still build it?[/h3]
 [list]
