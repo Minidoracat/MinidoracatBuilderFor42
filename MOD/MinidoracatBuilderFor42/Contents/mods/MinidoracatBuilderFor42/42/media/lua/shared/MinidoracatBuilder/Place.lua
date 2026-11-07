@@ -246,7 +246,9 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
             return doorPairExists(spr) and ((n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
                 or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil))
         end
-        if kind == "window" then
+        -- 一般的窗要放進同方向、還沒有窗的窗框。牆型窗（Rules.framedWindow：窗和窗框同一張，地圖也不另放窗框）照下面
+        -- 一般格邊判斷：那條邊已經有窗框（地圖的或本工具蓋的）、牆、窗時 edgeTaken 擋下，不疊兩層框（BLOCKED）
+        if kind == "window" and not Rules.framedWindow(spr:getType()) then
             return (n and sq:has(F.WindowN) and sq:getWindow(NS) == nil)
                 or (w and sq:has(F.WindowW) and sq:getWindow(EW) == nil)
         end
@@ -501,7 +503,9 @@ end
 local function placeWindow(sq, obj, north)
     local index = -1
     local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）
+    -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）；牆型窗沒有窗框，
+    -- 照地圖加在最後（CellLoader.java:128-137）
+    for i = 0, objects:size() - 1 do
         local p = objects:get(i):getProperties()
         if p and p:has(north and F.WindowN or F.WindowW) then index = i + 1 end
     end

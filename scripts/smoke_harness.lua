@@ -5776,6 +5776,86 @@ print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊�
         "0.5.0 蓋成地板的地毯：不能搬的照地板走本工具拆（不當地面覆蓋），能搬的照舊歸原版拿起來")
 end)()
 
+print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框同一張）不用先有窗框、不疊兩層框；一般窗照舊要窗框")
+;(function()
+    local Place, Dismantle = MinidoracatBuilder.Place, MinidoracatBuilder.Dismantle
+    local EW = GridSquareEdgeFacingDirection.EAST_WEST
+    -- 照原版 walls_commercial_01_96：型別 wall、帶窗旗標 windowW 也帶窗框旗標 WindowW
+    local framed = sprite("walls_fbwin_01_96", 9201, { type = T.wall,
+        flags = { "collideW", "windowW", "transparentW", "cutW", "canPathW", "WindowW" },
+        keys = { WindowLocked = "", WindowW = "WindowW" } })
+    local framed2 = sprite("walls_fbwin_01_98", 9202, { type = T.wall, flags = { "collideW", "windowW", "cutW", "WindowW" },
+        keys = { WindowW = "WindowW" } })
+    local plain = sprite("fbwin_plain_01_0", 9203, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" } }) -- 一般的窗
+    local frameS = sprite("walls_fbwin_01_8", 9204, { flags = { "WindowW", "cutW", "collideW" }, keys = { WindowW = "" } })
+    local wallS = sprite("walls_fbwin_01_0", 9205, { flags = { "WallW", "cutW", "collideW" }, keys = { WallW = "" } })
+    check(kind({ type = T.wall, flags = { "windowW", "WindowW" }, keys = { WindowW = "" } }) == "window"
+        and Rules.framedWindow(framed:getType()) and not Rules.framedWindow(plain:getType()), "牆型窗歸窗；只有型別 wall 的算牆型窗")
+
+    local empty = square(210, 210, 0)
+    local frameO = { flags = { WindowW = true, cutW = true, collideW = true } }
+    local withFrame = square(211, 210, 0, frameO)
+    check(Place.check("window", framed, empty) == true, "牆型窗：沒有窗框的邊可蓋")
+    check(not Place.check("window", framed, withFrame), "牆型窗：那條邊已經有窗框（地圖的或本工具蓋的）時擋下，不疊兩層框")
+    check(not Place.check("window", plain, empty) and Place.check("window", plain, withFrame),
+        "一般的窗照舊：沒有窗框不能放，有窗框、還沒有窗才能放")
+    check(not Place.check("window", framed, square(212, 210, 0, { flags = { WallW = true } }))
+        and not Place.check("window", framed, square(213, 210, 1)) and not Place.check("window", framed, square(214, 210, 0, { stairs = true })),
+        "牆型窗照一般格邊：那條邊有牆、樓上腳下沒有地板、格上有樓梯都擋")
+
+    -- 蓋：照舊建 IsoWindow（north 照佔的邊），沒有窗框時加在最後
+    local made = {}
+    local realWindow = IsoWindow
+    IsoWindow = { new = function(_, sq, spr, north)
+        local o = { spr = spr, sq = sq, north = north, set = {} }
+        function o:setIsLocked(v) self.set.locked = v end
+        function o:setExplored() end
+        function o:transmitCompleteItemToClients() end
+        function o:getContainerCount() return 0 end
+        function o:getProperties() return spr:getProperties() end
+        function o:getSprite() return spr end
+        made[#made + 1] = o
+        return o
+    end }
+    local placed = {}
+    local fresh = square(215, 210, 0, { flags = {} })
+    fresh.objects[1] = { getProperties = function() return wallS:getProperties() end } -- 同格別的東西（北邊的牆之類）
+    Place.build("window", { { sq = fresh, spr = framed, cost = { items = {} } } }, placed)
+    IsoWindow = realWindow
+    local win = made[1]
+    check(#made == 1 and win.north == false and win.spr == framed and win.set.locked == false and placed[1] == win
+        and fresh.objects[2] == win, "蓋牆型窗：建 IsoWindow（西邊 north＝false）、不另建窗框、加在格子最後")
+
+    -- 蓋好之後引擎的格子屬性是各物件的聯集，getWindow 回這扇窗（IsoGridSquare.java:7250-7264、3634-3680）
+    local builtO = { flags = { WindowW = true, windowW = true, cutW = true, collideW = true }, windows = { [EW] = win } }
+    local built = square(216, 210, 0, builtO)
+    built.objects[1] = win
+    check(not Place.check("wall", wallS, built) and not Place.check("windowFrame", frameS, built)
+        and not Place.check("window", framed2, built) and not Place.check("window", plain, built),
+        "牆型窗蓋好後，同一條邊再蓋牆、窗框、另一款牆型窗、一般窗都擋下")
+
+    -- 原地替換照現有裁定：窗不在可換的組（NO_REPLACE），不能拿牆型窗換掉本工具蓋的牆或窗框，也不能把它換成別的
+    check(not Dismantle.swappable("wall", wallS, "window", framed) and not Dismantle.swappable("windowFrame", frameS, "window", framed)
+        and not Dismantle.swappable("window", framed, "wall", wallS), "原地替換：牆型窗和牆、窗框不互換（窗照舊不換）")
+
+    -- 兩端同一份判斷：Check.item 預覽與伺服器回同一個碼
+    local old = IsoSpriteManager.instance:getNamedMap():values()._raw
+    local list = {}
+    for i, s in ipairs(old) do list[i] = s end
+    for _, s in ipairs({ framed, plain }) do list[#list + 1] = s end
+    world(list)
+    local K = player({ id = 380, x = 210.5, y = 211.5, here = square(210, 211, 0) })
+    local function both(name, x)
+        local a = Check.item(K, name, 0, { x, 210, 0 }, { preview = true })
+        local b = Check.item(K, name, 0, { x, 210, 0 })
+        return a == b and (a or "ok")
+    end
+    check(both("walls_fbwin_01_96", 210) == "ok" and both("walls_fbwin_01_96", 211) == "BLOCKED"
+        and both("fbwin_plain_01_0", 210) == "BLOCKED" and both("fbwin_plain_01_0", 211) == "ok",
+        "Check.item：預覽與伺服器同一個結果（牆型窗空邊可蓋、有窗框擋；一般窗反過來）")
+    world(old)
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")
