@@ -321,6 +321,16 @@ local function rehang(player, sq, saved)
     end
 end
 
+-- 記下的地面覆蓋裡的地毯（MoveType=FloorRug：圖塊包帶 solidfloor、不能搬的地毯歸地面覆蓋，Rules.kindOfProps）
+local function rugsOf(saved)
+    local out = {}
+    for name, items in pairs(saved) do
+        local spr = Entry.sprite(name)
+        if spr and spr:getProperties():get("MoveType") == "FloorRug" then out[name] = items end
+    end
+    return out
+end
+
 -- 替換的經驗只照補的料給（舊的料拿回來再用，不算新付的）：新的那格成本複製一份，items 換成 pay；電器費不超過補的件數
 local function paidCost(c, pay)
     local fee = {}
@@ -383,11 +393,15 @@ function Server.complete(player, n, i)
     if rep and instanceof(rep.obj, "IsoThumpable") and rep.obj:getMaxHealth() > 0 then
         cells[1].wear = math.min(1, rep.obj:getHealth() / rep.obj:getMaxHealth()) -- Place.thumpable 照比例給新的耐久
     end
-    -- 換一樓地板：舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）
-    local saved = rep and entry.kind == "floor" and Overlays and Overlays.at(oldSq) or nil
+    -- 換一樓地板：舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）。舊地板不是本工具的（不算替換）時
+    -- 只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex）
+    local saved = entry.kind == "floor" and Overlays and Overlays.at(cells[1].sq) or nil
+    if saved and not rep then saved = rugsOf(saved) end
     local placed = {}
     local ok, err = pcall(Place.build, entry.kind, cells, placed)
     if ok and rep then ok, err = pcall(removeOld, rep) end
+    -- 地下室 MOD 外邊的土牆（Place.check 放行了才蓋得到這裡）：拆不掉就和蓋到一半出錯一樣撤回、不扣料
+    if ok then ok, err = pcall(Place.clearDirt, entry.kind, cells) end
     if not ok then
         Place.undo(placed)
         if rep and not restoreOld(rep, oldSq, oldSpr, had) then
@@ -410,7 +424,6 @@ function Server.complete(player, n, i)
         xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
         drop(player, cells[1].sq, refund)
     end
-    Place.clearDirt(entry.kind, cells) -- 地下室 MOD 外邊的土牆（Place.check 放行了才蓋得到這裡）
     Place.settle(cells)
     if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
         local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)

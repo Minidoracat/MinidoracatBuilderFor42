@@ -5076,6 +5076,44 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     check(okJ and cmdJ == "placed" and aJ.replaced == true and here.dropped["Base.Nails"] == 2
         and MinidoracatBuilder.Overlays.get(FJ, "cs_gone_01_0") == nil,
         "換地板：舊地板上本工具的地面覆蓋掛不回去時整份退（釘子 2），帳本不留")
+    -- 舊地板不是本工具的（不算替換）：上面本工具掛的地毯（MoveType=FloorRug）換好照帳本掛回新地板；標線這類照舊跟著舊
+    -- 地板消失、不退（審查 1107 Codex：Constown 不能搬的地毯改歸地面覆蓋後，換地圖地板會連地毯和帳本一起拆掉）
+    local rugS = sp("cs_rug_01_0", 3208, { "solidfloor", "FloorOverlay" }, { MoveType = "FloorRug" })
+    local lineS = sp("cs_line_01_0", 3209, { "FloorOverlay" })
+    world({ wallW, wallN, wallN2, lone, boxS, floorA, floorB, rugS, lineS })
+    local FK = S(116, 116)
+    function FK:getFloor() for _, v in ipairs(self.objects) do if v:isFloor() then return v end end return nil end
+    local OK = obj(FK, floorA, {})
+    OK.class, OK.md = "IsoObject", {}
+    OK.att = { { getParentSprite = function() return rugS end }, { getParentSprite = function() return lineS end } }
+    function OK:getAttachedAnimSprite() return javaList(self.att) end
+    MinidoracatBuilder.Overlays.put(FK, "cs_rug_01_0", { ["Base.Nails"] = 1 })
+    MinidoracatBuilder.Overlays.put(FK, "cs_line_01_0", { ["Base.Plank"] = 1 })
+    local realNew = IsoThumpable.new
+    IsoThumpable.new = function(...)
+        local o = realNew(...)
+        o.att = {}
+        function o:getAttachedAnimSprite() return javaList(self.att) end
+        function o:addAttachedAnimSprite(s) self.att[#self.att + 1] = { getParentSprite = function() return s end } end
+        function o:RemoveAttachedAnim(i) table.remove(self.att, i + 1) end
+        function o:transmitUpdatedSpriteToClients() end
+        function o:transmitModData() end
+        return o
+    end
+    local px, py = P.pos.x, P.pos.y
+    P.pos.x, P.pos.y = 116.5, 116.5
+    give(P, fTotal.items)
+    here.dropped = {}
+    nonce = nonce + 1
+    local okK, cmdK, aK = build(P, nonce, "cs_floor_01_1", { 116, 116, 0 })
+    IsoThumpable.new = realNew
+    P.pos.x, P.pos.y = px, py
+    local newK, hungK = named(FK, "cs_floor_01_1"), {}
+    for _, a in ipairs(newK and newK.att or {}) do hungK[#hungK + 1] = a:getParentSprite():getName() end
+    check(okK and cmdK == "placed" and aK.replaced == nil and not has(FK, OK) and table.concat(hungK, ",") == "cs_rug_01_0"
+        and MinidoracatBuilder.Overlays.get(FK, "cs_rug_01_0") ~= nil and MinidoracatBuilder.Overlays.get(FK, "cs_line_01_0") == nil
+        and next(here.dropped) == nil,
+        "換地圖地板（不算替換）：本工具掛的地毯照帳本掛回新地板；標線照舊跟著舊地板消失、不退")
     P.inv = inventory()
     P.inv:add(item("Base.Hammer", { HAMMER = true }))
 
@@ -5873,7 +5911,9 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local f32 = fence("fencing_01_32", 4007, "N")         -- 同一對的 fencing_01_33 不在圖塊表
     local f16 = fence("fencing_01_16", 4008, "W")         -- 原版柵欄但不是「2-tile」那五族
     local pack = fence("packfence_01_8", 4009, "N")       -- 圖塊包的同號柵欄：不猜
-    world({ f8, f9, f10, f11, f24, f25, f32, f16, pack })
+    local f64, f65 = fence("fencing_01_64", 4010, "N"), fence("fencing_01_65", 4011, "N", true) -- 65 被配方佔走
+    local f34, f35 = fence("fencing_01_34", 4012, "W"), fence("fencing_01_35", 4013, "W")       -- 35 被排除
+    world({ f8, f9, f10, f11, f24, f25, f32, f16, pack, f64, f65, f34, f35 })
     check(Rules.classify(f8) == "fence" and Rules.classify(f10) == "fence" and Rules.classify(f25) == nil,
         "假圖塊：8、10 是柵欄；25 是建造配方的圖（ENTITY，目錄不列）")
     local function alt(name, x, y)
@@ -5890,6 +5930,9 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     check(alt("fencing_01_32", 211, 210) == "fencing_01_32", "另一張（33）不在圖塊表：照原圖")
     check(alt("fencing_01_16", 211, 210) == "fencing_01_16" and alt("packfence_01_8", 211, 210) == "packfence_01_8",
         "不在名單的柵欄（原版其他柵欄、圖塊包的同號圖）不換")
+    Rules.addLuaSprites({ "fencing_01_35" })
+    check(alt("fencing_01_64", 211, 210) == "fencing_01_64" and alt("fencing_01_34", 211, 210) == "fencing_01_34",
+        "另一張自己不能蓋（別的 MOD 的配方佔走、addLuaSprites 排除）：照原圖，交替不繞過排除（審查 1107 Codex）")
     local code, arg, a25 = Entry.why("fencing_01_25")
     check(code == "ENTITY" and arg == "MetalSmallWireFence" and a25 == nil, "挑到建造配方的那張（25）：說明照舊，不給另一張")
 
@@ -6263,8 +6306,9 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     check(not ok and a.code == "INTERNAL" and #cleared == 1 and has(sqW2, "underground_01_8") and not has(sqW2, "bd_wall_01_0"),
         "蓋到一半出錯：拆回本工具的牆（Place.undo），不拆土牆")
     BD.clearDirt = function() error("renamed inside") end
-    ok = build(P, 3904, "bd_wall_01_0", { 395, 390, -1 })
-    check(ok and has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8"), "clearDirt 丟錯：牆照樣蓋好、不丟出去（土牆留著）")
+    ok, cmd, a = build(P, 3904, "bd_wall_01_0", { 395, 390, -1 })
+    check(not ok and a.code == "INTERNAL" and not has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8"),
+        "clearDirt 丟錯：和蓋到一半出錯一樣撤回本工具的牆、回 INTERNAL、不扣料，土牆留著（審查 1107 Codex）")
 
     local sqN2 = cell(397, 390, dirtN, "N")
     aparosa_BD_DirtLayer = nil

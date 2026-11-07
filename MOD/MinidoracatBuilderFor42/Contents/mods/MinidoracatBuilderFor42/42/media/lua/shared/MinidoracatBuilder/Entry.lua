@@ -132,13 +132,17 @@ for _, n in ipairs({ 8, 10, 32, 34, 64, 66 }) do
     ALTERNATE[pair[1]], ALTERNATE[pair[2]] = pair, pair
 end
 
--- 格 (x, y) 實際放的圖：名單裡的柵欄照 (x+y) 奇偶放 A（偶）或 B（奇），另一張查不到時照原圖；其他圖照原圖。
+-- 格 (x, y) 實際放的圖：名單裡的柵欄照 (x+y) 奇偶放 A（偶）或 B（奇），另一張查不到或自己不能蓋時照原圖；其他圖照原圖。
 -- 兩端共用（Check.item 給伺服器與預覽、游標虛影），所以扣料、退料表、builderEntry 都是放下的那張。單格放也照座標：
 -- 同一格永遠同一張，伺服器不必知道是不是拖的
 function Entry.alternate(spr, x, y)
     local pair = ALTERNATE[spr:getName()]
     if not pair then return spr end
-    return Entry.sprite(pair[(x + y) % 2 + 1]) or spr
+    local alt = Entry.sprite(pair[(x + y) % 2 + 1])
+    if not alt or alt == spr then return spr end
+    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋（審查 1107 Codex）
+    local other = Entry.resolve(alt:getName())
+    return other and other.kind == "fence" and alt or spr
 end
 
 -- 樓梯中片、頂片所屬那一組的底片（Rules.stairsSet 的 B 片在 ±1、±2）
