@@ -136,7 +136,7 @@ end
 -- 兩端共用（Check.item 給伺服器與預覽、游標虛影），所以扣料、退料表、builderEntry 都是放下的那張。單格放也照座標：
 -- 同一格永遠同一張，伺服器不必知道是不是拖的
 function Entry.alternate(spr, x, y)
-    local pair = ALTERNATE[spr:getName()]
+    local pair = spr and ALTERNATE[spr:getName()] -- 游標沒有那一面的格子（NO_FACE）傳 nil：照回 nil（只畫地框）
     if not pair then return spr end
     local alt = Entry.sprite(pair[(x + y) % 2 + 1])
     if not alt or alt == spr then return spr end

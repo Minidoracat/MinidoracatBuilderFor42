@@ -5760,6 +5760,11 @@ print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊�
     check(kind(rugMove) == "furniture" and kind(rugOver) == "floorOverlay" and kind({ flags = { "solidfloor" } }) == "floor"
         and kind({ flags = { "solidfloor" }, keys = { MoveType = "FloorTile", IsMoveAble = "" } }) == "floor",
         "帶 solidfloor 的地毯（UMCTP、Constown）：能搬的歸家具、不能搬的歸地面覆蓋；其他地板照舊")
+    local g1, g2 = sprite("rugpack_04_0", 9108, rugOver), sprite("rugpack_04_1", 9109, rugOver)
+    fakeGrid(2, 1, { { g1, g2 } })
+    check(kind({ flags = { "solidfloor" }, keys = { MoveType = "FloorRug" } }) == "floor" and Rules.classify(g1) == "floor"
+        and Rules.classify(g2) == "floor",
+        "掛不上地板的實心地毯（沒有 FloorOverlay、多格）：照 0.5.0 當地板，免得建成物件又記不了退料（審查 1107 Claude）")
     local function code(o) return select(2, Rules.classify(sprite("test_01_0", 5, o))) end
     local bed = { flags = { "bed", "solidtrans" }, keys = { IsMoveAble = "", BedType = "averageBed" } }
     local function with(item) bed.keys.CustomItem = item return kind(bed) end
@@ -6005,6 +6010,12 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local ring = ghosts()
     check(ring == "209,209=8 210,209=9 211,209=10 211,210=11 210,211=9 209,211=8 209,210=11 209,209=10",
         "拉長方形圍一圈：北、南邊 8／9，西、東邊（配對面 10）10／11，各照自己的座標（" .. ring .. "）")
+    cur.sides = { n = 0 } -- 西、東兩邊沒有那一面（NO_FACE）：游標那幾格只畫地框（審查 1107 Claude：交替那行收到 nil 丟錯）
+    local okNF = pcall(cur.refresh, cur, 209, 209, 0, 210, 210)
+    local drawn = 0
+    for i = 1, cur.g.n do if cur.g.spr[i] ~= nil then drawn = drawn + 1 end end
+    cur.sides = Cursor.sides(e8, 0)
+    check(okNF and drawn == 4, "圍一圈時西、東邊沒有那一面（NO_FACE）：不丟錯，只畫北、南邊 4 格的虛影（" .. drawn .. "）")
     cur:refresh(210, 215, 0, 213, 215)
     local realSend, parts = Cursor.send, nil
     Cursor.send = function(_, _, _, p) parts = p end
@@ -6200,7 +6211,8 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     local transN = sp("bd_wframe_01_1", 3904, { "WallNTrans" }) -- 牆框（只有透明牆鍵）
     local dirtN, dirtW = sp("underground_01_9", 3905, { "WallN" }), sp("underground_01_8", 3906, { "WallW" })
     local woodN = sp("bd_wood_01_25", 3907, { "WallN" }) -- 它挖的地下室外邊的木牆（不是土牆）
-    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN })
+    local tdoorN = sp("bd_tdoor_01_1", 3908, { "DoorWallNTrans" }) -- 透明門框（只有字串鍵，它的 edgesOf 不認）
+    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN, tdoorN })
     -- 假的它（aparosa_BD_DirtLayer 1.6.9 的 6 支，照原檔的判斷縮寫）：outer＝外邊（"x,y,z,N|W"）
     local outer, calls, cleared = {}, 0, {}
     local DIRT = { underground_01_9 = "N", underground_01_8 = "W" }
@@ -6288,6 +6300,8 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
         and fits("wall", wallN, sqE), "有它：外邊不准蓋窗框（開口）、牆框、和土牆同一張圖的牆；同一條邊的實牆照樣蓋")
     check(not fits("wall", wallN, cell(393, 390, dirtN)), "有它：不是外邊的土牆照舊擋")
     check(not fits("wall", wallN, cell(394, 390, woodN, "N")), "有它：外邊上它的木牆（不是土牆）照舊擋")
+    check(not fits("doorFrame", tdoorN, cell(399, 390, dirtN, "N")),
+        "有它：外邊的透明門框（它的 edgesOf 不認、蓋了它不補回土牆）：土牆照舊擋（審查 1107 Claude）")
     local before = calls
     fits("wall", wallN, square(396, 390, 0))
     check(calls == before, "z ≥ 0 不問它（地上不多花）")

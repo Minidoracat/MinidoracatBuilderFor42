@@ -391,23 +391,31 @@ end
 --   物件、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水、STACK 疊放圖、STAIRS_PART 能搬
 --   或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED 拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、
 --   NO_KIND 沒有能判斷種類的屬性。
--- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。
+-- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。spr 是 sprite 本身（看多格）。
 -- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
 -- 只收地板與地面覆蓋（使用者 2026-10-31 選）：放下的是本工具的物件，不是配方的 entity——地圖物件只有讀地圖時才建
 -- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。
-function Rules.kindOf(name, p, t)
+-- 實心地毯（帶 solidfloor 的 FloorRug）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當地面覆蓋；多格或沒有
+-- FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：照 0.5.0 當地板
+-- （審查 1107 Claude；正式服組合 0 張）
+local function solidRug(kind, p, spr)
+    return kind == "floorOverlay" and p:has(solidfloor)
+        and not (p:has(FloorOverlay) and (spr == nil or spr:getSpriteGrid() == nil))
+end
+function Rules.kindOf(name, p, t, spr)
     if not name then return nil, "NO_KIND" end
     if UNLISTED[name] then return nil, "LUA" end
     if WINDOW_STATE[name] then return nil, "WINDOW_STATE" end
     if excludedName(name) then return nil, "PREFIX" end
-    if not p:has(EntityScript) then return kindOfProps(name, p, t) end
-    local kind = kindOfProps(name, p, t)
+    local kind, why = kindOfProps(name, p, t)
+    if solidRug(kind, p, spr) then kind = "floor" end
+    if not p:has(EntityScript) then return kind, why end
     if kind == "floor" or kind == "floorOverlay" then return kind end
     return nil, "ENTITY"
 end
 
 function Rules.classify(spr)
-    return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType())
+    return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType(), spr)
 end
 
 -- 地面覆蓋裡帶 FloorOverlay 的單格圖：照地圖讀檔的做法掛在那格的地板上（CellLoader.java:256-264），不建物件。

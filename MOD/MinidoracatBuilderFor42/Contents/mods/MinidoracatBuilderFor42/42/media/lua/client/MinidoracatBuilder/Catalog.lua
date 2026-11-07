@@ -43,7 +43,7 @@ local function scanSprite(spr, named)
     local id = spr:getID()
     if id < 0 or id == NO_TILE_ID then return end
     local name, p = spr:getName(), spr:getProperties()
-    local kind = Rules.kindOf(name, p, spr:getType())
+    local kind = Rules.kindOf(name, p, spr:getType(), spr)
     if not kind then return end
     local key, raw
     if kind == "stairs" then

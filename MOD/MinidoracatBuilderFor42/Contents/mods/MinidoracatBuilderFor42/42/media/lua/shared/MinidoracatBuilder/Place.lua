@@ -131,6 +131,14 @@ local function basementCheck(D, sq, name, n, w)
     return false, n and outerDirt(D, sq, "N"), w and outerDirt(D, sq, "W")
 end
 
+-- 它只認實牆的格邊（aparosa_BD_DirtLayer.lua:46-63 edgesOf 的 WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
+-- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋（審查 1107 Claude）
+local function bdEdges(spr, n, w)
+    local p = spr:getProperties()
+    local nw = p:has(F.WallNW)
+    return n and (nw or p:has(F.WallN)), w and (nw or p:has(F.WallW))
+end
+
 -- 回 refused（照它的規則外邊不准蓋）, 北邊、西邊不算擋的土牆；沒裝它、不在地下或出錯回 nil（照沒裝它）
 local function basement(sq, name, n, w)
     local D = dirtLayer(sq)
@@ -295,7 +303,7 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
     if Entry.EDGE[kind] then
         if sq:HasStairs() then return false end
         local n, w = Entry.edges(kind, spr)
-        local refused, dirtN, dirtW = basement(sq, spr:getName(), n, w)
+        local refused, dirtN, dirtW = basement(sq, spr:getName(), bdEdges(spr, n, w))
         if refused then return false end
         if kind == "door" then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在
@@ -807,7 +815,7 @@ function Place.clearDirt(kind, cells)
     for _, c in ipairs(cells) do
         local D = dirtLayer(c.sq)
         if D then
-            local n, w = Entry.edges(kind, c.spr)
+            local n, w = bdEdges(c.spr, Entry.edges(kind, c.spr))
             broken = D
             clearDirtAt(D, c, n, w)
             broken = nil
