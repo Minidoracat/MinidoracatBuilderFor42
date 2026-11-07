@@ -169,6 +169,7 @@ function Check.item(player, name, d, anchor, opts)
     info.entry = entry
     local spr = Entry.face(entry, d)
     if not spr then return "BAD_FACE", nil, info end
+    spr = Entry.alternate(spr, anchor[1], anchor[2]) -- 交替柵欄：這一格放的那張（成本、放置、記號都照它）
     info.spr = spr
     local cells, sprites = {}, {}
     for j, o in ipairs(Entry.cells(spr)) do

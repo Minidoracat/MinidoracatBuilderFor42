@@ -5856,6 +5856,122 @@ print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框�
     world(old)
 end)()
 
+print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組的柵欄照 ABAB 交替（伺服器、預覽、游標虛影同一張）")
+;(function()
+    nowMs = nowMs + 180000
+    local realMax = sb.MaxCellsPerDrag
+    sb.MaxCellsPerDrag = 8
+    local function fence(name, id, dir, entity)
+        local flags = { "TallHoppable" .. dir, "collide" .. dir, "cut" .. dir, "Wall" .. dir }
+        if entity then flags[#flags + 1] = "EntityScript" end
+        return sprite(name, id, { flags = flags, keys = { ["Wall" .. dir] = "", CanScrap = "", Material = "Wood",
+            HitByCar = "", EntityScriptName = entity and "MetalSmallWireFence" or nil } })
+    end
+    local f8, f9 = fence("fencing_01_8", 4001, "N"), fence("fencing_01_9", 4002, "N")
+    local f10, f11 = fence("fencing_01_10", 4003, "W"), fence("fencing_01_11", 4004, "W")
+    local f24, f25 = fence("fencing_01_24", 4005, "N"), fence("fencing_01_25", 4006, "N", true)
+    local f32 = fence("fencing_01_32", 4007, "N")         -- 同一對的 fencing_01_33 不在圖塊表
+    local f16 = fence("fencing_01_16", 4008, "W")         -- 原版柵欄但不是「2-tile」那五族
+    local pack = fence("packfence_01_8", 4009, "N")       -- 圖塊包的同號柵欄：不猜
+    world({ f8, f9, f10, f11, f24, f25, f32, f16, pack })
+    check(Rules.classify(f8) == "fence" and Rules.classify(f10) == "fence" and Rules.classify(f25) == nil,
+        "假圖塊：8、10 是柵欄；25 是建造配方的圖（ENTITY，目錄不列）")
+    local function alt(name, x, y)
+        local ok, s = pcall(Entry.alternate, Entry.sprite(name), x, y)
+        return ok and s and s:getName() or nil
+    end
+    check(alt("fencing_01_8", 210, 210) == "fencing_01_8" and alt("fencing_01_8", 211, 210) == "fencing_01_9"
+        and alt("fencing_01_9", 212, 210) == "fencing_01_8" and alt("fencing_01_9", 211, 212) == "fencing_01_9",
+        "北向一排：(x+y) 偶數放 A（8）、奇數放 B（9）；挑 A 或 B 都照座標")
+    check(alt("fencing_01_10", 210, 211) == "fencing_01_11" and alt("fencing_01_11", 210, 212) == "fencing_01_10",
+        "西向一排：同一條規則（10／11）")
+    check(alt("fencing_01_24", 211, 210) == "fencing_01_25", "鐵絲網：另一張是建造配方的圖照樣換（成本、種類照項目算）")
+    check(alt("fencing_01_32", 211, 210) == "fencing_01_32", "另一張（33）不在圖塊表：照原圖")
+    check(alt("fencing_01_16", 211, 210) == "fencing_01_16" and alt("packfence_01_8", 211, 210) == "packfence_01_8",
+        "不在名單的柵欄（原版其他柵欄、圖塊包的同號圖）不換")
+    local code, arg, a25 = Entry.why("fencing_01_25")
+    check(code == "ENTITY" and arg == "MetalSmallWireFence" and a25 == "fencing_01_24",
+        "挑到建造配方的那張（25）：說明照舊，另給同一對能蓋的那張（吸管、搜完整圖塊名都跳到 24）")
+
+    -- 伺服器：一個請求拖四格，北向一排、西向一排；放下的圖、builderEntry、退料表照每格自己的那張
+    for x = 208, 216 do for y = 208, 216 do square(x, y, 0) end end
+    local P = player({ id = 4001, x = 212.5, y = 213.5 })
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(P, { ["Base.Plank"] = 60, ["Base.Nails"] = 60 })
+    local function row(n, e, cells)
+        local flat = {}
+        for _, c in ipairs(cells) do for k = 1, 3 do flat[#flat + 1] = c[k] end flat[#flat + 1] = 0 end
+        sent = {}
+        Server.intent(P, { n = n, e = e, c = flat, v = Entry.digest() })
+        local names = {}
+        for i, c in ipairs(cells) do
+            P.pos.x, P.pos.y = c[1] + 0.5, c[2] + 0.5 -- 角色先走到那一格（Client.build 照樣先走過去）
+            Server.complete(P, n, i)
+            local o = squares[c[1] .. "," .. c[2] .. ",0"].objects[1]
+            names[i] = o and o:getSprite() and o:getSprite():getName() or "-"
+            if o and o:getModData().builderEntry ~= names[i] then names[i] = names[i] .. "!md" end
+        end
+        return table.concat(names, ",")
+    end
+    local north = { { 210, 210, 0 }, { 211, 210, 0 }, { 212, 210, 0 }, { 213, 210, 0 } }
+    local west = { { 215, 210, 0 }, { 215, 211, 0 }, { 215, 212, 0 }, { 215, 213, 0 } }
+    local nNames = row(4001, "fencing_01_8", north)
+    local wNames = row(4002, "fencing_01_11", west)
+    check(nNames == "fencing_01_8,fencing_01_9,fencing_01_8,fencing_01_9",
+        "伺服器拖北向一排：8、9、8、9，builderEntry 是放下的那張（" .. nNames .. "）")
+    check(wNames == "fencing_01_11,fencing_01_10,fencing_01_11,fencing_01_10",
+        "伺服器拖西向一排（挑 B 片 11 也一樣照座標）：11、10、11、10（" .. wNames .. "）")
+    local oA, oB = squares["210,210,0"].objects[1], squares["211,210,0"].objects[1]
+    local same = oA ~= nil and oB ~= nil and next(oA.mats) ~= nil
+    for ft, v in pairs(oA and oA.mats or {}) do same = same and oB.mats[ft] == v end
+    for ft in pairs(oB and oB.mats or {}) do same = same and oA ~= nil and oA.mats[ft] ~= nil end
+    check(same, "A、B 兩格的退料表一樣（屬性相同，成本相同）")
+    local pNames = row(4003, "fencing_01_32", { { 210, 212, 0 }, { 211, 212, 0 } })
+    check(pNames == "fencing_01_32,fencing_01_32", "另一張不在圖塊表：整排照原圖（" .. pNames .. "）")
+
+    -- 預覽（Cursor.preview → Check.item）與游標虛影、排隊虛影：和伺服器同一張
+    require "MinidoracatBuilder/Cursor"
+    local Cursor = MinidoracatBuilder.Cursor
+    local chain = { { 210, 214, 0, 0 }, { 211, 214, 0, 0 }, { 212, 214, 0, 0 } }
+    local res = Cursor.preview(P, "fencing_01_24", 0, chain, nil)
+    local pv = {}
+    for i, r in ipairs(res) do pv[i] = (r.code or "") .. (r.cells and r.cells[1].spr:getName() or "-") end
+    local sv = row(4004, "fencing_01_24", chain)
+    check(table.concat(pv, ",") == "fencing_01_24,fencing_01_25,fencing_01_24" and sv == table.concat(pv, ","),
+        "鐵絲網同三格：預覽每格都能蓋、和伺服器放下的同一張（24、25、24）：預覽 " .. table.concat(pv, ",") .. "／伺服器 " .. sv)
+    local realCore, realCoreT = getCore, Core
+    local color = { getR = function() return 1 end, getG = function() return 1 end, getB = function() return 1 end }
+    getCore = function() return { getGoodHighlitedColor = function() return color end,
+        getBadHighlitedColor = function() return color end } end
+    Core = { getTileScale = function() return 1 end }
+    local e8 = Entry.resolve("fencing_01_8")
+    local cur = setmetatable({ character = P, name = e8.name, entry = e8, d = 0, canDrag = true, max = 32, offsBy = {},
+        colors = { warning = color }, texts = function() end }, { __index = Cursor })
+    cur.sides = Cursor.sides(e8, 0)
+    local function ghosts()
+        local out = {}
+        for i = 1, cur.g.n do out[i] = cur.g.x[i] .. "," .. cur.g.y[i] .. "=" .. cur.g.spr[i]:getName():match("_(%d+)$") end
+        return table.concat(out, " ")
+    end
+    cur:refresh(210, 215, 0, 213, 215)
+    local line = ghosts()
+    check(line == "210,215=9 211,215=8 212,215=9 213,215=8", "游標虛影拖一排北向：照座標交替（" .. line .. "）")
+    cur:refresh(209, 209, 0, 210, 210)
+    local ring = ghosts()
+    check(ring == "209,209=8 210,209=9 211,209=10 211,210=11 210,211=9 209,211=8 209,210=11 209,209=10",
+        "拉長方形圍一圈：北、南邊 8／9，西、東邊（配對面 10）10／11，各照自己的座標（" .. ring .. "）")
+    cur:refresh(210, 215, 0, 213, 215)
+    local realSend, parts = Cursor.send, nil
+    Cursor.send = function(_, _, _, p) parts = p end
+    cur.kx, cur.ky, cur.kz = 210, 215, 0
+    cur:tryBuild(210, 215, 0)
+    Cursor.send, getCore, Core = realSend, realCore, realCoreT
+    local q = {}
+    for i, ps in ipairs(parts or {}) do q[i] = ps[1][4]:getName():match("_(%d+)$") end
+    check(table.concat(q, ",") == "9,8,9,8", "送出後的排隊虛影也照座標交替：" .. table.concat(q, ","))
+    sb.MaxCellsPerDrag = realMax
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")

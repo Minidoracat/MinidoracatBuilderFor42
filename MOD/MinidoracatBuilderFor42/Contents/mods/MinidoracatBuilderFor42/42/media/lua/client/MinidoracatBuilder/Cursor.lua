@@ -491,16 +491,17 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         if swap then swapN = swapN + 1 end
         for j, o in ipairs(a[4] and self:offsOf(a[4]) or NO_OFFS) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
+            local spr = Entry.alternate(o[4], x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
             -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:560-567）。沒算到那一格的畫在地上。
             local c = r.cells and r.cells[j]
             local yoff = (c and c.yoff or 0) * scale
             if code == nil then
-                ghost(g, x, y, z, o[4], yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
+                ghost(g, x, y, z, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
             elseif not at or (e.x == x and e.y == y and e.z == z) then
-                ghost(g, x, y, z, o[4], yoff, RED, bad, MARK_BAD)
+                ghost(g, x, y, z, spr, yoff, RED, bad, MARK_BAD)
             else
-                ghost(g, x, y, z, o[4], yoff, RED, NEUTRAL)
+                ghost(g, x, y, z, spr, yoff, RED, NEUTRAL)
             end
         end
     end
@@ -916,7 +917,8 @@ function Cursor:tryBuild(x, y, z)
             local a, ps = r.a, {}
             for j, o in ipairs(self:offsOf(a[4])) do
                 local c = r.cells and r.cells[j]
-                ps[j] = { a[1] + o[1], a[2] + o[2], a[3] + o[3], o[4], (c and c.yoff or 0) * scale }
+                local x, y = a[1] + o[1], a[2] + o[2]
+                ps[j] = { x, y, a[3] + o[3], Entry.alternate(o[4], x, y), (c and c.yoff or 0) * scale }
             end
             anchors[#anchors + 1] = { a[1], a[2], a[3], a[4] }
             parts[#anchors] = ps
