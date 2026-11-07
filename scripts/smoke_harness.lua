@@ -5885,13 +5885,13 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
         "北向一排：(x+y) 偶數放 A（8）、奇數放 B（9）；挑 A 或 B 都照座標")
     check(alt("fencing_01_10", 210, 211) == "fencing_01_11" and alt("fencing_01_11", 210, 212) == "fencing_01_10",
         "西向一排：同一條規則（10／11）")
-    check(alt("fencing_01_24", 211, 210) == "fencing_01_25", "鐵絲網：另一張是建造配方的圖照樣換（成本、種類照項目算）")
+    check(alt("fencing_01_24", 211, 210) == "fencing_01_24" and alt("fencing_01_25", 210, 210) == "fencing_01_25",
+        "鐵絲網不換：另一張（25）是原版建造配方的圖，配方的圖只收地板與地面覆蓋（使用者 2026-10-31）")
     check(alt("fencing_01_32", 211, 210) == "fencing_01_32", "另一張（33）不在圖塊表：照原圖")
     check(alt("fencing_01_16", 211, 210) == "fencing_01_16" and alt("packfence_01_8", 211, 210) == "packfence_01_8",
         "不在名單的柵欄（原版其他柵欄、圖塊包的同號圖）不換")
     local code, arg, a25 = Entry.why("fencing_01_25")
-    check(code == "ENTITY" and arg == "MetalSmallWireFence" and a25 == "fencing_01_24",
-        "挑到建造配方的那張（25）：說明照舊，另給同一對能蓋的那張（吸管、搜完整圖塊名都跳到 24）")
+    check(code == "ENTITY" and arg == "MetalSmallWireFence" and a25 == nil, "挑到建造配方的那張（25）：說明照舊，不給另一張")
 
     -- 伺服器：一個請求拖四格，北向一排、西向一排；放下的圖、builderEntry、退料表照每格自己的那張
     for x = 208, 216 do for y = 208, 216 do square(x, y, 0) end end
@@ -5928,17 +5928,19 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     check(same, "A、B 兩格的退料表一樣（屬性相同，成本相同）")
     local pNames = row(4003, "fencing_01_32", { { 210, 212, 0 }, { 211, 212, 0 } })
     check(pNames == "fencing_01_32,fencing_01_32", "另一張不在圖塊表：整排照原圖（" .. pNames .. "）")
+    local wire = row(4005, "fencing_01_24", { { 210, 216, 0 }, { 211, 216, 0 } })
+    check(wire == "fencing_01_24,fencing_01_24", "伺服器拖鐵絲網：整排照舊同一張（" .. wire .. "）")
 
     -- 預覽（Cursor.preview → Check.item）與游標虛影、排隊虛影：和伺服器同一張
     require "MinidoracatBuilder/Cursor"
     local Cursor = MinidoracatBuilder.Cursor
     local chain = { { 210, 214, 0, 0 }, { 211, 214, 0, 0 }, { 212, 214, 0, 0 } }
-    local res = Cursor.preview(P, "fencing_01_24", 0, chain, nil)
+    local res = Cursor.preview(P, "fencing_01_8", 0, chain, nil)
     local pv = {}
     for i, r in ipairs(res) do pv[i] = (r.code or "") .. (r.cells and r.cells[1].spr:getName() or "-") end
-    local sv = row(4004, "fencing_01_24", chain)
-    check(table.concat(pv, ",") == "fencing_01_24,fencing_01_25,fencing_01_24" and sv == table.concat(pv, ","),
-        "鐵絲網同三格：預覽每格都能蓋、和伺服器放下的同一張（24、25、24）：預覽 " .. table.concat(pv, ",") .. "／伺服器 " .. sv)
+    local sv = row(4004, "fencing_01_8", chain)
+    check(table.concat(pv, ",") == "fencing_01_8,fencing_01_9,fencing_01_8" and sv == table.concat(pv, ","),
+        "同三格：預覽每格都能蓋、和伺服器放下的同一張（8、9、8）：預覽 " .. table.concat(pv, ",") .. "／伺服器 " .. sv)
     local realCore, realCoreT = getCore, Core
     local color = { getR = function() return 1 end, getG = function() return 1 end, getB = function() return 1 end }
     getCore = function() return { getGoodHighlitedColor = function() return color end,

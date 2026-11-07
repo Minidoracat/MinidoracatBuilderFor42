@@ -124,10 +124,10 @@ local function offset(name, d)
 end
 
 -- 原版兩張一組、交替排的柵欄：BrokenFences.lua 註解寫「2-tile」的五族（BentFences.lua 的 stage 也照 ABAB 排），
--- 北向、西向各一對 { A, B }。圖塊包的柵欄不猜。鐵絲網兩族各有一對裡的一張（fencing_01_25/26/57/58）是原版建造配方的圖
--- （Rules 回 ENTITY、目錄不列），照樣交替放；屬性除了燒焦圖、積雪圖和同一對的另一張相同，成本一樣
+-- 北向、西向各一對 { A, B }。圖塊包的柵欄不猜。鐵絲網兩族（24/25、26/27、56/57、58/59）不換：每對有一張
+-- （fencing_01_25/26/57/58）是原版建造配方的圖（Rules 回 ENTITY），使用者 2026-10-31 定配方的圖只收地板與地面覆蓋
 local ALTERNATE = {}
-for _, n in ipairs({ 8, 10, 24, 26, 32, 34, 56, 58, 64, 66 }) do
+for _, n in ipairs({ 8, 10, 32, 34, 64, 66 }) do
     local pair = { "fencing_01_" .. n, "fencing_01_" .. (n + 1) }
     ALTERNATE[pair[1]], ALTERNATE[pair[2]] = pair, pair
 end
@@ -156,7 +156,7 @@ end
 --   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 車庫門、
 --     PART 多格的其他格、STAIRS_SET 湊不成三格的樓梯片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
 --   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
---   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、交替柵欄的另一張），能蓋才給。
+--   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片），能蓋才給。
 --     那張也不能蓋時改給它能蓋的那張，不然 code／arg 改說它的原因（只往下查一層；nested 是內部用的）
 function Entry.why(name, nested)
     local entry, res = Entry.resolve(name)
@@ -168,8 +168,6 @@ function Entry.why(name, nested)
     local arg, alt
     if code == "ENTITY" then
         arg = p:get("EntityScriptName")
-        local pair = ALTERNATE[name] -- 交替柵欄裡建造配方的那張：同一對的另一張（放的時候照座標換）
-        alt = pair and pair[pair[1] == name and 2 or 1]
     elseif code == "WINDOW_STATE" then
         alt = Rules.windowOf(name)
     elseif code == "DOOR_OPEN" then
