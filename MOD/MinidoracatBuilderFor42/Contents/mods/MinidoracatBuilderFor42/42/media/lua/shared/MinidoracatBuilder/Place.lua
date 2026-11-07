@@ -44,14 +44,17 @@ local function hasCrop(sq)
 end
 
 -- 格子有這個屬性（旗標或字串鍵）。skip＝要被原地替換掉的那件（Check.item 的 info.replace）：格子的屬性是各物件屬性的
--- 聯集（IsoGridSquare.RecalcProperties，IsoGridSquare.java:7250-7264），所以有 skip 時逐件看、跳過它
-local function has(sq, k, skip)
+-- 聯集（IsoGridSquare.RecalcProperties，IsoGridSquare.java:7250-7264），所以有 skip 時逐件看、跳過它。
+-- dirt＝也不算的物件清單（地下室 MOD 的外邊土牆，見 basement）
+local function has(sq, k, skip, dirt)
     if not sq:has(k) then return false end
-    if not skip then return true end
+    if not skip and not dirt then return true end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
-        if o ~= skip then
+        local out = o == skip
+        for j = 1, dirt and #dirt or 0 do out = out or o == dirt[j] end
+        if not out then
             local p = o:getProperties()
             if p and p:has(k) then return true end
         end
@@ -78,16 +81,60 @@ local function attachedCount(obj)
 end
 
 -- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
--- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）。skip 見 has
-local function edgeTaken(sq, north, skip)
+-- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）。skip、dirt 見 has
+local function edgeTaken(sq, north, skip, dirt)
     if north then
-        return has(sq, F.WallN, skip) or has(sq, F.WallNTrans, skip) or has(sq, F.WallNW, skip) or has(sq, F.collideN, skip)
-            or has(sq, F.DoorWallN, skip) or has(sq, "DoorWallNTrans", skip) or has(sq, F.WindowN, skip)
-            or has(sq, F.HoppableN, skip) or has(sq, F.TallHoppableN, skip) or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
+        return has(sq, F.WallN, skip, dirt) or has(sq, F.WallNTrans, skip, dirt) or has(sq, F.WallNW, skip, dirt)
+            or has(sq, F.collideN, skip, dirt) or has(sq, F.DoorWallN, skip, dirt) or has(sq, "DoorWallNTrans", skip, dirt)
+            or has(sq, F.WindowN, skip, dirt) or has(sq, F.HoppableN, skip, dirt) or has(sq, F.TallHoppableN, skip, dirt)
+            or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
     end
-    return has(sq, F.WallW, skip) or has(sq, F.WallWTrans, skip) or has(sq, F.WallNW, skip) or has(sq, F.collideW, skip)
-        or has(sq, F.DoorWallW, skip) or has(sq, "DoorWallWTrans", skip) or has(sq, F.WindowW, skip)
-        or has(sq, F.HoppableW, skip) or has(sq, F.TallHoppableW, skip) or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+    return has(sq, F.WallW, skip, dirt) or has(sq, F.WallWTrans, skip, dirt) or has(sq, F.WallNW, skip, dirt)
+        or has(sq, F.collideW, skip, dirt) or has(sq, F.DoorWallW, skip, dirt) or has(sq, "DoorWallWTrans", skip, dirt)
+        or has(sq, F.WindowW, skip, dirt) or has(sq, F.HoppableW, skip, dirt) or has(sq, F.TallHoppableW, skip, dirt)
+        or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+end
+
+-- Basement Building（Workshop 3806513504，Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）
+-- 的土牆是最底層，別的牆可以蓋在上面；蓋好它拆掉那條邊的土牆，上層牆拆了它下一個 tick 補回（aparosa_BD_DirtLayer.lua:1-18、
+-- 138-151、196-221）。它只包原版新式建造（:309-397），本工具自己建物件不經過那裡，所以照它的同一份判斷：外邊土牆不算擋，
+-- 外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定，:131-135、243-266），被擋的回 BLOCKED（不另立原因碼）。
+-- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推，aparosa_BD_Sync.lua:1-16），預覽同一份判斷。
+-- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
+local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "isFrameOnDirt", "isDirtLookOnOuterEdge", "clearDirt" }
+local function dirtLayer(sq)
+    if sq:getZ() >= 0 then return nil end
+    local D = aparosa_BD_DirtLayer
+    if type(D) ~= "table" then return nil end
+    for i = 1, #BD_FNS do
+        if type(D[BD_FNS[i]]) ~= "function" then return nil end
+    end
+    return D
+end
+
+-- 這條邊（k＝"N"／"W"）是它的外邊時，這格上它的外邊土牆；不是外邊或沒有回 nil
+local function outerDirt(D, sq, k)
+    if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return nil end
+    local list, objects = {}, sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        if D.isDirtOnOuterEdge(o) then list[#list + 1] = o end
+    end
+    return list[1] and list or nil
+end
+
+local function basementCheck(D, sq, name, n, w)
+    if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
+    return false, n and outerDirt(D, sq, "N"), w and outerDirt(D, sq, "W")
+end
+
+-- 回 refused（照它的規則外邊不准蓋）, 北邊、西邊不算擋的土牆；沒裝它、不在地下或出錯回 nil（照沒裝它）
+local function basement(sq, name, n, w)
+    local D = dirtLayer(sq)
+    if not D then return nil end
+    local ok, refused, dn, dw = pcall(basementCheck, D, sq, name, n, w)
+    if not ok then return nil end
+    return refused, dn, dw
 end
 
 local function doorFrameAt(sq, north)
@@ -241,6 +288,8 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
     if Entry.EDGE[kind] then
         if sq:HasStairs() then return false end
         local n, w = Entry.edges(kind, spr)
+        local refused, dirtN, dirtW = basement(sq, spr:getName(), n, w)
+        if refused then return false end
         if kind == "door" then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在
             return doorPairExists(spr) and ((n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
@@ -260,7 +309,7 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
         end
         if not floorUnder(sq) and not sq:hasFloor(n) then return false end -- 樓上的牆要踩在地板上（ISWoodenWall:isValid）
         if not n and not w then return not has(sq, F.WallSE, replacing) end -- 柱子
-        return not ((n and edgeTaken(sq, true, replacing)) or (w and edgeTaken(sq, false, replacing))
+        return not ((n and edgeTaken(sq, true, replacing, dirtN)) or (w and edgeTaken(sq, false, replacing, dirtW))
             or splitsGrid(sq, n, w, replacing))
     end
     -- 會擋路的東西：格上有人、殭屍或動物，或會擋到樓梯時不放（原版 isFree(true)、stairIsBlockingPlacement）
@@ -732,6 +781,28 @@ function Place.settle(cells)
     for _, c in ipairs(cells) do
         c.sq:RecalcAllWithNeighbours(true)
         buildUtil.setHaveConstruction(c.sq, true)
+    end
+end
+
+local function clearDirtAt(D, c, n, w)
+    local x, y, z = c.sq:getX(), c.sq:getY(), c.sq:getZ()
+    if n and D.isOuterEdge(x, y, z, "N") then D.clearDirt(c.sq, "N") end
+    if w and D.isOuterEdge(x, y, z, "W") then D.clearDirt(c.sq, "W") end
+end
+
+-- 蓋好之後（Server.complete，Place.settle 之前）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
+-- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
+-- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
+-- 出錯只記 log：牆已經蓋好，土牆留著也只是同一條邊兩面牆，拆掉本工具的那面時它看到土牆還在就不補。
+function Place.clearDirt(kind, cells)
+    if not Entry.EDGE[kind] then return end
+    for _, c in ipairs(cells) do
+        local D = dirtLayer(c.sq)
+        if D then
+            local n, w = Entry.edges(kind, c.spr)
+            local ok, err = pcall(clearDirtAt, D, c, n, w)
+            if not ok then print(LOG .. "basement dirt not cleared at " .. at(c.sq) .. ": " .. tostring(err)) end
+        end
     end
 end
 

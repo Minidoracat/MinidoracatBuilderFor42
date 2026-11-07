@@ -410,6 +410,7 @@ function Server.complete(player, n, i)
         xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
         drop(player, cells[1].sq, refund)
     end
+    Place.clearDirt(entry.kind, cells) -- 地下室 MOD 外邊的土牆（Place.check 放行了才蓋得到這裡）
     Place.settle(cells)
     if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
         local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)

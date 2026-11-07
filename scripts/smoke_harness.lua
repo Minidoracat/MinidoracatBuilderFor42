@@ -6141,6 +6141,148 @@ print("情境四十一：2026-11-07 Workshop 回饋：五個 tileset 的價錢�
     instanceof = realInst
 end)()
 
+print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可蓋實牆、開口／框／同圖被擋、蓋好拆土牆；沒裝或出錯照舊 BLOCKED")
+;(function()
+    nowMs = nowMs + 180000
+    local Place = MinidoracatBuilder.Place
+    local realS, realC = isServer, isClient
+    isServer, isClient = function() return true end, function() return false end
+    local function sp(name, id, flags)
+        local keys = {}
+        for _, f in ipairs(flags) do if f:match("^[A-Z]") then keys[f] = "" end end
+        return sprite(name, id, { flags = flags, keys = keys })
+    end
+    local wallN, wallW = sp("bd_wall_01_1", 3901, { "WallN" }), sp("bd_wall_01_0", 3902, { "WallW" })
+    local frameN = sp("bd_frame_01_1", 3903, { "WindowN" }) -- 窗框（開口）
+    local transN = sp("bd_wframe_01_1", 3904, { "WallNTrans" }) -- 牆框（只有透明牆鍵）
+    local dirtN, dirtW = sp("underground_01_9", 3905, { "WallN" }), sp("underground_01_8", 3906, { "WallW" })
+    local woodN = sp("bd_wood_01_25", 3907, { "WallN" }) -- 它挖的地下室外邊的木牆（不是土牆）
+    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN })
+    -- 假的它（aparosa_BD_DirtLayer 1.6.9 的 6 支，照原檔的判斷縮寫）：outer＝外邊（"x,y,z,N|W"）
+    local outer, calls, cleared = {}, 0, {}
+    local DIRT = { underground_01_9 = "N", underground_01_8 = "W" }
+    local function isOuter(x, y, z, k)
+        calls = calls + 1
+        return outer[x .. "," .. y .. "," .. z .. "," .. k] == true
+    end
+    local function sqOuter(sq, k) return isOuter(sq:getX(), sq:getY(), sq:getZ(), k) end
+    local function flagged(name, list)
+        local p = spriteMap[name]:getProperties()
+        for _, k in ipairs({ "N", "W" }) do
+            for _, f in ipairs(list[k]) do
+                if p:has(F[f]) then return k end
+            end
+        end
+        return nil
+    end
+    local OPEN = { N = { "WindowN", "DoorWallN", "HoppableN", "TallHoppableN", "WallNTrans", "doorN" },
+        W = { "WindowW", "DoorWallW", "HoppableW", "TallHoppableW", "WallWTrans", "doorW" } }
+    local function dirtOn(sq, k)
+        for _, o in ipairs(sq.objects) do
+            local s = o.getSprite and o:getSprite()
+            if s and DIRT[s:getName()] == k then return true end
+        end
+        return false
+    end
+    local BD = {
+        isOuterEdge = isOuter,
+        isDirtOnOuterEdge = function(o)
+            local k = DIRT[o:getSprite():getName()]
+            return k ~= nil and sqOuter(o:getSquare(), k)
+        end,
+        isOpeningOnOuterEdge = function(sq, name)
+            local k = flagged(name, OPEN)
+            return k ~= nil and sqOuter(sq, k)
+        end,
+        isFrameOnDirt = function(sq, name)
+            local k = flagged(name, { N = { "WallNTrans" }, W = { "WallWTrans" } })
+            return k ~= nil and not flagged(name, { N = { "WallN" }, W = { "WallW" } }) and sqOuter(sq, k) and dirtOn(sq, k)
+        end,
+        isDirtLookOnOuterEdge = function(sq, name) return DIRT[name] ~= nil and sqOuter(sq, DIRT[name]) end,
+        clearDirt = function(sq, k)
+            cleared[#cleared + 1] = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. "," .. k
+            for i = #sq.objects, 1, -1 do
+                local s = sq.objects[i].getSprite and sq.objects[i]:getSprite()
+                if s and DIRT[s:getName()] == k then table.remove(sq.objects, i) end
+            end
+        end,
+    }
+    local function piece(sq, spr)
+        local o = {}
+        function o:getSprite() return spr end
+        function o:getProperties() return spr:getProperties() end
+        function o:getSquare() return sq end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    -- z＝−1 的一格：有地板、邊上一件 spr（格子屬性照它）；k 給了就是外邊
+    local function cell(x, y, spr, k)
+        local f = {}
+        if spr then for _, n in ipairs({ "WallN", "WallW" }) do if spr:getProperties():has(F[n]) then f[n] = true end end end
+        local sq = square(x, y, -1, { floor = {}, flags = f })
+        if spr then piece(sq, spr) end
+        if k then outer[x .. "," .. y .. ",-1," .. k] = true end
+        return sq
+    end
+    local function has(sq, name)
+        for _, o in ipairs(sq.objects) do
+            local s = o.getSprite and o:getSprite()
+            if s and s:getName() == name then return true end
+        end
+        return false
+    end
+    local P = player({ id = 3901, x = 393.5, y = 391.5, z = -1, cheat = true })
+    local function fits(kind, spr, sq)
+        local ok, fine = pcall(Place.check, kind, spr, sq, P)
+        return ok and fine == true, ok
+    end
+
+    aparosa_BD_DirtLayer = BD
+    local sqN, sqW = cell(390, 390, dirtN, "N"), cell(391, 390, dirtW, "W")
+    check(fits("wall", wallN, sqN) and fits("wall", wallW, sqW), "有它：外邊土牆那條邊（北、西）可蓋實牆")
+    local sqE = cell(392, 390, nil, "N") -- 外邊、土牆已經拆了（上面蓋過別的又拆掉前）
+    check(not fits("windowFrame", frameN, sqN) and not fits("wall", transN, sqN) and not fits("wall", dirtN, sqE)
+        and fits("wall", wallN, sqE), "有它：外邊不准蓋窗框（開口）、牆框、和土牆同一張圖的牆；同一條邊的實牆照樣蓋")
+    check(not fits("wall", wallN, cell(393, 390, dirtN)), "有它：不是外邊的土牆照舊擋")
+    check(not fits("wall", wallN, cell(394, 390, woodN, "N")), "有它：外邊上它的木牆（不是土牆）照舊擋")
+    local before = calls
+    fits("wall", wallN, square(396, 390, 0))
+    check(calls == before, "z ≥ 0 不問它（地上不多花）")
+
+    local ok, cmd, a = build(P, 3901, "bd_wall_01_1", { 390, 390, -1 })
+    check(ok and cmd == "placed" and cleared[1] == "390,390,-1,N" and #cleared == 1 and has(sqN, "bd_wall_01_1")
+        and not has(sqN, "underground_01_9"), "蓋好之後照它的規則拆那條邊的土牆（clearDirt(sq, \"N\")），本工具的牆在")
+    local sqF = cell(398, 390, dirtN, "N")
+    ok, cmd, a = build(P, 3902, "bd_frame_01_1", { 398, 390, -1 })
+    check(not ok and a.code == "BLOCKED" and #cleared == 1 and has(sqF, "underground_01_9") and not has(sqF, "bd_frame_01_1"),
+        "伺服器：外邊的窗框回 BLOCKED、土牆留著")
+    local sqW2 = cell(395, 390, dirtW, "W")
+    failAdd = true
+    ok, cmd, a = build(P, 3903, "bd_wall_01_0", { 395, 390, -1 })
+    failAdd = false
+    check(not ok and a.code == "INTERNAL" and #cleared == 1 and has(sqW2, "underground_01_8") and not has(sqW2, "bd_wall_01_0"),
+        "蓋到一半出錯：拆回本工具的牆（Place.undo），不拆土牆")
+    BD.clearDirt = function() error("renamed inside") end
+    ok = build(P, 3904, "bd_wall_01_0", { 395, 390, -1 })
+    check(ok and has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8"), "clearDirt 丟錯：牆照樣蓋好、不丟出去（土牆留著）")
+
+    local sqN2 = cell(397, 390, dirtN, "N")
+    aparosa_BD_DirtLayer = nil
+    local fine, noErr = fits("wall", wallN, sqN2)
+    ok, cmd, a = build(P, 3905, "bd_wall_01_1", { 397, 390, -1 })
+    check(not fine and noErr and not ok and a.code == "BLOCKED", "沒裝它：外邊土牆照舊擋，伺服器回 BLOCKED")
+    aparosa_BD_DirtLayer = BD
+    BD.clearDirt = nil
+    fine, noErr = fits("wall", wallN, sqN2)
+    check(not fine and noErr, "它的函式不在（改名）：照沒裝它，照舊擋")
+    BD.clearDirt = function() end
+    BD.isOuterEdge = function() error("boom") end
+    fine, noErr = fits("wall", wallN, sqN2)
+    check(not fine and noErr, "它的函式丟錯：照沒裝它，照舊擋、不丟出去")
+    aparosa_BD_DirtLayer = nil
+    isServer, isClient = realS, realC
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")
