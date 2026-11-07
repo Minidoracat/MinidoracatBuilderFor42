@@ -5076,19 +5076,25 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     check(okJ and cmdJ == "placed" and aJ.replaced == true and here.dropped["Base.Nails"] == 2
         and MinidoracatBuilder.Overlays.get(FJ, "cs_gone_01_0") == nil,
         "換地板：舊地板上本工具的地面覆蓋掛不回去時整份退（釘子 2），帳本不留")
-    -- 舊地板不是本工具的（不算替換）：上面本工具掛的地毯（MoveType=FloorRug）換好照帳本掛回新地板；標線這類照舊跟著舊
-    -- 地板消失、不退（審查 1107 Codex：Constown 不能搬的地毯改歸地面覆蓋後，換地圖地板會連地毯和帳本一起拆掉）
+    -- 舊地板不是本工具的（不算替換）：上面本工具掛的地毯（MoveType=FloorRug 或名稱 floors_rugs）換好照帳本掛回新地板；
+    -- 標線這類照舊跟著舊地板消失、不退（審查 1107 Codex：Constown 不能搬的地毯改歸地面覆蓋後，換地圖地板會連地毯和帳本一起
+    -- 拆掉）。帳本有、圖已經不在的（鏟地、火燒）不掛回（審查 1107 Claude 第 2 輪）
     local rugS = sp("cs_rug_01_0", 3208, { "solidfloor", "FloorOverlay" }, { MoveType = "FloorRug" })
     local lineS = sp("cs_line_01_0", 3209, { "FloorOverlay" })
-    world({ wallW, wallN, wallN2, lone, boxS, floorA, floorB, rugS, lineS })
+    local nameRugS = sp("floors_rugs_test_01_0", 3212, { "FloorOverlay" }) -- 名稱是原版地毯、沒有 MoveType
+    local goneS = sp("cs_rug_01_1", 3213, { "solidfloor", "FloorOverlay" }, { MoveType = "FloorRug" }) -- 燒掉了，帳本還在
+    world({ wallW, wallN, wallN2, lone, boxS, floorA, floorB, rugS, lineS, nameRugS, goneS })
     local FK = S(116, 116)
     function FK:getFloor() for _, v in ipairs(self.objects) do if v:isFloor() then return v end end return nil end
     local OK = obj(FK, floorA, {})
     OK.class, OK.md = "IsoObject", {}
-    OK.att = { { getParentSprite = function() return rugS end }, { getParentSprite = function() return lineS end } }
+    OK.att = { { getParentSprite = function() return rugS end }, { getParentSprite = function() return lineS end },
+        { getParentSprite = function() return nameRugS end } }
     function OK:getAttachedAnimSprite() return javaList(self.att) end
     MinidoracatBuilder.Overlays.put(FK, "cs_rug_01_0", { ["Base.Nails"] = 1 })
     MinidoracatBuilder.Overlays.put(FK, "cs_line_01_0", { ["Base.Plank"] = 1 })
+    MinidoracatBuilder.Overlays.put(FK, "floors_rugs_test_01_0", { ["Base.Nails"] = 1 })
+    MinidoracatBuilder.Overlays.put(FK, "cs_rug_01_1", { ["Base.Nails"] = 1 })
     local realNew = IsoThumpable.new
     local function attNew(...) -- 新地板要能掛附加圖
         local o = realNew(...)
@@ -5111,10 +5117,14 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     P.pos.x, P.pos.y = px, py
     local newK, hungK = named(FK, "cs_floor_01_1"), {}
     for _, a in ipairs(newK and newK.att or {}) do hungK[#hungK + 1] = a:getParentSprite():getName() end
-    check(okK and cmdK == "placed" and aK.replaced == nil and not has(FK, OK) and table.concat(hungK, ",") == "cs_rug_01_0"
-        and MinidoracatBuilder.Overlays.get(FK, "cs_rug_01_0") ~= nil and MinidoracatBuilder.Overlays.get(FK, "cs_line_01_0") == nil
+    table.sort(hungK)
+    local OV = MinidoracatBuilder.Overlays
+    check(okK and cmdK == "placed" and aK.replaced == nil and not has(FK, OK)
+        and table.concat(hungK, ",") == "cs_rug_01_0,floors_rugs_test_01_0" and OV.get(FK, "cs_rug_01_0") ~= nil
+        and OV.get(FK, "floors_rugs_test_01_0") ~= nil and OV.get(FK, "cs_line_01_0") == nil and OV.get(FK, "cs_rug_01_1") == nil
         and next(here.dropped) == nil,
-        "換地圖地板（不算替換）：本工具掛的地毯照帳本掛回新地板；標線照舊跟著舊地板消失、不退")
+        "換地圖地板（不算替換）：本工具掛的地毯（MoveType 或名稱）照帳本掛回新地板；標線照舊跟著消失、不退；圖已不在的殘帳不掛回（"
+        .. table.concat(hungK, ",") .. "）")
     -- 多格的地板每格各自記下、各自掛回（審查 1107 Codex 第 2 輪：只記第一格時，第二格的地毯和帳本跟著舊地板消失）
     local mf0, mf1 = sp("cs_mfloor_01_0", 3210, { "solidfloor" }), sp("cs_mfloor_01_1", 3211, { "solidfloor" })
     fakeGrid(2, 1, { { mf0, mf1 } })
@@ -6356,30 +6366,27 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     check(not ok and a.code == "INTERNAL" and not has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8")
         and P2.inv:count("Base.Plank") == 4 and P2.inv:count("Base.Nails") == 6 and #xpLog == 0,
         "clearDirt 丟錯：和蓋到一半出錯一樣撤回本工具的牆、回 INTERNAL，不扣料、不給經驗，土牆留著（審查 1107 Codex）")
-    local before2 = calls
-    check(not fits("wall", wallW, sqW2) and calls == before2,
-        "clearDirt 丟過錯的那份之後照沒裝它：土牆照舊擋、不再呼叫它的函式（不每格再丟，審查 1107 Grok）")
-    local BD2 = {} -- 它重新載入成另一個表：再試
-    for k, v in pairs(BD) do BD2[k] = v end
-    BD2.clearDirt = function() end
-    aparosa_BD_DirtLayer = BD2
-    check(fits("wall", wallW, sqW2), "換成另一個表（重新載入）才再試")
+    BD.clearDirt = function() end
+    check(fits("wall", wallW, sqW2),
+        "clearDirt 丟錯不停用它：只有伺服器跑得到那裡，停用了兩端就判斷不一樣（審查 1107 Claude 第 2 輪）")
 
     local sqN2 = cell(397, 390, dirtN, "N")
     aparosa_BD_DirtLayer = nil
     local fine, noErr = fits("wall", wallN, sqN2)
     ok, cmd, a = build(P, 3905, "bd_wall_01_1", { 397, 390, -1 })
     check(not fine and noErr and not ok and a.code == "BLOCKED", "沒裝它：外邊土牆照舊擋，伺服器回 BLOCKED")
-    aparosa_BD_DirtLayer = BD2
-    BD2.clearDirt = nil
+    aparosa_BD_DirtLayer = BD
+    BD.clearDirt = nil
     fine, noErr = fits("wall", wallN, sqN2)
     check(not fine and noErr, "它的函式不在（改名）：照沒裝它，照舊擋")
-    BD2.clearDirt = function() end
+    BD.clearDirt = function() end
     local boom = 0
-    BD2.isOuterEdge = function() boom = boom + 1 error("boom") end
+    BD.isOuterEdge = function() boom = boom + 1 error("boom") end
     fine, noErr = fits("wall", wallN, sqN2)
-    local again = fits("wall", wallN, sqN2)
-    check(not fine and noErr and not again and boom == 1, "它的函式丟錯：照沒裝它，照舊擋、不丟出去；同一份之後不再呼叫（只丟一次）")
+    local before2 = calls
+    local again = fits("wall", wallW, sqW2)
+    check(not fine and noErr and not again and boom == 1 and calls == before2,
+        "它的判斷丟錯：照沒裝它，照舊擋、不丟出去；同一份之後別格也不再呼叫它（只丟一次，審查 1107 Grok）")
     aparosa_BD_DirtLayer = nil
     isServer, isClient = realS, realC
 end)()

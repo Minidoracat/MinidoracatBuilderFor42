@@ -398,9 +398,8 @@ end
 -- 實心地毯（帶 solidfloor 的 FloorRug）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當地面覆蓋；多格或沒有
 -- FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：照 0.5.0 當地板
 -- （審查 1107 Claude；正式服組合 0 張）
-local function solidRug(kind, p, spr)
-    return kind == "floorOverlay" and p:has(solidfloor)
-        and not (p:has(FloorOverlay) and (spr == nil or spr:getSpriteGrid() == nil))
+local function solidRug(kind, p, spr) -- spr 必填：漏傳時目錄和伺服器會分得不一樣
+    return kind == "floorOverlay" and p:has(solidfloor) and not (p:has(FloorOverlay) and spr:getSpriteGrid() == nil)
 end
 function Rules.kindOf(name, p, t, spr)
     if not name then return nil, "NO_KIND" end

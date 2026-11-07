@@ -101,8 +101,8 @@ end
 -- 外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定，:131-135、243-266），被擋的回 BLOCKED（不另立原因碼）。
 -- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推，aparosa_BD_Sync.lua:1-16），預覽同一份判斷。
 -- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
--- 丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
--- 每格再丟一次（審查 1107 Grok）。它重新載入成另一個表才再試
+-- 判斷丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
+-- 每格再丟一次（審查 1107 Grok）。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
 local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "isFrameOnDirt", "isDirtLookOnOuterEdge", "clearDirt" }
 local broken
 local function dirtLayer(sq)
@@ -139,11 +139,13 @@ local function bdEdges(spr, n, w)
     return n and (nw or p:has(F.WallN)), w and (nw or p:has(F.WallW))
 end
 
--- 回 refused（照它的規則外邊不准蓋）, 北邊、西邊不算擋的土牆；沒裝它、不在地下或出錯回 nil（照沒裝它）
-local function basement(sq, name, n, w)
+-- 回 refused（照它的規則外邊不准蓋）, 北邊、西邊不算擋的土牆；沒裝它、不在地下或出錯回 nil（照沒裝它）。
+-- n、w 是 Entry.edges 的格邊；照它認得的再篩（bdEdges），地上不多查
+local function basement(sq, spr, n, w)
     local D = dirtLayer(sq)
     if not D then return nil end
-    local ok, refused, dn, dw = pcall(basementCheck, D, sq, name, n, w)
+    n, w = bdEdges(spr, n, w)
+    local ok, refused, dn, dw = pcall(basementCheck, D, sq, spr:getName(), n, w)
     if not ok then
         broken = D
         print("[MinidoracatBuilderFor42] Basement Building check failed, treated as not installed: " .. tostring(refused))
@@ -303,7 +305,7 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
     if Entry.EDGE[kind] then
         if sq:HasStairs() then return false end
         local n, w = Entry.edges(kind, spr)
-        local refused, dirtN, dirtW = basement(sq, spr:getName(), bdEdges(spr, n, w))
+        local refused, dirtN, dirtW = basement(sq, spr, n, w)
         if refused then return false end
         if kind == "door" then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在
@@ -515,10 +517,11 @@ local function thumpable(c, kind, north)
 end
 
 -- 地毯：原版建地板照名稱認（buildRecipeCode.lua:242,381），搬動照 MoveType 認（ISMoveableSpriteProps.lua:1884）。圖塊包的
--- 地毯沒有那個名稱、有的還帶 solidfloor（Rules.kindOf），兩種都認
-local function isRug(o, p)
-    return (o:getTextureName() or ""):find("floors_rugs", 1, true) ~= nil or (p ~= nil and p:get("MoveType") == "FloorRug")
+-- 地毯沒有那個名稱、有的還帶 solidfloor（Rules.kindOf），兩種都認。Server.complete 換地板時掛回的地毯也照這份
+function Place.isRug(name, p)
+    return (name or ""):find("floors_rugs", 1, true) ~= nil or (p ~= nil and p:get("MoveType") == "FloorRug")
 end
+local function isRug(o, p) return Place.isRug(o:getTextureName(), p) end
 
 -- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
 -- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
@@ -808,17 +811,16 @@ end
 -- 蓋好之後（Server.complete 的同一個 pcall，扣料之前）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
 -- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
 -- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
--- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）；
--- 丟錯的那份之後照沒裝它（broken：先設、沒丟錯才清，不另包 pcall 再丟一次）
+-- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）。
+-- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣（審查 1107 Claude 第 2 輪）；INTERNAL 會清掉
+-- 客戶端排在後面的動作，不會每格再丟
 function Place.clearDirt(kind, cells)
     if not Entry.EDGE[kind] then return end
     for _, c in ipairs(cells) do
         local D = dirtLayer(c.sq)
         if D then
             local n, w = bdEdges(c.spr, Entry.edges(kind, c.spr))
-            broken = D
             clearDirtAt(D, c, n, w)
-            broken = nil
         end
     end
 end

@@ -321,12 +321,13 @@ local function rehang(player, sq, saved)
     end
 end
 
--- 記下的地面覆蓋裡的地毯（MoveType=FloorRug：圖塊包帶 solidfloor、不能搬的地毯歸地面覆蓋，Rules.kindOfProps）
-local function rugsOf(saved)
+-- sq 記下的地面覆蓋裡、現在還掛著的地毯（Place.isRug：名稱 floors_rugs 或 MoveType=FloorRug）。鏟地、火燒拿掉圖但帳本還在的
+-- 殘帳不帶：不然換一塊地板就把燒掉的地毯免費掛回來（審查 1107 Claude 第 2 輪）
+local function rugsOf(sq, saved)
     local out = {}
     for name, items in pairs(saved) do
         local spr = Entry.sprite(name)
-        if spr and spr:getProperties():get("MoveType") == "FloorRug" then out[name] = items end
+        if spr and Place.isRug(name, spr:getProperties()) and Dismantle.hung(sq, name) then out[name] = items end
     end
     return out
 end
@@ -399,7 +400,7 @@ function Server.complete(player, n, i)
     if entry.kind == "floor" and Overlays then
         for j, c in ipairs(cells) do
             local s = Overlays.at(c.sq)
-            if s and not rep then s = rugsOf(s) end
+            if s and not rep then s = rugsOf(c.sq, s) end
             saved[j] = s
         end
     end
