@@ -326,8 +326,9 @@ function Dismantle.replaceable(sq, kind, spr)
     return nil
 end
 
--- 燈拆了退什麼：退料表（伺服器帳本或估的價）有燈泡、燈上卻已經沒有（被拿走、燒掉；IsoLightSwitch.hasLightBulb，
--- IsoLightSwitch.java:224-226,263,733）時不退燈泡。0.5.0 以前蓋的不能搬的燈帳本本來就沒有燈泡。伺服器 Server.dismantle
+-- 燈拆了退什麼：退料表（伺服器帳本或估的價）有燈泡、燈上卻已經沒有（IsoLightSwitch.hasLightBulb，IsoLightSwitch.java:224-226）
+-- 時不退燈泡。本工具拆的燈都不能搬，原版拿不下、不會燒掉（:76-79,683,733），這條防的是別的 MOD 改掉燈泡欄位。
+-- 0.5.0 以前蓋的不能搬的燈帳本本來就沒有燈泡。伺服器 Server.dismantle
 -- 與預覽 estimateRefund 共用
 function Dismantle.lightRefund(obj, mats)
     if not (mats and mats[Cost.BULB] and instanceof(obj, "IsoLightSwitch")) or obj:hasLightBulb() then return mats end
