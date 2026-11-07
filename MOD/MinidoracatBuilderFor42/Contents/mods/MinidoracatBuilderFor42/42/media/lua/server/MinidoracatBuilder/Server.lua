@@ -393,10 +393,16 @@ function Server.complete(player, n, i)
     if rep and instanceof(rep.obj, "IsoThumpable") and rep.obj:getMaxHealth() > 0 then
         cells[1].wear = math.min(1, rep.obj:getHealth() / rep.obj:getMaxHealth()) -- Place.thumpable 照比例給新的耐久
     end
-    -- 換一樓地板：舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）。舊地板不是本工具的（不算替換）時
-    -- 只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex）
-    local saved = entry.kind == "floor" and Overlays and Overlays.at(cells[1].sq) or nil
-    if saved and not rep then saved = rugsOf(saved) end
+    -- 換一樓地板：每格舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）。舊地板不是本工具的（不算替換）
+    -- 時只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex，多格的每格各記）
+    local saved = {}
+    if entry.kind == "floor" and Overlays then
+        for j, c in ipairs(cells) do
+            local s = Overlays.at(c.sq)
+            if s and not rep then s = rugsOf(s) end
+            saved[j] = s
+        end
+    end
     local placed = {}
     local ok, err = pcall(Place.build, entry.kind, cells, placed)
     if ok and rep then ok, err = pcall(removeOld, rep) end
@@ -411,11 +417,11 @@ function Server.complete(player, n, i)
             print(LOG .. "REPLACE RESTORE FAIL user=" .. who(player) .. " old=" .. oldSpr:getName() .. " at=" .. a[1] .. ","
                 .. a[2] .. "," .. a[3] .. " refund=" .. costLine(all))
         end
-        rehang(player, oldSq or cells[1].sq, saved)
+        for j, c in ipairs(cells) do rehang(player, c.sq, saved[j]) end -- 替換只有單格，舊的就在 cells[1]
         print(LOG .. (rep and "replace" or "build") .. " failed e=" .. it.e .. ": " .. tostring(err))
         return Server.refuse(player, n, i, "INTERNAL")
     end
-    rehang(player, cells[1].sq, saved)
+    for j, c in ipairs(cells) do rehang(player, c.sq, saved[j]) end
     local refund = {}
     if rep and plan then rollInto(refund, back) end
     local xp = ""

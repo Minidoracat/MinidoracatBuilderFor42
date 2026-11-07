@@ -5090,7 +5090,7 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     MinidoracatBuilder.Overlays.put(FK, "cs_rug_01_0", { ["Base.Nails"] = 1 })
     MinidoracatBuilder.Overlays.put(FK, "cs_line_01_0", { ["Base.Plank"] = 1 })
     local realNew = IsoThumpable.new
-    IsoThumpable.new = function(...)
+    local function attNew(...) -- 新地板要能掛附加圖
         local o = realNew(...)
         o.att = {}
         function o:getAttachedAnimSprite() return javaList(self.att) end
@@ -5100,6 +5100,7 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
         function o:transmitModData() end
         return o
     end
+    IsoThumpable.new = attNew
     local px, py = P.pos.x, P.pos.y
     P.pos.x, P.pos.y = 116.5, 116.5
     give(P, fTotal.items)
@@ -5114,6 +5115,33 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
         and MinidoracatBuilder.Overlays.get(FK, "cs_rug_01_0") ~= nil and MinidoracatBuilder.Overlays.get(FK, "cs_line_01_0") == nil
         and next(here.dropped) == nil,
         "換地圖地板（不算替換）：本工具掛的地毯照帳本掛回新地板；標線照舊跟著舊地板消失、不退")
+    -- 多格的地板每格各自記下、各自掛回（審查 1107 Codex 第 2 輪：只記第一格時，第二格的地毯和帳本跟著舊地板消失）
+    local mf0, mf1 = sp("cs_mfloor_01_0", 3210, { "solidfloor" }), sp("cs_mfloor_01_1", 3211, { "solidfloor" })
+    fakeGrid(2, 1, { { mf0, mf1 } })
+    world({ wallW, wallN, wallN2, lone, boxS, floorA, floorB, rugS, lineS, mf0, mf1 })
+    local M = { S(116, 117), S(117, 117) }
+    for _, q in ipairs(M) do
+        function q:getFloor() for _, v in ipairs(self.objects) do if v:isFloor() then return v end end return nil end
+        local o = obj(q, floorA, {})
+        o.class, o.md, o.att = "IsoObject", {}, { { getParentSprite = function() return rugS end } }
+        function o:getAttachedAnimSprite() return javaList(self.att) end
+        MinidoracatBuilder.Overlays.put(q, "cs_rug_01_0", { ["Base.Nails"] = 1 })
+    end
+    IsoThumpable.new = attNew
+    P.pos.x, P.pos.y = 116.5, 117.5
+    give(P, Cost.sum(Cost.forCells("floor", { mf0, mf1 }, 1)).items)
+    nonce = nonce + 1
+    local okM = build(P, nonce, "cs_mfloor_01_0", { 116, 117, 0 })
+    IsoThumpable.new = realNew
+    P.pos.x, P.pos.y = px, py
+    local hungM = {}
+    for j, name in ipairs({ "cs_mfloor_01_0", "cs_mfloor_01_1" }) do
+        local f = named(M[j], name)
+        hungM[j] = f and f.att[1] and f.att[1]:getParentSprite():getName() or "-"
+        if not MinidoracatBuilder.Overlays.get(M[j], "cs_rug_01_0") then hungM[j] = hungM[j] .. "!ledger" end
+    end
+    check(okM and table.concat(hungM, ",") == "cs_rug_01_0,cs_rug_01_0",
+        "兩格的地板蓋在地圖地板上：每格的地毯各自掛回、帳本都在（" .. table.concat(hungM, ",") .. "）")
     P.inv = inventory()
     P.inv:add(item("Base.Hammer", { HAMMER = true }))
 
@@ -6320,9 +6348,14 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     check(not ok and a.code == "INTERNAL" and #cleared == 1 and has(sqW2, "underground_01_8") and not has(sqW2, "bd_wall_01_0"),
         "蓋到一半出錯：拆回本工具的牆（Place.undo），不拆土牆")
     BD.clearDirt = function() error("renamed inside") end
-    ok, cmd, a = build(P, 3904, "bd_wall_01_0", { 395, 390, -1 })
-    check(not ok and a.code == "INTERNAL" and not has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8"),
-        "clearDirt 丟錯：和蓋到一半出錯一樣撤回本工具的牆、回 INTERNAL、不扣料，土牆留著（審查 1107 Codex）")
+    local P2 = player({ id = 3910, x = 395.5, y = 391.5, z = -1 }) -- 沒開作弊：真的要扣料（審查 1107 Codex 第 2 輪）
+    P2.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(P2, { ["Base.Plank"] = 4, ["Base.Nails"] = 6 })
+    xpLog = {}
+    ok, cmd, a = build(P2, 3904, "bd_wall_01_0", { 395, 390, -1 })
+    check(not ok and a.code == "INTERNAL" and not has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8")
+        and P2.inv:count("Base.Plank") == 4 and P2.inv:count("Base.Nails") == 6 and #xpLog == 0,
+        "clearDirt 丟錯：和蓋到一半出錯一樣撤回本工具的牆、回 INTERNAL，不扣料、不給經驗，土牆留著（審查 1107 Codex）")
     local before2 = calls
     check(not fits("wall", wallW, sqW2) and calls == before2,
         "clearDirt 丟過錯的那份之後照沒裝它：土牆照舊擋、不再呼叫它的函式（不每格再丟，審查 1107 Grok）")
