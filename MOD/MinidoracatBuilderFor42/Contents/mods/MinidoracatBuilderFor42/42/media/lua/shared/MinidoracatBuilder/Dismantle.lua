@@ -17,14 +17,14 @@ local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDi
 
 -- 本 MOD 蓋的片：Place 建的 IsoThumpable 或 IsoLightSwitch，modData 的 builderEntry 有值。退多少不看這個記號，只看
 -- 伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved 清退料表時不比圖；
--- 見 builder-dev placement.md「一樓地板的退料」）。
+-- 見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，Place.thumpable）
 local function mine(o)
     if not ((instanceof(o, "IsoThumpable") or instanceof(o, "IsoLightSwitch")) and o:hasModData()) then return false end
     local e = o:getModData().builderEntry
     if not e then return false end
     if instanceof(o, "IsoThumpable") and o:isFloor() then
         local spr = o:getSprite()
-        return spr ~= nil and spr:getName() == e
+        return spr ~= nil and spr:getName() == e, true
     end
     return true
 end
@@ -47,7 +47,8 @@ end
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
 -- memo 見 Dismantle.classOf。
 function Dismantle.kindOf(obj, memo)
-    if not mine(obj) then return nil end
+    local ours, floor = mine(obj)
+    if not ours then return nil end
     if instanceof(obj, "IsoThumpable") and not obj:isDismantable() then
         local sq = obj:getSquare()
         if not (sq and Place.groundFloor(obj, sq)) then return nil end
@@ -55,6 +56,9 @@ function Dismantle.kindOf(obj, memo)
     local spr = obj:getSprite()
     if not spr then return nil end
     local kind, refund = Dismantle.classOf(spr, memo)
+    -- 蓋成地板的照地板拆：0.5.0 以前帶 solidfloor 的圖塊包地毯被當地板蓋，現在歸家具或地面覆蓋（Rules.kindOf）；
+    -- 照現在的種類拆，地面覆蓋那條路找的是地板上掛的圖，地板帳本也退不到
+    if floor and kind ~= "floor" then kind, refund = "floor", Cost.refund("floor", spr) end
     if refund ~= "builder" then return nil end
     return kind
 end

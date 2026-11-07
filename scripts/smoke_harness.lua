@@ -5751,6 +5751,29 @@ print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊�
     local old2 = piece(sq2, floorS)
     local vanillaRug = piece(sq2, sprite("floors_rugs_01_86", 9103, {}))
     check(Place.clearFloor(sq2) == 0 and not has(sq2, old2) and has(sq2, vanillaRug), "放地板：原版名稱 floors_rugs 的地毯照舊留著")
+
+    -- 0.5.0 以前被當地板蓋的地毯（IsoThumpable、isFloor）：照地板拆。不能搬的（Constown，現在歸地面覆蓋）走本工具拆、
+    -- 照地板帳本退；能搬的（UMCTP，現在歸家具）和 0.5.0 一樣歸原版拿起來（pickup）
+    local Dismantle = MinidoracatBuilder.Dismantle
+    local realInst = instanceof
+    instanceof = function(o, cls) return o.class == cls end
+    local function oldFloor(spr)
+        local o = { class = "IsoThumpable", md = { builderEntry = spr:getName() } }
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:isFloor() return true end
+        function o:isDismantable() return true end
+        function o:getSprite() return spr end
+        function o:getSquare() return sq end
+        return o
+    end
+    local overS = sprite("rugpack_02_64", 9104, rugOver)
+    local moveS = sprite("rugpack_01_38", 9105, rugMove)
+    local kOver, kMove = Dismantle.kindOf(oldFloor(overS)), Dismantle.kindOf(oldFloor(moveS))
+    local _, routeMove = Dismantle.classOf(moveS)
+    instanceof = realInst
+    check(kOver == "floor" and kMove == nil and routeMove == "pickup",
+        "0.5.0 蓋成地板的地毯：不能搬的照地板走本工具拆（不當地面覆蓋），能搬的照舊歸原版拿起來")
 end)()
 
 print()
