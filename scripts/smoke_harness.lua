@@ -6309,20 +6309,30 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     ok, cmd, a = build(P, 3904, "bd_wall_01_0", { 395, 390, -1 })
     check(not ok and a.code == "INTERNAL" and not has(sqW2, "bd_wall_01_0") and has(sqW2, "underground_01_8"),
         "clearDirt 丟錯：和蓋到一半出錯一樣撤回本工具的牆、回 INTERNAL、不扣料，土牆留著（審查 1107 Codex）")
+    local before2 = calls
+    check(not fits("wall", wallW, sqW2) and calls == before2,
+        "clearDirt 丟過錯的那份之後照沒裝它：土牆照舊擋、不再呼叫它的函式（不每格再丟，審查 1107 Grok）")
+    local BD2 = {} -- 它重新載入成另一個表：再試
+    for k, v in pairs(BD) do BD2[k] = v end
+    BD2.clearDirt = function() end
+    aparosa_BD_DirtLayer = BD2
+    check(fits("wall", wallW, sqW2), "換成另一個表（重新載入）才再試")
 
     local sqN2 = cell(397, 390, dirtN, "N")
     aparosa_BD_DirtLayer = nil
     local fine, noErr = fits("wall", wallN, sqN2)
     ok, cmd, a = build(P, 3905, "bd_wall_01_1", { 397, 390, -1 })
     check(not fine and noErr and not ok and a.code == "BLOCKED", "沒裝它：外邊土牆照舊擋，伺服器回 BLOCKED")
-    aparosa_BD_DirtLayer = BD
-    BD.clearDirt = nil
+    aparosa_BD_DirtLayer = BD2
+    BD2.clearDirt = nil
     fine, noErr = fits("wall", wallN, sqN2)
     check(not fine and noErr, "它的函式不在（改名）：照沒裝它，照舊擋")
-    BD.clearDirt = function() end
-    BD.isOuterEdge = function() error("boom") end
+    BD2.clearDirt = function() end
+    local boom = 0
+    BD2.isOuterEdge = function() boom = boom + 1 error("boom") end
     fine, noErr = fits("wall", wallN, sqN2)
-    check(not fine and noErr, "它的函式丟錯：照沒裝它，照舊擋、不丟出去")
+    local again = fits("wall", wallN, sqN2)
+    check(not fine and noErr and not again and boom == 1, "它的函式丟錯：照沒裝它，照舊擋、不丟出去；同一份之後不再呼叫（只丟一次）")
     aparosa_BD_DirtLayer = nil
     isServer, isClient = realS, realC
 end)()

@@ -101,11 +101,14 @@ end
 -- 外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定，:131-135、243-266），被擋的回 BLOCKED（不另立原因碼）。
 -- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推，aparosa_BD_Sync.lua:1-16），預覽同一份判斷。
 -- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
+-- 丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
+-- 每格再丟一次（審查 1107 Grok）。它重新載入成另一個表才再試
 local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "isFrameOnDirt", "isDirtLookOnOuterEdge", "clearDirt" }
+local broken
 local function dirtLayer(sq)
     if sq:getZ() >= 0 then return nil end
     local D = aparosa_BD_DirtLayer
-    if type(D) ~= "table" then return nil end
+    if type(D) ~= "table" or D == broken then return nil end
     for i = 1, #BD_FNS do
         if type(D[BD_FNS[i]]) ~= "function" then return nil end
     end
@@ -133,7 +136,11 @@ local function basement(sq, name, n, w)
     local D = dirtLayer(sq)
     if not D then return nil end
     local ok, refused, dn, dw = pcall(basementCheck, D, sq, name, n, w)
-    if not ok then return nil end
+    if not ok then
+        broken = D
+        print("[MinidoracatBuilderFor42] Basement Building check failed, treated as not installed: " .. tostring(refused))
+        return nil
+    end
     return refused, dn, dw
 end
 
@@ -793,14 +800,17 @@ end
 -- 蓋好之後（Server.complete 的同一個 pcall，扣料之前）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
 -- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
 -- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
--- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）
+-- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）；
+-- 丟錯的那份之後照沒裝它（broken：先設、沒丟錯才清，不另包 pcall 再丟一次）
 function Place.clearDirt(kind, cells)
     if not Entry.EDGE[kind] then return end
     for _, c in ipairs(cells) do
         local D = dirtLayer(c.sq)
         if D then
             local n, w = Entry.edges(kind, c.spr)
+            broken = D
             clearDirtAt(D, c, n, w)
+            broken = nil
         end
     end
 end
