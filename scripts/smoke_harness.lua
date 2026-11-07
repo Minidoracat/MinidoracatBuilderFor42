@@ -5974,6 +5974,173 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     sb.MaxCellsPerDrag = realMax
 end)()
 
+print("情境四十一：2026-11-07 Workshop 回饋：五個 tileset 的價錢、不能搬的燈收燈泡（燈泡還在才退）、牆型窗＝窗框＋窗")
+;(function()
+    nowMs = nowMs + 180000
+    local Dismantle, Ledger = MinidoracatBuilder.Dismantle, MinidoracatBuilder.Ledger
+    local PANEL, PLANK, NAILS, BAR = "Base.GlassPanel", "Base.Plank", "Base.Nails", "Base.MetalBar"
+    local BULB, PIPE, ES, EW = "Base.LightBulb", "Base.MetalPipe", "Base.ElectronicsScrap", "Base.ElectricWire"
+    local function spr(name, o) return sprite(name, 4100, o) end
+    local function c(kind, name, o, mult) return Cost.of(kind, spr(name, o), mult) end
+    local function only(items, want) -- items 剛好是 want
+        for ft, n in pairs(items) do if want[ft] ~= n then return false end end
+        for ft, n in pairs(want) do if items[ft] ~= n then return false end end
+        return true
+    end
+    local function tools(cost) return table.concat(cost.tools, "+") end
+    local function skill(kind, name, o) local p, lv = Cost.skillOf(kind, spr(name, o)) return tostring(p) .. tostring(lv) end
+    local WALLW = { flags = { "WallW" }, keys = { WallW = "" } }
+
+    -- 玻璃屋頂（照圖名列）：木板換玻璃板，釘子、鐵鎚、技能照舊；同一個 tileset 別的屋頂照舊
+    local roof = c("roof", "roofs_30_04_7", { type = T.WestRoofB })
+    check(only(roof.items, { [PANEL] = 1, [NAILS] = 2 }) and tools(roof) == "HAMMER"
+        and skill("roof", "roofs_30_04_7", {}) == "Woodwork2", "玻璃屋頂（roofs_30_04 整套）：玻璃板 1＋釘子 2、鐵鎚、木工 2")
+    check(only(c("roof", "roofs_02_38", { flags = { "isEave" } }).items, { [PANEL] = 1, [NAILS] = 1 })
+        and only(c("floor", "roofs_02_54", { flags = { "solidfloor" } }).items, { [PANEL] = 1, [NAILS] = 1 })
+        and only(c("roof", "roofs_shallow_01_119", {}).items, { [PANEL] = 1, [NAILS] = 2 }),
+        "roofs_02 RoofGroup=4 的屋簷、透明平面片，roofs_shallow_01_96..119：照屋簷、地板價把木板換玻璃板")
+    check(only(c("roof", "roofs_02_31", {}).items, { [PLANK] = 1, [NAILS] = 2 })
+        and only(c("roof", "roofs_shallow_01_95", {}).items, { [PLANK] = 1, [NAILS] = 2 }), "名單外的屋頂照舊收木板")
+
+    -- 路燈：光桿照金屬；不能搬的路燈另收鐵管 2、燈泡 1，都不給經驗；能搬的照舊
+    local pole = c("solid", "lighting_outdoor_01_4", {})
+    check(only(pole.items, { ["Base.SmallSheetMetal"] = 2 }) and tools(pole) == "BLOW_TORCH+WELDING_MASK"
+        and skill("solid", "lighting_outdoor_01_4", {}) == "MetalWelding3", "光桿：照金屬（小鐵板 2、噴槍＋面罩、焊接 3）")
+    local LIT = { type = T.lightswitch, keys = { lightR = "200", lightG = "200", lightB = "150" } }
+    local street = c("light", "lighting_outdoor_01_0", LIT)
+    check(only(street.items, { [ES] = 1, [EW] = 1, [BULB] = 1, [PIPE] = 2 }) and tools(street) == "SCREWDRIVER"
+        and street.uniform and next(Cost.xp({ street }, nil)) == nil,
+        "不能搬的路燈：電子零件 1＋電線 1＋燈泡 1＋鐵管 2、螺絲起子；鐵管、燈泡不給經驗")
+    check(only(c("light", "lighting_outdoor_tk_01_12", LIT).items, { [ES] = 1, [EW] = 1, [BULB] = 1, [PIPE] = 2 }),
+        "UMCTP 的 lighting_outdoor_tk_01 一樣收鐵管")
+    check(only(c("light", "lighting_outdoor_01_0", LIT, 0).items, { [BULB] = 1 }), "倍率 0：燈泡照 1 收，鐵管照倍率免")
+    local sign = c("light", "signs_one-off_01_3", LIT)
+    check(only(sign.items, { [ES] = 1, [EW] = 1, [BULB] = 1 }) and sign.perkOf[BULB] == false,
+        "不能搬的招牌燈：也收燈泡 1、不給經驗，不收鐵管")
+    local MOVE = { type = T.lightswitch, keys = { lightR = "200", lightG = "200", lightB = "150", IsMoveAble = "" } }
+    check(only(c("light", "lighting_outdoor_01_24", MOVE).items, { [ES] = 1, [EW] = 1, [BULB] = 1 }),
+        "能搬的燈照舊（燈泡 1，路燈 tileset 的也不收鐵管）")
+
+    -- 商場：玻璃欄杆、磚、門框改對；柱 _27 照牆價不動
+    world({ spr("location_shop_mall_01_18", { flags = { "WallWTrans" }, keys = { WallWTrans = "", MaterialType = "Metal_Light" } }),
+        spr("location_shop_mall_01_0", { flags = { "WallW" }, keys = { WallW = "", MaterialType = "Cinderblock" } }) })
+    local rail = c("fence", "location_shop_mall_01_58", {})
+    check(only(rail.items, { [PANEL] = 1, [BAR] = 1 }) and tools(rail) == "BLOW_TORCH+WELDING_MASK"
+        and only(c("fence", "location_shop_mall_01_26", { keys = { MaterialType = "Glass" } }).items, { [PANEL] = 1, [BAR] = 1 })
+        and skill("fence", "location_shop_mall_01_58", {}) == "MetalWelding3",
+        "商場玻璃欄杆（有沒有寫 MaterialType=Glass 都一樣）：玻璃板 1＋鐵條 1、噴槍＋面罩、焊接 3")
+    local low, planter = c("fence", "location_shop_mall_01_56", {}), c("solid", "location_shop_mall_01_28", {})
+    check(only(low.items, { ["Base.ClayBrick"] = 2 }) and only(planter.items, { ["Base.ClayBrick"] = 2 })
+        and tools(low) == "MASONS_TROWEL", "商場磚矮牆、花台：紅磚 2、抹刀")
+    local frame = c("doorFrame", "location_shop_mall_01_16", { keys = { DoorWallW = "" } })
+    check(only(frame.items, { ["Base.ClayBrick"] = 4 }) and tools(frame) == "MASONS_TROWEL",
+        "商場白牆門框 16：不再照同一套繼承算到鐵柵牆 18 的金屬，照牆 0–2 的煤渣磚收紅磚 4")
+    check(only(c("post", "location_shop_mall_01_27", { keys = { MaterialType = "Glass" } }).items, { [PLANK] = 4, [NAILS] = 6 }),
+        "商場玻璃柱 _27：照牆價不動（木板 4＋釘子 6）")
+
+    -- 店面玻璃牆（原版寫 MaterialType=Glass）：金屬牆框＋玻璃板 4；硬核耗材照牆框
+    local GW = { flags = { "WallW" }, keys = { WallW = "", MaterialType = "Glass" } }
+    local gw = c("wall", "walls_commercial_01_18", GW)
+    sb.RecipeMaterials = true
+    local gwHard = c("wall", "walls_commercial_01_18", GW)
+    sb.RecipeMaterials = nil
+    check(only(gw.items, { [PANEL] = 4, [BAR] = 3 }) and tools(gw) == "BLOW_TORCH+WELDING_MASK"
+        and skill("wall", "walls_commercial_01_18", GW) == "MetalWelding3"
+        and only(gwHard.uses, { [Cost.TORCH] = 1, [Cost.RODS] = 2 }),
+        "店面玻璃牆：玻璃板 4＋鐵條 3、噴槍＋面罩、焊接 3；原版材料打開時噴槍 1、焊條 2（MetalWallFrame）")
+
+    -- 圓木山牆：圓木 4、鐵鎚、照原版 LogWall 不要技能；窗框照拆解價不動（這裡沒有拆解定義，照同一套的木窗框）
+    local log = c("wall", "walls_logs_16", WALLW)
+    check(only(log.items, { ["Base.Log"] = 4 }) and tools(log) == "HAMMER" and Cost.skillOf("wall", spr("walls_logs_16", WALLW)) == nil
+        and only(c("wall", "walls_logs_73", WALLW).items, { ["Base.Log"] = 4 }), "圓木山牆 16–33、56–73：圓木 4、鐵鎚、不要技能")
+    check(only(c("wall", "walls_logs_74", WALLW).items, { [PLANK] = 4, [NAILS] = 6 }), "名單外的照舊")
+
+    -- 鐵欄杆：鐵條 2、噴槍＋面罩、焊接 3；柱 _39 照牆價不動；拆除工具跟著換（和蓋的時候一樣）
+    local iron = c("fence", "fixtures_railings_01_16", {})
+    check(only(iron.items, { [BAR] = 2 }) and tools(iron) == "BLOW_TORCH+WELDING_MASK"
+        and skill("fence", "fixtures_railings_01_38", {}) == "MetalWelding3", "全金屬欄杆：鐵條 2、噴槍＋面罩、焊接 3")
+    check(only(c("post", "fixtures_railings_01_39", {}).items, { [PLANK] = 4, [NAILS] = 6 })
+        and only(c("fence", "fixtures_railings_01_18", {}).items, { [PLANK] = 2, [NAILS] = 2 }),
+        "欄杆柱 _39 照牆價不動；名單外的木欄杆照舊")
+    local ironObj = { getSprite = function() return spr("fixtures_railings_01_16", {}) end }
+    check(table.concat(Dismantle.tools("fence", { remove = { ironObj } }), "+") == "BLOW_TORCH+WELDING_MASK",
+        "拆除工具和蓋的時候一樣：已經蓋好的鐵欄杆拆除也要噴槍＋面罩")
+
+    -- 牆型窗（tiledef 寫 wall 型別）：同一族的窗框＋窗，技能取較高；一般的窗照舊
+    local FW = { type = T.wall, flags = { "windowW" }, keys = { WindowW = "", MaterialType = "Glass" } }
+    local fw = c("window", "walls_commercial_01_96", FW)
+    check(only(fw.items, { [PANEL] = 4, [PLANK] = 6, [NAILS] = 10 }) and tools(fw) == "HAMMER"
+        and skill("window", "walls_commercial_01_96", FW) == "Woodwork5",
+        "牆型窗：木窗框（木板 4＋釘子 6）＋木窗（玻璃板 4＋木板 2＋釘子 4）、鐵鎚、木工 5")
+    check(only(c("window", "fixtures_windows_01_40", { flags = { "windowW" }, keys = { MaterialType = "Glass" } }).items,
+        { [PANEL] = 4, [PLANK] = 2, [NAILS] = 4 }), "一般的窗（型別不是 wall）照舊只收窗")
+
+    -- 拆燈：帳本有燈泡、燈泡還在才退；0.5.0 以前的帳本沒有燈泡不退；預覽估的一樣
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    for x = 200, 203 do
+        local sq = square(x, 200, 0)
+        sq.dropped = {}
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+    end
+    local here = squares["200,200,0"]
+    local streetS = sprite("lighting_outdoor_01_0", 4101, LIT)
+    local function lamp(x, mats)
+        local sq = squares[x .. ",200,0"]
+        local o = { class = "IsoLightSwitch", md = { builderEntry = streetS:getName() }, keyId = -1 }
+        function o:getSprite() return streetS end
+        function o:getSquare() return sq end
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
+        function o:getProperties() return streetS:getProperties() end
+        function o:getTextureName() return streetS:getName() end
+        function o:getType() return streetS:getType() end
+        function o:isObjectNoContainerOrEmpty() return true end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function o:isConnectedSpriteGridObject(x2) return x2 == self end
+        function o:isStairsObject() return false end
+        function o:hasFluid() return false end
+        function o:isBarricaded() return false end
+        function o:getContainerCount() return 0 end
+        function o:hasLightBulb() return self.bulb ~= false end
+        sq.objects[#sq.objects + 1] = o
+        Ledger.put(o, mats)
+        return o
+    end
+    local P = player({ id = 4101, x = 200.5, y = 200.5, here = here })
+    P.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
+    local nonce = 4100
+    local function unbuild(o)
+        nonce = nonce + 1
+        sent, here.dropped = {}, {}
+        Server.dismantleIntent(P, { n = nonce, t = { o:getSquare():getX(), 200, 0, streetS:getName() } })
+        Server.dismantle(P, nonce, 1)
+        return sent[#sent] and sent[#sent].cmd
+    end
+    HARNESS_ROLL = "max"
+    local NEW = { [ES] = 1, [EW] = 1, [BULB] = 1, [PIPE] = 2 }
+    local A = lamp(201, NEW)
+    local estA = Dismantle.estimateRefund(A, "light")
+    check(unbuild(A) == "dismantled" and here.dropped[BULB] == 1 and here.dropped[PIPE] == 2 and estA[BULB] == 1,
+        "拆不能搬的燈、燈泡還在：退燈泡（預覽估的也有）")
+    local B = lamp(202, NEW)
+    B.bulb = false
+    local estB = Dismantle.estimateRefund(B, "light")
+    check(unbuild(B) == "dismantled" and here.dropped[BULB] == nil and here.dropped[PIPE] == 2 and estB[BULB] == nil
+        and estB[PIPE] == 2 and Ledger.get(B) == nil, "燈泡不在了（被拿走、燒掉）：其他照退，不退燈泡；預覽估的一樣")
+    local C0 = lamp(203, { [ES] = 1, [EW] = 1 })
+    check(unbuild(C0) == "dismantled" and here.dropped[BULB] == nil and here.dropped[EW] == 1,
+        "0.5.0 以前蓋的燈（帳本沒有燈泡）：燈泡還在也不退")
+    instanceof = realInst
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")

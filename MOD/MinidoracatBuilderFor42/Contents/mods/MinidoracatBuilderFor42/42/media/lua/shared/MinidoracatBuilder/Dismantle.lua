@@ -326,8 +326,20 @@ function Dismantle.replaceable(sq, kind, spr)
     return nil
 end
 
+-- 燈拆了退什麼：退料表（伺服器帳本或估的價）有燈泡、燈上卻已經沒有（被拿走、燒掉；IsoLightSwitch.hasLightBulb，
+-- IsoLightSwitch.java:224-226,263,733）時不退燈泡。0.5.0 以前蓋的不能搬的燈帳本本來就沒有燈泡。伺服器 Server.dismantle
+-- 與預覽 estimateRefund 共用
+function Dismantle.lightRefund(obj, mats)
+    if not (mats and mats[Cost.BULB] and instanceof(obj, "IsoLightSwitch")) or obj:hasLightBulb() then return mats end
+    local out = {}
+    for ft, n in pairs(mats) do
+        if ft ~= Cost.BULB then out[ft] = n end
+    end
+    return out
+end
+
 -- 客戶端預覽用的舊退料（伺服器照 Place.refundOf 算，見 Check.item）：拿得到退料表（buildMaterials）就用；拿不到
--- （一樓地板記在伺服器帳本）照現在的價（Cost.forCells × 沙盒倍率）扣電器費估。回 had, estimated（true＝估的）
+-- （一樓地板記在伺服器帳本、燈）照現在的價（Cost.forCells × 沙盒倍率）扣電器費估。回 had, estimated（true＝估的）
 function Dismantle.estimateRefund(obj, kind)
     if instanceof(obj, "IsoThumpable") and obj:hasBuildMaterials() then return obj:getBuildMaterials(), false end
     local cost = Cost.forCells(kind, { obj:getSprite() }, Check.setting("CostMultiplier", 1))[1]
@@ -336,7 +348,7 @@ function Dismantle.estimateRefund(obj, kind)
         local v = n - (fee[ft] or 0)
         if v > 0 then had[ft] = v end
     end
-    return had, true
+    return Dismantle.lightRefund(obj, had), true
 end
 
 return Dismantle

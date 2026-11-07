@@ -40,8 +40,14 @@ local SMALL = { [PLANK] = 1, [NAILS] = 1 } -- 掛牆物、窗上物件、地面�
 local EAVE = { [PLANK] = 1, [NAILS] = 1 }  -- 屋簷：isEave 是旗標（IsoFlagType.java:109），字串鍵查不到
 -- 燈：原版沒有建造配方。沒有拆解材質的收電子零件與電線各 1、要螺絲起子、給電工經驗
 local LIGHT_BASE = { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 }
--- 可搬又帶 lightR 的燈裝著燈泡，原版拿得下來（canBeModified，IsoLightSwitch.java:76-79）：每片另收 1 個，不給經驗
+-- 帶 lightR 的燈都裝著燈泡（IsoLightSwitch 的燈泡欄位預設 Base.LightBulb，IsoLightSwitch.java:52）：每片另收 1 個，不給經驗。
+-- 能搬的原版拿得下來（canBeModified，:76-79）；不能搬的拿不下、也不會燒掉（:683），拆除時燈泡還在才退（Dismantle.lightRefund）
 local BULB = "Base.LightBulb"
+Cost.BULB = BULB
+-- 不能搬的金屬路燈（整個 tileset：原版 lighting_outdoor_01、UMCTP 的 lighting_outdoor_tk_01）另收鐵管 2，不給經驗（不是電工的
+-- 材料）。原版沒有路燈配方，數量比照鐵管柵欄門（收 3–5 根，entities/walls/entity_metal_polefencegate*.txt）
+local STREET_LIGHT = { lighting_outdoor_01 = true, lighting_outdoor_tk_01 = true }
+local PIPE = "Base.MetalPipe"
 -- 窗簾：床單 1 張，長窗簾（CurtainSound=Long）2 張；不要工具、不給經驗。任何 IsoCurtain 都能用原版「移除窗簾」
 -- 拿回 1 張床單（IsoCurtain.removeSheet；ISWorldObjectContextMenu.lua:2214-2251），所以倍率低於 1 也照 1 收
 local CURTAIN, LONG_CURTAIN = { ["Base.Sheet"] = 1 }, { ["Base.Sheet"] = 2 }
@@ -63,10 +69,13 @@ local METAL = {
     solid = { ["Base.SmallSheetMetal"] = 2 },
     stairs = { ["Base.MetalBar"] = 4, ["Base.SmallSheetMetal"] = 6 },     -- Metal_Stairs（stairs/entity_welding_stairs.txt）
 }
+-- 圓木：原版 LogWall（entities/walls/entity_logwall.txt）圓木 4＋布條或繩子 4（幾種任選一，扣料只認單一物品，不收）、
+-- 不用工具、不要技能。工具照原版拆圓木（Material=Log）的鐵鎚：拆除工具和蓋的時候一樣
+local LOG = { wall = { ["Base.Log"] = 4 } }
 -- 土、碎石、沙地板（DirtFloor／GravelFloor／SandFloor，不用工具）
 local GROUND = { Dirt = "Base.Dirtbag", Grass = "Base.Dirtbag", Gravel = "Base.Gravelbag", Sand = "Base.Sandbag" }
 local TOOLS = { wood = { "HAMMER" }, masonry = { "MASONS_TROWEL" }, metal = { "BLOW_TORCH", "WELDING_MASK" }, ground = {},
-    electric = { "SCREWDRIVER" }, cloth = {} }
+    electric = { "SCREWDRIVER" }, cloth = {}, log = { "HAMMER" } }
 local MASONRY_TYPES = { Brick = true, Stone = true, Cinderblock = true, Concrete = true, Ceramic = true }
 -- 照拆解價收的：工具照原版拆第一個 Material 要的主工具（原版 hasScrapTool 只看 self.material，
 -- ISMoveableSpriteProps.lua:3986-4015；定義 ISMoveableDefinitions.lua:388-541）。噴槍另要焊接面罩（原版第二組工具）；
@@ -99,12 +108,13 @@ local ESCRAP = "Base.ElectronicsScrap"
 -- ＋baseChance（getChanceByDef，ISMoveableSpriteProps.lua:3834-3849）。等級看蓋的人蓋的當下（Cost.xp 的 player）。
 -- 本工具拆除的（Cost.refund 的 "builder"）每項退 1..v 件、不看技能，經驗照平均拿不回的 (v − 1) / 2 件給（uniform，
 -- 使用者 2026-10-28 選；付 1 件的一定全退，不給）。電器費那幾件拆了不退，不打折。
-local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding", electric = "Electricity" }
+local PERK = { wood = "Woodwork", masonry = "Masonry", metal = "MetalWelding", electric = "Electricity", log = "Woodwork" }
 local XP_PER_ITEM = 5
 
 -- 硬核「需要技能」（沙盒 RequireSkill，使用者 2026-11-01 選兩個開關）：照原版 42.21 同類配方的技能等級
 -- （scripts/generated/entities/walls、stairs；Wooden_Windows 木工 5、Wood_Stairs 木工 6、Metal_Stairs 焊接 5、
--- BrickFenceLvl2 石工 5）。屋頂沒有配方，照木牆。種類照「實際照哪一套收」：沒有對應配方、改照木頭收的照木頭。
+-- BrickFenceLvl2 石工 5）。屋頂沒有配方，照木牆；圓木牆照原版 LogWall 不要求。種類照「實際照哪一套收」：沒有對應配方、
+-- 改照木頭收的照木頭。
 local SKILL = {
     wood = { floor = 1, wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 3, door = 3, window = 5, stairs = 6,
         roof = 2 },
@@ -131,6 +141,40 @@ local USES = {
 -- 石牆（MaterialType=Stone）在「原版材料」打開時照原版 StoneWall 收石磚，不收紅磚
 local STONE = { wall = { ["Base.StoneBlock"] = 6 }, post = { ["Base.StoneBlock"] = 6 },
     windowFrame = { ["Base.StoneBlock"] = 5 }, doorFrame = { ["Base.StoneBlock"] = 4 } }
+-- 玻璃（MaterialType=Glass，原版沒有配方）：只換木價裡沒有玻璃的種類。窗（Wooden_Windows）本來就收玻璃板 4，所以玻璃的窗、
+-- 牆型窗照木窗框＋木窗；柱子照舊（商場玻璃柱 location_shop_mall_01_27）。as＝工具、技能、耗材照哪一族：
+--   roof／floor：玻璃屋頂（透光）與它的平面片，木屋頂把木板換成玻璃板，釘子、鐵鎚照舊；屋簷照屋簷價換
+--   fence：商場玻璃欄杆，玻璃板 1＋鐵條 1，照金屬欄杆
+--   wall：店面、手扶梯的玻璃牆，原版金屬牆框 MetalWallFrame（鐵條 3、噴槍 1、焊條 2，walls/entity_metal_wallframe.txt）
+--     裝玻璃板 4（同一扇木窗）
+local GLASS_PANEL = "Base.GlassPanel"
+local GLASS = {
+    roof = { items = { [GLASS_PANEL] = 1, [NAILS] = 2 }, as = "wood" },
+    floor = { items = { [GLASS_PANEL] = 1, [NAILS] = 1 }, as = "wood" },
+    fence = { items = { [GLASS_PANEL] = 1, ["Base.MetalBar"] = 1 }, as = "metal" },
+    wall = { items = { [GLASS_PANEL] = 4, ["Base.MetalBar"] = 3 }, as = "metal", uses = { [TORCH] = 1, [RODS] = 2 } },
+}
+local GLASS_EAVE = { [GLASS_PANEL] = 1, [NAILS] = 1 }
+-- 補 MaterialType（Workshop 2026-11-05 Thiefman256）：原版 tiledef 大多沒寫 MaterialType，下面這些的屬性裡也沒有能分辨
+-- 玻璃、圓木、金屬的欄位，伺服器又沒有貼圖，只能照圖名列。key＝圖名或整個 tileset；family 開頭先查，優先於圖塊屬性與
+-- 同一套繼承。拆除工具照 Cost.of 跟著換（Dismantle.tools）
+local MATERIAL = { roofs_30_04 = "Glass" } -- 整套玻璃屋頂
+local function setMaterial(mt, tileset, list)
+    for _, r in ipairs(list) do
+        local a, b = r, r
+        if type(r) == "table" then a, b = r[1], r[2] end
+        for i = a, b do MATERIAL[tileset .. "_" .. i] = mt end
+    end
+end
+setMaterial("Glass", "roofs_02", { { 32, 47 }, { 50, 61 }, 78, 79 }) -- RoofGroup=4，含帶 transparentFloor 的平面片 54、55
+setMaterial("Glass", "roofs_shallow_01", { { 96, 119 } })
+setMaterial("Metal", "lighting_outdoor_01", { 4, 16, 17, 52, 55 }) -- 沒有燈頭的光桿
+setMaterial("Glass", "location_shop_mall_01", { 26, { 58, 61 }, 88, 89, 92, 104, 107, 108 }) -- 玻璃欄杆
+setMaterial("Brick", "location_shop_mall_01", { { 28, 31 }, 56, 57 }) -- 磚花台、磚矮牆
+-- 白牆門框：這張表不是一列 8 格的排法，同一套繼承（Sets.wallMaterial）會算到鐵柵牆 18 的 Metal_Light；照同一張表的牆 0–2
+setMaterial("Cinderblock", "location_shop_mall_01", { 16, 17 })
+setMaterial("Log", "walls_logs", { { 16, 33 }, { 56, 73 } }) -- 圓木屋、立木屋的山牆（窗框、門框照拆解價，不動）
+setMaterial("Metal", "fixtures_railings_01", { 16, 17, 19, 20, 22, 23, 38 }) -- 鐵欄杆（39 是柱子，照牆價不動）
 local EMPTY = {}
 
 local function recipeOn()
@@ -148,14 +192,18 @@ local function mark(perkOf, ft, pid)
     end
 end
 
--- MaterialType（撞擊與腳步聲用的材質，iso/enums/MaterialType.java）→ wood／masonry／metal／ground；回 族, MaterialType。
--- 同一套的柱子、窗框、門框沒有 MaterialType 時照同一套牆的（Sets.wallMaterial；使用者 2026-11-01 選兩種模式都照：
--- 原版 46 套磚牆、金屬牆的 174 件原本照木頭收）
+-- MaterialType（撞擊與腳步聲用的材質，iso/enums/MaterialType.java）→ wood／masonry／metal／ground／log；回 族, MaterialType。
+-- 先查補表 MATERIAL。同一套的柱子、窗框、門框沒有 MaterialType 時照同一套牆的（Sets.wallMaterial；使用者 2026-11-01 選
+-- 兩種模式都照：原版 46 套磚牆、金屬牆的 174 件原本照木頭收）。玻璃照 GLASS 那一種的 as，GLASS 沒有的種類照木頭
 local INHERIT = { post = true, windowFrame = true, doorFrame = true }
 local function family(kind, spr)
-    local mt = spr:getProperties():get("MaterialType")
-    if not mt and INHERIT[kind] then mt = MinidoracatBuilder.Sets.wallMaterial(spr:getName()) end
+    local name = spr:getName()
+    local tileset = name and name:match("^(.*)_%d+$")
+    local mt = name and MATERIAL[name] or tileset and MATERIAL[tileset] or spr:getProperties():get("MaterialType")
+    if not mt and INHERIT[kind] then mt = MinidoracatBuilder.Sets.wallMaterial(name) end
     if not mt then return "wood", nil end
+    if mt == "Glass" and GLASS[kind] then return GLASS[kind].as, mt end
+    if mt == "Log" and LOG[kind] then return "log", mt end
     if mt:sub(1, 5) == "Metal" then return "metal", mt end
     if MASONRY_TYPES[mt] then return "masonry", mt end
     if kind == "floor" and GROUND[mt] then return "ground", mt end
@@ -166,6 +214,8 @@ end
 local function basePrice(kind, p, fam, mt)
     if kind == "light" then return LIGHT_BASE, "electric" end
     if kind == "curtain" then return p:get("CurtainSound") == "Long" and LONG_CURTAIN or CURTAIN, "cloth" end
+    local glass = mt == "Glass" and GLASS[kind]
+    if glass then return kind == "roof" and p:has(IsoFlagType.isEave) and GLASS_EAVE or glass.items, fam end
     local base
     if fam == "ground" then
         base = { [GROUND[mt]] = 1 }
@@ -173,6 +223,8 @@ local function basePrice(kind, p, fam, mt)
         base = METAL[kind]
     elseif fam == "masonry" then
         base = (mt == "Stone" and recipeOn() and STONE[kind]) or MASONRY[kind]
+    elseif fam == "log" then
+        base = LOG[kind]
     end
     if base then return base, fam end
     if kind == "furniture" or kind == "container" then return BY_WEIGHT[weightTier(p)], "wood" end
@@ -180,11 +232,15 @@ local function basePrice(kind, p, fam, mt)
     return WOOD[kind] or SMALL, "wood"
 end
 
--- 硬核「需要技能」：回 技能 ID, 等級；不要求的種類回 nil。照基本價那一族（拆解價的也照它：同一件要的技能不看怎麼收料）
+-- 硬核「需要技能」：回 技能 ID, 等級；不要求的種類回 nil。照基本價那一族（拆解價的也照它：同一件要的技能不看怎麼收料）。
+-- 牆型窗取窗框、窗兩者較高
 function Cost.skillOf(kind, spr)
     local p = spr:getProperties()
     local _, fam = basePrice(kind, p, family(kind, spr))
     local lv = SKILL[fam] and SKILL[fam][kind]
+    if lv and kind == "window" and MinidoracatBuilder.Rules.framedWindow(spr:getType()) then
+        lv = math.max(lv, SKILL[fam].windowFrame or 0)
+    end
     if lv then return PERK[fam], lv end
     if not WEIGHED[kind] then return nil end
     if fam == "metal" then return PERK.metal, 3 end
@@ -242,6 +298,12 @@ local function copyInto(src, out)
     for k, v in pairs(src) do out[k] = v end
 end
 
+-- 硬核耗材表（玻璃牆照 GLASS 自己的）
+local function usesOf(fam, kind, mt)
+    local glass = mt == "Glass" and GLASS[kind]
+    return glass and glass.uses or USES[fam] and USES[fam][kind] or EMPTY
+end
+
 -- 一格的成本。multiplier＝沙盒 CostMultiplier（0＝免材料，工具照樣要）。數量、耗材次數都無條件進位。
 function Cost.of(kind, spr, multiplier)
     local p = spr:getProperties()
@@ -256,7 +318,7 @@ function Cost.of(kind, spr, multiplier)
         -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）
         items, perkOf, chanceOf, scrapped, elec = {}, {}, {}, false, false
     end
-    local toolSet
+    local toolSet, framed
     if scrapped then
         -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
         -- 不能搬、沒有 CanScrap 的（builder）照退料表退 1..v 件。兩種都不會退得比這裡收的多。
@@ -268,7 +330,16 @@ function Cost.of(kind, spr, multiplier)
         base, fam = basePrice(kind, p, fam, mt)
         if kind == "curtain" and m < 1 then m = 1 end
         copyInto(base, items)
-        for ft in pairs(base) do perkOf[ft] = PERK[fam] or false end
+        -- 牆型窗（窗和窗框畫在同一張，Rules.framedWindow）：同一族的窗框＋窗
+        framed = kind == "window" and MinidoracatBuilder.Rules.framedWindow(spr:getType())
+        if framed then
+            for ft, n in pairs((basePrice("windowFrame", p, fam, mt))) do items[ft] = (items[ft] or 0) + n end
+        end
+        for ft in pairs(items) do perkOf[ft] = PERK[fam] or false end
+        if kind == "light" and not p:has("IsMoveAble") and STREET_LIGHT[(spr:getName() or ""):match("^(.*)_%d+$") or ""] then
+            items[PIPE] = 2
+            perkOf[PIPE] = false
+        end
     end
     -- 電器費（照拆解價或基本價都收）：照倍率算進 items，另記在 fee，Place 不寫進 buildMaterials（拆了不退）
     if elec then
@@ -280,7 +351,7 @@ function Cost.of(kind, spr, multiplier)
         local v = math.ceil(n * m - 1e-9)
         if v > 0 then out[ft] = v end
     end
-    if kind == "light" and p:has("IsMoveAble") and p:has("lightR") then -- 燈泡拆得下來：倍率低於 1 也照 1 收
+    if kind == "light" and p:has("lightR") then -- 燈泡：倍率低於 1 也照 1 收（能搬的拿得下來，不能搬的拆了退）
         out[BULB] = (out[BULB] or 0) + math.max(1, math.ceil(m - 1e-9))
         perkOf[BULB] = false
     end
@@ -292,7 +363,12 @@ function Cost.of(kind, spr, multiplier)
     -- 耗材不退料，照原本的倍率（上面「最低照 1 收」只為了退料不多於付的）
     local uses = {}
     if recipeOn() then
-        for key, n in pairs(USES[fam] and USES[fam][kind] or EMPTY) do
+        local raw = {}
+        copyInto(usesOf(fam, kind, mt), raw)
+        if framed then
+            for key, n in pairs(usesOf(fam, "windowFrame", mt)) do raw[key] = (raw[key] or 0) + n end
+        end
+        for key, n in pairs(raw) do
             local v = math.ceil(n * (multiplier or 1) - 1e-9)
             if v > 0 then uses[key] = v end
         end

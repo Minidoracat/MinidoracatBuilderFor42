@@ -549,7 +549,7 @@ local function unbuildOne(player, x, y, z, name)
     for _, o in ipairs(plan.refund) do
         local mats
         if instanceof(o, "IsoLightSwitch") then
-            mats = Ledger.get(o)
+            mats = Dismantle.lightRefund(o, Ledger.get(o))
         else
             mats = Place.refundOf(o)
         end
