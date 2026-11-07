@@ -288,9 +288,13 @@ end
 -- 植物，以及加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
 -- 每個牆、窗框、地板省 12 次 Java 呼叫。正式服 147 個 MOD（離線讀 tiledef）與 E2E 載的 18 個 tiledef 組合
 -- （遊戲內和逐一照設計稿順序判斷的版本逐格比對）都沒有同時帶結構鍵與這些鍵的圖塊，結果不變。
+-- CustomItem（撿起來變成專用物品）只放過床：行軍床、擔架床撿起來是 Mov_Cot／Mov_Gurney，放下就是一般的床
+-- （使用者 2026-11-07 選列出，Workshop ThatFatCat）。原版帶 CustomItem 的還有帳篷、睡袋、收音機、丙烷罐等 80 多種物品
+local BED_ITEM = { ["Base.Mov_Cot"] = true, ["Base.Mov_Gurney"] = true, Mov_Gurney = true }
 local function plantOrObject(p, mt)
     return mt == "Vegitation" or p:has("tree") or p:has(vegitation) or p:has(canBeCut) or p:has("Bush")
-        or p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound") or p:has("CustomItem")
+        or p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound")
+        or (p:has("CustomItem") and not BED_ITEM[p:get("CustomItem")])
         or p:has("TV") or p:has("Microwave") or p:has("signal")
 end
 
@@ -352,11 +356,13 @@ local function kindOfProps(name, p, t)
         if p:has(collideN) or p:has(collideW) then return nil, "BLOCKS_EDGE" end -- 柱子不擋格邊（見 decor）
         return "post"
     end
-    if p:has(solidfloor) then -- 平屋頂地板也在這
+    -- 地毯（MoveType=FloorRug）照原版搬動放在地板上面、不換掉地板（ISMoveableSpriteProps.lua:2508-2516）。圖塊包的地毯
+    -- 也有帶 solidfloor 的（UMCTP、Constown 53 張，2026-11-07 Workshop keke），不當地板：往下照能不能搬分到家具或地面覆蓋
+    local mt = p:get("MoveType")
+    if p:has(solidfloor) and mt ~= "FloorRug" then -- 平屋頂地板也在這
         if infiniteWater(p) then return nil, "WATER" end
         return "floor"
     end
-    local mt = p:get("MoveType")
     if plantOrObject(p, mt) then return nil, "PLANT" end
     if infiniteWater(p) then return nil, "WATER" end
     if p:has("container") then -- 冰箱帶燈，容器優先
@@ -411,6 +417,13 @@ end
 -- 地圖也是獨立物件，照舊。ponytail：多格的地面覆蓋（正式服 14 個 tiledef MOD 都沒有）照舊建物件；有了再逐格掛。
 function Rules.onFloor(kind, spr)
     return kind == "floorOverlay" and spr:getSpriteGrid() == nil and spr:getProperties():has(FloorOverlay)
+end
+
+-- 牆型窗：窗和窗框畫在同一張（tiledef 寫 wall 型別、也自己寫 WindowN/W，例 walls_commercial_01_96）。地圖照 IsoWindow
+-- 建、不另放窗框（CellLoader.java:128-137），所以不用先有窗框，成本照窗框＋窗收。一般的窗型別是 MAX（引擎替帶
+-- windowN/W 的補 WindowN/W 旗標，IsoWorld.java:907-914，不能看旗標分）。t＝getType()
+function Rules.framedWindow(t)
+    return t == T.wall
 end
 
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf

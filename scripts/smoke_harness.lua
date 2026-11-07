@@ -70,6 +70,10 @@ local function javaList(items)
             for _, v in ipairs(items) do if v == x then return true end end
             return false
         end,
+        indexOf = function(_, x)
+            for i, v in ipairs(items) do if v == x then return i - 1 end end
+            return -1
+        end,
         _raw = items,
     }
 end
@@ -313,7 +317,8 @@ buildUtil = { setHaveConstruction = function() end, stairIsBlockingPlacement = f
 local function oldPiece(sq, group, flag)
     local o = { group = group }
     function o:getProperties()
-        return { has = function(_, k) return type(k) == "table" and k.name == (flag or "canBeRemoved") end }
+        return { has = function(_, k) return type(k) == "table" and k.name == (flag or "canBeRemoved") end,
+            get = function() return nil end }
     end
     function o:getTextureName() return "vegetation_test_01_0" end
     function o:getType() return IsoObjectType.normal end
@@ -5707,6 +5712,45 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(kept and E.keyId > 0 and inst.lamps.e[E.keyId].i["Base.ElectricWire"] == 4 and count("LoadChunk") == 0,
         "定案出錯：舊鍵留著、這一場摘掉事件，下次開服照樣搬")
     instanceof = realInst
+end)()
+
+print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊包地毯不當地板、放地板時留著；行軍床與擔架床照列")
+;(function()
+    local Place = MinidoracatBuilder.Place
+    local rugMove = { flags = { "solidfloor" }, keys = { MoveType = "FloorRug", IsMoveAble = "" } }
+    local rugOver = { flags = { "solidfloor", "FloorOverlay" }, keys = { MoveType = "FloorRug" } }
+    check(kind(rugMove) == "furniture" and kind(rugOver) == "floorOverlay" and kind({ flags = { "solidfloor" } }) == "floor"
+        and kind({ flags = { "solidfloor" }, keys = { MoveType = "FloorTile", IsMoveAble = "" } }) == "floor",
+        "帶 solidfloor 的地毯（UMCTP、Constown）：能搬的歸家具、不能搬的歸地面覆蓋；其他地板照舊")
+    local function code(o) return select(2, Rules.classify(sprite("test_01_0", 5, o))) end
+    local bed = { flags = { "bed", "solidtrans" }, keys = { IsMoveAble = "", BedType = "averageBed" } }
+    local function with(item) bed.keys.CustomItem = item return kind(bed) end
+    check(with("Base.Mov_Cot") == "furniture" and with("Base.Mov_Gurney") == "furniture" and with("Mov_Gurney") == "furniture",
+        "行軍床、擔架床（撿起來是床的專用物品）：家具")
+    check(with("Base.Mattress") == nil and code({ keys = { CustomItem = "Base.Tent", IsMoveAble = "" } }) == "PLANT"
+        and code({ keys = { CustomItem = "", IsMoveAble = "" } }) == "PLANT", "其他帶 CustomItem 的照舊不列（PLANT）")
+
+    -- 放地板：拆掉舊地板，地毯照原版名稱（floors_rugs）或 MoveType=FloorRug 認、留著，新地板插在地毯前面
+    local function piece(sq, spr)
+        local o = {}
+        function o:getProperties() return spr:getProperties() end
+        function o:getTextureName() return spr:getName() end
+        function o:getType() return spr:getType() end
+        function o:getSprite() return spr end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    local function has(sq, o) for _, v in ipairs(sq.objects) do if v == o then return true end end return false end
+    local floorS = sprite("rugtest_floor_01_0", 9101, { flags = { "solidfloor" } })
+    local sq = square(190, 190, 0)
+    local old = piece(sq, floorS)
+    local packRug = piece(sq, sprite("rugpack_01_37", 9102, rugMove))
+    local idx = Place.clearFloor(sq)
+    check(not has(sq, old) and has(sq, packRug) and idx == 0, "放地板：圖塊包的地毯（帶 solidfloor）留著，新地板插在它前面")
+    local sq2 = square(191, 190, 0)
+    local old2 = piece(sq2, floorS)
+    local vanillaRug = piece(sq2, sprite("floors_rugs_01_86", 9103, {}))
+    check(Place.clearFloor(sq2) == 0 and not has(sq2, old2) and has(sq2, vanillaRug), "放地板：原版名稱 floors_rugs 的地毯照舊留著")
 end)()
 
 print()

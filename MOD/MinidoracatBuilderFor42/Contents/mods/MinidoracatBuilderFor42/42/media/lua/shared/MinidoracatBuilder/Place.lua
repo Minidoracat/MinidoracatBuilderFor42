@@ -448,6 +448,12 @@ local function thumpable(c, kind, north)
     return obj
 end
 
+-- 地毯：原版建地板照名稱認（buildRecipeCode.lua:242,381），搬動照 MoveType 認（ISMoveableSpriteProps.lua:1884）。圖塊包的
+-- 地毯沒有那個名稱、有的還帶 solidfloor（Rules.kindOf），兩種都認
+local function isRug(o, p)
+    return (o:getTextureName() or ""):find("floors_rugs", 1, true) ~= nil or (p ~= nil and p:get("MoveType") == "FloorRug")
+end
+
 -- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
 -- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
 -- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。IsoThumpable 的地板照建的時候設的 isFloor 拆，不看現在的圖：
@@ -460,7 +466,7 @@ function Place.clearFloor(sq)
         local tex = o:getTextureName() or ""
         if instanceof(o, "IsoThumpable") and o:isFloor() then
             sq:transmitRemoveItemFromSquare(o, false)
-        elseif tex:find("floors_rugs", 1, true) then
+        elseif isRug(o, p) then
             rug = o
         elseif p and (p:has(F.canBeRemoved) or p:has(F.solidfloor) or p:has(F.noStart) or p:has(F.taintedWater)
             or (p:has(F.vegitation) and o:getType() ~= T.tree)) or tex:find("blends_grassoverlays", 1, true) then
@@ -519,7 +525,7 @@ local function placeStairs(cells, placed)
                 local o = objects:get(i)
                 local op = o:getProperties()
                 if op and (op:has(F.canBeRemoved) or (op:has(F.vegitation) and o:getType() ~= T.tree))
-                    and not (o:getTextureName() or ""):find("floors_rugs", 1, true) then
+                    and not isRug(o, op) then
                     c.sq:transmitRemoveItemFromSquare(o, false)
                 end
             end
