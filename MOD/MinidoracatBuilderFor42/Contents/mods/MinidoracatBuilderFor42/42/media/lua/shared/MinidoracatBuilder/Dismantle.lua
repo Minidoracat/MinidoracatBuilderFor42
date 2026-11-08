@@ -116,14 +116,40 @@ function Dismantle.overlayPlan(t)
     return { remove = {}, refund = {}, overlay = t, foreign = false }
 end
 
+-- 這一組樓梯的平台：頂片往上爬那一側、上一層那格的 Entry.STAIR_FLOOR 一般物件（Entry.cells 的 platform）。照位置找，
+-- 不照原版 buildUtil.getStairObjects 收：原版旁邊八格有別的地板就不收（ISBuildUtil.lua:523-537，原版分不出平台是不是
+-- 跟著樓梯補的），本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）。另一組往別的方向爬的
+-- 樓梯也通到這格時不收（同原版 countAdjacentStairs：W 型頂片在平台東邊、N 型在南邊），等最後一組拆掉時才拆。
+local function landingOf(top, west)
+    local cell, x, y, z = getCell(), top:getX(), top:getY(), top:getZ()
+    local lx, ly, other
+    if west then
+        lx, ly = x - 1, y
+        other = cell:getGridSquare(lx, ly + 1, z)
+        if other and other:has(IsoObjectType.stairsTN) then return nil end
+    else
+        lx, ly = x, y - 1
+        other = cell:getGridSquare(lx + 1, ly, z)
+        if other and other:has(IsoObjectType.stairsTW) then return nil end
+    end
+    local sq = cell:getGridSquare(lx, ly, z + 1)
+    local objects = sq and sq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local o = objects:get(i)
+        local spr = o:getSprite()
+        if spr and spr:getName() == Entry.STAIR_FLOOR and not o:isStairsObject() and not instanceof(o, "IsoThumpable") then
+            return o
+        end
+    end
+    return nil
+end
+
 -- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = 平台或 nil,
 -- foreign = true（同一組裡有不是本 MOD 蓋的片）}。同一組的片照「本 MOD 蓋的」收，不照各片自己的種類（建造時整組
 -- 用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
 --   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:69-73），只照被點的那片退一次（三片的退料表都寫
---     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片與它們的平台
---     （ISBuildUtil.lua:395-404,523-536），那些不算這一組。平台＝這一組頂片往上爬那一側、上一層那格的 Entry.STAIR_FLOOR
---     一般物件（Entry.cells 的 platform），原版只在旁邊沒有別的地板、沒有別的樓梯時收；拆不拆由伺服器決定
---     （Server.dismantle：只拆本 MOD 補的）。
+--     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
+--     平台照 landingOf 找。
 --   多格：同一組的每一片（getSpriteGridObjectsIncludingSelf，ISDestroyCursor.lua:217），每片照自己的退料表退。引擎只看
 --     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5421-5455），另用 isConnectedSpriteGridObject 對原點。
 --   其他：自己。
@@ -131,8 +157,7 @@ function Dismantle.plan(obj, kind)
     local remove, refund, landing, foreign = {}, {}, nil, false
     if kind == "stairs" then
         local west, top = Rules.westStairs(obj:getSprite():getType()), nil
-        local list = buildUtil.getStairObjects(obj)
-        for _, o in ipairs(list) do
+        for _, o in ipairs(buildUtil.getStairObjects(obj, true)) do
             local spr = o:getSprite()
             if o:isStairsObject() and spr and Rules.westStairs(spr:getType()) == west then
                 if mine(o) then remove[#remove + 1] = o else foreign = true end
@@ -140,16 +165,7 @@ function Dismantle.plan(obj, kind)
                 if t == IsoObjectType.stairsTW or t == IsoObjectType.stairsTN then top = o:getSquare() end
             end
         end
-        if top then
-            local lx, ly, lz = top:getX() - (west and 1 or 0), top:getY() - (west and 0 or 1), top:getZ() + 1
-            for _, o in ipairs(list) do
-                local spr, s = o:getSprite(), o:getSquare()
-                if not o:isStairsObject() and not instanceof(o, "IsoThumpable") and spr and spr:getName() == Entry.STAIR_FLOOR
-                    and s and s:getX() == lx and s:getY() == ly and s:getZ() == lz then
-                    landing = o
-                end
-            end
-        end
+        if top then landing = landingOf(top, west) end
         refund[1] = obj
     else
         local list = obj:getSpriteGridObjectsIncludingSelf(ArrayList.new())

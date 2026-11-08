@@ -531,11 +531,12 @@ function Server.dismantleDuration(player, n, i)
     return Entry.duration(kind, player)
 end
 
--- 樓梯平台留著的情況：不是本 MOD 補的（帳本沒記：蓋樓梯時那格原本就有地板）、上面還有別的東西、或沒有 BUILD 權限。
+-- 樓梯平台留著的情況：不是本 MOD 補的（帳本沒記：蓋樓梯時那格原本就有地板）、上面還有別的東西（同一格別的物件，或掛在
+-- 它上面的地面覆蓋：拆平台時覆蓋跟著消失、不退料，Overlays.dropFloor）、或沒有 BUILD 權限。
 -- 平台不退料，留著只是一塊地板；安全屋照預覽查（只決定留不留，不推通知、不寫稽核）。
 local function keepLanding(player, l)
-    local s = l:getSquare()
-    return not (s and Ledger.get(l)) or s:getObjects():size() > 1
+    local s, hung = l:getSquare(), l:getAttachedAnimSprite()
+    return not (s and Ledger.get(l)) or s:getObjects():size() > 1 or (hung ~= nil and hung:size() > 0)
         or Check.safehouse(player, { x = s:getX(), y = s:getY(), z = s:getZ(), sq = s }, true, "dismantle") ~= nil
 end
 

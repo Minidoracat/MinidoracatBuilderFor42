@@ -2561,8 +2561,16 @@ local function dismantleScenario()
         function l:getSprite() return landS end
         function l:getSquare() return sq end
         function l:isStairsObject() return false end
+        function l:getAttachedAnimSprite() return self.hung end -- 掛在平台上的圖（本工具的地面覆蓋，Place.attach）
         sq.objects[#sq.objects + 1] = l
         return l
+    end
+    -- 照引擎：本 MOD 傳 skipFloor=true，原版就只回樓梯片（ISBuildUtil.lua:525）；mock 也只回樓梯片
+    local function stairsOnly(list)
+        return function(_, skipFloor)
+            if skipFloor ~= true then error("getStairObjects without skipFloor would add vanilla's landing") end
+            return list
+        end
     end
     local plat = engineSq(73, 73, 1)
     plat:getModData().ConnectedToStairsfalse = true
@@ -2572,13 +2580,16 @@ local function dismantleScenario()
     local landing = landingAt(plat)
     Ledger.put(landing, {})
     local realStairs = buildUtil.getStairObjects
-    buildUtil.getStairObjects = function() return { T0, M0, B0, landing } end -- 原版收三片＋旁邊沒地板的平台
+    -- 平台旁邊有別的地板時，原版 getStairObjects 只收三片、不收平台（ISBuildUtil.lua:523-537；2026-11-08 Discord 回報
+    -- 拆樓梯後平台留著）：平台照位置找，照樣一起拆
+    engineSq(72, 72, 1, { floor = {} })
+    buildUtil.getStairObjects = stairsOnly({ T0, M0, B0 })
     local SP2 = hammerer(2207, 75.5, 72.5, at(75, 72, 0))
     unbuild(SP2, 10, 75, 73, 0, "ds_01_1")
     check(Server.dismantle(SP2, 10, 1) and not has(at(74, 73, 0), T0) and not has(at(75, 73, 0), M0)
         and not has(at(76, 73, 0), B0) and not has(plat, landing) and plat.md.ConnectedToStairsfalse == nil
         and at(75, 72, 0).dropped["Base.Plank"] == 13 and at(75, 72, 0).dropped["Base.Nails"] == 8 and Ledger.get(landing) == nil,
-        "樓梯：點中片，三片與平台一起拆、只退一組、平台格的 ConnectedToStairs 清掉、帳本的平台清掉")
+        "樓梯：點中片，三片與平台一起拆（平台旁邊有別的地板、原版不收平台也一樣）、只退一組、平台格的 ConnectedToStairs 清掉、帳本的平台清掉")
 
     -- 樓梯有一片沒有記號：整組不拆、不退（三片要一起拆、只退一組）
     local SP3 = hammerer(2210, 75.5, 75.5, at(75, 75, 0))
@@ -2590,7 +2601,7 @@ local function dismantleScenario()
     Ledger.put(land1, {})
     ours(plat1, wallS, {}) -- 平台上蓋了牆
     M1.md.builderEntry = false -- 記號要有值（和 Place.onAboutToBeRemoved 同一個判斷），false 不算
-    buildUtil.getStairObjects = function() return { T1, M1, B1, land1 } end
+    buildUtil.getStairObjects = stairsOnly({ T1, M1, B1 })
     unbuild(SP3, 14, 74, 76, 0, "ds_01_2")
     Server.dismantle(SP3, 14, 1)
     c, a = lastSent()
@@ -2610,12 +2621,12 @@ local function dismantleScenario()
     local platN = engineSq(75, 76, 1) -- 別方向那組的平台（也是本 MOD 補的），不是這一組的
     local landN = landingAt(platN)
     Ledger.put(landN, {})
-    buildUtil.getStairObjects = function() return { T2, M2, NM, B2, land2, landN } end
+    buildUtil.getStairObjects = stairsOnly({ T2, M2, NM, B2 })
     unbuild(SP3, 16, 74, 77, 0, "ds_01_2")
     check(Server.dismantle(SP3, 16, 1) and not has(at(74, 77, 0), T2) and not has(at(75, 77, 0), M2)
         and not has(at(76, 77, 0), B2) and has(at(75, 77, 0), NM) and has(plat2, land2)
         and has(platN, landN) and Ledger.get(landN) ~= nil,
-        "別方向的樓梯片與它的平台不算這一組（不拆）；這一組的平台不在帳本（原本就有的地板）：留著")
+        "別方向的樓梯片不算這一組（不拆），那組的平台也不動；這一組的平台不在帳本（原本就有的地板）：留著")
     -- 平台在別人的安全屋
     local plat3 = engineSq(73, 76, 1, { owner = "someone" })
     local T3 = ours(at(74, 76, 0), stS[3], { ["Base.Plank"] = "13" })
@@ -2623,9 +2634,61 @@ local function dismantleScenario()
     local B3 = ours(at(76, 76, 0), stS[1], { ["Base.Plank"] = "13" })
     local land3 = landingAt(plat3)
     Ledger.put(land3, {})
-    buildUtil.getStairObjects = function() return { T3, M3, B3, land3 } end
+    buildUtil.getStairObjects = stairsOnly({ T3, M3, B3 })
     unbuild(SP3, 17, 74, 76, 0, "ds_01_2")
     check(Server.dismantle(SP3, 17, 1) and not has(at(75, 76, 0), M3) and has(plat3, land3), "平台在別人的安全屋：拆樓梯、平台留著")
+    -- 平台也是另一組往北爬的樓梯的平台（那組的頂片在平台南邊）：拆這一組、平台留著（另一組還要走），帳本照舊
+    local plat5 = engineSq(73, 75, 1)
+    local T5 = ours(at(74, 75, 0), stS[3], { ["Base.Plank"] = "13" })
+    local M5 = ours(at(75, 75, 0), stS[2], { ["Base.Plank"] = "13" })
+    local B5 = ours(at(76, 75, 0), stS[1], { ["Base.Plank"] = "13" })
+    local land5 = landingAt(plat5)
+    Ledger.put(land5, {})
+    local southTop = engineSq(73, 76, 0, { flags = { stairsTN = true } })
+    buildUtil.getStairObjects = stairsOnly({ T5, M5, B5 })
+    check(Dismantle.plan(T5, "stairs").landing == nil, "平台也通到另一組（往北爬的頂片在平台南邊）：這一組的 plan 不帶平台")
+    unbuild(SP3, 23, 74, 75, 0, "ds_01_2")
+    check(Server.dismantle(SP3, 23, 1) and not has(at(74, 75, 0), T5) and has(plat5, land5) and Ledger.get(land5) ~= nil,
+        "平台也通到另一組：拆這一組、平台與帳本留著")
+    check(southTop:has(IsoObjectType.stairsTN), "夾具：另一組頂片的旗標查得到")
+    -- 往北爬的（N 型：三片沿 +y、平台在頂片北邊上一層），另一組往西爬的頂片在平台東邊；平台上掛著地面覆蓋
+    do
+        local stN = { sprite("dsn_01_0", 2216, { type = T.stairsBN }), sprite("dsn_01_2", 2217, { type = T.stairsMN }),
+            sprite("dsn_01_3", 2218, { type = T.stairsTN }) }
+        for x = 78, 84 do engineSq(x, 75, 0) end -- 站位那一排（伺服器找路要鄰格）
+        local NP = hammerer(2219, 81.5, 75.5, at(81, 75, 0))
+        local function setN(x, n)
+            local plat = engineSq(x, 71, 1)
+            local set = { top = ours(engineSq(x, 72, 0), stN[3], { ["Base.Plank"] = "13" }),
+                mid = ours(engineSq(x, 73, 0), stN[2], { ["Base.Plank"] = "13" }),
+                bottom = ours(engineSq(x, 74, 0), stN[1], { ["Base.Plank"] = "13" }), plat = plat, land = landingAt(plat) }
+            Ledger.put(set.land, {})
+            buildUtil.getStairObjects = stairsOnly({ set.top, set.mid, set.bottom })
+            unbuild(NP, n, x, 74, 0, "dsn_01_0")
+            return set
+        end
+        engineSq(78, 71, 1, { floor = {} }) -- 平台西邊那格的地板（原版 getStairObjects 這時不收平台）
+        local N1 = setN(79, 31)
+        N1.plat:getModData().ConnectedToStairstrue = true
+        check(Server.dismantle(NP, 31, 1) and not has(at(79, 72, 0), N1.top) and not has(at(79, 74, 0), N1.bottom)
+            and not has(N1.plat, N1.land) and Ledger.get(N1.land) == nil and N1.plat.md.ConnectedToStairstrue == nil,
+            "往北爬的：平台在頂片北邊上一層，旁邊有地板也一起拆、帳本清掉、平台格的 ConnectedToStairstrue 清掉")
+        local westTop = engineSq(82, 71, 0, { flags = { stairsTW = true } })
+        local N2 = setN(81, 32)
+        check(Dismantle.plan(N2.top, "stairs").landing == nil and westTop:has(IsoObjectType.stairsTW),
+            "往北爬的：平台也通到往西爬的那組（頂片在平台東邊）時 plan 不帶平台")
+        check(Server.dismantle(NP, 32, 1) and not has(at(81, 72, 0), N2.top) and has(N2.plat, N2.land)
+            and Ledger.get(N2.land) ~= nil, "往北爬的：平台也通到另一組，拆這一組、平台與帳本留著")
+        local N3 = setN(83, 33)
+        N3.land.hung = javaList({ {} })
+        check(Server.dismantle(NP, 33, 1) and not has(at(83, 72, 0), N3.top) and has(N3.plat, N3.land)
+            and Ledger.get(N3.land) ~= nil, "平台上掛著地面覆蓋：拆樓梯、平台與覆蓋留著（拆了覆蓋會跟著消失、不退料）")
+        -- 掛過又拆掉的覆蓋：引擎留下空清單、不設回 nil（IsoObject.java:3317-3329），照常拆
+        local N4 = setN(80, 34)
+        N4.land.hung = javaList({})
+        check(Server.dismantle(NP, 34, 1) and not has(at(80, 72, 0), N4.top) and not has(N4.plat, N4.land)
+            and Ledger.get(N4.land) == nil, "平台上的覆蓋拆掉了（附加圖清單是空的）：平台照常一起拆")
+    end
     buildUtil.getStairObjects = realStairs
 
     -- 多格：同一組（同一個原點）整組拆、每片照自己的退料表退；引擎一起收到的別組那片（同一張 grid、原點不同）不拆
