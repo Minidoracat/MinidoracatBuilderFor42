@@ -147,7 +147,7 @@ end
 -- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = 平台或 nil,
 -- foreign = true（同一組裡有不是本 MOD 蓋的片）}。同一組的片照「本 MOD 蓋的」收，不照各片自己的種類（建造時整組
 -- 用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
---   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:69-73），只照被點的那片退一次（三片的退料表都寫
+--   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:76-80），只照被點的那片退一次（三片的退料表都寫
 --     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
 --     平台照 landingOf 找。
 --   多格：同一組的每一片（getSpriteGridObjectsIncludingSelf，ISDestroyCursor.lua:217），每片照自己的退料表退。引擎只看

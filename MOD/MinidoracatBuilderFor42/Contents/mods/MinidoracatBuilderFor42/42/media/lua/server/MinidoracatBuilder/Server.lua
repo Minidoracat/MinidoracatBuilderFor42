@@ -215,9 +215,9 @@ local function giveXp(player, costs)
 end
 
 -- ---------------------------------------------------------------- 移除與退料（拆除、原地替換共用）
-local DIRT = "blends_natural_01_64" -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:74-81）
+local DIRT = "blends_natural_01_64" -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:82-88）
 
--- 每項退 1..v 件（原版 ISDismantleAction、ISThumpableSpriteProps 同一算法，ISDismantleAction.lua:55-66）
+-- 每項退 1..v 件（原版 ISDismantleAction、ISThumpableSpriteProps 同一算法，ISDismantleAction.lua:69-72）
 local function rollInto(into, mats)
     for ft, v in pairs(mats) do
         local c = math.floor(tonumber(v) or 0)
@@ -234,7 +234,7 @@ local function drop(player, sq, refund)
 end
 
 -- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
--- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:74-81）；掛在地板上的地面覆蓋拿掉那張、清覆蓋帳本。移除時引擎丟的
+-- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；掛在地板上的地面覆蓋拿掉那張、清覆蓋帳本。移除時引擎丟的
 -- 例外 Kahlua 只記 log、不往上丟（MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
 local function removeAll(kind, plan)
     local t = plan.overlay
