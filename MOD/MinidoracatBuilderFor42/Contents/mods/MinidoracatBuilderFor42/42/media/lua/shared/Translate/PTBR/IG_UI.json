@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "Esta é uma porta aberta. Procure a porta fechada.",
   "IGUI_MBLD_Why_INVINCIBLE": "Janelas indestrutíveis e peças que deixam uma janela indestrutível não são listadas.",
   "IGUI_MBLD_Why_WATER": "Tem água infinita, por isso não é listado.",
+  "IGUI_MBLD_Why_COLLECTOR": "Barris coletores de chuva e outros tambores de água construídos aqui não guardam água, por isso não são listados. Construa os coletores de chuva pelo menu de construção vanilla.",
   "IGUI_MBLD_Why_STACK": "Esta é a aparência empilhada; ao carregar o mapa, vira outro tile. Procure o que não está empilhado.",
   "IGUI_MBLD_Why_STAIRS_PART": "Peças de escada que podem ser pegas ou sucateadas não são listadas.",
   "IGUI_MBLD_Why_STAIRS_SET": "Escadas são listadas pela peça de baixo, e só quando as três peças existem.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Porta O",
   "IGUI_MBLD_SetRole_DoorN": "Porta N",
   "IGUI_MBLD_Pick_Tip": "Escolher do mundo: clique em algo no mundo para selecioná-lo aqui.",
-  "IGUI_MBLD_Pick_Label": "Escolher tile: clique para selecionar o tile deste quadrado",
+  "IGUI_MBLD_Pick_Label": "Escolher tile: clique em algo para selecionar o tile dele",
   "IGUI_MBLD_Pick_Many": "Se houver vários, aparece uma lista",
   "IGUI_MBLD_Pick_HintClick": "Botão esquerdo: escolher",
   "IGUI_MBLD_Pick_None": "Não há tile para escolher neste quadrado."

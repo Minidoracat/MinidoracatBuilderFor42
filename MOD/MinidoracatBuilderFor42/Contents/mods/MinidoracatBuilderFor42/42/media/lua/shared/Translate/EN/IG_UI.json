@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "This is a door shown open. Search for the closed door instead.",
   "IGUI_MBLD_Why_INVINCIBLE": "Unbreakable windows and pieces that make a window unbreakable are not listed.",
   "IGUI_MBLD_Why_WATER": "It holds endless water, so it is not listed.",
+  "IGUI_MBLD_Why_COLLECTOR": "Rain collector barrels and other water drums built here would not hold water, so they are not listed. Build rain collectors from the vanilla build menu.",
   "IGUI_MBLD_Why_STACK": "This is how it looks when stacked; loading the map turns it into another tile. Search for the unstacked one instead.",
   "IGUI_MBLD_Why_STAIRS_PART": "Stair pieces that can be picked up or scrapped are not listed.",
   "IGUI_MBLD_Why_STAIRS_SET": "Stairs are listed by their bottom piece, and only when all three pieces exist.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Door W",
   "IGUI_MBLD_SetRole_DoorN": "Door N",
   "IGUI_MBLD_Pick_Tip": "Pick from the world: click something in the world to select it here.",
-  "IGUI_MBLD_Pick_Label": "Pick tile: click to select the tile on this square",
+  "IGUI_MBLD_Pick_Label": "Pick tile: click something to select its tile",
   "IGUI_MBLD_Pick_Many": "If there are several, a list pops up",
   "IGUI_MBLD_Pick_HintClick": "Left click: pick",
   "IGUI_MBLD_Pick_None": "There's no tile to pick on this square."

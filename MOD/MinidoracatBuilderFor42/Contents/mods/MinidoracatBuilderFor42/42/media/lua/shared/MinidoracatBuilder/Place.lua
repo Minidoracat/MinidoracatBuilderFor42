@@ -208,9 +208,10 @@ local function stairsOk(spr, sq, role)
     return not buildUtil.stairIsBlockingPlacement(sq, true)
 end
 
--- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：從二樓起，正下方不是樓梯（同原版地板的 HasStairsBelow）；
--- 要有東西撐著：正下方那格有牆，或這格、四鄰有地板或屋頂（四鄰有地板＝connectedWithFloor，不含斜坡）。
--- 照座標查、不要這格存在：客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
+-- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
+-- 一樓（z＝0）不查支撐：原版地圖的屋簷、貼牆的邊緣裝飾、帳篷與碉堡頂都放在一樓（離線讀 Muldraugh 的 lotpack，z＝0 的
+-- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆，或這格、四鄰有地板或屋頂
+-- （四鄰有地板＝connectedWithFloor，不含斜坡）。照座標查、不要這格存在：客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
 local function supports(sq)
@@ -225,10 +226,11 @@ local function supports(sq)
 end
 function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
 function Place.roofAt(x, y, z, planned)
-    if z < 1 then return false end
+    if z < 0 then return false end
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
-    if below and below:HasStairs() then return false end
+    if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋（審查 1109 Claude）
+    if z == 0 then return true end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
     if planned and (planned[Place.key(x - 1, y, z)] or planned[Place.key(x + 1, y, z)]
         or planned[Place.key(x, y - 1, z)] or planned[Place.key(x, y + 1, z)]) then
@@ -237,6 +239,27 @@ function Place.roofAt(x, y, z, planned)
     return supports(cell:getGridSquare(x, y, z)) or supports(cell:getGridSquare(x - 1, y, z))
         or supports(cell:getGridSquare(x + 1, y, z)) or supports(cell:getGridSquare(x, y - 1, z))
         or supports(cell:getGridSquare(x, y + 1, z))
+end
+
+-- 地板：照原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）：正下方不是樓梯（HasStairsBelow），而且
+-- connectedWithFloor（IsoGridSquare.java:3467-3505：一樓一律可以；旁邊同一層有地板，或斜坡頂接到這格）。二樓以上另外：
+-- 正下方那格有牆也撐得住，同屋頂（使用者 2026-11-09 選：站在下面往上鋪，不必先蓋樓梯）。照座標查、不要這格存在
+-- （預覽時上一層的格子常常還沒建）；planned 同屋頂（同一排前面判定可蓋的地板格）
+local SIDES = { { -1, 0, "E" }, { 1, 0, "W" }, { 0, -1, "S" }, { 0, 1, "N" } } -- 鄰格與斜坡朝向（同 connectedWithFloor）
+function Place.floorAt(x, y, z, planned)
+    local cell = getCell()
+    local below = cell:getGridSquare(x, y, z - 1)
+    if below and below:HasStairs() then return false end
+    if z == 0 then return true end
+    if z > 0 and below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
+    for _, d in ipairs(SIDES) do
+        local nx, ny = x + d[1], y + d[2]
+        local n = cell:getGridSquare(nx, ny, z)
+        if (n and n:has(F.solidfloor)) or (planned and planned[Place.key(nx, ny, z)]) then return true end
+        local b = cell:getGridSquare(nx, ny, z - 1)
+        if b and b:getSlopedSurfaceHeight(IsoDirections[d[3]]) == 1 then return true end
+    end
+    return false
 end
 
 -- 窗簾（原版搬動放窗上物件，ISMoveableSpriteProps.lua:1896-1937；找窗框 getWallForFacing :2651-2691）：
@@ -296,10 +319,7 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
         if floor and attachedAt(floor, spr:getName()) then return false, "SAME_TILE" end
         return floor ~= nil and attachedCount(floor) < MAX_ATTACHED and not vegetation(sq)
     end
-    if kind == "floor" then
-        -- 原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）
-        return not sq:HasStairsBelow() and sq:connectedWithFloor()
-    end
+    if kind == "floor" then return Place.floorAt(sq:getX(), sq:getY(), sq:getZ(), planned) end
     if kind == "roof" then return Place.roofAt(sq:getX(), sq:getY(), sq:getZ(), planned) end
     if kind == "curtain" then return curtainOk(spr, sq) end
     if Entry.EDGE[kind] then
@@ -406,10 +426,16 @@ local function otherFloor(sq, obj)
     return false
 end
 
--- 拆了退什麼（Server.dismantle 讀，只在伺服器）：一樓以下的地板照地板帳本，現在的圖和蓋的時候一樣、這一格只有
--- 它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、還沒搬的舊地板照 buildMaterials
--- （Place.migrate）。都沒有回 nil。
+-- 拆了退什麼（Server.dismantle 與伺服器的原地替換讀，只在伺服器）：燈、家電（Place.keyed）照伺服器帳本；一樓以下的地板照
+-- 地板帳本，現在的圖和蓋的時候一樣、這一格只有它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、
+-- 還沒搬的舊地板照 buildMaterials（Place.migrate）。都沒有回 nil。
 function Place.refundOf(obj)
+    if Place.keyed(obj) then
+        local Ledger, Dismantle = MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
+        local mats = Ledger and Ledger.get(obj)
+        if mats and Dismantle then mats = Dismantle.lightRefund(obj, mats) end
+        return mats
+    end
     local sq = obj:getSquare()
     if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return obj:getBuildMaterials() end
     local Floors = MinidoracatBuilder.Floors
@@ -641,6 +667,55 @@ local function newLight(c)
     return obj
 end
 
+-- 家電（壁爐、爐子、烤肉架、洗衣機、烘衣機）：照地圖讀檔，依容器型別建原版類別（CellLoader.java:68-70,139-168,318-328；
+-- 那裡 camping_01_04..06 的 campfire 例外，目錄沒有這三張）。建成 IsoThumpable 的話原版認不得：生火選單只開給
+-- isFireInteractionObject（IsoFireplace、IsoBarbecue，IsoObject.java:6801-6803），爐子、洗衣機的功能也在各自的類別裡。
+-- 擋路的（solid／solidtrans）照原版搬家具放爐子、烤肉架、洗衣機、烘衣機設 movedThumpable（ISMoveableSpriteProps.lua:2246-2263,
+-- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時（審查 1109 Claude）；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
+-- 照當下的值改（同燈）。目錄的壁爐靠牆、不擋整格（collideN／W），原版搬家具也不設，照舊不打。沒有 buildMaterials：拆了退什麼記在伺服器帳本（同燈）。
+-- 0.6.1 以前蓋成 IsoThumpable 的照舊，拆掉重蓋才是新的（使用者 2026-11-09 裁定）。
+local APPLIANCE = {
+    fireplace = "IsoFireplace", woodstove = "IsoFireplace", brazier = "IsoFireplace", campfire = "IsoFireplace",
+    barbecue = "IsoBarbecue", barbecuepropane = "IsoBarbecue",
+    stove = "IsoStove", toaster = "IsoStove", coffeemaker = "IsoStove", microwave = "IsoStove",
+    clothingdryer = "IsoClothingDryer", clothingwasher = "IsoClothingWasher",
+}
+-- 這張圖照地圖會建成哪個家電類別（類別名稱），不是家電回 nil
+function Place.applianceOf(spr)
+    return APPLIANCE[spr:getProperties():get("container") or ""]
+end
+
+-- 沒有 buildMaterials 的本 MOD 物件（燈與開關、家電）：退料記在伺服器帳本，物件帶帳本編號（Ledger）。照 APPLIANCE 組，
+-- 加家電類別時兩邊不會漏一邊
+local KEYED = { "IsoLightSwitch" }
+do
+    local seen = {}
+    for _, cls in pairs(APPLIANCE) do
+        if not seen[cls] then
+            seen[cls] = true
+            KEYED[#KEYED + 1] = cls
+        end
+    end
+end
+function Place.keyed(obj)
+    for i = 1, #KEYED do
+        if instanceof(obj, KEYED[i]) then return true end
+    end
+    return false
+end
+
+-- 容器照地圖讀檔那樣在建好後補（CellLoader.java:341-342）：壁爐只在圖寫了 ContainerCapacity 時自己建（IsoFireplace.java:61-67），
+-- 壁爐、洗衣機、烘衣機的 addToWorld 不呼叫上一層，AddSpecialObject 不會替它們建（IsoClothingWasher.java:52-55）。已有容器時不重建
+local function newAppliance(c, cls)
+    local obj = _G[cls].new(getCell(), c.sq, c.spr)
+    obj:createContainersFromSpriteProperties()
+    if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end -- 放在桌上的微波爐、咖啡機
+    local p = c.spr:getProperties()
+    if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
+    obj:getModData().builderEntry = c.spr:getName()
+    return obj
+end
+
 -- ---------------------------------------------------------------- 掛在地板上的地面覆蓋（Rules.onFloor）
 -- 圖掛在那格地板的附加圖上（地圖讀檔同一種，CellLoader.java:256-264），不建物件。transmitUpdatedSpriteToClients 把整串
 -- 附加圖送給客戶端（IsoObject.java:4614-4645；客戶端照 sprite id 重掛、重畫那格，GameClient.java:1122-1162），跟著地板存檔。
@@ -750,6 +825,11 @@ function Place.build(kind, cells, placed)
             placeWindow(sq, obj, north)
         elseif kind == "light" then
             obj = newLight(c)
+            placed[#placed + 1] = obj
+            finish(sq, obj)
+            if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(obj, refundable(c.cost)) end
+        elseif kind == "container" and Place.applianceOf(spr) then
+            obj = newAppliance(c, Place.applianceOf(spr))
             placed[#placed + 1] = obj
             finish(sq, obj)
             if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(obj, refundable(c.cost)) end
@@ -892,7 +972,7 @@ function Place.harden(obj)
             obj:setIsThumpable(k % 2 == 1)
             obj:setThumpDmg(k >= 2 and 1 or 8) -- 8＝IsoThumpable 的預設（IsoThumpable.java:101）
         end
-    elseif instanceof(obj, "IsoLightSwitch") then
+    elseif Place.keyed(obj) then -- 燈、家電（擋路的打得壞，見 newLight、newAppliance）
         local p = obj:getSprite() and obj:getSprite():getProperties()
         if not p then return end
         local want = (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof")

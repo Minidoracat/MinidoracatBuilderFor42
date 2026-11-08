@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "这是门打开时的样子。请改找关着的那扇门。",
   "IGUI_MBLD_Why_INVINCIBLE": "打不破的窗、会让窗打不破的图块不列出。",
   "IGUI_MBLD_Why_WATER": "它有用不完的水，所以不列出。",
+  "IGUI_MBLD_Why_COLLECTOR": "雨水收集桶和其他装水的桶子用建造工坊建出来不会装水，所以不列出。雨水收集桶请用原版建造菜单建造。",
   "IGUI_MBLD_Why_STACK": "这是堆叠时的样子，读档时会换成别的图块。请改找没有堆叠的那个。",
   "IGUI_MBLD_Why_STAIRS_PART": "可以搬走或拆成零件的楼梯片不列出。",
   "IGUI_MBLD_Why_STAIRS_SET": "楼梯只在三片齐全时列出，显示的是最下面那片。",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "西门框",
   "IGUI_MBLD_SetRole_DoorN": "北门框",
   "IGUI_MBLD_Pick_Tip": "从世界中选取图块：点一下世界里的东西，这里就选中它。",
-  "IGUI_MBLD_Pick_Label": "选取图块：点一下，选中这一格的图块",
+  "IGUI_MBLD_Pick_Label": "选取图块：点一下东西，选中它的图块",
   "IGUI_MBLD_Pick_Many": "有好几张时，弹出列表",
   "IGUI_MBLD_Pick_HintClick": "左键：选取",
   "IGUI_MBLD_Pick_None": "这一格没有可以选取的图块。"

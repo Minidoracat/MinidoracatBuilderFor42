@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "열린 문의 모습입니다. 닫힌 문을 찾아보세요.",
   "IGUI_MBLD_Why_INVINCIBLE": "부술 수 없는 창문과 창문을 부술 수 없게 만드는 물건은 목록에 없습니다.",
   "IGUI_MBLD_Why_WATER": "물이 끝없이 나오므로 목록에 없습니다.",
+  "IGUI_MBLD_Why_COLLECTOR": "빗물받이 통 같은 물통은 여기서 지으면 물이 담기지 않으므로 목록에 없습니다. 빗물받이 통은 바닐라 건축 메뉴로 지으세요.",
   "IGUI_MBLD_Why_STACK": "쌓인 상태의 모습으로, 맵을 불러오면 다른 타일로 바뀝니다. 쌓이지 않은 것을 찾아보세요.",
   "IGUI_MBLD_Why_STAIRS_PART": "들거나 해체할 수 있는 계단 조각은 목록에 없습니다.",
   "IGUI_MBLD_Why_STAIRS_SET": "계단은 세 조각이 모두 있을 때만 맨 아래 조각으로 목록에 나옵니다.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "서쪽 문틀",
   "IGUI_MBLD_SetRole_DoorN": "북쪽 문틀",
   "IGUI_MBLD_Pick_Tip": "월드에서 고르기: 월드에 있는 것을 클릭하면 여기서 선택됩니다.",
-  "IGUI_MBLD_Pick_Label": "타일 고르기: 클릭하면 이 칸의 타일을 선택",
+  "IGUI_MBLD_Pick_Label": "타일 고르기: 클릭한 것의 타일을 선택",
   "IGUI_MBLD_Pick_Many": "여러 개면 목록이 뜹니다",
   "IGUI_MBLD_Pick_HintClick": "좌클릭: 고르기",
   "IGUI_MBLD_Pick_None": "이 칸에는 고를 수 있는 타일이 없습니다."

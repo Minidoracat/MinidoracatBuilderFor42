@@ -177,6 +177,7 @@ Perks = { Woodwork = "Woodwork", FromString = function(s) return "perk:" .. s en
 local xpLog = {} -- addXp 的呼叫：{ p, perk, n }
 function addXp(p, perk, n) xpLog[#xpLog + 1] = { p = p, perk = perk, n = n } end
 GridSquareEdgeFacingDirection = { NORTH_SOUTH = { name = "NS" }, EAST_WEST = { name = "EW" } }
+IsoDirections = { N = { name = "N" }, S = { name = "S" }, E = { name = "E" }, W = { name = "W" } }
 SandboxVars = { MinidoracatBuilder = {} }
 function getWorld() return { isValidSquare = function(_, x, y, z) return z >= -32 and z <= 31 end } end
 function getMaximumWorldLevel() return 31 end
@@ -287,6 +288,7 @@ square = function(x, y, z, o)
     end
     sq.removeHere = removeHere
     function sq:connectedWithFloor() return true end
+    function sq:getSlopedSurfaceHeight() return 0 end -- 照引擎：不是斜坡回 0（IsoGridSquare.java:10288-10292）
     function sq:RecalcProperties() end
     function sq:getCell() return getCell() end
     function sq:clearWater() end
@@ -323,6 +325,7 @@ local function oldPiece(sq, group, flag)
     function o:getTextureName() return "vegetation_test_01_0" end
     function o:getType() return IsoObjectType.normal end
     function o:getSprite() return nil end
+    function o:hasModData() return false end
     sq.objects[#sq.objects + 1] = o
     group[#group + 1] = { sq = sq, o = o }
     return o
@@ -337,6 +340,7 @@ IsoThumpable = { new = function(_, sq, name, north)
     function o:getSprite() return spriteMap[name] end
     function o:getBuildMaterials() return self.mats end
     function o:getModData() return self.md end
+    function o:hasModData() return next(self.md) ~= nil end -- 照引擎：表不是空的才 true
     function o:isFloor() return self.set.setIsFloor == true end
     function o:getSquare() return sq end
     -- 容器（boxes）、thumpDmg 預設 8：Place.fitContainers／Place.harden 用
@@ -2119,8 +2123,11 @@ local function newKinds()
         sprite("sts_01_2", 2174, { type = T.stairsTW, keys = { CanScrap = "" } }) }
     local stI = { sprite("sti_01_0", 2175, { type = T.stairsBW, keys = { IsMoveAble = "" } }), sprite("sti_01_1", 2176, { type = T.stairsMW }),
         sprite("sti_01_2", 2177, { type = T.stairsTW }) }
+    local fireplace = sprite("fire_01_0", 2178, { flags = { "solid" }, keys = { container = "fireplace" } })
+    local fireplace2 = sprite("fire_01_1", 2180, { flags = { "solid" }, keys = { container = "fireplace" } })
+    local floorUp = sprite("fup_01_0", 2179, { flags = { "solidfloor" } })
     local list = { stW[1], stW[2], stW[3], stN[1], stN[2], stN[3], landing, lamp, switch, roof, eave, stE[1], stE[2], stE[3],
-        stM[1], stM[2], stM[3], stS[1], stS[2], stS[3], stI[1], stI[2], stI[3],
+        stM[1], stM[2], stM[3], stS[1], stS[2], stS[3], stI[1], stI[2], stI[3], fireplace, fireplace2, floorUp,
         curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
         curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
         curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N") }
@@ -2298,6 +2305,77 @@ local function newKinds()
     roomSq.getRoom = noRoom
     ISMoveableSpriteProps = nil
 
+    -- 家電：容器型別是壁爐的照地圖建成 IsoFireplace（原版的生火選單只認它），不是 IsoThumpable；退料記在帳本、發編號，
+    -- 本工具拆得到（退料照帳本），移出世界時帳本清掉。mock 照圖沒寫 ContainerCapacity 的壁爐：建構子與 addToWorld 都不建容器
+    -- （IsoFireplace.java:61-67,436-441），要照地圖讀檔補建（審查 1109 Codex）
+    local fires = {}
+    IsoFireplace = { new = function(_, sq, spr)
+        local o = { class = "IsoFireplace", spr = spr, md = {}, keyId = -1 }
+        function o:getKeyId() return self.keyId end
+        function o:setKeyId(v) self.keyId = v end
+        function o:setRenderYOffset(v) self.yoff = v end
+        function o:getModData() return self.md end
+        function o:hasModData() return true end
+        function o:setExplored() end
+        function o:transmitCompleteItemToClients() self.sent = true end
+        function o:getSquare() return sq end
+        function o:getSprite() return spr end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function o:isConnectedSpriteGridObject(x) return x == self end
+        function o:isObjectNoContainerOrEmpty() return true end
+        function o:setMovedThumpable(v) self.moved = v end
+        function o:getContainerCount() return self.container and 1 or 0 end
+        function o:getContainer() return self.container end
+        function o:getContainerByIndex(i) return i == 0 and self.container or nil end
+        function o:createContainersFromSpriteProperties()
+            self.container = self.container or { type = spr:getProperties():get("container"), cap = 50,
+                getType = function(s) return s.type end, getCapacity = function(s) return s.cap end,
+                setCapacity = function(s, v) s.cap = v end }
+        end
+        fires[#fires + 1] = o
+        return o
+    end }
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local FP = who(2112, 51.5, 60.5)
+    give(FP, { ["Base.Plank"] = 20, ["Base.Nails"] = 20 })
+    local fok, _, fa = build(FP, 1, "fire_01_0", { 50, 60, 0 })
+    local F1 = fires[1]
+    local fmats = F1 and MinidoracatBuilder.Ledger.get(F1)
+    check(fok and F1 and F1.sent and F1.md.builderEntry == "fire_01_0" and F1.keyId > 0 and fmats ~= nil
+        and squares["50,60,0"].objects[1] == F1 and MinidoracatBuilder.Place.refundOf(F1) == fmats
+        and MinidoracatBuilder.Dismantle.kindOf(F1) == "container" and F1:getContainer() ~= nil
+        and F1:getContainer().type == "fireplace" and F1.moved == true,
+        "壁爐：照地圖建成 IsoFireplace（不是 IsoThumpable）、有壁爐容器、記進帳本發編號；退料照帳本，本工具拆得到；"
+            .. "擋路的圖殭屍打得壞（" .. tostring(fa and fa.code) .. "）")
+    fire("OnObjectAboutToBeRemoved", F1)
+    check(MinidoracatBuilder.Ledger.get(F1) == nil, "壁爐移出世界：帳本那一筆清掉")
+    -- 家電原地替換：舊的已付料照帳本算（不是 buildMaterials），同價不用補；新的另發編號，舊的移出世界時那筆清掉
+    -- （審查 1109 Codex 的驗證缺口）。這一格的移除照引擎先觸發 OnObjectAboutToBeRemoved；蓋好後格子照引擎變實心
+    -- （AddSpecialObject 重算格子屬性），新的那件才算被舊的擋住、走替換
+    local repOpt = {}
+    local repSq = square(51, 61, 0, repOpt)
+    local realRm = repSq.transmitRemoveItemFromSquare
+    function repSq:transmitRemoveItemFromSquare(obj, safely)
+        fire("OnObjectAboutToBeRemoved", obj)
+        return realRm(self, obj, safely)
+    end
+    local nFires = #fires
+    build(FP, 2, "fire_01_0", { 51, 61, 0 })
+    local FA = fires[nFires + 1]
+    repOpt.solid = true
+    local planks, nails = FP.inv:count("Base.Plank"), FP.inv:count("Base.Nails")
+    local rok, rcmd, ra = build(FP, 3, "fire_01_1", { 51, 61, 0 })
+    local FB = fires[nFires + 2]
+    check(rok and rcmd == "placed" and ra.replaced == true and FA ~= nil and FB ~= nil and FB.keyId > 0
+        and FB.keyId ~= FA.keyId and MinidoracatBuilder.Ledger.get(FA) == nil and MinidoracatBuilder.Ledger.get(FB) ~= nil
+        and FP.inv:count("Base.Plank") == planks and FP.inv:count("Base.Nails") == nails
+        and repSq.objects[#repSq.objects] == FB,
+        "壁爐原地換成另一款：舊的照帳本算已付料（同價不用補）、新的另發編號，舊的那筆清掉（" .. tostring(ra.code) .. "）")
+    repSq.transmitRemoveItemFromSquare = realRm
+    instanceof = realInst
+    IsoFireplace = nil
+
     -- 窗簾：掛在窗框上；面向 E 的窗框在本格西邊，面向 W 的在東邊那格
     local function framed(x, y, extra, owner)
         local flags = { WindowW = true }
@@ -2305,12 +2383,13 @@ local function newKinds()
         local sq = square(x, y, 0, { flags = flags, owner = owner })
         local props = { has = function(_, k) return (type(k) == "table" and k.name or k) == "WindowW" end,
             get = function() return nil end }
-        sq.objects[1] = { getProperties = function() return props end, getSprite = function() return nil end }
+        sq.objects[1] = { getProperties = function() return props end, getSprite = function() return nil end,
+            hasModData = function() return false end }
         return sq
     end
     local cq = framed(53, 57)
     local other = { getProperties = function() return { has = function() return false end, get = function() return nil end } end,
-        getSprite = function() return nil end }
+        getSprite = function() return nil end, hasModData = function() return false end }
     cq.objects[2] = other
     framed(53, 58, { exterior = true })
     square(53, 59, 0)
@@ -2329,6 +2408,7 @@ local function newKinds()
     IsoCurtain = { new = function(_, sq, name, north)
         local o = { name = name, north = north, md = {} }
         function o:getModData() return self.md end
+        function o:hasModData() return next(self.md) ~= nil end
         function o:setExplored() end
         function o:transmitCompleteItemToClients() end
         function o:getSquare() return sq end
@@ -2353,13 +2433,14 @@ local function newKinds()
     local sheet = framed(55, 59)
     local free = cur("cur_01_4", 55, 59)
     sheet.objects[2] = { getProperties = function() return { has = function() return false end, get = function() return nil end } end,
-        getType = function() return T.curtainW end, getSprite = function() return nil end, isCurtain = true }
+        getType = function() return T.curtainW end, getSprite = function() return nil end, isCurtain = true,
+        hasModData = function() return false end }
     local realInstanceof = instanceof
     instanceof = function(o, cls) return cls == "IsoCurtain" and o.isCurtain == true end
     check(free == nil and cur("cur_01_4", 55, 59) == "BLOCKED", "同一面掛著床單窗簾：擋下（原版搬家具同規則）")
     instanceof = realInstanceof
 
-    -- 屋頂：二樓起、要有東西撐著（正下方有牆、四鄰有地板或屋頂）；殭屍不打、不擋整格、重算有沒有屋頂
+    -- 屋頂：一樓不查支撐；二樓起要有東西撐著（正下方有牆、四鄰有地板或屋頂）；殭屍不打、不擋整格、重算有沒有屋頂
     square(56, 57, 0, { wallW = {} })
     square(56, 57, 1)
     square(57, 57, 1)
@@ -2369,12 +2450,40 @@ local function newKinds()
     square(59, 58, 0, { wallN = {} })
     local RP = who(2106, 57.5, 57.5)
     local PV = { preview = true }
-    check(Check.item(RP, "roof_01_0", 0, { 58, 58, 1 }) == "BLOCKED" and Check.item(RP, "roof_01_0", 0, { 56, 58, 0 }) == "BLOCKED"
-        and Check.item(RP, "roof_01_0", 0, { 59, 57, 1 }) == "BLOCKED",
-        "屋頂擋下：沒有東西撐著、蓋在一樓、正下方是樓梯")
+    check(Check.item(RP, "roof_01_0", 0, { 58, 58, 1 }) == "BLOCKED" and Check.item(RP, "roof_01_0", 0, { 59, 57, 1 }) == "BLOCKED",
+        "屋頂擋下：二樓沒有東西撐著、正下方是樓梯")
+    square(60, 60, -1, { stairs = true })
+    check(Check.item(RP, "roof_01_0", 0, { 56, 58, 0 }, PV) == nil and Check.item(RP, "roof_01_0", 0, { 56, 58, 0 }) == nil
+        and MinidoracatBuilder.Place.roofAt(56, 58, 0) and MinidoracatBuilder.Place.roofAt(56, 58, -1) == false
+        and MinidoracatBuilder.Place.roofAt(60, 60, 0) == false,
+        "一樓的屋頂片不查支撐（屋簷、貼牆的邊緣裝飾在地圖上放在一樓）：預覽與伺服器都放行；地下室不放，地下室樓梯口上面也不放")
     check(Check.item(RP, "roof_01_0", 0, { 58, 59, 1 }, PV) == "BLOCKED" and Check.item(RP, "roof_01_0", 0, { 59, 58, 1 }, PV) == nil
         and squares["58,59,1"] == nil and squares["59,58,1"] == nil,
         "預覽：上一層的格子還沒建也照座標查撐不撐得住（不補格子）")
+    -- 地板往上一層（使用者 2026-11-09 選）：正下方有牆撐得住；旁邊同一層有地板、同一排前面判定可蓋的地板（planned）也算；
+    -- 什麼都沒有、正下方是樓梯的擋下；一樓一律可以。預覽照座標（格子還沒建、不補）；伺服器補了格子照同一份
+    local Place = MinidoracatBuilder.Place
+    square(300, 300, 0, { wallN = {} })
+    square(302, 302, 1, { flags = { solidfloor = true } })
+    square(304, 300, 0, { stairs = true, wallW = {} })
+    check(Place.floorAt(300, 300, 1) and Place.floorAt(303, 302, 1) and Place.floorAt(306, 306, 1, { [Place.key(307, 306, 1)] = true })
+        and not Place.floorAt(306, 306, 1) and not Place.floorAt(304, 300, 1) and Place.floorAt(306, 306, 0),
+        "上一層的地板：正下方有牆、旁邊有地板、同一排前面的格子都撐得住；沒東西撐、正下方是樓梯擋下；一樓一律可以")
+    -- 斜坡頂接到這格也算（同原版 connectedWithFloor，IsoGridSquare.java:3485-3505：西邊下一層的斜坡朝東高 1）；
+    -- 地下室（z＜0）牆不算，照原版要旁邊的地板（審查 1109 Grok：寫進玩家文字）
+    local slope = square(309, 310, 0)
+    function slope:getSlopedSurfaceHeight(dir) return dir == IsoDirections.E and 1 or 0 end
+    square(312, 310, -2, { wallN = {} })
+    check(Place.floorAt(310, 310, 1) and not Place.floorAt(312, 310, -1),
+        "上一層的地板：西邊下一層的斜坡頂接到這格也撐得住；地下室正下方的牆不算（照原版）")
+    square(57, 55, 0, { wallW = {} })
+    check(Check.item(RP, "fup_01_0", 0, { 57, 55, 1 }, PV) == nil and Check.item(RP, "fup_01_0", 0, { 55, 55, 1 }, PV) == "BLOCKED"
+        and squares["57,55,1"] == nil and squares["55,55,1"] == nil,
+        "地板往上一層：預覽照座標查，格子還沒建也查得出撐不撐得住（不補格子）")
+    square(57, 55, 1)
+    square(55, 55, 1)
+    check(Check.item(RP, "fup_01_0", 0, { 57, 55, 1 }) == nil and Check.item(RP, "fup_01_0", 0, { 55, 55, 1 }) == "BLOCKED",
+        "伺服器（格子已補）照同一份：正下方有牆的放行、沒東西撐的擋下")
     check(Cost.of("roof", eave).items["Base.Nails"] == 1 and Cost.of("roof", roof).items["Base.Nails"] == 2,
         "屋頂木板 1、釘子 2；屋簷釘子 1")
     give(RP, { ["Base.Plank"] = 2, ["Base.Nails"] = 4 })
@@ -2714,15 +2823,8 @@ local function dismantleScenario()
     check(c == "dismantleSkipped" and a.code == "NOT_OURS" and has(at(73, 74, 0), GC) and has(at(74, 74, 0), GD)
         and at(71, 74, 0).dropped["Base.Plank"] == 4, "多格：同一組有一片沒有本 MOD 的記號：整組不拆、不退")
 
-    -- 原版拆解擋的：集水的裡面有水、門框裝著門、窗框釘著木板、樓梯頂端接著的地板；移除沒生效不退料
+    -- 原版拆解擋的：門框裝著門、窗框釘著木板、樓梯頂端接著的地板；移除沒生效不退料
     local WP = hammerer(2211, 75.5, 70.5, at(75, 70, 0))
-    local WC = ours(at(77, 72, 0), sprite("dwc_01_0", 2212, { keys = { container = "", IsWaterCollector = "" } }),
-        { ["Base.Plank"] = "2" })
-    WC.fluid = true
-    unbuild(WP, 18, 77, 72, 0, "dwc_01_0")
-    Server.dismantle(WP, 18, 1)
-    c, a = lastSent()
-    check(c == "dismantleSkipped" and a.code == "NOT_EMPTY" and has(at(77, 72, 0), WC), "集水的裡面有水：NOT_EMPTY、不拆")
     local DF = ours(at(74, 72, 0), sprite("ddf_01_0", 2213, { flags = { "DoorWallN" }, keys = { DoorWallN = "" } }),
         { ["Base.Plank"] = "4" })
     at(74, 72, 0).getDoor = function(_, dir)
@@ -3586,6 +3688,82 @@ local function circuitScenario()
     m.busy, m.busyAt = true, nowMs + 100000 -- 時鐘往回跳
     nowMs = nowMs + 300
     check(Wiring.op("clear") ~= nil and m.nL == 0, "時鐘往回跳時不當成還在等回覆")
+    -- 游標給的那一個（照圖指到的格子可能不是滑鼠下那格，WireCursor:tryBuild 傳 hover）：點的是它，不是那一格現在輪到的那盞
+    local cur = Wiring.at(83, 106, 0)
+    local other
+    for _, c in ipairs(m.cand) do if c.x == 83 and c.y == 106 and c.e ~= cur.e then other = c end end
+    nowMs = nowMs + 300
+    Wiring.click(83, 106, 0, other)
+    local wiredE
+    for _, c in ipairs(m.cand) do if c.x == 83 and c.y == 106 and c.status == "wired" then wiredE = c.e end end
+    check(other ~= nil and m.nL == 1 and wiredE == other.e, "照圖選到的燈：點的是它，不是那一格輪到的那盞")
+    nowMs = nowMs + 300
+    Wiring.op("clear")
+    -- 滑鼠照圖指到同一格重疊的兩盞（Wiring.atMouse）：選那一格現在輪到的那盞，點完換下一盞，不會一直點同一盞（審查 1109
+    -- Codex）。畫面換算的 API 換成固定值：兩盞的圖都蓋住滑鼠那一點，其他候選都不中
+    local sMX, sMY, sIX, sIY, sCore, sCoreT = getMouseX, getMouseY, isoToScreenX, isoToScreenY, getCore, Core
+    getMouseX, getMouseY = function() return 400 end, function() return 300 end
+    isoToScreenX, isoToScreenY = function() return 390 end, function() return 290 end
+    getCore = function() return { getZoom = function() return 1 end } end
+    Core = { getTileScale = function() return 1 end }
+    for _, c in ipairs(m.cand) do
+        for _, o in ipairs(at(c.x, c.y).objects) do
+            if o.getSprite and o:getSprite() and o:getSprite():getName() == c.e then
+                o.getOffsetX, o.getOffsetY = function() return 32 end, function() return 96 end
+                o.getRenderYOffset, o.getTargetAlpha = function() return 0 end, function() return 1 end
+                o.isMaskClicked = function(s) return s == O.LP1 or s == O.LP2 end
+            end
+        end
+    end
+    nowMs = nowMs + 300
+    local h1, hi1, hn1 = Wiring.atMouse(0)
+    local hq = h1 and Wiring.click(h1.x, h1.y, h1.z, h1)
+    local h2, hi2 = Wiring.atMouse(0)
+    -- 只有一盞的圖蓋住滑鼠那一點：選它，不管那一格現在輪到哪一盞（輪到的是 h2）（審查 1109 Grok）
+    for _, o in ipairs(at(83, 106).objects) do
+        if o == O.LP1 or o == O.LP2 then
+            local hitMe = o:getSprite():getName() == h1.e
+            o.isMaskClicked = function() return hitMe end
+        end
+    end
+    local h3, hi3, hn3 = Wiring.atMouse(0)
+    -- 同一格三盞、只有第一、三盞的圖蓋住滑鼠那一點：輪到第二盞時選第三盞（從輪到的往後找命中的），輪到第三盞選它，
+    -- 輪到第一盞（點完第三盞 advance 繞回）選第一盞（審查 1109 Codex 第 2 輪：以前一律回第一個命中的，點不到第三盞）
+    local tri = {}
+    do
+        local savedMode, tsq, list = Wiring.mode, square(410, 410, 0), {}
+        for i = 1, 3 do
+            local spr = sprite("tri_01_" .. i, 2190 + i, {})
+            local o = { class = "IsoLightSwitch" }
+            function o:getSprite() return spr end
+            function o:getOffsetX() return 32 end
+            function o:getOffsetY() return 96 end
+            function o:getRenderYOffset() return 0 end
+            function o:getTargetAlpha() return 1 end
+            function o:isMaskClicked() return i ~= 2 end
+            tsq.objects[i] = o
+            list[i] = { x = 410, y = 410, z = 0, e = "tri_01_" .. i, k = "l", status = "free" }
+        end
+        Wiring.mode = { cand = list, byPos = { ["410,410,0"] = list }, pick = {} }
+        local tn = {}
+        for i = 1, 3 do
+            Wiring.mode.pick["410,410,0"] = "410,410,0,tri_01_" .. i
+            local c, _, n = Wiring.atMouse(0)
+            tri[i], tn[i] = c and c.e, n
+        end
+        tri.n = tn[1] == 2 and tn[2] == 2 and tn[3] == 2
+        tri.below = Wiring.atMouse(0, 1) == nil -- 游標在樓上：下一層的燈被這層地板蓋住，不算
+        Wiring.mode = savedMode
+    end
+    getMouseX, getMouseY, isoToScreenX, isoToScreenY, getCore, Core = sMX, sMY, sIX, sIY, sCore, sCoreT
+    check(hq ~= nil and h2 ~= nil and hn1 == 2 and h1.x == 83 and h1.y == 106 and h1.e ~= h2.e and hi1 ~= hi2,
+        "滑鼠照圖指到同一格重疊的兩盞：點完換下一盞（照輪替，不會一直點同一盞）")
+    check(h3 ~= nil and h3.e == h1.e and hi3 == 1 and hn3 == 1,
+        "滑鼠只指著同一格其中一盞的圖：選那一盞，不管那一格輪到哪一盞；只疊一個不提示「再點一次換下一個」")
+    check(tri[1] == "tri_01_1" and tri[2] == "tri_01_3" and tri[3] == "tri_01_3" and tri.n and tri.below,
+        "同一格三盞只有兩盞的圖蓋住滑鼠：輪到沒蓋住的那盞時選下一個蓋住的，共幾個照蓋住的算；游標在樓上時下一層的不算")
+    nowMs = nowMs + 300
+    Wiring.op("clear")
     -- 同一格排前面的那盞被拒（被別人拿走：GONE、side＝t）：接線模式留著，下一次點換到另一盞，不卡在被拒的那盞
     local cA = Wiring.at(83, 106, 0)
     local lpSq, gone = at(83, 106), nil
@@ -3874,6 +4052,10 @@ do
         and code({ type = T.stairsBW, keys = { CanScrap = "" } }) == "STAIRS_PART" and code({ keys = { LightRadius = "5" } }) == "LIGHT"
         and code({ type = T.curtainS, keys = { MoveType = "WindowObject", IsClosedState = "" } }) == "CURTAIN_CLOSED"
         and code({ flags = { "WallSE", "makeWindowInvincible" } }) == "INVINCIBLE", "不列的圖都帶原因碼")
+    check(code({ keys = { IsMoveAble = "", IsWaterCollector = "", CustomName = "Rain Collector Barrel" } }) == "COLLECTOR"
+        and code({ flags = { "solidtrans" }, keys = { IsWaterCollector = "" } }) == "COLLECTOR"
+        and code({ flags = { "WallN" }, keys = { WallN = "", IsWaterCollector = "" } }) ~= "COLLECTOR",
+        "集雨桶、金屬桶這類集水的不列（蓋成 IsoThumpable 裝不了水），原因 COLLECTOR；結構類照舊先判斷")
     -- Entry.why：原因與改選的那一張
     local closed = sprite("door_x_01_0", 60, { flags = { "doorN" } })
     local open = sprite("door_x_01_2", 61, { flags = { "doorN", "open" } })
@@ -4462,7 +4644,8 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     local le = loaded("IsoThumpable", edgeS, { thump = true }) -- 現在分類是 nil
     local lamp = loaded("IsoLightSwitch", lampS, { moved = true })
     local dim = loaded("IsoLightSwitch", dimS, { moved = false })
-    local all = { lw, odd, ls, lf, nw, le, lamp, dim }
+    local stove = loaded("IsoStove", sinkS, { moved = true }) -- 家電：擋路的同燈（審查 1109 Claude）
+    local all = { lw, odd, ls, lf, nw, le, lamp, dim, stove }
     load(all)
     check(lw.thump == true and lw.dmg == 8 and odd.thump == false and odd.dmg == 8 and ls.thump == true and ls.dmg == 1
         and le.thump == true and le.dmg == 8 and lamp.moved == true and dim.moved == false,
@@ -4472,15 +4655,15 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     load(all) -- 重複跑結果一樣
     check(lw.thump == false and lw.dmg == PROOF - 1 and odd.thump == false and odd.dmg == PROOF and ls.thump == false
         and ls.dmg == PROOF - 3 and lf.thump == false and lf.dmg == PROOF and le.thump == false and le.dmg == PROOF - 1
-        and nw.thump == true and nw.dmg == 8 and lamp.moved == false and dim.moved == false,
-        "讀檔、打開：本 MOD 蓋的都不給打、記下原本的樣子（擋路的燈不設 movedThumpable）；不是本 MOD 蓋的不動")
+        and nw.thump == true and nw.dmg == 8 and lamp.moved == false and dim.moved == false and stove.moved == false,
+        "讀檔、打開：本 MOD 蓋的都不給打、記下原本的樣子（擋路的燈、家電不設 movedThumpable）；不是本 MOD 蓋的不動")
     sb.ZombieProof = nil
     load(all)
     check(lw.thump == true and lw.dmg == 8 and odd.thump == false and odd.dmg == 8 and ls.thump == true and ls.dmg == 1
         and lf.thump == false and lf.dmg == 8 and le.thump == true and le.dmg == 8 and nw.thump == true
-        and lamp.moved == true and dim.moved == false,
+        and lamp.moved == true and dim.moved == false and stove.moved == true,
         "讀檔、關掉：照記號還原成打開前的樣子（牆 thumpDmg 8、家具 1、地板與原本不打的照舊不打、現在分類不到的牆角片照樣打得壞、"
-            .. "擋路的燈打得壞、不擋路的燈照舊）")
+            .. "擋路的燈、家電打得壞、不擋路的燈照舊）")
     -- 同一條邊有木板時 isThumpable() 一律回 true（IsoThumpable.java:1677-1679），門框旁的門釘了木板也算：記號照種類算
     local lfr = loaded("IsoThumpable", frameS, { thump = false })
     local lpo = loaded("IsoThumpable", postS, { thump = true })
@@ -6368,6 +6551,7 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
         function o:getSprite() return spr end
         function o:getProperties() return spr:getProperties() end
         function o:getSquare() return sq end
+        function o:hasModData() return false end
         sq.objects[#sq.objects + 1] = o
         return o
     end

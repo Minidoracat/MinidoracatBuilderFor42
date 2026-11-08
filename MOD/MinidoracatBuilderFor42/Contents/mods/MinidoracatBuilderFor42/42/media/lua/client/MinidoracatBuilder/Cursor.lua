@@ -25,6 +25,9 @@ local LOG = "[MinidoracatBuilderFor42] "
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
 local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", wall = "ring", fence = "ring", post = "edge" }
+-- 能換層的種類（PgUp／PgDn、手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
+-- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
+local LAYERED = { roof = true, floor = true }
 local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64，再遠的都是 OVER_MAX）
 local DRAW_MAX = 512  -- ponytail：一次最多畫 512 格（超過上限的照畫紅），量到卡頓再縮
 local AREA_SIDE = 40  -- 一區拆除每邊最多幾格（Area 每次預覽掃整區）
@@ -147,8 +150,8 @@ end
 
 -- 各格的預覽：照順序每格 Check.item（朝向照錨點的第 4 欄，沒有用 d），可蓋的從摘要副本扣掉成本（Materials.take；替換的
 -- 格子扣要補的 info.pay 與耗材），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
--- 副本的 items、uses 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂可以靠前面可蓋的屋頂撐著（伺服器照同一個
--- 順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
+-- 副本的 items、uses 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂、地板可以靠同一排前面可蓋的撐著（伺服器
+-- 照同一個順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
 -- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、OVER_MAX）的不跑 Check.item，照那個碼。
 -- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
@@ -182,7 +185,7 @@ function Cursor.preview(player, name, d, anchors, S)
                     Materials.take(work, info.total)
                 end
             end
-            if info and info.entry and info.entry.kind == "roof" then
+            if info and info.entry and LAYERED[info.entry.kind] then
                 for _, c in ipairs(info.cells) do planned[B.Place.key(c.x, c.y, c.z)] = true end
             end
         elseif SHORT[code] then
@@ -243,7 +246,7 @@ function Cursor.new(player, entry, d)
     o.faces = Cursor.faces(entry)
     o:setFace(Cursor.pickFace(entry, o.faces, d))
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
-    -- 屋頂預設蓋在上一層：站在下面那層往上蓋。PgUp／PgDn、手把 X 切換（isValid 照它換算）
+    -- 屋頂預設蓋在上一層：站在下面那層往上蓋。屋頂與地板都能用 PgUp／PgDn、手把 X 切換（LAYERED；isValid 照它換算）
     o.up = entry.kind == "roof"
     o.max = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
     local key = getCore():getKey(KeybindId.ROTATE_BUILDING)
@@ -336,7 +339,7 @@ end
 function Cursor:rotateKey(key)
     if self.area then return end
     if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
-    if self.entry.kind ~= "roof" then return end
+    if not LAYERED[self.entry.kind] then return end
     if key == Keyboard.KEY_PRIOR then
         self.up = true
     elseif key == Keyboard.KEY_NEXT then
@@ -370,7 +373,7 @@ end
 function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
     if button == Joypad.RBumper then return self:turn(1) end
     if button == Joypad.LBumper then return self:turn(-1) end
-    if button == Joypad.XButton and self.entry.kind == "roof" then
+    if button == Joypad.XButton and LAYERED[self.entry.kind] then
         self.up = not self.up
         return
     end
@@ -379,7 +382,7 @@ end
 
 -- 原版按鈕提示列照拖曳物件的 getXPrompt 顯示 X（ISButtonPrompt.lua:1012-1013）
 function Cursor:getXPrompt()
-    if not (self.entry and self.entry.kind == "roof") then return nil end
+    if not (self.entry and LAYERED[self.entry.kind]) then return nil end
     return getText(self.up and "IGUI_MBLD_PadLayerHere" or "IGUI_MBLD_PadLayerUp")
 end
 
@@ -642,7 +645,7 @@ function Cursor:texts()
         if self.faces.n > 1 and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
-        if self.entry.kind == "roof" then
+        if LAYERED[self.entry.kind] then
             parts[#parts + 1] = getText(self.up and "IGUI_MBLD_HintLayerHere" or "IGUI_MBLD_HintLayerUp")
         end
         parts[#parts + 1] = getText("IGUI_MBLD_HintCancel")
@@ -932,8 +935,12 @@ function Cursor:tryBuild(x, y, z)
 end
 
 -- 放置中點到物件時不讓原版處理（開門、開關燈、拉窗簾）。原版只在拖曳物件有這個方法時才擋
--- （ISObjectClickHandler.lua:341-344），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）
-function Cursor.onObjectLeftMouseButtonDown()
+-- （ISObjectClickHandler.lua:341-344），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）。
+-- 吸管記下這個物件：引擎按下左鍵時照圖挑（UIManager.java:587-589），早於放開時的 tryBuild；放開時照它的格子列圖
+-- （Window.startPick）。滑鼠只有玩家 0 用
+function Cursor.onObjectLeftMouseButtonDown(object)
+    local c = Cursor.get(0)
+    if c and c.one then c.picked = object end
     return true
 end
 

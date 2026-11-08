@@ -364,6 +364,10 @@ local function kindOfProps(name, p, t)
         return "floor"
     end
     if plantOrObject(p, mt) then return nil, "PLANT" end
+    -- 集水的（IsWaterCollector：集雨桶、金屬桶）：B42 只有 entity 的液體容器會接雨水、裝水（FluidContainer 的 RainFactor），
+    -- 蓋成 IsoThumpable 是空殼（E2E builder-bili-1109a）；地圖上的集雨桶是生成地圖時才換成 entity
+    -- （MORainCollectorBarrel.lua:100-103）。不列，說明寫用原版選單蓋（使用者 2026-11-09 選）
+    if p:has("IsWaterCollector") then return nil, "COLLECTOR" end
     if infiniteWater(p) then return nil, "WATER" end
     if p:has("container") then -- 冰箱帶燈，容器優先
         if stackReplaced(p) then return nil, "STACK" end
@@ -388,9 +392,9 @@ end
 
 -- 回種類字串；不列時回 nil 與原因碼（建造視窗說明為什麼搜不到，Entry.why；翻譯 IGUI_MBLD_Why_<碼>）：
 --   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴、ENTITY 建造配方的圖、TREE 樹、PLANT 植物與有功能的
---   物件、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水、STACK 疊放圖、STAIRS_PART 能搬
---   或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED 拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、
---   NO_KIND 沒有能判斷種類的屬性。
+--   物件、COLLECTOR 蓋了裝不了水的集水桶、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水、
+--   STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED 拉上的窗簾、
+--   BLOCKS_EDGE 擋一條格邊卻不是牆、NO_KIND 沒有能判斷種類的屬性。
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。spr 是 sprite 本身（看多格）。
 -- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
 -- 只收地板與地面覆蓋（使用者 2026-10-31 選）：放下的是本工具的物件，不是配方的 entity——地圖物件只有讀地圖時才建

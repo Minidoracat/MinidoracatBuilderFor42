@@ -1,10 +1,10 @@
--- 伺服器帳本（設計稿「伺服器帳本」）：本 MOD 蓋的燈與開關，以及樓梯頂端補的平台地板。燈沒有 buildMaterials，平台是一般
--- IsoObject（和原版樓梯補的長得一樣），所以「是不是本 MOD 蓋的、拆了退什麼」只認這裡（只在伺服器）。存在 GOS 系統
+-- 伺服器帳本（設計稿「伺服器帳本」）：本 MOD 蓋的燈、開關與家電，以及樓梯頂端補的平台地板。燈與家電沒有 buildMaterials，
+-- 平台是一般 IsoObject（和原版樓梯補的長得一樣），所以「是不是本 MOD 蓋的、拆了退什麼」只認這裡（只在伺服器）。存在 GOS 系統
 -- 自己的 modData（gos_MinidoracatBuilder.bin，跟世界一起存檔、一起回溯）；不建全域物件、不送客戶端。
 -- 寫法照家族 VehicleManager 的帳本分片（MinidoracatVehicleManager_OwnershipSystem.lua:231-253）。
--- lamps＝燈與開關（IsoLightSwitch）：{ next = 下一個編號, e = { [編號] = { p = "x,y,z", s = 蓋的圖名, i = { [fullType] = 退料數 } } } }。
---   蓋的時候把編號寫進物件的 keyId（跟物件存檔），認燈看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md
---   「燈的帳本照編號認」）。
+-- lamps＝燈、開關（IsoLightSwitch）與家電（壁爐這類，Place.keyed）：{ next = 下一個編號, e = { [編號] = { p = "x,y,z",
+--   s = 蓋的圖名, i = { [fullType] = 退料數 } } } }。蓋的時候把編號寫進物件的 keyId（IsoObject 的欄位，任何類別都跟著存檔），
+--   認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
 -- built＝樓梯平台：built["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。0.3.0 以前的燈也記在這裡（鍵同上、值是退料表；
 --   0.4.0 起發編號），升版後讀到那一塊時搬進 lamps 或刪掉（檔尾）。
 -- circuits＝第六階段的線路（格式與讀寫在 Circuits.lua；成員的鍵照 Ledger.key）。
@@ -12,6 +12,7 @@
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Place"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Ledger = SGlobalObjectSystem:derive("MinidoracatBuilderLedger")
@@ -92,7 +93,7 @@ local function lampOf(inst, obj)
     return nil
 end
 
--- 發一個新編號給燈，寫進物件與帳本（items 照抄）
+-- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄）
 local function issue(inst, obj, sq, items)
     local id = inst.lamps.next
     inst.lamps.next = id + 1
@@ -101,17 +102,17 @@ local function issue(inst, obj, sq, items)
     return id
 end
 
--- 記下本 MOD 蓋好的燈或補的平台（items＝拆了退什麼）。帳本還沒建（不該發生）時只記 log：之後這盞燈拆不了（大錘照樣能砸），
+-- 記下本 MOD 蓋好的燈、家電或補的平台（items＝拆了退什麼）。帳本還沒建（不該發生）時只記 log：之後這件拆不了（大錘照樣能砸），
 -- 平台拆樓梯時留著。
 function Ledger.put(obj, items)
     local inst, k = Ledger.instance, Ledger.key(obj)
     if not (inst and k) then
-        print(LOG .. "ledger not ready; light not recorded: " .. tostring(k))
+        print(LOG .. "ledger not ready; not recorded: " .. tostring(k))
         return
     end
     local copy = {}
     for ft, n in pairs(items) do copy[ft] = n end
-    if instanceof(obj, "IsoLightSwitch") then
+    if MinidoracatBuilder.Place.keyed(obj) then
         issue(inst, obj, obj:getSquare(), copy)
     else
         inst.built[k] = copy
@@ -122,7 +123,7 @@ end
 function Ledger.get(obj)
     local inst = Ledger.instance
     if not inst then return nil end
-    if instanceof(obj, "IsoLightSwitch") then
+    if MinidoracatBuilder.Place.keyed(obj) then
         local e = lampOf(inst, obj)
         return e and e.i or nil
     end
@@ -131,11 +132,11 @@ function Ledger.get(obj)
 end
 
 -- 移出世界前清掉（拿起、砸、拆、多格整組拆都會觸發，RemoveItemFromSquarePacket.java:151、IsoGridSquare.java:5745）。
--- 燈只清自己那一筆（認法同 Ledger.get）
+-- 燈與家電只清自己那一筆（認法同 Ledger.get）
 function Ledger.forget(obj)
     local inst = Ledger.instance
     if not inst then return end
-    if instanceof(obj, "IsoLightSwitch") then
+    if MinidoracatBuilder.Place.keyed(obj) then
         local e, id = lampOf(inst, obj)
         if e then inst.lamps.e[id] = nil end
         return
@@ -146,7 +147,7 @@ end
 
 local STAIR_FLOOR = MinidoracatBuilder.Entry.STAIR_FLOOR
 Events.OnObjectAboutToBeRemoved.Add(function(obj)
-    if instanceof(obj, "IsoLightSwitch") then return MinidoracatBuilder.Ledger.forget(obj) end
+    if MinidoracatBuilder.Place.keyed(obj) then return MinidoracatBuilder.Ledger.forget(obj) end
     local spr = obj:getSprite()
     if spr and spr:getName() == STAIR_FLOOR and not instanceof(obj, "IsoThumpable") then MinidoracatBuilder.Ledger.forget(obj) end
 end)

@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "Es una puerta abierta. Busca la puerta cerrada.",
   "IGUI_MBLD_Why_INVINCIBLE": "No se muestran ventanas irrompibles ni piezas que vuelven irrompible una ventana.",
   "IGUI_MBLD_Why_WATER": "Tiene agua infinita, así que no se muestra.",
+  "IGUI_MBLD_Why_COLLECTOR": "Los recolectores de lluvia y otros bidones de agua construidos aquí no guardan agua, así que no se muestran. Construye los recolectores de lluvia desde el menú de construcción original.",
   "IGUI_MBLD_Why_STACK": "Así se ve apilado; al cargar el mapa se convierte en otro tile. Busca el que no está apilado.",
   "IGUI_MBLD_Why_STAIRS_PART": "No se muestran las piezas de escalera que se pueden recoger o desguazar.",
   "IGUI_MBLD_Why_STAIRS_SET": "Las escaleras se muestran por su pieza inferior, y solo si existen las tres piezas.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Puerta O",
   "IGUI_MBLD_SetRole_DoorN": "Puerta N",
   "IGUI_MBLD_Pick_Tip": "Elegir del mundo: haz clic en algo del mundo para seleccionarlo aquí.",
-  "IGUI_MBLD_Pick_Label": "Elegir tile: haz clic para seleccionar el tile de esta casilla",
+  "IGUI_MBLD_Pick_Label": "Elegir tile: haz clic en algo para seleccionar su tile",
   "IGUI_MBLD_Pick_Many": "Si hay varios, aparece una lista",
   "IGUI_MBLD_Pick_HintClick": "Clic izquierdo: elegir",
   "IGUI_MBLD_Pick_None": "No hay ningún tile que elegir en esta casilla."

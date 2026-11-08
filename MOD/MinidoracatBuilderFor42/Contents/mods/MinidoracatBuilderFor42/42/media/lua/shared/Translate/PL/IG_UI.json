@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "To drzwi pokazane jako otwarte. Poszukaj zamkniętych drzwi.",
   "IGUI_MBLD_Why_INVINCIBLE": "Niezniszczalne okna i elementy, które czynią okno niezniszczalnym, nie są wyświetlane.",
   "IGUI_MBLD_Why_WATER": "Ma nieskończony zapas wody, więc nie jest wyświetlany.",
+  "IGUI_MBLD_Why_COLLECTOR": "Beczki na deszczówkę i inne beczki na wodę zbudowane tutaj nie trzymają wody, więc nie są wyświetlane. Beczki na deszczówkę buduj z menu budowy gry bazowej.",
   "IGUI_MBLD_Why_STACK": "Tak wygląda po ułożeniu w stos; po wczytaniu mapy zmienia się w inny kafelek. Poszukaj wersji bez stosu.",
   "IGUI_MBLD_Why_STAIRS_PART": "Części schodów, które można podnieść lub rozebrać na złom, nie są wyświetlane.",
   "IGUI_MBLD_Why_STAIRS_SET": "Schody są wyświetlane po dolnej części i tylko wtedy, gdy istnieją wszystkie trzy części.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Drzwi Z",
   "IGUI_MBLD_SetRole_DoorN": "Drzwi Pn",
   "IGUI_MBLD_Pick_Tip": "Wybierz ze świata: kliknij coś w świecie, by zaznaczyć to tutaj.",
-  "IGUI_MBLD_Pick_Label": "Wybór kafelka: kliknij, by zaznaczyć kafelek z tego pola",
+  "IGUI_MBLD_Pick_Label": "Wybór kafelka: kliknij coś, by zaznaczyć jego kafelek",
   "IGUI_MBLD_Pick_Many": "Jeśli jest ich kilka, pojawi się lista",
   "IGUI_MBLD_Pick_HintClick": "LPM: wybierz",
   "IGUI_MBLD_Pick_None": "Na tym polu nie ma kafelka do wybrania."

@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "C'est une porte ouverte. Cherchez plutôt la porte fermée.",
   "IGUI_MBLD_Why_INVINCIBLE": "Les fenêtres incassables et les pièces qui rendent une fenêtre incassable ne sont pas listées.",
   "IGUI_MBLD_Why_WATER": "Elle contient une eau inépuisable, elle n'est donc pas listée.",
+  "IGUI_MBLD_Why_COLLECTOR": "Les collecteurs d'eau de pluie et autres fûts d'eau construits ici ne retiennent pas l'eau, ils ne sont donc pas listés. Construisez les collecteurs depuis le menu de construction vanilla.",
   "IGUI_MBLD_Why_STACK": "C'est son apparence empilée ; au chargement de la carte, elle devient une autre tile. Cherchez plutôt celle qui n'est pas empilée.",
   "IGUI_MBLD_Why_STAIRS_PART": "Les morceaux d'escalier qu'on peut ramasser ou démanteler ne sont pas listés.",
   "IGUI_MBLD_Why_STAIRS_SET": "Les escaliers sont listés par leur morceau du bas, et seulement si les trois morceaux existent.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Porte O",
   "IGUI_MBLD_SetRole_DoorN": "Porte N",
   "IGUI_MBLD_Pick_Tip": "Choisir dans le monde : cliquez sur un élément du monde pour le sélectionner ici.",
-  "IGUI_MBLD_Pick_Label": "Choisir la tile : cliquez pour sélectionner la tile de cette case",
+  "IGUI_MBLD_Pick_Label": "Choisir la tile : cliquez sur un élément pour sélectionner sa tile",
   "IGUI_MBLD_Pick_Many": "S'il y en a plusieurs, une liste s'affiche",
   "IGUI_MBLD_Pick_HintClick": "Clic gauche : choisir",
   "IGUI_MBLD_Pick_None": "Aucune tile à choisir sur cette case."

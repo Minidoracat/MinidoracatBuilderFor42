@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "Das ist eine offene Tür. Such stattdessen die geschlossene Tür.",
   "IGUI_MBLD_Why_INVINCIBLE": "Unzerstörbare Fenster und Teile, die ein Fenster unzerstörbar machen, werden nicht gelistet.",
   "IGUI_MBLD_Why_WATER": "Es enthält unbegrenzt Wasser und wird deshalb nicht gelistet.",
+  "IGUI_MBLD_Why_COLLECTOR": "Regentonnen und andere Wasserfässer, die hier gebaut werden, halten kein Wasser und werden deshalb nicht gelistet. Bau Regentonnen über das Vanilla-Baumenü.",
   "IGUI_MBLD_Why_STACK": "So sieht es gestapelt aus; beim Laden der Karte wird es zu einer anderen Kachel. Such stattdessen die ungestapelte.",
   "IGUI_MBLD_Why_STAIRS_PART": "Treppenteile, die man aufheben oder verschrotten kann, werden nicht gelistet.",
   "IGUI_MBLD_Why_STAIRS_SET": "Treppen werden über ihr unterstes Teil gelistet, und nur wenn alle drei Teile existieren.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Tür W",
   "IGUI_MBLD_SetRole_DoorN": "Tür N",
   "IGUI_MBLD_Pick_Tip": "Aus der Welt wählen: Klick auf etwas in der Welt, um es hier auszuwählen.",
-  "IGUI_MBLD_Pick_Label": "Kachel wählen: Klick wählt die Kachel auf diesem Feld",
+  "IGUI_MBLD_Pick_Label": "Kachel wählen: Klick auf etwas wählt seine Kachel",
   "IGUI_MBLD_Pick_Many": "Bei mehreren erscheint eine Liste",
   "IGUI_MBLD_Pick_HintClick": "Linksklick: wählen",
   "IGUI_MBLD_Pick_None": "Auf diesem Feld gibt es keine Kachel zum Wählen."

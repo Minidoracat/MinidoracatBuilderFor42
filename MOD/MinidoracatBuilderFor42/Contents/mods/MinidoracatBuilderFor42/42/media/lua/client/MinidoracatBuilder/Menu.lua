@@ -186,9 +186,12 @@ local function keepOnTop(menu)
     Events.OnTick.Add(tick)
 end
 
--- 吸管（Window.startPick）點了一格：只有一張能蓋（或同一件東西有能蓋的那一項）就直接選；好幾張就在滑鼠旁跳出和右鍵
--- 「挑圖塊」子選單同一份清單（addPick）；格子上沒有圖就說一聲
-function Menu.pickAt(playerNum, sq)
+-- 吸管（Window.startPick）點了一格：按下時引擎照圖點到的物件（obj，Cursor.onObjectLeftMouseButtonDown）在哪一格就列那一格
+-- （指著牆、門的上半時滑鼠下的地板格是牆後那一格；別層看得到的東西也拿得到），沒點到物件時列滑鼠那格（sq）。
+-- 只有一張能蓋（或同一件東西有能蓋的那一項）就直接選；好幾張就在滑鼠旁跳出和右鍵「挑圖塊」子選單同一份清單（addPick）；
+-- 格子上沒有圖就說一聲
+function Menu.pickAt(playerNum, sq, obj)
+    sq = obj and obj:getSquare() or sq
     local tiles = {}
     if sq then squareTiles(sq, tiles, {}) end
     if #tiles == 0 then

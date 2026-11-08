@@ -1871,7 +1871,7 @@ function W.startPick()
         preview = function(x, y, _, _, z) return { cells = { { x, y, z } }, lines = lines } end,
         release = function(x, y, _, _, z)
             back()
-            M.pickAt(pn, getCell():getGridSquare(x, y, z))
+            M.pickAt(pn, getCell():getGridSquare(x, y, z), o and o.picked) -- 按下時點到的物件（Cursor.onObjectLeftMouseButtonDown）
         end,
         -- 右鍵、換了別的游標：視窗回來。被建造游標取代（吸管開著時從 Dock 開視窗按「建造」，Cursor.start 設 replaced）
         -- 時不叫：W.build 剛把視窗收起

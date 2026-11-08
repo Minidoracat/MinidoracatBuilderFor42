@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "Bu, açık hâliyle bir kapı. Bunun yerine kapalı kapıyı ara.",
   "IGUI_MBLD_Why_INVINCIBLE": "Kırılmaz pencereler ve bir pencereyi kırılmaz yapan parçalar listelenmez.",
   "IGUI_MBLD_Why_WATER": "Sonsuz su içerdiği için listelenmez.",
+  "IGUI_MBLD_Why_COLLECTOR": "Yağmur depolayıcı fıçılar ve diğer su varilleri burada inşa edilirse su tutmaz, bu yüzden listelenmez. Yağmur depolayıcıları vanilla inşa menüsünden inşa et.",
   "IGUI_MBLD_Why_STACK": "Bu, üst üste konmuş hâli; harita yüklenince başka bir tile'a dönüşür. Bunun yerine üst üste konmamış olanı ara.",
   "IGUI_MBLD_Why_STAIRS_PART": "Alınabilen veya hurdaya ayrılabilen merdiven parçaları listelenmez.",
   "IGUI_MBLD_Why_STAIRS_SET": "Merdivenler alt parçalarıyla ve yalnızca üç parçası da varsa listelenir.",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "Kapı B",
   "IGUI_MBLD_SetRole_DoorN": "Kapı K",
   "IGUI_MBLD_Pick_Tip": "Dünyadan seç: dünyadaki bir şeye tıkla, burada seçilsin.",
-  "IGUI_MBLD_Pick_Label": "Tile seç: bu karedeki tile'ı seçmek için tıkla",
+  "IGUI_MBLD_Pick_Label": "Tile seç: bir şeye tıkla, onun tile'ı seçilsin",
   "IGUI_MBLD_Pick_Many": "Birden fazlaysa bir liste açılır",
   "IGUI_MBLD_Pick_HintClick": "Sol tık: seç",
   "IGUI_MBLD_Pick_None": "Bu karede seçilecek tile yok."

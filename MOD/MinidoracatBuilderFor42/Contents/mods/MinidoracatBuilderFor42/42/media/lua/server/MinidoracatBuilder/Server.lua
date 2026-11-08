@@ -542,8 +542,8 @@ end
 
 -- 拆一件：拆那格上 sprite 名稱相同、本 MOD 蓋的那件；格上沒有那件物件時，找那格地板上掛的那張地面覆蓋
 -- （Dismantle.hung，不看記號）。物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
--- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈）：同一件被兩個動作拆時，後到的
--- 找不到物件（GONE），不會再退。燈與平台只認帳本；地面覆蓋只認覆蓋帳本（Overlays）；IsoThumpable 照 Place.refundOf
+-- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈與家電）：同一件被兩個動作拆時，後到的
+-- 找不到物件（GONE），不會再退。燈、家電與平台只認帳本；地面覆蓋只認覆蓋帳本（Overlays）；其他照 Place.refundOf
 -- （一樓以下的地板在地板帳本）。查不到退料表的不拆（NOT_OURS，平台留著）。移除出錯時不退料（只會少，不會多）。不給經驗。
 -- 拆好回 nil, nil, refund, kind, 片數；拆不了回 code, extra。
 local function unbuildOne(player, x, y, z, name)
@@ -569,12 +569,7 @@ local function unbuildOne(player, x, y, z, name)
         rollInto(refund, mats)
     end
     for _, o in ipairs(plan.refund) do
-        local mats
-        if instanceof(o, "IsoLightSwitch") then
-            mats = Dismantle.lightRefund(o, Ledger.get(o))
-        else
-            mats = Place.refundOf(o)
-        end
+        local mats = Place.refundOf(o)
         if not mats then return "NOT_OURS", at end
         rollInto(refund, mats)
     end

@@ -157,7 +157,7 @@ end
 -- 替換時只查要補的料與新舊工具）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
 -- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）。
--- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂格（Place.roofAt），後面的格子可以靠它撐著。
+-- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂或地板格（Place.roofAt、Place.floorAt），後面的格子可以靠它撐著。
 -- 伺服器（opts 為 nil）不查材料：Server.complete 自己 plan。
 function Check.item(player, name, d, anchor, opts)
     local preview = opts ~= nil and opts.preview == true
@@ -247,8 +247,9 @@ function Check.item(player, name, d, anchor, opts)
                     return "BLOCKED", { x = o.x, y = o.y, z = o.z }, info
                 end
             end
-        elseif entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned) then
-            -- 預覽：上一層的格子常常還沒建，屋頂照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
+        elseif (entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned))
+            or (entry.kind == "floor" and not Place.floorAt(c.x, c.y, c.z, planned)) then
+            -- 預覽：上一層的格子常常還沒建，屋頂與地板照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end

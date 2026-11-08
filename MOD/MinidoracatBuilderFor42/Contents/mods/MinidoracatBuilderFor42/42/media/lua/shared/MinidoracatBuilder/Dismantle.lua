@@ -1,5 +1,5 @@
 -- 拆除（第五階段，設計稿「拆」）：本 MOD 蓋的、Cost.refund 是 "builder" 的東西（不能搬、原版不照材質拆的 IsoThumpable、
--- 燈、掛在地板上的地面覆蓋）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：IsoThumpable 照 Place.refundOf；燈記在伺服器
+-- 燈、家電、掛在地板上的地面覆蓋）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：照 Place.refundOf，燈與家電記在伺服器
 -- 帳本 Ledger；地面覆蓋記在覆蓋帳本 Overlays）。
 -- 兩端共用、只讀世界：客戶端右鍵選單用 preview 判斷，伺服器 Server.dismantle 照同一份重查後才拆。
 require "MinidoracatBuilder/Entry"
@@ -15,14 +15,17 @@ local Rules, Entry, Cost = MinidoracatBuilder.Rules, MinidoracatBuilder.Entry, M
 local Materials, Check, Place = MinidoracatBuilder.Materials, MinidoracatBuilder.Check, MinidoracatBuilder.Place
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
--- 本 MOD 蓋的片：Place 建的 IsoThumpable 或 IsoLightSwitch，modData 的 builderEntry 有值。退多少不看這個記號，只看
--- 伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved 清退料表時不比圖；
--- 見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，Place.thumpable）
+-- 本 MOD 蓋的片：Place 建的 IsoThumpable，或沒有 buildMaterials 的燈、家電（Place.keyed），modData 的 builderEntry 有值。
+-- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
+-- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
+-- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
 local function mine(o)
-    if not ((instanceof(o, "IsoThumpable") or instanceof(o, "IsoLightSwitch")) and o:hasModData()) then return false end
+    if not o:hasModData() then return false end
     local e = o:getModData().builderEntry
     if not e then return false end
-    if instanceof(o, "IsoThumpable") and o:isFloor() then
+    local thump = instanceof(o, "IsoThumpable")
+    if not (thump or Place.keyed(o)) then return false end
+    if thump and o:isFloor() then
         local spr = o:getSprite()
         return spr ~= nil and spr:getName() == e, true
     end
@@ -216,10 +219,7 @@ function Dismantle.blocked(kind, plan)
         local at = { x = sq:getX(), y = sq:getY(), z = sq:getZ() }
         local spr = o:getSprite()
         local p = spr:getProperties()
-        if not o:isObjectNoContainerOrEmpty() or (p:has("IsTable") and sq:has("IsTableTop"))
-            or (p:has("IsWaterCollector") and o:hasFluid()) then
-            return "NOT_EMPTY", at
-        end
+        if not o:isObjectNoContainerOrEmpty() or (p:has("IsTable") and sq:has("IsTableTop")) then return "NOT_EMPTY", at end
         if (kind == "doorFrame" or kind == "windowFrame") and attached(kind, o, sq, spr) then return "ATTACHED", at end
     end
     return nil
@@ -247,8 +247,8 @@ end
 --     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
 --   原版拆解擋的（canScrapObjectInternal，ISMoveableSpriteProps.lua:3905-3939）：
---     容器要空（isObjectNoContainerOrEmpty；伺服器的移除不倒出內容，IsoObject.java:4545-4553）、桌子上有桌上物件、
---     集水的（IsWaterCollector）裡面有水：NOT_EMPTY。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
+--     容器要空（isObjectNoContainerOrEmpty；伺服器的移除不倒出內容，IsoObject.java:4545-4553）、桌子上有桌上物件：
+--     NOT_EMPTY（集水的不列，Rules 的 COLLECTOR，所以不查有沒有水）。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
 --   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
@@ -356,7 +356,7 @@ function Dismantle.lightRefund(obj, mats)
 end
 
 -- 客戶端預覽用的舊退料（伺服器照 Place.refundOf 算，見 Check.item）：拿得到退料表（buildMaterials）就用；拿不到
--- （一樓地板記在伺服器帳本、燈）照現在的價（Cost.forCells × 沙盒倍率）扣電器費估。回 had, estimated（true＝估的）
+-- （一樓地板記在伺服器帳本、燈、家電）照現在的價（Cost.forCells × 沙盒倍率）扣電器費估。回 had, estimated（true＝估的）
 function Dismantle.estimateRefund(obj, kind)
     if instanceof(obj, "IsoThumpable") and obj:hasBuildMaterials() then return obj:getBuildMaterials(), false end
     local cost = Cost.forCells(kind, { obj:getSprite() }, Check.setting("CostMultiplier", 1))[1]

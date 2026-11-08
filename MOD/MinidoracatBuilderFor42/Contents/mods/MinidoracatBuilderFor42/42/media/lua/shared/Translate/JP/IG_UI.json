@@ -332,6 +332,7 @@
   "IGUI_MBLD_Why_DOOR_OPEN": "これはドアが開いている状態の見た目です。閉じたドアを探してください。",
   "IGUI_MBLD_Why_INVINCIBLE": "壊せない窓と、窓を壊せなくする物は載せていません。",
   "IGUI_MBLD_Why_WATER": "水が無限に出るため、載せていません。",
+  "IGUI_MBLD_Why_COLLECTOR": "雨樽などの水をためる樽は、ここで建てると水が入らないため載せていません。雨樽はバニラの建築メニューから建ててください。",
   "IGUI_MBLD_Why_STACK": "これは積み重ねた状態の見た目で、マップを読み込むと別のタイルに変わります。積み重ねていないものを探してください。",
   "IGUI_MBLD_Why_STAIRS_PART": "拾ったり解体したりできる階段パーツは載せていません。",
   "IGUI_MBLD_Why_STAIRS_SET": "階段は 3 つのパーツがすべてそろうものだけを、一番下のパーツで載せています。",
@@ -402,7 +403,7 @@
   "IGUI_MBLD_SetRole_DoorW": "西のドア枠",
   "IGUI_MBLD_SetRole_DoorN": "北のドア枠",
   "IGUI_MBLD_Pick_Tip": "ワールドから選ぶ：ワールド内のものをクリックすると、ここで選択されます。",
-  "IGUI_MBLD_Pick_Label": "タイルを選ぶ：クリックでその場所のタイルを選択",
+  "IGUI_MBLD_Pick_Label": "タイルを選ぶ：クリックしたもののタイルを選択",
   "IGUI_MBLD_Pick_Many": "複数ある場合はリストが表示されます",
   "IGUI_MBLD_Pick_HintClick": "左クリック：選択",
   "IGUI_MBLD_Pick_None": "この場所には選べるタイルがありません。"

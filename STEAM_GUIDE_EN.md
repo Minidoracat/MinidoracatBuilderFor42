@@ -59,6 +59,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:15-pick-en.jpg}}
 [list]
 [*] [b]Eyedropper[/b]: press the eyedropper button left of the search bar (Pick from the world), the window hides, and clicking something in the world selects it.
+[*] [b]Tall things[/b]: click the image of a wall or a light to pick the square it stands on, with no need to find the ground at its foot.
 [*] [b]Several images on one square[/b]: a list pops up to choose from.
 [*] [b]Cancel the eyedropper[/b]: right-click, and the window comes back.
 [*] [b]Pick tile with a right-click[/b]: right-click the ground and choose Pick tile (Build Anything).
@@ -185,6 +186,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300. Server owners can turn on Zombies can't break builds in the sandbox.
 [*] [b]Stair openings[/b]: walls, fences and door frames can't block the way onto or off stairs.
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
+[*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
+[*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use.
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
@@ -242,6 +245,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Roofs[/h3]
 {{img:07-roof-en.jpg}}
 [list]
+[*] [b]On the ground floor too[/b]: eaves, roof trims and other roof pieces can go on the level of the walls, as on the vanilla map, with no support check. Not allowed in basements.
 [*] [b]From the second floor up[/b]: needs a wall below, or a floor or roof beside it holding it up.
 [*] [b]Above stairs[/b]: not allowed directly above stairs.
 [*] [b]Which level[/b]: the cursor builds one level up at the same spot on screen by default.
@@ -264,6 +268,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
+[*] [b]Fireplaces[/b]: work like the ones on the map once built, so you can add fuel and light them; stoves, ovens and similar appliances from tile packs are built the way the map builds them too.
+[*] [b]Fireplaces built in 0.6.1 or earlier[/b]: can't be lit; dismantle them with Dismantle (Build Anything) and build them again.
+[*] [b]Rain collector barrels and metal drums[/b]: not in the catalog. Built with this mod they can't collect rain, so build them from the vanilla build menu. Ones built before this update can be picked up as in vanilla if they're movable; the immovable one can only be smashed with a sledgehammer, for no materials.
 [*] [b]Container capacity[/b]: the same as the vanilla piece; server owners can set Container capacity multiplier in the sandbox, up to 100.
 [/list]
 [h3]Lights[/h3]
@@ -438,11 +445,12 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [list]
 [*] [b]Open wiring mode[/b]: right-click the switch and choose Wiring... (Build Anything).
 [*] [b]Outline colours[/b]: green is this switch, yellow a wired light, white a light you can wire, grey a light on another switch.
+[*] [b]Which one is picked[/b]: point at the image of a light or switch (a lamp head or a wall light counts) to pick it, and its square lights up; when you aren't pointing at anything you can wire, the square under the mouse is grey.
 [*] [b]Click a light[/b]: adds or removes it.
 [*] [b]Lights on another circuit[/b]: clicking one moves it over.
 [*] [b]Click another switch[/b]: makes it two-way, and its whole circuit joins.
 [*] [b]Click a wired switch[/b]: takes it off.
-[*] [b]Several on one square[/b]: click again for the next one.
+[*] [b]Several on one square[/b]: when their images overlap, or you point at that square's floor, click again for the next one; the panel shows which one of how many.
 [*] [b]Panel buttons[/b]: Wire this room, Unwire all, Done.
 [*] [b]Leave[/b]: Esc or right-click.
 [*] [b]Lights you can wire[/b]: lights built with Build Anything, and movable lights.
@@ -502,7 +510,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [/list]
 [h3]Before you dismantle[/h3]
 [list]
-[*] [b]Containers[/b]: empty them, and pour the water out of rain collectors.
+[*] [b]Containers[/b]: empty them first.
 [*] [b]Door and window frames[/b]: take off the door, window or boards first.
 [*] [b]Upper floors[/b]: move what is on them first.
 [*] [b]A floor the stairs lead up to[/b]: dismantle the stairs first.
@@ -531,7 +539,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Rotate[/b]: LB/RB.
 [*] [b]Build[/b]: A.
 [*] [b]Cancel[/b]: B.
-[*] [b]Roof level[/b]: X switches between one level up and this level.
+[*] [b]Roof and floor level[/b]: X switches between one level up and this level.
 [*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time.
 [/list]
 [h3]Wiring mode[/h3]
@@ -703,6 +711,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Street lights in singleplayer[/b]: switch off street lights and signs that are lit at night before you save, or after removal their heads keep looking lit (without giving light).
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
+[*] [b]Remove fireplaces and stoves you don't want[/b]: fireplaces and immovable stoves built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove floor overlays you don't want[/b]: road markings, cracks and similar overlays built with Build Anything can't be removed after removal.
 [*] [b]Zombie-proof builds and container capacity[/b]: to turn what you built back to vanilla, switch off Zombies can't break builds and Zombies can't break doors, set Container capacity multiplier back to 1, restart the server (reload the save in singleplayer), then visit every place you built so the area loads again. This can't be changed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
@@ -727,7 +736,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]Removing things after removal[/h3]
 [list]
 [*] [b]Walls[/b]: vanilla Disassemble or a sledgehammer.
-[*] [b]Immovable lights[/b]: only by smashing with a sledgehammer.
+[*] [b]Immovable lights, fireplaces and immovable stoves[/b]: only by smashing with a sledgehammer.
 [*] [b]Ground floors[/b]: can't be removed.
 [*] [b]Floor overlays[/b]: can't be removed, like the map's own road markings; they go away when that square's floor is replaced.
 [/list]
@@ -741,7 +750,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Set the source back to All sources, the tab to All, and untick Only what I can build.
 [*] Search its full tile name, use the eyedropper to click it in the world, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
-[*] Some things are never in the catalog, such as tents, sleeping bags and other things that turn into a special item when picked up, and Lifestyle: Hobbies tiles are off by default in new worlds; see For server admins: other mods' facilities.
+[*] Some things are never in the catalog, such as tents, sleeping bags and other things that turn into a special item when picked up, and rain collector barrels and metal drums (build them from the vanilla build menu); Lifestyle: Hobbies tiles are off by default in new worlds. See For server admins: other mods' facilities.
 [/list]
 [h3]An item is dimmed. Can I still build it?[/h3]
 [list]
@@ -749,6 +758,10 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] Materials (have / need) in the details shows how many.
 [*] When the server turns on Require vanilla skill levels, a skill that's too low dims it too, and you can build it once you reach the level in the details.
 [*] When dragging a row, only the tiles you can afford are built.
+[/list]
+[h3]My fireplace can't be lit[/h3]
+[list]
+[*] Fireplaces built with this mod in 0.6.1 or earlier can't be lit. Dismantle them with Dismantle (Build Anything) and build them again, and then you can add fuel and light them.
 [/list]
 [h3]Why doesn't my light turn on?[/h3]
 [list]

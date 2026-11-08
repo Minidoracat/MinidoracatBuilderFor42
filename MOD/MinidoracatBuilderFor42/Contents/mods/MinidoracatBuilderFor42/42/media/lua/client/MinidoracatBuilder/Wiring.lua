@@ -234,6 +234,51 @@ function Wiring.at(x, y, z)
     return list[i], i, #list
 end
 
+-- 滑鼠停在哪一個候選的圖上（滑鼠用）。照引擎點物件的算法：圖的左上角＝格子在畫面上的位置減物件的 offsetX／offsetY
+-- （IsoSprite.java:595-604；renderYOffset 另加，IsoObject.java:3549），isoToScreenX 已扣攝影機、除縮放（LuaManager.java:3769-3776）；
+-- 圖外不算，圖內看那一點透不透明（isMaskClicked），同 FBORenderObjectPicker.java:154-191,461-470；淡出看不見的（targetAlpha 0，
+-- 例：擋住視線被切掉的牆上的燈）不算，同 :68、:298。指燈頭、牆上的燈時，滑鼠下的地板格是後面那一格（E2E builder-bili-1109a），
+-- 所以先照圖找。好幾格都中時照引擎的順序取最後一格：層高大的，同一層 y 大的、再來 x 大的（FBORenderObjectPicker.java:196-204,
+-- 247-251，從尾端往前挑 :337；引擎在層高之後另比 render layer，Lua 讀不到）。那一格從現在輪到的（m.pick）往後找第一個命中的：
+-- 只有一個中就是它（指著哪個選哪個，審查 1109 Grok），好幾個都中時點一次換下一個命中的（審查 1109 Codex）。
+-- 比游標那一層（zmin）低的候選不算：從樓上看，下一層的燈被這層的地板蓋住，引擎點到的是地板（同上，層高先比；審查 1109
+-- Claude 第 2 輪），0.6.1 照游標那格找時也點不到下一層。回選到的、它在疊在滑鼠那點的幾個裡排第幾、共幾個（面板提示
+-- 「再點一次換下一個」照這個數，只疊一個時不提示），或 nil
+function Wiring.atMouse(pn, zmin)
+    local m = Wiring.mode
+    if not (m and m.cand) then return nil end
+    local mx, my, zoom, ts = getMouseX(), getMouseY(), getCore():getZoom(pn), Core.getTileScale()
+    local w, h, rank, hit, at = 64 * ts, 128 * ts, nil, nil, nil
+    for _, c in ipairs(m.cand) do -- 每幀跑：排在已中的那格前面的不取物件（審查 1109 Claude）
+        local r = c.z * 1e11 + c.y * 100000 + c.x
+        local o = c.z >= (zmin or c.z) and (not rank or r >= rank) and objAt(c)
+        if o and o:getTargetAlpha(pn) > 0 then
+            local lx = math.floor((mx - isoToScreenX(pn, c.x, c.y, c.z)) * zoom + o:getOffsetX())
+            local ly = math.floor((my - isoToScreenY(pn, c.x, c.y, c.z)) * zoom + o:getOffsetY() + o:getRenderYOffset() * ts)
+            if lx >= 0 and lx < w and ly >= 0 and ly < h and o:isMaskClicked(lx, ly) then
+                if r ~= rank then rank, hit, at = r, {}, c end
+                hit[keyOf(c)] = true
+            end
+        end
+    end
+    if not rank then return nil end
+    -- 從那一格輪到的往後找：部分疊在滑鼠那點時也照樣輪到下一個命中的，不會卡在第一個（審查 1109 Codex 第 2 輪）
+    local p = posOf(at.x, at.y, at.z)
+    local list, want, start, nth, n = m.byPos[p], m.pick[p], 1, {}, 0
+    for j, c in ipairs(list) do
+        local k = keyOf(c)
+        if k == want then start = j end
+        if hit[k] then
+            n = n + 1
+            nth[j] = n
+        end
+    end
+    for k = 0, #list - 1 do
+        local j = (start - 1 + k) % #list + 1
+        if nth[j] then return list[j], nth[j], n end
+    end
+end
+
 -- 送一個接線指令（op＝add／remove／join／room／clear，c＝點到的那一個）。回覆前不收下一個。onDone：成功（apply 之後），
 -- 或被拒而接線模式還開著時呼叫（限流不算）。busy 在送出前設：單機的回覆在 send 裡面就到了，回呼清掉 busy 之後
 -- 不能再被 send 的回傳值蓋回去
@@ -262,14 +307,15 @@ function Wiring.op(op, c, onDone)
     end)
 end
 
--- 點一格：現在選的那個。開關＝接成雙切（已在這條線路就拿掉）；燈＝加入或移除。這一格有好幾個時，回覆後下一次點換
--- 下一個：記物件的鍵（apply 會重排清單，記第幾個會指回剛操作的那一個）。被拒也換（不然每次都拒的那一個會擋住同一格
--- 其他的），限流不換
-function Wiring.click(x, y, z)
+-- 點一個：c（游標照圖選到的那一個），沒給時是 (x, y, z) 那一格現在選的那個。開關＝接成雙切（已在這條線路就拿掉）；
+-- 燈＝加入或移除。那一格有好幾個時，回覆後下一次點換下一個：記物件的鍵（apply 會重排清單，記第幾個會指回剛操作的
+-- 那一個）。被拒也換（不然每次都拒的那一個會擋住同一格其他的），限流不換
+function Wiring.click(x, y, z, c)
     local m = Wiring.mode
-    local c, _, n = Wiring.at(x, y, z)
+    if c then x, y, z = c.x, c.y, c.z else c = Wiring.at(x, y, z) end
     if not c then return nil end
     local p, ck = posOf(x, y, z), keyOf(c)
+    local n = #(m and m.byPos and m.byPos[p] or {})
     local function advance()
         if n < 2 or Wiring.mode ~= m then return end
         local list = m.byPos[p] or {}
@@ -337,26 +383,30 @@ function WireCursor:isValid(square)
         setHover(m, nil)
         return false
     end
-    local c, i, n = Wiring.at(square:getX(), square:getY(), square:getZ())
+    local c, i, n
+    if not self.joypad then c, i, n = Wiring.atMouse(m.pn, square:getZ()) end
+    if not c then c, i, n = Wiring.at(square:getX(), square:getY(), square:getZ()) end
     self.hover = c
     setHover(m, c and Wiring.hoverText(c, i, n) or nil)
     return c ~= nil and not busy(m)
 end
 
--- 地上照好／壞色畫一格；停在可以點的格子時，把現在選的那一個用它自己的圖再畫一次（一格好幾個時看得出選的是哪個）
+-- 停在可以點的那一個：它那一格畫好色（照圖選到的不一定在滑鼠下那格），再用它自己的圖畫一次（一格好幾個時看得出選的是
+-- 哪個）。沒有可以點的：滑鼠那格畫灰色（使用者 2026-11-09 選：不畫紅色，玩家看到整片紅以為壞了）
 function WireCursor:render(x, y, z)
-    local good, bad = getCore():getGoodHighlitedColor(), getCore():getBadHighlitedColor()
-    local c = self.hover and good or bad
-    self:getFloorCursorSprite():RenderGhostTileColor(x, y, z, c:getR(), c:getG(), c:getB(), 0.8)
     local h = self.hover
-    if h then
-        local named = IsoSpriteManager.instance:getNamedMap()
-        local spr = named:containsKey(h.e) and named:get(h.e)
-        if spr then spr:RenderGhostTileColor(h.x, h.y, h.z, 0, 0, 1, 1, 1, 0.6) end
+    if not h then
+        self:getFloorCursorSprite():RenderGhostTileColor(x, y, z, 0.55, 0.55, 0.55, 0.6)
+        return
     end
+    local good = getCore():getGoodHighlitedColor()
+    self:getFloorCursorSprite():RenderGhostTileColor(h.x, h.y, h.z, good:getR(), good:getG(), good:getB(), 0.8)
+    local named = IsoSpriteManager.instance:getNamedMap()
+    local spr = named:containsKey(h.e) and named:get(h.e)
+    if spr then spr:RenderGhostTileColor(h.x, h.y, h.z, 0, 0, 1, 1, 1, 0.6) end
 end
 
-function WireCursor:tryBuild(x, y, z) Wiring.click(x, y, z) end
+function WireCursor:tryBuild(x, y, z) Wiring.click(x, y, z, self.hover) end
 
 function WireCursor:deactivate()
     local m = Wiring.mode
