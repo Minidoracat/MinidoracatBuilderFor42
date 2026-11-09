@@ -23,7 +23,7 @@ local LANDING = "," .. MinidoracatBuilder.Entry.STAIR_FLOOR
 
 local function isLanding(k) return k:sub(-#LANDING) == LANDING end
 
-local CHUNK = 8 -- IsoChunk 一邊幾格（IsoChunk.java:3763,3801）
+local CHUNK = 8 -- IsoChunk 一邊幾格（IsoChunk.java:3762,3800）
 local function chunkOf(x, y) return math.floor(x / CHUNK) * 100000 + math.floor(y / CHUNK) end
 local byChunk = {} -- 還沒定案的 0.3.0 舊燈鍵，照所在的 chunk 分（檔尾）
 local watchLegacy -- 檔尾：還有舊鍵時才掛讀 chunk 的事件
@@ -131,7 +131,7 @@ function Ledger.get(obj)
     return k and inst.built[k] or nil
 end
 
--- 移出世界前清掉（拿起、砸、拆、多格整組拆都會觸發，RemoveItemFromSquarePacket.java:151、IsoGridSquare.java:5745）。
+-- 移出世界前清掉（拿起、砸、拆、多格整組拆都會觸發，RemoveItemFromSquarePacket.java:151、IsoGridSquare.java:5732）。
 -- 燈與家電只清自己那一筆（認法同 Ledger.get）
 function Ledger.forget(obj)
     local inst = Ledger.instance
@@ -156,7 +156,7 @@ end)
 -- built 照「位置＋圖名」記。升版後每個 chunk 第一次讀進來時，那一塊的舊鍵全部定案：那一格帳本還認不得（keyId -1，或當機回溯後
 -- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、把那一筆搬進 lamps；沒有或有兩盞以上（分不出是哪一盞）就刪掉
 -- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。
--- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3969），物件在那之前就從存檔讀進來（IsoChunk.java:2325,3800-3838），所以用
+-- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3968），物件在那之前就從存檔讀進來（IsoChunk.java:2324,3799-3837），所以用
 -- getObjects 找整塊的燈。只在還有舊鍵時掛 LoadChunk：舊鍵所在的塊沒人去就一直掛著，但每塊只取一格、查一次表；
 -- 全部定案（或出錯、留到下次開服）就摘掉。不掛逐格的 LoadGridsquare：那是每讀一格都跑一次。
 local function candidate(inst, o, name)
@@ -196,7 +196,7 @@ local function settleChunk(inst, ck, chunk)
     byChunk[ck] = nil
     local ok, err = pcall(settle, inst, chunk, keys)
     if not ok then print(LOG .. "light ledger adopt failed: " .. tostring(err)) end
-    -- 還有塊沒讀到。不用 pairs 判空：Kahlua 的 pairs 先把整張表的鍵複製一份（KahluaTableImpl.java:152-154）
+    -- 還有塊沒讀到。不用 pairs 判空：Kahlua 的 pairs 先把整張表的鍵複製一份（KahluaTableImpl.java:154-156）
     if not table.isempty(byChunk) then return end
     watchLegacy(false)
     print(LOG .. "LEDGER legacy lights done, unsettled=" .. Ledger.legacy)
@@ -221,7 +221,7 @@ local function onLoadChunk(chunk)
     if ck and byChunk[ck] then settleChunk(Ledger.instance, ck, chunk) end
 end
 
--- 帳本建好之前就讀進來的塊（單機讀檔先讀格子、後建帳本，GameLoadingState.java:305,313）：建好後的第一個 tick 照舊鍵的位置找，
+-- 帳本建好之前就讀進來的塊（單機讀檔先讀格子、後建帳本，GameLoadingState.java:307,316）：建好後的第一個 tick 照舊鍵的位置找，
 -- 那一塊在就定案，不在的等它讀進來。專用伺服器先建帳本再讀格子，這時一塊都還沒有。
 local function settleLoaded()
     Events.OnTick.Remove(settleLoaded)

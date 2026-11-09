@@ -37,7 +37,7 @@ end
 local setting = Check.setting
 
 -- 請求的錨點 (x, y, z) 在收請求的範圍內：水平各軸 INTENT_REACH 格內、樓層差 ≤ 1。Server.intent、Server.dismantleIntent
--- 與游標預覽共用。建造作弊不限（使用者 2026-11-02 選照原版：作弊時不走過去、點哪裡蓋哪裡，ISBuildingObject.lua:208、
+-- 與游標預覽共用。建造作弊不限（使用者 2026-11-02 選照原版：作弊時不走過去、點哪裡蓋哪裡，ISBuildingObject.lua:212、
 -- 拆的 ISDestroyCursor.lua:24）。
 function Check.inReach(player, x, y, z)
     if Materials.cheat(player) then return true end
@@ -70,7 +70,7 @@ local function reach(player, cells)
 end
 
 -- 同一層：玩家走得到最近那一格嗎。在兩格圍成的範圍外加一圈裡，沿 canReachTo 找路：牆（含透明牆）、關著的門窗都擋
--- （IsoGridSquare.java:939-961；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
+-- （IsoGridSquare.java:934-956；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
 -- 只讀已有的格子（getGridSquare 不建格子）。ponytail：範圍最大約 (2×MaxDistance＋3)² 格，每次判斷跑一次。
 local function reachable(player, c)
     local pz = math.floor(player:getZ())
@@ -105,7 +105,7 @@ local function reachable(player, c)
 end
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，伺服器拒絕時它自己推通知）。
 -- 預覽時格子可能不存在：要格子的原版查詢略過（交給伺服器），denies 照座標查（格子不必存在）。
--- checkPermissions 只在伺服器回 true（LuaManager.java:3054-3057），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
+-- checkPermissions 只在伺服器回 true（LuaManager.java:3075-3078），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
 -- why＝"build"（預設）、"dismantle" 或 "wire"（接線，Circuits）：拆除、接線一樣要 BUILD 權限（原版大錘、ISDismantleAction
 -- 也是），但不看 WhereCanBuild。
 function Check.safehouse(player, c, preview, why)

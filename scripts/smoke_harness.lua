@@ -1984,6 +1984,32 @@ do
         "一排逐格累計：木板 5、每格 2，前兩格可蓋，被擋的不扣，後兩格缺料")
     check(S.items["Base.Plank"] == 5, "累計只扣在副本，原摘要不動")
     Check.item = realItem
+    -- 手把 A（42.22.2）：原版 DoTileBuilding 對手把玩家不讀建造鍵（ISBuildingObject.lua:114-126），A 只送到游標的
+    -- onJoypadPressButton，原版基底又不處理 A：本工具的游標照手把現在那一格重算、記成 square，再設建造旗標
+    local realJoypad, realBase = Joypad, ISBuildingObject
+    local baseCalls = 0
+    Joypad = { AButton = 1, BButton = 2, XButton = 3, YButton = 4, LBumper = 5, RBumper = 6 }
+    ISBuildingObject = { onJoypadPressButton = function() baseCalls = baseCalls + 1 end }
+    local function padCursor(valid, o)
+        o.entry = { kind = "wall" }
+        o.isValid = function(self, sq) self.asked = sq return valid end
+        return setmetatable(o, { __index = Cursor })
+    end
+    local oldSq, newSq = getCell():getGridSquare(58, 41, 0), getCell():getGridSquare(59, 41, 0)
+    local pad = padCursor(true, { square = oldSq, canBeBuild = false, xJoypad = 59, yJoypad = 41, zJoypad = 0 })
+    pad:onJoypadPressButton(0, {}, Joypad.AButton)
+    -- 方向鍵連跳和 A 同一次輪詢：square／canBeBuild 還是剛離開的那格（可蓋），手把已經到下一格（不可蓋）
+    local moved = padCursor(false, { square = oldSq, canBeBuild = true, xJoypad = 59, yJoypad = 41, zJoypad = 0 })
+    moved:onJoypadPressButton(0, {}, Joypad.AButton)
+    local gone = padCursor(true, { square = oldSq, canBeBuild = true, xJoypad = 59, yJoypad = 41, zJoypad = 5 })
+    gone:onJoypadPressButton(0, {}, Joypad.AButton)
+    check(pad.build == true and pad.canBeBuild == true and pad.square == newSq and pad.asked == newSq and baseCalls == 0,
+        "手把 A：照手把那一格重算，可蓋就記成要蓋的格子、設建造旗標（下一幀蓋）；A 不交給原版基底")
+    check(moved.build == false and moved.canBeBuild == false and moved.square == newSq and not gone.build
+        and gone.asked == nil, "手把 A：游標剛移走時不照上一格蓋（審查 1110 Grok）；那一格還沒建出來不蓋")
+    pad:onJoypadPressButton(0, {}, Joypad.BButton)
+    check(baseCalls == 1, "手把 B：照舊交給原版（取消游標）")
+    Joypad, ISBuildingObject = realJoypad, realBase
 end
 
 print("情境十九：拒絕碼的玩家訊息")
@@ -4718,6 +4744,48 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     load({ lc, lr })
     check(at115 == 58 and at41[1] == 100 and at41[2] == 62 and lc.boxes[1].cap == 50 and lr.boxes[2].cap == 15,
         "讀檔、容器：.5 邊界照四捨五入進位（50×1.15＝58、冷凍庫 15×4.1＝62）")
+
+    -- 插入位置（42.22.2 原版 fenceOrWall／door OnCreate，buildRecipeCode.lua:625-658）：格上已有地板與家具時，牆插在
+    -- 最後一個地板後面（不畫在家具上），門插在同方向門框後面
+    local function obj(spr) return { getProperties = function() return spr:getProperties() end,
+        getType = function() return spr:getType() end, getSprite = function() return spr end,
+        getTextureName = function() return spr:getName() end } end
+    local chairS = sprite("zp_chair_01_0", 2715, { keys = { IsMoveAble = "" } })
+    local frameTyped = sprite("zp_frame_01_1", 2716, { type = T.doorFrW, flags = { "DoorWallW" }, keys = { DoorWallW = "" } })
+    local orderSq = squares["97,97,0"]
+    local F0, CH = obj(floorS), obj(chairS)
+    orderSq.objects = { F0, CH }
+    Place.build("wall", { { sq = orderSq, spr = wallS, cost = { items = {} } } }, {})
+    local wallAt = orderSq.objects[2] and orderSq.objects[2]:getSprite():getName()
+    local FR = obj(frameTyped)
+    local doorSq = squares["97,96,0"]
+    doorSq.objects = { obj(floorS), FR, obj(chairS) }
+    Place.build("door", { { sq = doorSq, spr = doorS, cost = {} } }, {})
+    local doorAt = doorSq.objects[3] and doorSq.objects[3].name
+    check(wallAt == "zp_wall_01_0" and orderSq.objects[1] == F0 and orderSq.objects[3] == CH
+        and doorSq.objects[2] == FR and doorAt == "zp_door_01_0",
+        "牆插在地板後、家具前；門插在同方向門框後（照 42.22 原版，牆不畫在家具上）")
+    -- 換地板（沒有地毯）：新地板插回舊地板的位置，不加在最後。加在最後的話地板排到家具後面，之後蓋的柵欄照「最後一個
+    -- 地板後面」也跟著排到家具後面（審查 1110 Claude）
+    local swapSq = squares["96,97,0"]
+    local oldF, CH2, swapped = obj(floorS), obj(chairS), {}
+    swapSq.objects = { oldF, CH2 }
+    Place.build("floor", { { sq = swapSq, spr = floorS, cost = { items = {} } } }, swapped)
+    local newF = swapped[1]
+    local floorFirst = newF ~= nil and newF ~= oldF and swapSq.objects[1] == newF and swapSq.objects[2] == CH2
+        and #swapSq.objects == 2
+    if newF then newF.getProperties = function() return floorS:getProperties() end end
+    Place.build("fence", { { sq = swapSq, spr = fenceS, cost = { items = {} } } }, {})
+    check(floorFirst and swapSq.objects[2] and swapSq.objects[2].name == "zp_fence_01_0" and swapSq.objects[3] == CH2,
+        "換地板：新地板插回舊地板的位置（家具前面）；之後蓋的柵欄插在它後面、家具前面")
+    -- 舊地板前面還有會被拆的東西（草疊圖）：拆掉它以後地板的位置往前一格
+    local grassS = sprite("zp_grass_01_0", 2717, { flags = { "canBeRemoved" } })
+    local grassSq = squares["95,97,0"]
+    local CH3, swapped2 = obj(chairS), {}
+    grassSq.objects = { obj(grassS), obj(floorS), CH3 }
+    Place.build("floor", { { sq = grassSq, spr = floorS, cost = { items = {} } } }, swapped2)
+    check(swapped2[1] ~= nil and grassSq.objects[1] == swapped2[1] and grassSq.objects[2] == CH3 and #grassSq.objects == 2,
+        "換地板：舊地板前面的草一起拆掉時，新地板照樣排在家具前面（審查 1110 第 2 輪 Claude）")
     instanceof = realInst
     IsoDoor = nil
 end)()
@@ -6132,7 +6200,7 @@ print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框�
         and not Place.check("window", framed, square(213, 210, 1)) and not Place.check("window", framed, square(214, 210, 0, { stairs = true })),
         "牆型窗照一般格邊：那條邊有牆、樓上腳下沒有地板、格上有樓梯都擋")
 
-    -- 蓋：照舊建 IsoWindow（north 照佔的邊），沒有窗框時加在最後
+    -- 蓋：照舊建 IsoWindow（north 照佔的邊）；沒有窗框，照牆插在最後一個地板後面（格上沒有地板就加在最後）
     local made = {}
     local realWindow = IsoWindow
     IsoWindow = { new = function(_, sq, spr, north)
@@ -6150,10 +6218,18 @@ print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框�
     local fresh = square(215, 210, 0, { flags = {} })
     fresh.objects[1] = { getProperties = function() return wallS:getProperties() end } -- 同格別的東西（北邊的牆之類）
     Place.build("window", { { sq = fresh, spr = framed, cost = { items = {} } } }, placed)
+    local floorS = sprite("floors_fbwin_01_0", 9206, { flags = { "solidfloor" } })
+    local FL = { getProperties = function() return floorS:getProperties() end }
+    local CHR = { getProperties = function() return wallS:getProperties() end }
+    local onFloor = square(217, 210, 0, { flags = {} })
+    onFloor.objects = { FL, CHR }
+    Place.build("window", { { sq = onFloor, spr = framed, cost = { items = {} } } }, {})
     IsoWindow = realWindow
     local win = made[1]
-    check(#made == 1 and win.north == false and win.spr == framed and win.set.locked == false and placed[1] == win
-        and fresh.objects[2] == win, "蓋牆型窗：建 IsoWindow（西邊 north＝false）、不另建窗框、加在格子最後")
+    check(#made == 2 and win.north == false and win.spr == framed and win.set.locked == false and placed[1] == win
+        and fresh.objects[2] == win, "蓋牆型窗：建 IsoWindow（西邊 north＝false）、不另建窗框；格上沒有地板時加在最後")
+    check(onFloor.objects[1] == FL and onFloor.objects[2] == made[2] and onFloor.objects[3] == CHR,
+        "蓋牆型窗：格上有地板和別的東西時照牆插在地板後面、不排到最後（審查 1110）")
 
     -- 蓋好之後引擎的格子屬性是各物件的聯集，getWindow 回這扇窗（IsoGridSquare.java:7250-7264、3634-3680）
     local builtO = { flags = { WindowW = true, windowW = true, cutW = true, collideW = true }, windows = { [EW] = win } }
@@ -6814,10 +6890,12 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         end
         return c
     end
-    ISBuildIsoEntity = { new = function(_, player, objectInfo, n, containers, logic)
-        return { character = player, objectInfo = objectInfo, nSprite = n, containers = containers, buildPanelLogic = logic,
-            dragNilAfterPlace = true, blockAfterPlace = false }
-    end }
+    -- 類別方法：本 MOD 掛在實例上的手把處理，A 以外要交回這裡（遊戲裡實例照 metatable 拿到類別的那支）
+    ISBuildIsoEntity = { onJoypadPressButton = function(self, _, _, button) self.classPressed = button end }
+    ISBuildIsoEntity.new = function(_, player, objectInfo, n, containers, logic)
+        return setmetatable({ character = player, objectInfo = objectInfo, nSprite = n, containers = containers,
+            buildPanelLogic = logic, dragNilAfterPlace = true, blockAfterPlace = false }, { __index = ISBuildIsoEntity })
+    end
     ISPaintCursor = { new = function(_, player, action, args) return { character = player, action = action, args = args } end }
     ISTimedActionQueue.isPlayerDoingAction = function() return false end
     Recipes.list = nil
@@ -7002,6 +7080,29 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     check(o2 and o2.firstItem == "Base.Hammer" and o2.secondItem == nil and o2.equipBothHandItem == nil,
         "要拿在手上的工具照原版視窗：背包裡有的那件")
     check(o2 and drag[0] == o2 and o.replaced and ended == nil, "換成本 MOD 另一個游標：舊的不算結束，視窗不回來")
+    -- 手把 A（42.22.2）：原版 DoTileBuilding 不替手把讀建造鍵、原版配方游標也不處理 A；本 MOD 開的實例自己設建造旗標
+    local realJoypad = Joypad
+    Joypad = { AButton = 1, BButton = 2 }
+    local padSq = getCell():getGridSquare(58, 41, 0)
+    o2.xJoypad, o2.yJoypad, o2.zJoypad = 58, 41, 0
+    o2.isValid = function(_, sq) return sq == padSq end
+    o2:onJoypadPressButton(0, {}, Joypad.AButton)
+    local aBuild, aClass = o2.build, o2.classPressed
+    o2:onJoypadPressButton(0, {}, Joypad.BButton)
+    -- 油漆、壁紙游標：換了格，上一格選的第幾個物件要設回 1；沒換格照舊
+    o2.objectIndex, o2.currentSquare = 2, getCell():getGridSquare(57, 41, 0)
+    o2:onJoypadPressButton(0, {}, Joypad.AButton)
+    local movedIdx, movedSq = o2.objectIndex, o2.currentSquare
+    o2.objectIndex = 2
+    o2:onJoypadPressButton(0, {}, Joypad.AButton)
+    local stayIdx = o2.objectIndex
+    o2.objectIndex, o2.currentSquare = nil, nil
+    Joypad = realJoypad
+    check(aBuild == true and aClass == nil and o2.classPressed == 2 and rawget(o2, "onJoypadPressButton") ~= nil
+        and rawget(o2, "onJoypadPressButton") ~= ISBuildIsoEntity.onJoypadPressButton,
+        "配方游標的手把 A：設建造旗標（下一幀照它蓋）、不交回原版；B 照原版處理；只掛在這個實例上")
+    check(movedIdx == 1 and movedSq == padSq and stayIdx == 2,
+        "油漆、壁紙游標的手把 A：換了格，選第幾個物件設回 1；同一格照舊（審查 1110 第 2 輪 Codex）")
     getCell():setDrag(nil, 0)
     check(ended == 0, "游標清掉（右鍵、手把 B）：視窗回來")
     fire("OnTick")

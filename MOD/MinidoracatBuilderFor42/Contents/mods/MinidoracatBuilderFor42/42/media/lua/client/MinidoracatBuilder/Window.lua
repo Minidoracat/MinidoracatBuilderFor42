@@ -76,7 +76,7 @@ local function trim(s)
 end
 
 -- 一排幾格的設定檔：讀不到、不是 2–10 的整數就用預設 5。getFileReader／getFileWriter 的路徑相對 Zomboid/Lua，
--- 寫入時自動建資料夾（LuaManager.java:5936-5963,6727-6759；同 Favorites.lua）
+-- 寫入時自動建資料夾（LuaManager.java:5910-5937,6687-6719；同 Favorites.lua）
 local function readPerRow()
     local r = getFileReader(W.PER_ROW_FILE, false)
     if not r then return nil end
@@ -864,7 +864,7 @@ function W.whyText(code, arg, name)
     elseif code == "DISABLED_SOURCE" and arg then
         arg = W.modName(arg)
     elseif code == "ENTITY" and arg then
-        -- 配方的顯示名稱（Translator.getRecipeName：沒有翻譯時回原名；LuaManager.java:8848-8853、Translator.java:691-701）
+        -- 配方的顯示名稱（Translator.getRecipeName：沒有翻譯時回原名；LuaManager.java:8784-8789、Translator.java:691-701）
         arg = getRecipeDisplayName(arg)
     end
     return getTextOrNull("IGUI_MBLD_Why_" .. tostring(code), tostring(arg or "?")) or getText("IGUI_MBLD_Why_UNKNOWN")
@@ -1171,7 +1171,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         end
     end
     -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
-    -- （IsoWindow.java:84,744）；打破窗不看這個鎖（:264-306）
+    -- （IsoWindow.java:91,737）；打破窗不看這個鎖（:264-306）
     if e.kind == "window" and e.spr:getProperties():has("WindowLocked") then
         y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowLocked"), y, dw)
     end
@@ -1236,12 +1236,12 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + lh
     end
     -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動），
-    -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2671-2672 的
+    -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2656-2657 的
     -- hasRainBlockingTile），換一句；路燈與發光招牌（sprite 帶 streetlight）引擎只在夜裡點亮（LightingJNI.java:282-294），
     -- 本工具接發電機的補亮也照這條（Lights.lua），換一句。接水管的（sprite 帶 waterPiped：水槽、馬桶、浴缸、淋浴）
     -- 照原版搬家具沒有自來水（Place.lua 寫 canBeWaterPiped），原版「接水管」是從上一層 3×3 的裝水容器取水
-    -- （IsoObject.java:2457-2508,2666-2705），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明。帶
-    -- makeWindowInvincible 的牆（商場鐵捲門）同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5231-5234），寫出來
+    -- （IsoObject.java:2478-2529,2687-2726），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明。帶
+    -- makeWindowInvincible 的牆（商場鐵捲門）同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5234-5237），寫出來
     local key = e.kind
     if key == "roof" then
         if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
@@ -1495,7 +1495,7 @@ local function padScroll(v)
     box:setYScroll(math.max(-room, math.min(0, y)))
 end
 
--- 管理員改了沙盒（種類、來源、圖塊組、成本倍率；改了 SandboxVars 會整包轉送，GameClient.java:2772-2779）：重排頁籤、
+-- 管理員改了沙盒（種類、來源、圖塊組、成本倍率；改了 SandboxVars 會整包轉送，GameClient.java:2547-2554）：重排頁籤、
 -- 來源、分類與清單。開窗時比對一次（W.open），開著時每秒比對（W.pump）
 function W.syncSettings(v)
     local dg = Entry.digest()
@@ -2067,7 +2067,7 @@ end
 
 -- 建造：交給 Cursor，視窗收起、直接進放置（使用者 2026-10-29：按建造後視窗應該自動關閉）；游標結束時
 -- （右鍵取消、項目不能蓋）W.onCursorEnd 把視窗叫回來。手把玩家另外交還手把（原版只在沒有 UI 焦點時把按鍵交給游標，
--- JoyPadSetup.lua:323,363-366）：Window:setVisible(false) 會 Focus.releaseJoypad（Widgets/Window.lua:336-348）。
+-- JoyPadSetup.lua:325,363-366）：Window:setVisible(false) 會 Focus.releaseJoypad（Widgets/Window.lua:336-348）。
 -- 建造配方項目開原版的游標（Recipes.build），結束時一樣叫回視窗
 function W.build()
     local v = W.v
@@ -2148,14 +2148,14 @@ end
 -- 建造鍵不算按過（Mouse.isButtonDownUICheck，Mouse.java:94-107），不會在視窗收起後的位置蓋下去，同按「建造」鈕。
 -- W.build 照 selName 蓋，selName 要等 pump 才跟上方格的選取：第二下時還沒跟上（兩下在同一幀之間）就只當選取，
 -- 不蓋上一個選的（審查 1103 Codex）。換了條件（W.refilter 的 keep＝false）、開關視窗時重新數（W.resetPick）
-local DOUBLE_MS = 500 -- 照引擎的雙擊間隔（UIManager.getDoubleClickInterval，UIManager.java:1304）
+local DOUBLE_MS = 500 -- 照引擎的雙擊間隔（UIManager.getDoubleClickInterval，UIManager.java:1301）
 function W.onPick(v, name)
     if name == nil then return end
     local now, last = getTimestampMs(), v.pickedAt
     -- 時鐘往回調時差值是負的：照家族 pitfalls「X 毫秒內」的寫法要 now >= last（審查 1103 Claude 第 2 輪）
     local quick = last ~= nil and now >= last and now - last <= DOUBLE_MS
     -- 手把再按一次 A 不限時間；指派了手把卻用滑鼠點的照雙擊算：滑鼠按下時左鍵是按著的（Mouse.update 在 UIManager
-    -- 分派 onMouseDown 之前更新，isMouseButtonDown＝Mouse.isButtonDown，LuaManager.java:8030-8032；審查 1103 Grok 第 2 輪）。
+    -- 分派 onMouseDown 之前更新，isMouseButtonDown＝Mouse.isButtonDown，LuaManager.java:7966-7968；審查 1103 Grok 第 2 輪）。
     -- 有手把又用鍵盤 Enter 的照手把算
     local pad = W.usingPad() and not isMouseButtonDown(0)
     if W.st.picked == name and v.selName == name and (pad or quick) then
@@ -2441,7 +2441,7 @@ function W.create(UI)
     local fh = tm:getFontHeight(font)
     local s = fh / 16 -- 字級比例：門檻與尺寸乘它（規格 1.2）
     local pn = W.playerNum
-    -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3908-3934）
+    -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3925-3951）
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
     local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
     -- 靠右、不越過畫面中央：角色在畫面中央；放置時視窗收起，但放置中可以從 Dock 再打開，那時不能蓋住要蓋的地方

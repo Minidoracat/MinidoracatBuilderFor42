@@ -1,9 +1,9 @@
 -- 管理面板（設計稿 builder-feedback-1031 第 1、2 節）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
 -- 改開關只改面板裡的草稿；按「套用」才寫沙盒，走原版沙盒封包（不新增網路指令）：
 --   多人：當下從 getSandboxOptions() 複製一份、只改本 MOD 的鍵、sendToServer。伺服器先驗 Capability.SandboxOptions
---   （PacketTypes.java:300-305,421），再存檔、轉送給每個連線（GameServer.java:1710-1728），客戶端收到後 toLua 更新
---   SandboxVars（GameClient.java:2772-2779）。伺服器不回成功或失敗：SandboxVars 變成送出的值才算成功，10 秒沒變算失敗。
---   單機：直接 set 原版選項再 toLua（存檔時 GameWindow.java:1032-1040 寫進 map_sand.bin）。
+--   （PacketTypes.java:294-299,417），再存檔、轉送給每個連線（GameServer.java:1732-1750），客戶端收到後 toLua 更新
+--   SandboxVars（GameClient.java:2547-2554）。伺服器不回成功或失敗：SandboxVars 變成送出的值才算成功，10 秒沒變算失敗。
+--   單機：直接 set 原版選項再 toLua（存檔時 GameWindow.java:1019-1027 寫進 map_sand.bin）。
 -- 原版沙盒頁同一條路：ISServerSandboxOptionsUI.lua:762-771,794-795。
 -- 每幀路徑（清單格、狀態列、說明文字的 render）只畫備好的字串；字串在狀態改變時才組。
 if isServer() then return end
@@ -22,7 +22,7 @@ local Entry, W, Names, Index = B.Entry, B.Window, B.Names, B.Index
 
 local LOG = "[MinidoracatBuilderFor42] "
 local PREFIX = "MinidoracatBuilder."
--- 沙盒封包的字串以 2 位元組（有號 short）記 UTF-8 長度，超過 32767 讀回空字串（GameWindow.java:1263-1276）。
+-- 沙盒封包的字串以 2 位元組（有號 short）記 UTF-8 長度，超過 32767 讀回空字串（GameWindow.java:1250-1263）。
 -- 這裡量的是字元數：MOD ID 與 tileset 名稱都是 ASCII，字元數＝位元組數。
 Admin.MAX_STRING = 32000
 Admin.TIMEOUT_MS = 10000
@@ -104,9 +104,9 @@ function Admin.available()
     return W.ui(CAPS) ~= nil
 end
 
--- 和原版沙盒封包同一個判斷（PacketTypes.java:300-302）：看這條連線的角色（haveAccess，LuaManager.java:4443-4446；
+-- 和原版沙盒封包同一個判斷（PacketTypes.java:294-296）：看這條連線的角色（haveAccess，LuaManager.java:4460-4463；
 -- 分割畫面的玩家共用一條連線，個別玩家的 getRole 可能和連線的不同），合作模式的主機另外放行（isCoopHost，:9153-9154）。
--- UI 放行而封包被拒時伺服器記反作弊點數（PacketTypes.java:310-311）。不用 checkPermissions（客戶端一律回 true）。
+-- UI 放行而封包被拒時伺服器記反作弊點數（PacketTypes.java:304-305）。不用 checkPermissions（客戶端一律回 true）。
 function Admin.canManage()
     if not isClient() then return true end -- 單機：本機玩家就是主機
     return isCoopHost() or haveAccess("SandboxOptions") == true
@@ -196,19 +196,19 @@ function Admin.apply(changes, onDone)
     end
     if not any then return false, "NOTHING" end
     local live = getSandboxOptions()
-    -- 先全部檢查再動手：set 遇到不存在的選項會丟例外（SandboxOptions.java:572-583），單機時會改到一半
+    -- 先全部檢查再動手：set 遇到不存在的選項會丟例外（SandboxOptions.java:568-579），單機時會改到一半
     for k, v in pairs(expect) do
         if type(v) == "string" and #v > Admin.MAX_STRING then return false, "TOO_LONG", k end
         if live:getOptionByName(PREFIX .. k) == nil then return false, "UNKNOWN_OPTION", k end
     end
     if isClient() then
-        -- 套用當下才複製：別的 MOD 的值與別的管理員改的值照這台最後收到的（伺服器每次收到都廣播整份，GameServer.java:1710-1724）。
-        -- 封包是整份快照、伺服器整份照存（SandboxOptions.java:467-509）：兩人在對方的廣播到之前同時套用，後到的蓋掉先到的
+        -- 套用當下才複製：別的 MOD 的值與別的管理員改的值照這台最後收到的（伺服器每次收到都廣播整份，GameServer.java:1732-1746）。
+        -- 封包是整份快照、伺服器整份照存（SandboxOptions.java:463-505）：兩人在對方的廣播到之前同時套用，後到的蓋掉先到的
         -- （原版伺服器沙盒視窗同樣送整份，ISServerSandboxOptionsUI.lua:762-771）。要不掉得在伺服器合併，不在這裡做
         local copy = SandboxOptions.new()
         copy:copyValuesFrom(live)
         for k, v in pairs(expect) do copy:set(PREFIX .. k, v) end
-        copy:sendToServer() -- SandboxOptions.java:1107-1111
+        copy:sendToServer() -- SandboxOptions.java:1103-1107
         Admin.pending = { expect = expect, at = getTimestampMs(), onDone = onDone }
         Events.OnTick.Add(poll)
         if Admin.win then Admin.win:setStatus() end
@@ -814,7 +814,7 @@ function Panel.new(UI, playerNum)
     -- 視窗裡第一個 Tabs：手把 LB／RB 切它（Widgets/Window.lua:315-325）
     self.tabs = UI.Tabs.new({ x = PAD, y = 0, items = items, selected = "kinds", theme = theme, target = self,
         onSelect = function(t, id) t:show(id) end })
-    -- 用該玩家的畫面範圍（分割畫面；LuaManager.java:3908-3934，同 Window.lua）。1280×720 時 560×600
+    -- 用該玩家的畫面範圍（分割畫面；LuaManager.java:3925-3951，同 Window.lua）。1280×720 時 560×600
     local sx, sy = getPlayerScreenLeft(playerNum), getPlayerScreenTop(playerNum)
     local sw, sh = getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)
     local w = math.min(sw - 40, math.max(math.floor(560 * s), self.tabs.width + 2 * PAD))

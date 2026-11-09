@@ -1,6 +1,6 @@
 -- 建造游標：原版 ISBuildingObject 的子類別（server/BuildingObjects/ISBuildingObject.lua），不覆寫原版全域函式，
--- 也不動 DoTileBuilding。引擎每幀照常呼叫：isValid（只給畫面用）→ render → 放開左鍵／手把 A 且可蓋時 tryBuild
--- （ISBuildingObject.lua:97-174）。能不能蓋、扣什麼料一律由伺服器重算（Server.complete）；這裡只是預覽與送請求。
+-- 也不動 DoTileBuilding。引擎每幀照常呼叫：isValid（只給畫面用）→ render → 放開左鍵、或按下手把 A 且可蓋時 tryBuild
+-- （ISBuildingObject.lua:97-178）。能不能蓋、扣什麼料一律由伺服器重算（Server.complete）；這裡只是預覽與送請求。
 -- 收尾只放在 deactivate：右鍵選單（ISWorldObjectContextMenu.lua:180）、Neat_Building 關面板都會直接 setDrag(nil)，
 -- 換游標時引擎呼叫舊游標的 deactivate（IsoCell.java:2558-2575）。
 require "MinidoracatBuilder/Entry"
@@ -37,7 +37,7 @@ local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；一區拆除同時�
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
 local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算停下（MP 的 placed 比客戶端動作結束晚到）
 local QR, QG, QB = 0.45, 0.75, 1 -- 已送出、還沒蓋好的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
--- 虛影染色：可蓋白、不能蓋照原版紅（ISBuildingObject.lua:572-576）；多格物件被擋時沒出問題的那幾格地框中性灰
+-- 虛影染色：可蓋白、不能蓋照原版紅（ISBuildingObject.lua:576-580）；多格物件被擋時沒出問題的那幾格地框中性灰
 local WHITE, RED, NEUTRAL = { r = 1, g = 1, b = 1 }, { r = 0.65, g = 0.2, b = 0.2 }, { r = 0.6, g = 0.6, b = 0.6 }
 local MARK_BAD, MARK_SWAP = 1, 2 -- 格子上的記號（不只靠顏色）：警告三角／替換
 local NO_OFFS = { { 0, 0, 0 } }  -- 沒有那一面（NO_FACE）：只畫地框與記號，不畫虛影
@@ -229,7 +229,7 @@ local function base(player)
     o:init()
     o.character = player
     o.player = player:getPlayerNum()
-    o.isYButtonResetCursor = true -- 手把 Y 回到角色位置（ISBuildingObject.lua:629-634）
+    o.isYButtonResetCursor = true -- 手把 Y 回到角色位置（ISBuildingObject.lua:633-638）
     o.dragNilAfterPlace = false   -- 蓋完游標留著，可以連續蓋
     o.joypad = JoypadState.players[o.player + 1] ~= nil
     o.sAt = 0
@@ -331,12 +331,12 @@ function Cursor:turn(step)
     if self.faces.n > 1 then self:setFace(Cursor.nextFace(self.faces, self.d, step)) end
 end
 
--- DoTileBuilding 每幀拿它當目前的 sprite 名稱（ISBuildingObject.lua:125）；原版的四向 sprite 欄位這裡不用
+-- DoTileBuilding 每幀拿它當目前的 sprite 名稱（ISBuildingObject.lua:129）；原版的四向 sprite 欄位這裡不用
 function Cursor:getSprite()
     return self.sprName
 end
 
--- R：原版全域按鍵處理只轉 getDrag(0)（ISBuildingObject.lua:588-592），所以只有玩家 0 能用鍵盤轉、換層
+-- R：原版全域按鍵處理只轉 getDrag(0)（ISBuildingObject.lua:592-596），所以只有玩家 0 能用鍵盤轉、換層
 function Cursor:rotateKey(key)
     if self.area then return end
     if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
@@ -348,8 +348,8 @@ function Cursor:rotateKey(key)
     end
 end
 
--- 按住左鍵時每幀呼叫，x, y 是滑鼠目前那格；self.square 是按下那格（ISBuildingObject.lua:114-135）。
--- 能拖的種類記下拉到哪裡畫一排；其他種類照原版往哪邊拖就轉向哪邊（:595-617），只轉到項目有的朝向。
+-- 按住左鍵時每幀呼叫，x, y 是滑鼠目前那格；self.square 是按下那格（ISBuildingObject.lua:117-139）。
+-- 能拖的種類記下拉到哪裡畫一排；其他種類照原版往哪邊拖就轉向哪邊（:599-621），只轉到項目有的朝向。
 function Cursor:rotateMouse(x, y)
     -- 在介面上按住不算（見 isValid 的 pressUI）：不擋的話拖過不吃滑鼠的介面會把朝向轉掉
     if self.joypad or not self.square or self.pressUI then return end
@@ -369,9 +369,23 @@ function Cursor:rotateMouse(x, y)
     end
 end
 
--- 手把：LB／RB 在有的朝向之間轉；X 換層（屋頂）；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:623-649）。
--- A 由引擎的 isBuildButtonDown 處理（手把是 Interact 鍵，CharacterInputComponent.java:385-391）。
+-- 手把 A（42.22.2）：原版 DoTileBuilding 對手把玩家不再讀建造鍵（ISBuildingObject.lua:114-126），A 只送到拖曳物件的
+-- onJoypadPressButton（JoyPadSetup.lua:363-366），原版基底又不處理 A（:627-653；原版只有 ISMoveableCursor 自己接，
+-- ISMoveableCursor.lua:1053-1057）。這裡照手把游標現在那一格（xJoypad…）重算可不可蓋、記成 square，再設建造旗標；
+-- 下一幀 DoTileBuilding 照 square 那格呼叫 tryBuild（:133-136,171-174）。不沿用上一幀的 square／canBeBuild：方向鍵
+-- 連跳和 A 落在同一次手把輪詢時（先跑方向、再掃按鍵，JoyPadSetup.lua:940-963）它們還是剛離開的那一格（審查 1110 Grok）。
+-- 那一格還沒建出來（原版下一幀才補）就不蓋。接線游標、配方項目開的原版游標實例共用（Wiring.lua、Recipes.lua）
+function Cursor.padBuild(c)
+    local sq = c.xJoypad and c.zJoypad and getCell():getGridSquare(c.xJoypad, c.yJoypad, c.zJoypad)
+    if not sq then return end
+    c.square = sq
+    c.canBeBuild = c:isValid(sq, c.north)
+    c.build = c.canBeBuild
+end
+
+-- 手把：A 蓋；LB／RB 在有的朝向之間轉；X 換層（屋頂）；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:627-653）
 function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
+    if button == Joypad.AButton then return Cursor.padBuild(self) end
     if button == Joypad.RBumper then return self:turn(1) end
     if button == Joypad.LBumper then return self:turn(-1) end
     if button == Joypad.XButton and LAYERED[self.entry.kind] then
@@ -396,7 +410,7 @@ function Cursor:getRBPrompt()
     if self.faces and self.faces.n > 1 then return getText("IGUI_Controller_RotateRight") end
     return nil
 end
--- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:667-672）
+-- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:671-676）
 
 -- 滑鼠在任何介面上（原版 ISMoveableCursor.lua:301-323 同寫法；E2E 可換掉）。每幀一次 Java 迴圈，不配置。
 -- 游標自己的兩個元件不算（overlay＝警告三角層、tooltip＝跟著滑鼠的標籤框）：只顯示、不收滑鼠（引擎的 isMouseOver
@@ -416,7 +430,7 @@ end
 -- （材料摘要重算的同時；目標格被別人占走、讓開、權限變了，材料都不變）才重算；其餘幀只比數字，不配置。
 -- 至少一格能蓋就算可蓋。
 -- 滑鼠玩家在介面上按下不算建造。有 onMouseDown 的介面（建造視窗、大部分面板）吃掉按下時，引擎本來就不當建造鍵
--- （UIManager.java:716-724 → Mouse.UIBlockButtonDown，GameKeyboard.isKeyDown 走 isButtonDownUICheck；E2E ui-mp
+-- （UIManager.java:713-721 → Mouse.UIBlockButtonDown，GameKeyboard.isKeyDown 走 isButtonDownUICheck；E2E ui-mp
 -- realclick 實測）；不吃滑鼠的介面（提示框、標籤）照樣算按下，放開會蓋在介面底下看不到的格子，這裡補上。
 -- 從世界按下、拖過介面的照算（同 ISMoveableCursor）。沒按時滑鼠在介面上也不算可蓋，虛影與提示框收起。
 function Cursor:isValid(square)
@@ -497,7 +511,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
             local spr = Entry.alternate(o[4], x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
-            -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:560-567）。沒算到那一格的畫在地上。
+            -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:564-571）。沒算到那一格的畫在地上。
             local c = r.cells and r.cells[j]
             local yoff = (c and c.yoff or 0) * scale
             if code == nil then
@@ -765,7 +779,7 @@ end
 
 -- 記號層：每個壞格子上一個警告三角、每個替換格上一個替換圖示（框架 UI.Icons 的 reload，rev 2；不只靠顏色），下面墊
 -- surface 底，在紅色、黃色虛影上也看得清楚（審查 #11）。缺圖示時退回字：「!」與「~」（框架紅線：get／draw 回 false）。
--- backMost：UIManager 每次 update 把它移到最底層（UIManager.java:563-567），不畫在聊天框、建造視窗等介面上面。
+-- backMost：UIManager 每次 update 把它移到最底層（UIManager.java:560-564），不畫在聊天框、建造視窗等介面上面。
 local function marksRender(self)
     local c = self.cursor
     if getCell():getDrag(c.player) ~= c or c.overUI then return end -- 滑鼠在介面上時虛影收起，記號也不畫
@@ -875,7 +889,7 @@ function Cursor:hideUI()
     end
 end
 
--- 每幀畫虛影：每格各自的 sprite 照 refresh 算好的染色（可蓋白、不能蓋照原版紅、替換黃；ISBuildingObject.lua:572-576、
+-- 每幀畫虛影：每格各自的 sprite 照 refresh 算好的染色（可蓋白、不能蓋照原版紅、替換黃；ISBuildingObject.lua:576-580、
 -- IsoSprite.java:507-516），地框照玩家設定的好／壞色（ISBuildIsoEntity.lua:46-68）、中性灰或黃。沒有 sprite 的格子
 -- （NO_FACE、一區拆除）只畫地框。不配置 table／字串。
 -- 開頭先比 getDrag：同一幀每個 OnDoTileBuilding2 處理器拿到同一個拖曳物件（IsoCell.java:2612），
@@ -896,7 +910,7 @@ function Cursor:render(x, y, z, square)
     end
 end
 
--- 放開左鍵／手把 A，而且至少一格可蓋（DoTileBuilding:167-170）。只送可蓋的格子（含替換格）；缺料、擋住、
+-- 放開左鍵、或按下手把 A，而且至少一格可蓋（ISBuildingObject.lua:171-174）。只送可蓋的格子（含替換格）；缺料、擋住、
 -- 沒有那一面、超過上限的跳過。覆寫它就不經過原版 ISBuildAction；角色走過去與排動作在 Client.build（伺服器收下才排）。
 -- 送出的每格順便記下各片的虛影（照那一格自己的面，同 refresh 的算法），還沒蓋好前照畫（Cursor.drawQueued）。
 -- 一區拆除模式：先關游標（deactivate 看 released 不呼叫 cancel），再把範圍交給 cb.release。
@@ -911,7 +925,9 @@ function Cursor:tryBuild(x, y, z)
         end
         return
     end
-    if x ~= self.kx or y ~= self.ky or z ~= self.kz then -- 手把同一幀移了游標：先照那一格重算
+    -- 傳進來的格子和上次算的不一樣就先照它重算。手把按 A 時 padBuild 已經照那一格算過、x／y 會相同；原版只換 x／y，
+    -- z 照這一幀的（ISBuildingObject.lua:133-136），按 A 之後換了層就會不同
+    if x ~= self.kx or y ~= self.ky or z ~= self.kz then
         local sq = getCell():getGridSquare(x, y, z)
         if not (sq and self:isValid(sq)) then return end
     end
@@ -936,8 +952,8 @@ function Cursor:tryBuild(x, y, z)
 end
 
 -- 放置中點到物件時不讓原版處理（開門、開關燈、拉窗簾）。原版只在拖曳物件有這個方法時才擋
--- （ISObjectClickHandler.lua:341-344），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）。
--- 吸管記下這個物件：引擎按下左鍵時照圖挑（UIManager.java:587-589），早於放開時的 tryBuild；放開時照它的格子列圖
+-- （ISObjectClickHandler.lua:315-318），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）。
+-- 吸管記下這個物件：引擎按下左鍵時照圖挑（UIManager.java:584-586），早於放開時的 tryBuild；放開時照它的格子列圖
 -- （Window.startPick）。滑鼠只有玩家 0 用
 function Cursor.onObjectLeftMouseButtonDown(object)
     local c = Cursor.get(0)
@@ -1057,8 +1073,8 @@ end
 Events.OnTick.Add(Cursor.tick)
 
 -- 已送出、還沒蓋好的格子（使用者 2026-10-29：還沒蓋完前要顯示預計要蓋的格子）：淡虛影＋藍框，蓋好一格收一格。
--- 游標關掉後角色照樣在蓋，所以不畫在游標的 render，改在世界畫完時畫（OnPostRender，IngameState.java:1198-1201）：
--- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:319 的 DoBuilding），所以一樣畫在世界最上層。
+-- 游標關掉後角色照樣在蓋，所以不畫在游標的 render，改在世界畫完時畫（OnPostRender，IngameState.java:1197-1200）：
+-- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:316 的 DoBuilding），所以一樣畫在世界最上層。
 -- 不能用 OnPostFloorLayerDraw：它只在舊渲染器（IsoCell.java:856-860）觸發，B42 預設的 FBO 渲染器沒有
 -- （builder-ui-1029a 截圖一格都沒畫出來）。
 -- 各片的 sprite 是 tryBuild 照那一格自己的面記的（圍一圈時北、西兩種邊各畫各的）。
@@ -1066,7 +1082,7 @@ function Cursor.drawQueued()
     local w = watch
     local parts = w and w.parts
     if not parts then return end
-    local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:693-700）
+    local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:697-703）
     for _, ps in pairs(parts) do
         for _, g in ipairs(ps) do
             g[4]:RenderGhostTileColor(g[1], g[2], g[3], 0, g[5], 1, 1, 1, 0.35)

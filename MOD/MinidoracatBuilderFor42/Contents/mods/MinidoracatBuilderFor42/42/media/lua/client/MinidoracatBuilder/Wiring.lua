@@ -235,10 +235,10 @@ function Wiring.at(x, y, z)
 end
 
 -- 滑鼠停在哪一個候選的圖上（滑鼠用）。照引擎點物件的算法：圖的左上角＝格子在畫面上的位置減物件的 offsetX／offsetY
--- （IsoSprite.java:595-604；renderYOffset 另加，IsoObject.java:3549），isoToScreenX 已扣攝影機、除縮放（LuaManager.java:3769-3776）；
--- 圖外不算，圖內看那一點透不透明（isMaskClicked），同 FBORenderObjectPicker.java:154-191,461-470；淡出看不見的（targetAlpha 0，
+-- （IsoSprite.java:595-604；renderYOffset 另加，IsoObject.java:3573），isoToScreenX 已扣攝影機、除縮放（LuaManager.java:3786-3793）；
+-- 圖外不算，圖內看那一點透不透明（isMaskClicked），同 FBORenderObjectPicker.java:153-194,446-455；淡出看不見的（targetAlpha 0，
 -- 例：擋住視線被切掉的牆上的燈）不算，同 :68、:298。指燈頭、牆上的燈時，滑鼠下的地板格是後面那一格（E2E builder-bili-1109a），
--- 所以先照圖找。好幾格都中時照引擎的順序取最後一格：層高大的，同一層 y 大的、再來 x 大的（FBORenderObjectPicker.java:196-204,
+-- 所以先照圖找。好幾格都中時照引擎的順序取最後一格：層高大的，同一層 y 大的、再來 x 大的（FBORenderObjectPicker.java:195-199,
 -- 247-251，從尾端往前挑 :337；引擎在層高之後另比 render layer，Lua 讀不到）。那一格從現在輪到的（m.pick）往後找第一個命中的：
 -- 只有一個中就是它（指著哪個選哪個，審查 1109 Grok），好幾個都中時點一次換下一個命中的（審查 1109 Codex）。
 -- 比游標那一層（zmin）低的候選不算：從樓上看，下一層的燈被這層的地板蓋住，引擎點到的是地板（同上，層高先比；審查 1109
@@ -361,7 +361,7 @@ local function setHover(m, s)
 end
 
 -- ---------------------------------------------------------------- 接線模式：游標
--- 原版 ISBuildingObject 的子類別（同 Cursor.lua）：引擎照常呼叫 isValid → render → 放開左鍵／手把 A 時 tryBuild。
+-- 原版 ISBuildingObject 的子類別（同 Cursor.lua）：引擎照常呼叫 isValid → render → 放開左鍵、或按下手把 A 時 tryBuild。
 -- 只用來選格子；右鍵、手把 B 照原版取消。點到物件時原版的開燈、開門由 onObjectLeftMouseButtonDown 擋（下方）。
 
 local WireCursor, Class = {}, nil
@@ -370,7 +370,7 @@ function WireCursor:getSprite() return self.mode.sw.e end
 function WireCursor:rotateKey() end
 function WireCursor:rotateMouse() end
 
--- 點燈接線時不讓原版順便開關燈（原版只在拖曳物件有這個方法時才擋，ISObjectClickHandler.lua:341-344；點號呼叫，
+-- 點燈接線時不讓原版順便開關燈（原版只在拖曳物件有這個方法時才擋，ISObjectClickHandler.lua:315-318；點號呼叫，
 -- 第一個參數是被點的物件，不是游標）。builder-input-1029c／d：沒有這個方法時，點一下燈就被切一次
 function WireCursor.onObjectLeftMouseButtonDown()
     return true
@@ -413,8 +413,10 @@ function WireCursor:deactivate()
     if m and m.cursor == self then Wiring.close() end
 end
 
--- 手把：A 加入或移除（引擎的建造鍵）、X 接同一房間、Y 回角色位置、B 離開（原版）；LB／RB 不轉向
+-- 手把：A 加入或移除（照手把那一格重算 hover 再設建造旗標，下一幀原版 DoTileBuilding 呼叫 tryBuild；42.22 起它不替手把
+-- 讀建造鍵，見 Cursor.padBuild）、X 接同一房間、Y 回角色位置、B 離開（原版）；LB／RB 不轉向
 function WireCursor:onJoypadPressButton(joypadIndex, joypadData, button)
+    if button == Joypad.AButton then return B.Cursor.padBuild(self) end
     if button == Joypad.XButton then
         Wiring.op("room")
         return
@@ -658,8 +660,8 @@ local function lampMenu(context, playerNum, player, o, label)
     end)
 end
 
--- 原版沒列「開燈／關燈」時補上（沒有房間又不能改裝、或客戶端算沒電，ISWorldObjectContextMenuLogic.java:367-369、
--- ISWorldObjectContextMenu.lua:1226-1236）。選了照原版走過去、排 ISToggleLightAction，伺服器照線路或原版處理。
+-- 原版沒列「開燈／關燈」時補上（沒有房間又不能改裝、或客戶端算沒電，ISWorldObjectContextMenuLogic.java:369-371、
+-- ISWorldObjectContextMenu.lua:1225-1235）。選了照原版走過去、排 ISToggleLightAction，伺服器照線路或原版處理。
 -- 同一格有好幾個時，選項名稱後面加物件名稱分得出來
 local function toggleMenu(context, worldobjects, playerNum, o, named)
     local sq = o:getSquare()

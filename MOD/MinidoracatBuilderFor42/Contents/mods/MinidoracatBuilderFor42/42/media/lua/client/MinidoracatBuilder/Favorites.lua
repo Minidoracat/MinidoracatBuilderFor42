@@ -3,7 +3,7 @@
 -- 一個檔涵蓋所有伺服器：這個伺服器沒有的名稱照樣留在檔裡（換回有那個 MOD 的伺服器還在），
 -- 只在視窗列出時略過（Window 的最愛分類逐項 Entry.resolve，解析不了的不列，DD:133；配方項目照 Recipes.shown，這位玩家
 -- 看不到的不列）。
--- getFileReader／getFileWriter 的路徑相對 Zomboid/Lua；寫入時自動建資料夾（LuaManager.java:5936-5963,6727-6759）。
+-- getFileReader／getFileWriter 的路徑相對 Zomboid/Lua；寫入時自動建資料夾（LuaManager.java:5910-5937,6687-6719）。
 -- 引擎會吞掉讀寫錯誤：檔案在卻打不開時 getFileReader 回 nil（和檔案不存在一樣），讀到一半出錯時 readLine 回 nil
 -- （和讀完一樣，MethodCaller.java:34-42），寫入走 PrintWriter 不丟錯。所以讀要看到最後一行 END 才算完整，
 -- 寫完要讀回來比對；沒讀完整就不寫，免得拿殘缺的清單蓋掉檔裡的最愛。

@@ -26,7 +26,7 @@ local function now()
 end
 
 -- 引擎認定是同一件的各面：能搬（或多格）又有 GroupName 的同名組合法時，每一面都寫了其他面原點的偏移，自己那面不寫
--- （IsoWorld.java:1064-1101,1283-1326）。所以照自己的 Facing 查其他三面；沒寫的是共用名稱的不同物件，或只有一面。
+-- （IsoWorld.java:1076-1113,1295-1338）。所以照自己的 Facing 查其他三面；沒寫的是共用名稱的不同物件，或只有一面。
 local OTHER = { N = { "Eoffset", "Soffset", "Woffset" }, E = { "Noffset", "Soffset", "Woffset" },
     S = { "Noffset", "Eoffset", "Woffset" }, W = { "Noffset", "Eoffset", "Soffset" } }
 local function faced(p)
@@ -54,7 +54,7 @@ local function scanSprite(spr, named)
         local custom = p:get("CustomName")
         if custom then
             local group = p:get("GroupName")
-            raw = group and (group .. " " .. custom) or custom -- 引擎的群組鍵也是這樣接（IsoWorld.java:1068）
+            raw = group and (group .. " " .. custom) or custom -- 引擎的群組鍵也是這樣接（IsoWorld.java:1080）
             -- 同一件的各面（同種類）共用群組鍵、併成一項；共用名稱的不同物件用自己的名稱當鍵，各列一項（只為了搜尋鍵）
             key = faced(p) and (kind .. "|" .. raw) or name
         end

@@ -1,12 +1,12 @@
 -- 本工具蓋的燈，引擎不會照電力亮暗的兩種，客戶端自己補（只動這台客戶端的光源與附加圖）：
--- 一、IsoThumpable 帶 lightR：引擎在加進世界時照 checkObjectPowered 建光源（IsoObject.java:6510-6540），之後靠
---   checkLightSourceActive 更新（停電、發電機開關時，IsoObject.java:5183,6557-6565），它讀 getLightSource()；IsoThumpable
---   改寫成回自己的燃料燈欄位（IsoThumpable.java:1761-1763），所以光源停在加進世界那刻。每遊戲分鐘照同一個判斷補做一次。
+-- 一、IsoThumpable 帶 lightR：引擎在加進世界時照 checkObjectPowered 建光源（IsoObject.java:6488-6518），之後靠
+--   checkLightSourceActive 更新（停電、發電機開關時，IsoObject.java:5172,6535-6543），它讀 getLightSource()；IsoThumpable
+--   改寫成回自己的燃料燈欄位（IsoThumpable.java:1777-1779），所以光源停在加進世界那刻。每遊戲分鐘照同一個判斷補做一次。
 -- 二、路燈（sprite 帶 streetlight 的 IsoLightSwitch）：引擎只在夜裡、那格有市電時點亮它的光源與亮燈圖
---   （LightingJNI.java:282-294、IsoLightSwitch.java:873-885），發電機、電池都不算。夜裡、沒有市電、開著又有其他電
+--   （LightingJNI.java:282-294、IsoLightSwitch.java:874-886），發電機、電池都不算。夜裡、沒有市電、開著又有其他電
 --   （canSwitchLight）時，在那格另加一盞同色同半徑的光源（addLamppost：不是 hydroPowered、沒有開關，引擎不套路燈規則，
---   IsoCell.java:2803-2806、LightingJNI.java:266-296），亮燈圖（同號 _on 圖塊，IsoObject.java:6081-6087）掛成附加圖；
---   有市電時交給引擎。附加圖跟著物件存檔（IsoObject.java:1352-1370），單機讀檔後照樣由這裡判斷留著或收掉。
+--   IsoCell.java:2803-2806、LightingJNI.java:266-296），亮燈圖（同號 _on 圖塊，IsoObject.java:6070-6076）掛成附加圖；
+--   有市電時交給引擎。附加圖跟著物件存檔（IsoObject.java:1369-1387），單機讀檔後照樣由這裡判斷留著或收掉。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Lights = MinidoracatBuilder.Lights or {}
 MinidoracatBuilder.Lights = Lights
@@ -18,7 +18,7 @@ local street = {} -- 路燈（IsoLightSwitch）→ 紀錄
 local extras = {} -- 補的光源 → true（在清單上不當成別人的光源）
 local ON = {}     -- sprite 名稱 → 亮燈圖（IsoSprite）或 false
 
--- 照 sprite 建的光源：顏色是 lightR/G/B ÷ 255，半徑是 LightRadius（沒有或 ≤ 0 時 10）（IsoObject.java:6527-6535）
+-- 照 sprite 建的光源：顏色是 lightR/G/B ÷ 255，半徑是 LightRadius（沒有或 ≤ 0 時 10）（IsoObject.java:6505-6513）
 local function same(l, p)
     local r, g, b = tonumber(p:get("lightR")), tonumber(p:get("lightG")), tonumber(p:get("lightB"))
     if not (r and g and b) then return false end
@@ -30,7 +30,7 @@ end
 
 local function ownerOf(l)
     if l:isHydroPowered() then
-        -- 開關的燈都是 hydroPowered，第一個開關就是燈自己（IsoLightSwitch.java:130-135、CellLoader.java:119-121）
+        -- 開關的燈都是 hydroPowered，第一個開關就是燈自己（IsoLightSwitch.java:131-136、CellLoader.java:119-121）
         local sws = l:getSwitches()
         local sw = sws:size() > 0 and sws:get(0) or nil
         if not (sw and sw:hasModData() and sw:getModData().builderEntry and sw:getProperties():has("streetlight")) then
@@ -58,7 +58,7 @@ local function ownerOf(l)
     return found and { thump = found } or false
 end
 
--- 亮燈圖：sprite 有 HasLightOnSprite、同號的 _on 圖塊存在（引擎同一個找法，IsoObject.java:6081-6087）
+-- 亮燈圖：sprite 有 HasLightOnSprite、同號的 _on 圖塊存在（引擎同一個找法，IsoObject.java:6070-6076）
 local function onSprite(spr)
     local name = spr and spr:getName()
     if not name then return false end

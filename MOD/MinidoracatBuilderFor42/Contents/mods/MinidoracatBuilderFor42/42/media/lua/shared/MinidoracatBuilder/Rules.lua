@@ -32,7 +32,7 @@ function Rules.westStairs(t)
 end
 
 -- 線路認的開關（p＝light 種類 sprite 的屬性）：沒有 lightR 的 IsoLightSwitch 引擎都當開關，但帶 streetlight 的是招牌、外牆字
--- （有亮圖的只在夜裡有市電時疊上，IsoLightSwitch.java:873-885），能搬的是菜單板、霓虹招牌，都不是開關。
+-- （有亮圖的只在夜裡有市電時疊上，IsoLightSwitch.java:874-886），能搬的是菜單板、霓虹招牌，都不是開關。
 -- 原版＋正式服 13 個 tiledef MOD 的 507 個裡只剩 lighting_indoor_01_0..7（E2E builder-rooms-1029e）。兩端共用
 function Rules.switchProps(p)
     return not p:has("lightR") and not p:has("streetlight") and not p:has("IsMoveAble")
@@ -64,7 +64,7 @@ addRange("constructedobjects_01", 16, 19)
 -- PSR（正式服有裝）與 Immersive Solar Arrays 共用的太陽能 tileset（兩者都是 40 格）：面板接上電池組就照面板數發電，
 -- 認的只是 sprite 名稱（PSR shared/PSR/WorldUtilities.lua 的 PSRTypes、PowerBankObject_Server.lua 的 checkPanels）
 addRange("solarmod_tileset_01", 0, 39)
--- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4834-4844）
+-- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4821-4831）
 unlist({ "invisible_01_0", "underground_01_0", "underground_01_1" })
 -- 照原版圖塊名稱給功能的 MOD（Workshop 路徑 content/108600/<ID>）：{ tileset, 起, 迄, ... }
 local BY_MOD = {
@@ -94,9 +94,9 @@ function Rules.unlistedByName(name)
 end
 
 -- 窗開著、破了、拆了玻璃的三種狀態圖不列。引擎建 IsoWindow 時把關著那張的屬性與型別整份加到這三張
--- （IsoWindow.java:99-121），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
+-- （IsoWindow.java:106-128），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
 -- 20 張在窗與附著物之間換（E2E ui-mp 1027f／g），客戶端與伺服器也可能不同。圖塊定義剛載入、還沒載入任何
--- chunk 時（OnLoadedTileDefinitions，IsoWorld.java:1977-1978，chunk 在 :2188 才載）照關著那張的偏移記下來。
+-- chunk 時（OnLoadedTileDefinitions，IsoWorld.java:1990-1991，chunk 在 :2188 才載）照關著那張的偏移記下來。
 -- 「關著那張」逐步確認：有窗旗標、有偏移，而且指到它的都已確定是狀態圖（一開始＝沒被任何一張指到）；
 -- 確認後它的偏移目標記成狀態圖，那些目標自己的偏移就不再算。被引擎改過的狀態圖、作者把關著那張的屬性
 -- 複製過去的狀態圖，都帶著關著那張的旗標與偏移，這樣算才不會讓它們的偏移影響下一扇窗（不誤記、不漏記），
@@ -178,8 +178,8 @@ function Rules.recordWindowStates(sprites, late)
         .. " windows, " .. sprites:size() .. " sprites in " .. (getTimestampMs() - t0) .. " ms" .. (late and " (late)" or ""))
 end
 
--- 牆配方指定的轉角柱（原版蓋牆時自動補的那根，ISBuildUtil.lua:89-100；名稱照 ISBuildIsoEntity.lua:913 取）。
--- 圖塊定義載入時記：ScriptManager 的 PostTileDefinitions 先建好 SpriteConfig（IsoWorld.java:1976-1978、
+-- 牆配方指定的轉角柱（原版蓋牆時自動補的那根，ISBuildUtil.lua:89-100；名稱照 ISBuildIsoEntity.lua:922 取）。
+-- 圖塊定義載入時記：ScriptManager 的 PostTileDefinitions 先建好 SpriteConfig（IsoWorld.java:1989-1991、
 -- ScriptManager.java:363-366）。只用在 kindOf 走到最後還沒有種類的圖（沒有牆鍵、沒有撞車屬性的柱子，
 -- 例：constructedobjects_01_60）。集合放在 Rules 表上，理由同 WINDOW_STATE。
 local CORNER = Rules.cornerSet or {}
@@ -250,7 +250,7 @@ local function excludedName(name)
 end
 
 -- 疊放圖不列（使用者 2026-10-30 選）：讀格子時引擎把 StackReplaceTileOffset 不是 0 的物件換成「編號＋偏移」那張
--- （IsoGridSquare.java:9754-9762，不看有沒有疊著），放下去讀檔就變成另一張圖。離線讀本機 313 個 tiledef 檔（186 萬格）
+-- （IsoGridSquare.java:9712-9720，不看有沒有疊著），放下去讀檔就變成另一張圖。離線讀本機 313 個 tiledef 檔（186 萬格）
 -- 有 172 個名稱：160 個容器、8 個實心物件（CustomMapBridge）、4 個 vegetation_（名稱已排除），所以只在這兩處查。
 local function stackReplaced(p)
     local s = p:get("StackReplaceTileOffset")
@@ -280,7 +280,7 @@ local function decor(name, p, mt)
     -- （E2E builder-place-1031z）。柱子一律不擋格邊，所以這條排在柱子前面
     if p:has(collideN) or p:has(collideW) then return nil, "BLOCKS_EDGE" end
     -- 柵欄柱、收尾柱（沒有牆鍵，只有撞車）與牆配方指定的轉角柱（使用者 2026-10-31 選新增「柱子」）。
-    -- 只動原本不列的圖：已經列出的項目不換種類。撞車是字串屬性（IsoPropertyType.java:212，原版 GameClient.java:1138 同查法）
+    -- 只動原本不列的圖：已經列出的項目不換種類。撞車是字串屬性（IsoPropertyType.java:212，原版 GameClient.java:1060 同查法）
     if p:has("HitByCar") or CORNER[name] then return "post" end
     return nil, "NO_KIND"
 end
@@ -299,7 +299,7 @@ local function plantOrObject(p, mt)
 end
 
 -- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定）：引擎只看這個值，不看停水與房間
--- （IsoObject.java:2618-2623），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
+-- （IsoObject.java:2639-2644），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
 -- 只出現在樓梯、地板與非結構類，沒有門窗、門框、窗框、柵欄、牆，所以只在這三處查，每個牆、窗框省一次 Java 呼叫。
 local function infiniteWater(p)
     local w = p:get("waterAmount")
@@ -319,17 +319,17 @@ local function kindOfProps(name, p, t)
     end
     if p:has("GarageDoor") then return "garage" end
     if p:has(doorN) or p:has(doorW) then
-        -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:789-796），單片放會開錯圖、MP 不同步；之後和車庫門一起做
+        -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:610-617），單片放會開錯圖、MP 不同步；之後和車庫門一起做
         if p:has("DoubleDoor") then return nil, "DOUBLE_DOOR" end
-        -- 開著的門：關著那張 +2，載入圖塊時引擎替它補上門旗標與 open（IsoWorld.java:1477-1505），和關著那張是同一扇門
+        -- 開著的門：關著那張 +2，載入圖塊時引擎替它補上門旗標與 open（IsoWorld.java:1489-1517），和關著那張是同一扇門
         if p:has(doorOpen) then return nil, "DOOR_OPEN" end
         return "door"
     end
     -- 打不破的窗不列：窗自己帶 makeWindowInvincible，或同一格同方向帶 cutN/W 的物件帶它，窗就打不破、爬不過，
-    -- 殭屍也不開（IsoWindow.java:1150-1172,436,1111-1135,1314）。原版 tiledef 帶它的 10 張是 8 扇窗與 2 片商場鐵捲門
+    -- 殭屍也不開（IsoWindow.java:1144-1166,429,1104-1128,1308）。原版 tiledef 帶它的 10 張是 8 扇窗與 2 片商場鐵捲門
     -- （location_shop_mall_01_18／19）。旗標只影響窗：牆帶它照列（使用者 2026-11-03 選列鐵捲門），本工具蓋的牆是
-    -- IsoThumpable，殭屍打得壞；副作用只有同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5231-5234）。同一條邊的
-    -- 窗洞早就被牆占走，引擎也只替 WallN 加 cutN、WallW 加 cutW（IsoWorld.java:894-927）。只在窗、窗框、柱子、
+    -- IsoThumpable，殭屍打得壞；副作用只有同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5234-5237）。同一條邊的
+    -- 窗洞早就被牆占走，引擎也只替 WallN 加 cutN、WallW 加 cutW（IsoWorld.java:906-939）。只在窗、窗框、柱子、
     -- 牆面疊圖查（不每格多一次 Java 呼叫），別的種類帶它由 catalog-sp audit 抓。
     if p:has(windowN) or p:has(windowW) then -- 窗一定也帶 WindowN/W，所以先判斷
         if p:has(invincible) then return nil, "INVINCIBLE" end
@@ -375,7 +375,7 @@ local function kindOfProps(name, p, t)
     end
     if tc == "light" or p:has("LightRadius") then
         -- 不是開關、又沒有 lightR 的不會亮（IsoLightSwitch 只依 lightR 建光源）。有 lightR 就要三色都有：
-        -- 建構子三色都照字串轉數字，缺一個就丟錯（IsoLightSwitch.java:76-83；原版 lighting_indoor_03_5 只有 lightR）
+        -- 建構子三色都照字串轉數字，缺一個就丟錯（IsoLightSwitch.java:77-84；原版 lighting_indoor_03_5 只有 lightR）
         if tc ~= "light" and not p:has("lightR") then return nil, "LIGHT" end
         if p:has("lightR") and not (p:has("lightG") and p:has("lightB")) then return nil, "LIGHT" end
         return "light"
@@ -432,7 +432,7 @@ end
 
 -- 地面覆蓋裡帶 FloorOverlay 的單格圖：照地圖讀檔的做法掛在那格的地板上（CellLoader.java:256-264），不建物件。
 -- 獨立物件的話，原版 tileGeometry.txt 標 Translucent 的（交通標線、污漬、血跡這類）排進半透明層、深度和地板打平，
--- 畫出來只剩一段一段（IsoSprite.java:1097,1142-1149；FBORenderCell.java:1713-1715,1927-1929）。Lua 讀不到這個旗標
+-- 畫出來只剩一段一段（IsoSprite.java:1073,1118-1125；FBORenderCell.java:1709-1711,1923-1925）。Lua 讀不到這個旗標
 -- （IsoSprite.depthFlags 沒有 getter），所以照地圖：FloorOverlay 一律掛。只有 attachedFloor 的（地上的雜物、石頭）
 -- 地圖也是獨立物件，照舊。ponytail：多格的地面覆蓋（正式服 14 個 tiledef MOD 都沒有）照舊建物件；有了再逐格掛。
 function Rules.onFloor(kind, spr)
@@ -441,7 +441,7 @@ end
 
 -- 牆型窗：窗和窗框畫在同一張（tiledef 寫 wall 型別、也自己寫 WindowN/W，例 walls_commercial_01_96）。地圖照 IsoWindow
 -- 建、不另放窗框（CellLoader.java:128-137），所以不用先有窗框，成本照窗框＋窗收。一般的窗型別是 MAX（引擎替帶
--- windowN/W 的補 WindowN/W 旗標，IsoWorld.java:907-914，不能看旗標分）。t＝getType()
+-- windowN/W 的補 WindowN/W 旗標，IsoWorld.java:919-926，不能看旗標分）。t＝getType()
 function Rules.framedWindow(t)
     return t == T.wall
 end

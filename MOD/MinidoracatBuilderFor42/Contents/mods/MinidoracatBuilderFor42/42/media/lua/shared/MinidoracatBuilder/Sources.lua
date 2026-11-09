@@ -5,13 +5,13 @@ MinidoracatBuilder = MinidoracatBuilder or {}
 local Sources = MinidoracatBuilder.Sources or {}
 MinidoracatBuilder.Sources = Sources
 
--- IsoWorld.getSpriteID（IsoWorld.java:632-634）的反算：檔號 1 用 1024×1024 格，其餘每檔 262144 格、從 1048576 起
+-- IsoWorld.getSpriteID（IsoWorld.java:644-646）的反算：檔號 1 用 1024×1024 格，其餘每檔 262144 格、從 1048576 起
 function Sources.fileOf(id)
     if id < 1048576 then return 1 end
     return math.floor((id - 1048576) / 262144) + 2
 end
 
--- MOD 的 tiledef 檔號限 100–8189（ChooseGameInfo.java:309-314），原版是 1、2、4–8
+-- MOD 的 tiledef 檔號限 100–8189（ChooseGameInfo.java:314-319），原版是 1、2、4–8
 function Sources.isModFile(file)
     return file >= 100
 end
@@ -30,7 +30,7 @@ function Sources.build()
             if reader then
                 local line = reader:readLine()
                 while line do
-                    -- ChooseGameInfo.java:292-316：含 tiledef= 的行，去掉後剩「名稱 檔號」
+                    -- ChooseGameInfo.java:297-321：含 tiledef= 的行，去掉後剩「名稱 檔號」
                     if line:find("tiledef=", 1, true) then
                         local num = tonumber(line:match("tiledef=%s*%S+%s+(%d+)%s*$"))
                         if num and not byFile[num] then byFile[num] = id end

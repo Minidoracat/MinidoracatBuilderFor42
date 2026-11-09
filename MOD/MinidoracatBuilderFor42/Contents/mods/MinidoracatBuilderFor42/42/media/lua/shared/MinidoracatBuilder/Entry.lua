@@ -26,7 +26,7 @@ for _, k in ipairs(Entry.KINDS) do
     Entry.KIND_KEY[k] = "Kind" .. k:sub(1, 1):upper() .. k:sub(2)
 end
 
--- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:252-255）
+-- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:258-261）
 Entry.STAIR_FLOOR = "carpentry_02_57"
 
 -- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著。柱子不佔邊（NORTH／WEST 是空的；擋邊的圖 Rules 不列），
@@ -248,11 +248,11 @@ local function opposite(entry)
 end
 
 -- 引擎沒連起來的同名家具（Entry.face 的後備）。引擎只替能搬、有 GroupName、同組最多 4 張且每面一張的圖寫朝向偏移
--- （IsoWorld.java:1064-1101,1304-1326），其他同名的圖原版搬家具也轉不了。這裡把 SIBLING 種類裡同一 tileset、同種類、
+-- （IsoWorld.java:1076-1113,1316-1338），其他同名的圖原版搬家具也轉不了。這裡把 SIBLING 種類裡同一 tileset、同種類、
 -- 同 GroupName＋CustomName、單格、沒有引擎偏移的圖配起來：每張都有 Facing、每個朝向剛好一張才配。同名好幾款照編號配
 -- 會配錯（2026-11-03 稽核 1031c：這樣配得到的 187 張全部看圖）；NO_PAIR 是看圖確認的同名不同物，鍵＝
 -- tileset|GroupName|CustomName。第一次碰到一個 tileset 時從 _0 往上掃到第一個沒有的編號（引擎照 nTiles 連號建，
--- IsoWorld.java:700-716），結果照 tileset 快取：sibCache[tileset][名稱]＝{ N = 圖, … }，不配的不記。
+-- IsoWorld.java:712-728），結果照 tileset 快取：sibCache[tileset][名稱]＝{ N = 圖, … }，不配的不記。
 local SIBLING = { furniture = true, container = true, solid = true, light = true, wallObject = true, attached = true,
     overlay = true }
 local NO_PAIR = { ["AuthenticZ_Store||Wall Piece"] = true, ["DylansRandomFurniture02||Safe"] = true,
@@ -328,7 +328,7 @@ local function siblingFace(entry, dir, p)
 end
 
 -- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W；5＝配對面（上面）。引擎替同組的每個成員寫「其他面的原點 − 自己」的
--- Noffset 等，自己那一面不寫（IsoWorld.java:1283-1325），所以自己的 Facing 就是自己；引擎沒連起來的同名家具照
+-- Noffset 等，自己那一面不寫（IsoWorld.java:1295-1337），所以自己的 Facing 就是自己；引擎沒連起來的同名家具照
 -- siblingFace 配。查不到那一面回 nil。
 local DIRS = { "N", "E", "S", "W" }
 function Entry.face(entry, d)
@@ -367,7 +367,7 @@ end
 -- 佔地：{ { dx, dy, dz, sprite[, 角色] }, ... }，相對原點那一格。單格就是自己。
 -- 原點＝grid 第一層第一個非空成員（IsoSpriteGrid.java:23-31），不一定在 (0,0)。
 -- 樓梯（項目＝底片）：原點是頂片，接著中片、底片，最後是上一層的平台（角色 top／mid／bottom／platform）。
--- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:190-200,257-283）。
+-- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:196-206,263-289）。
 function Entry.cells(spr)
     if Rules.typeCode(spr:getType()) == "stairs" then
         local named = IsoSpriteManager.instance:getNamedMap()
@@ -396,7 +396,7 @@ function Entry.cells(spr)
 end
 
 -- 佔格邊的種類放在哪條邊：回 n（北邊）、w（西邊）。牆角（WallNW）兩條都佔，柱子兩條都不佔。
--- 透明牆角與透明門框只有字串鍵、沒有同名旗標（IsoWorld.java:932-965），字串鍵用 has(String) 查。
+-- 透明牆角與透明門框只有字串鍵、沒有同名旗標（IsoWorld.java:944-977），字串鍵用 has(String) 查。
 local F = IsoFlagType
 local NORTH = { wall = { F.WallN, F.WallNTrans, F.WallNW, "WallNWTrans" }, windowFrame = { F.WindowN },
     doorFrame = { F.DoorWallN, "DoorWallNTrans" }, fence = { F.HoppableN, F.TallHoppableN }, door = { F.doorN },

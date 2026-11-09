@@ -27,7 +27,7 @@ function Messages.useName(key)
     return getItemName(key) or key
 end
 
--- need＝{ [fullType] = 數量 } → 「木板 ×2、釘子 ×4」。物品名照玩家語言（getItemName，LuaManager.java:8749；verify_mod 規定用它）。
+-- need＝{ [fullType] = 數量 } → 「木板 ×2、釘子 ×4」。物品名照玩家語言（getItemName，LuaManager.java:8685；verify_mod 規定用它）。
 -- 缺的耗材（鍵是 Materials.USE＋耗材鍵）寫次數：「焊條 2 次」
 function Messages.items(need)
     local parts, n = {}, 0

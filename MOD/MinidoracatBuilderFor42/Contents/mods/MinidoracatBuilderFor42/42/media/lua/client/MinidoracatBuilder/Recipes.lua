@@ -247,7 +247,7 @@ function Recipes.state(pn, r)
 end
 
 -- 學會了沒：不看沙盒「檢視未知配方」（它只管列不列；isValidRecipeForCharacter 也不看），同原版合成視窗標「沒學會」的判斷
--- （isRecipeKnown(recipe, true)，IsoGameCharacter.java:11717-11724）。沒學會的配方開著那個選項時照列，方格標缺、詳情寫原因
+-- （isRecipeKnown(recipe, true)，IsoGameCharacter.java:11858-11865）。沒學會的配方開著那個選項時照列，方格標缺、詳情寫原因
 function Recipes.learned(pn, r)
     local player = getSpecificPlayer(pn)
     return not r.learn or player == nil or player:isRecipeKnown(r.recipe, true)
@@ -338,7 +338,7 @@ end
 -- （BaseCraftingLogic.java:767-790）。原版視窗同法，玩家換格子就換（ISBuildPanel.lua:185-221）；站著不動時每秒一次，
 -- 接得到拿起、放下的東西（原版靠背包頁 refreshBackpacks 標 drawDirty，ISInventoryPage.lua:1537-1539）。
 -- 游標不在、動作也不在跑就不追（isPlayerDoingAction 是保險：走不到、佇列清掉時原版也會經 onActionComplete 清掉進行中，
--- ISBuildingObject.lua:281-286、ISBuildAction.lua:192-197）
+-- ISBuildingObject.lua:285-290、ISBuildAction.lua:192-197）
 local function follow()
     local keep, t = {}, getTimestampMs()
     for _, a in ipairs(live) do
@@ -356,7 +356,7 @@ local function follow()
     if #keep == 0 then Events.OnTick.Remove(follow) end
 end
 
--- 動作跑完（蓋好、被打斷、被伺服器拒絕：ISBuildingObject.lua:287-299 → BuildLogic.stopCraftAction）：換容器、用掉的
+-- 動作跑完（蓋好、被打斷、被伺服器拒絕：ISBuildingObject.lua:291-303 → BuildLogic.stopCraftAction）：換容器、用掉的
 -- 材料換成還在的、重算擋不擋，同原版視窗重建游標（ISBuildPanel.lua:310-336,414-422）。o＝游標（addEventListener 的 target）
 local function onStopCraft(o)
     if getCell():getDrag(o.player) ~= o then return end
@@ -393,8 +393,23 @@ function Recipes.cursor(pn)
     return nil
 end
 
+-- 手把 A（42.22.2）：原版 DoTileBuilding 對手把玩家不讀建造鍵（ISBuildingObject.lua:114-126），A 只送到拖曳物件的
+-- onJoypadPressButton（JoyPadSetup.lua:363-366）；ISBuildIsoEntity 沒有自己的，ISPaintCursor／ISPaperCursor 把 A 交回
+-- 不處理 A 的基底（:627-653），所以原版建造選單用手把也蓋不下去。照本工具的游標處理（Cursor.padBuild：照手把那格重算
+-- 再設建造旗標，下一幀 DoTileBuilding 呼叫 tryBuild）；只掛在本 MOD 開的實例上（同 deactivate，不改原版類別），其他鍵
+-- 照該類別原本的處理
+local function joypadPress(self, joypadIndex, joypadData, button)
+    if button ~= Joypad.AButton then return self.mbldPress(self, joypadIndex, joypadData, button) end
+    -- 油漆、壁紙游標選的是格上第幾個物件（objectIndex），只在 render 換格時設回 1（ISPaintCursor.lua:101-104、
+    -- ISPaperCursor.lua:94-97）；A 比 render 早，換了格先照它設回去，不然拿上一格的第幾個去新格找物件
+    local sq = self.objectIndex and self.xJoypad and self.zJoypad
+        and getCell():getGridSquare(self.xJoypad, self.yJoypad, self.zJoypad)
+    if sq and sq ~= self.currentSquare then self.objectIndex, self.currentSquare = 1, sq end
+    return MinidoracatBuilder.Cursor.padBuild(self)
+end
+
 -- 開原版的游標，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，材料、工具、技能或學過不夠時游標擋住
--- （客戶端的游標本身只擋地形；伺服器 create 再驗一次、不夠就不蓋，ISBuildIsoEntity.lua:534-554）；放完游標留著，動作跑完
+-- （客戶端的游標本身只擋地形；伺服器 create 再驗一次、不夠就不蓋，ISBuildIsoEntity.lua:543-563）；放完游標留著，動作跑完
 -- 才再放得下。牆面油漆、壁紙、灰泥開原版的油漆和壁紙游標。回游標，或 nil（沒開）
 function Recipes.build(pn, id)
     local player = getSpecificPlayer(pn)
@@ -433,6 +448,7 @@ function Recipes.build(pn, id)
     end
     o.mbldRecipe = true
     o.deactivate = deactivate
+    o.mbldPress, o.onJoypadPressButton = o.onJoypadPressButton, joypadPress
     -- 換掉本工具的舊游標不算結束：W.build 剛把視窗收起
     local C = MinidoracatBuilder.Cursor
     local old = Recipes.cursor(pn) or (C and C.get and C.get(pn))

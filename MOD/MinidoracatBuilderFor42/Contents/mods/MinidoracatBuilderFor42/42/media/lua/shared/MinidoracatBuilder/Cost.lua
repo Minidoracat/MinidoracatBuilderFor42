@@ -40,7 +40,7 @@ local SMALL = { [PLANK] = 1, [NAILS] = 1 } -- 掛牆物、窗上物件、地面�
 local EAVE = { [PLANK] = 1, [NAILS] = 1 }  -- 屋簷：isEave 是旗標（IsoFlagType.java:109），字串鍵查不到
 -- 燈：原版沒有建造配方。沒有拆解材質的收電子零件與電線各 1、要螺絲起子、給電工經驗
 local LIGHT_BASE = { ["Base.ElectronicsScrap"] = 1, ["Base.ElectricWire"] = 1 }
--- 帶 lightR 的燈都裝著燈泡（IsoLightSwitch 的燈泡欄位預設 Base.LightBulb，IsoLightSwitch.java:52）：每片另收 1 個，不給經驗。
+-- 帶 lightR 的燈都裝著燈泡（IsoLightSwitch 的燈泡欄位預設 Base.LightBulb，IsoLightSwitch.java:53）：每片另收 1 個，不給經驗。
 -- 能搬的原版拿得下來（canBeModified，:76-79）；不能搬的拿不下、也不會燒掉（:683），拆除時燈泡還在才退（Dismantle.lightRefund）
 local BULB = "Base.LightBulb"
 Cost.BULB = BULB
@@ -49,7 +49,7 @@ Cost.BULB = BULB
 local STREET_LIGHT = { lighting_outdoor_01 = true, lighting_outdoor_tk_01 = true }
 local PIPE = "Base.MetalPipe"
 -- 窗簾：床單 1 張，長窗簾（CurtainSound=Long）2 張；不要工具、不給經驗。任何 IsoCurtain 都能用原版「移除窗簾」
--- 拿回 1 張床單（IsoCurtain.removeSheet；ISWorldObjectContextMenu.lua:2214-2251），所以倍率低於 1 也照 1 收
+-- 拿回 1 張床單（IsoCurtain.removeSheet；ISWorldObjectContextMenu.lua:2234-2271），所以倍率低於 1 也照 1 收
 local CURTAIN, LONG_CURTAIN = { ["Base.Sheet"] = 1 }, { ["Base.Sheet"] = 2 }
 -- 磚石：BrickWall／BrickFloor 等。原版另收的黏土漿、混凝土是照次數用的桶子，硬核「原版材料」打開時才收（Cost.USES）
 local MASONRY = {

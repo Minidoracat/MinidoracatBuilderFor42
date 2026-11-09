@@ -154,7 +154,7 @@ end
 --     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
 --     平台照 landingOf 找。
 --   多格：同一組的每一片（getSpriteGridObjectsIncludingSelf，ISDestroyCursor.lua:217），每片照自己的退料表退。引擎只看
---     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5421-5455），另用 isConnectedSpriteGridObject 對原點。
+--     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5410-5444），另用 isConnectedSpriteGridObject 對原點。
 --   其他：自己。
 function Dismantle.plan(obj, kind)
     local remove, refund, landing, foreign = {}, {}, nil, false
@@ -204,7 +204,7 @@ end
 
 -- 門框、窗框那條邊上還裝著門、窗（原版 canScrapObjectInternal，ISMoveableSpriteProps.lua:3920-3925），或框上釘著木板
 -- （窗框能封，Place.thumpable 的 setCanBarricade；拆了木板會懸空）。getDoor／getWindow 只收邊方向列舉，沒有 boolean 版
--- （IsoGridSquare.java:3634-3644,3666-3680；Place.check 同一種寫法）。
+-- （IsoGridSquare.java:3619-3629,3651-3665；Place.check 同一種寫法）。
 local function attached(kind, o, sq, spr)
     if o:isBarricaded() then return true end
     local n, w = Entry.edges(kind, spr)
@@ -247,7 +247,7 @@ end
 --     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
 --   原版拆解擋的（canScrapObjectInternal，ISMoveableSpriteProps.lua:3905-3939）：
---     容器要空（isObjectNoContainerOrEmpty；伺服器的移除不倒出內容，IsoObject.java:4545-4553）、桌子上有桌上物件：
+--     容器要空（isObjectNoContainerOrEmpty；伺服器的移除不倒出內容，IsoObject.java:4534-4542）、桌子上有桌上物件：
 --     NOT_EMPTY（集水的不列，Rules 的 COLLECTOR，所以不查有沒有水）。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
@@ -342,7 +342,7 @@ function Dismantle.replaceable(sq, kind, spr)
     return nil
 end
 
--- 燈拆了退什麼：退料表（伺服器帳本或估的價）有燈泡、燈上卻已經沒有（IsoLightSwitch.hasLightBulb，IsoLightSwitch.java:224-226）
+-- 燈拆了退什麼：退料表（伺服器帳本或估的價）有燈泡、燈上卻已經沒有（IsoLightSwitch.hasLightBulb，IsoLightSwitch.java:225-227）
 -- 時不退燈泡。本工具拆的燈都不能搬，原版拿不下、不會燒掉（:76-79,683,733），這條防的是別的 MOD 改掉燈泡欄位。
 -- 0.5.0 以前蓋的不能搬的燈帳本本來就沒有燈泡。伺服器 Server.dismantle
 -- 與預覽 estimateRefund 共用

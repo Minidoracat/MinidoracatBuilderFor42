@@ -70,7 +70,7 @@ end
 
 -- 帶著沒壞的這種工具（ItemTag 欄位名；這個版本沒有的標籤當沒帶）。plan 與 summary 共用，兩邊才不會判斷不同。
 -- 噴槍另外照型別找：42.21 的 item BlowTorch 沒有 Tags（scripts/generated/items/drainable.txt），沒有物品帶這個標籤，
--- 原版自己也照型別找（ISMoveableSpriteProps.lua:4-6、ISVehicleMenu.lua:878）。原版拆解還要燃料（uses ≥ 1）；
+-- 原版自己也照型別找（ISMoveableSpriteProps.lua:4-6、ISVehicleMenu.lua:880）。原版拆解還要燃料（uses ≥ 1）；
 -- 這裡工具不消耗（使用者 2026-10-27 決定），所以不看燃料，空的噴槍也算。硬核「原版材料」打開時燃料另照耗材
 -- （Cost 的 uses、findUses）扣，那裡才看次數。
 local BY_TYPE = { BLOW_TORCH = "BlowTorch" }
@@ -178,9 +178,9 @@ function Materials.plan(player, cost)
 end
 
 -- 建造作弊（不扣料、不要工具）。多人兩端都只認 isBuildCheat：伺服器上要 UseBuildCheat 能力才開得了
--- （ExtraInfoPacket.java:274-277），客戶端的 Lua 全域伺服器看不到。單機另認原版的 ISBuildMenu.cheat：debug 選單
+-- （ExtraInfoPacket.java:275-278），客戶端的 Lua 全域伺服器看不到。單機另認原版的 ISBuildMenu.cheat：debug 選單
 -- 「Build Cheat」和管理面板的按鈕只設它（ISGeneralCheats.lua:16、ISAdminPanelUI.lua:255），debug 模式預設開
--- （ISBuildMenu.lua:2），原版建造也認它（ISBuildingObject.lua:382-385）。
+-- （ISBuildMenu.lua:2），原版建造也認它（ISBuildingObject.lua:386-389）。
 function Materials.cheat(player)
     if player:isBuildCheat() then return true end
     return not isClient() and not isServer() and ISBuildMenu ~= nil and ISBuildMenu.cheat == true
@@ -192,7 +192,7 @@ end
 -- 「需要技能」，Check.affordable 讀），都是第一次讀到才查（每種一次 Java 查詢，之後讀表），所以 pairs(S.items) 只列出
 -- 查過的種類。S.cheat＝建造作弊（Materials.cheat；伺服器不扣料，Check 看它）。
 -- 背包用 getCountTypeEvalRecurse：和 plan 的 getSomeTypeEvalRecurse 走同一套遞迴、同一個 predicate
--- （ItemContainer.java:1267-1300,1316-1343,1357-1360,1435-1438）。
+-- （ItemContainer.java:1315-1348,1364-1391,1405-1408,1483-1486）。
 function Materials.summary(player)
     local inv = player:getInventory()
     local ground

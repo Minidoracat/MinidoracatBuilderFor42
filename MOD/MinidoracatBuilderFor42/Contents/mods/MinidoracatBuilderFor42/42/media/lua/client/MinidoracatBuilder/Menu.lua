@@ -181,7 +181,7 @@ local function addPick(sub, playerNum, name)
 end
 
 -- 選單接下來兩個 tick 再置頂一次（開著才做）。吸管放開時視窗同一幀回來（框架 setVisible → Focus.onFocus 置頂），
--- 同一批置頂的介面照它們在 UIManager 裡原本的先後排（UIManager.java:546-560），視窗建得比玩家的右鍵選單晚，
+-- 同一批置頂的介面照它們在 UIManager 裡原本的先後排（UIManager.java:543-557），視窗建得比玩家的右鍵選單晚，
 -- 會蓋在選單上面（E2E hardcore-mp builder-hardcore-1102b）。放開跟 OnTick 誰先跑不一定，所以做兩次
 local function keepOnTop(menu)
     local left = 2

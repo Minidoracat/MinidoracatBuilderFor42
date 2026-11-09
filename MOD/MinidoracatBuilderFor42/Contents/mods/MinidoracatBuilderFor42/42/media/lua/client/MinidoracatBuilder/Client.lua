@@ -82,7 +82,7 @@ end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
--- 佇列空了以後 Cursor.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:208；伺服器也不限距離，
+-- 佇列空了以後 Cursor.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，
 -- Check.near）
 local function queue(b)
     b.queued = true
@@ -353,8 +353,8 @@ Events.OnServerCommand.Add(function(module, command, args)
     if module == MODULE then Client.onServerCommand(command, args or {}) end
 end)
 
--- 伺服器剛放的物件，客戶端收到時引擎先 load 才設格子（IsoObject.java:4432,4448），IsoLightSwitch.load 要有格子的兩段都被跳過
--- （IsoLightSwitch.java:350-379）。本 MOD 蓋的照 load 補上：
+-- 伺服器剛放的物件，客戶端收到時引擎先 load 才設格子（IsoObject.java:4421,4437），IsoLightSwitch.load 要有格子的兩段都被跳過
+-- （IsoLightSwitch.java:351-380）。本 MOD 蓋的照 load 補上：
 --   不能改裝的燈：照 sprite 設顏色。processClient 用預設的白色建光源（AddItemToMapPacket.java:62-64），重新載入區塊才是 sprite
 --     的顏色（E2E builder-rooms-1029d）；LightingJNI 下次更新看到顏色變了就送（LightingJNI.java:334-343）。能改裝的燈顏色在封包裡。
 --   自建房間裡的開關：switchLight(activated)（:351-352）。沒補的話房間燈停在房間原本的狀態：開關顯示開著、房間卻暗，第一次按

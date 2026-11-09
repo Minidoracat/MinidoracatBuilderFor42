@@ -1,7 +1,7 @@
 -- 放置：補格子、每格能不能放、依種類建立物件並同步。出處 bt-authority §2、§4.2。
 -- 兩端共用：伺服器（單機在本機）放置；客戶端只用 Place.check 給游標預覽（Check.item 的 preview 不補格子，只查已有的格子）。
 -- 通則：建好物件、設完屬性，才 AddSpecialObject（引擎自己更新室內判定與碰撞），再 transmit 一次。
--- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4430-4471）。
+-- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4419-4460）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 
@@ -13,7 +13,7 @@ local F, T = IsoFlagType, IsoObjectType
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
--- 格子不存在時補建（原版 ISBuildIsoEntity.lua:517-529）；chunk 沒載入時建不出來（IsoCell.java:4337-4362）
+-- 格子不存在時補建（原版 ISBuildIsoEntity.lua:526-538）；chunk 沒載入時建不出來（IsoCell.java:4336-4361）
 function Place.square(x, y, z)
     local cell = getCell()
     local sq = cell:getGridSquare(x, y, z)
@@ -22,7 +22,7 @@ function Place.square(x, y, z)
     return sq
 end
 
--- 同一張圖不重複放（buildRecipeCode.lua:345-353）
+-- 同一張圖不重複放（buildRecipeCode.lua:351-359）
 local function hasSprite(sq, name)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
@@ -73,7 +73,7 @@ local function attachedAt(obj, name)
 end
 Place.attachedAt = attachedAt
 
--- 一個物件存檔與同步只帶前 255 張附加圖（IsoObject.java:1359、4630-4635；張數只用 1 byte），再多就會消失
+-- 一個物件存檔與同步只帶前 255 張附加圖（IsoObject.java:1376、4630-4635；張數只用 1 byte），再多就會消失
 local MAX_ATTACHED = 255
 local function attachedCount(obj)
     local list = obj and obj:getAttachedAnimSprite()
@@ -81,7 +81,7 @@ local function attachedCount(obj)
 end
 
 -- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
--- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:150-166）。skip、dirt 見 has
+-- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:159-175）。skip、dirt 見 has
 local function edgeTaken(sq, north, skip, dirt)
     if north then
         return has(sq, F.WallN, skip, dirt) or has(sq, F.WallNTrans, skip, dirt) or has(sq, F.WallNW, skip, dirt)
@@ -159,7 +159,7 @@ local function doorFrameAt(sq, north)
     return sq:has(F.DoorWallW) or sq:has("DoorWallWTrans")
 end
 
--- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:388-399）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
+-- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:397-408）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
 local function splitsGrid(sq, n, w, skip)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
@@ -173,7 +173,7 @@ local function splitsGrid(sq, n, w, skip)
     return false
 end
 
--- IsoDoor 會把同一張表 +2 號當開門的圖（IsoDoor.java:856-868；開著的那張 Rules 不列）；那一號不存在時引擎會建一個空 sprite
+-- IsoDoor 會把同一張表 +2 號當開門的圖（IsoDoor.java:677-689；開著的那張 Rules 不列）；那一號不存在時引擎會建一個空 sprite
 local function doorPairExists(spr)
     local tileset, num = spr:getName():match("^(.*)_(%d+)$")
     return tileset ~= nil and Entry.sprite(tileset .. "_" .. (tonumber(num) + 2)) ~= nil
@@ -187,7 +187,7 @@ local function vegetation(sq)
     return sq:has(F.canBeCut) or sq:has("tree")
 end
 
--- 樓梯一片（照原版 BuildRecipeCode.stairs.OnIsValid，buildRecipeCode.lua:163-212）。role＝top／mid／bottom／platform
+-- 樓梯一片（照原版 BuildRecipeCode.stairs.OnIsValid，buildRecipeCode.lua:169-218）。role＝top／mid／bottom／platform
 -- （Entry.cells）。west＝往西爬的那種，原版叫 north（ISBuildIsoEntity.lua:18-20）。
 -- 不在最高層、不是別組同向樓梯的頂端平台、正上方沒有地板（頭會撞到）；頂片上一層朝平台那邊沒有牆；平台不實心。
 -- 比原版嚴：三片都要踩在地板上（z=0 的地面也算），不放在水上（原版底片不能，中、頂片會補地板），不補懸空的柱子。
@@ -241,8 +241,8 @@ function Place.roofAt(x, y, z, planned)
         or supports(cell:getGridSquare(x, y + 1, z))
 end
 
--- 地板：照原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:338-361）：正下方不是樓梯（HasStairsBelow），而且
--- connectedWithFloor（IsoGridSquare.java:3467-3505：一樓一律可以；旁邊同一層有地板，或斜坡頂接到這格）。二樓以上另外：
+-- 地板：照原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:344-370）：正下方不是樓梯（HasStairsBelow），而且
+-- connectedWithFloor（IsoGridSquare.java:3452-3490：一樓一律可以；旁邊同一層有地板，或斜坡頂接到這格）。二樓以上另外：
 -- 正下方那格有牆也撐得住，同屋頂（使用者 2026-11-09 選：站在下面往上鋪，不必先蓋樓梯）。照座標查、不要這格存在
 -- （預覽時上一層的格子常常還沒建）；planned 同屋頂（同一排前面判定可蓋的地板格）
 local SIDES = { { -1, 0, "E" }, { 1, 0, "W" }, { 0, -1, "S" }, { 0, 1, "N" } } -- 鄰格與斜坡朝向（同 connectedWithFloor）
@@ -390,8 +390,8 @@ end
 
 -- ---------------------------------------------------------------- 建立
 local function finish(sq, obj, index)
-    sq:AddSpecialObject(obj, index or -1) -- 會呼叫 addToWorld，照 sprite 的 container 屬性建容器（IsoObject.java:4502-4504）
-    obj:setExplored(true) -- 所以排在這之後：蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:736-737）
+    sq:AddSpecialObject(obj, index or -1) -- 會呼叫 addToWorld，照 sprite 的 container 屬性建容器（IsoObject.java:4491-4493）
+    obj:setExplored(true) -- 所以排在這之後：蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:745-746）
     Place.fitContainers(obj) -- 容器也是 addToWorld 建的；容量跟著下一行送給玩家
     obj:transmitCompleteItemToClients()
 end
@@ -457,17 +457,17 @@ end
 -- 退料寫在伺服器建立的 Java 欄位 buildMaterials（原版拆解讀它），一樓以下的地板改記在地板帳本（groundFloor）；
 -- 退多少不看 modData
 -- 門框照原版不給打（entity 門框腳本都是 isThumpable = false）：thumpable 的 IsoThumpable 會被 getSpecialWall 當成牆，
--- 門開著也走不過去（IsoGridSquare.java:3804-3818）
+-- 門開著也走不過去（IsoGridSquare.java:3789-3803）
 -- 樓梯照 Wood_Stairs 剛好 6 級、沒有建造加成時的血量：health 150＋最高相關技能等級 6 × skillBaseHealth 50
--- （stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:657-668，等級越高原版越耐打）
+-- （stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:666-677，等級越高原版越耐打）
 local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450, post = 450 }
 -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
---   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1029-1041），血量＝搬運重量（沒寫當 50）
+--   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1044-1056），血量＝搬運重量（沒寫當 50）
 --   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
 --   地毯、掛牆物、放在桌上的：原版做成一般物件再設 movedThumpable（ISMoveableSpriteProps.lua:2330,2501-2504），血量 100、
---   每下扣「圍著打的殭屍數 ÷ 8」、最多 1，不足 1 的累積（IsoObject.java:205,5747-5759）；IsoThumpable 的 thumpDmg 預設就是 8
---   （IsoThumpable.java:101,1027-1041 同一算法）。這裡做成 IsoThumpable，和原版那種一般物件差在：受沙盒「殭屍破壞
---   建築」控制（IsoThumpable.java:994）、玩家揮武器打得到（CombatManager.java:277-283）。
+--   每下扣「圍著打的殭屍數 ÷ 8」、最多 1，不足 1 的累積（IsoObject.java:207,5736-5748）；IsoThumpable 的 thumpDmg 預設就是 8
+--   （IsoThumpable.java:106,1042-1056 同一算法）。這裡做成 IsoThumpable，和原版那種一般物件差在：受沙盒「殭屍破壞
+--   建築」控制（IsoThumpable.java:1009）、玩家揮武器打得到（CombatManager.java:278-284）。
 -- 回傳血量與 thumpDmg（nil＝不改預設）
 local function solidHealth(p)
     local mt = p:get("MoveType")
@@ -483,14 +483,14 @@ local function durability(kind, p)
     return HEALTH[kind], nil
 end
 -- 沙盒「殭屍打不壞」（ZombieProof，使用者 2026-11-01 選「不打，也不找路穿過」）：IsoThumpable 不給打，原生尋路把它當一般的牆
--- （getThumpableFor 看 isThumpable，IsoThumpable.java:1093-1126；nativeCode/SquareUpdateTask.java:334-381），玩家武器也打不到
+-- （getThumpableFor 看 isThumpable，IsoThumpable.java:1108-1141；nativeCode/SquareUpdateTask.java:334-381），玩家武器也打不到
 -- （:1148-1157,1564），大錘不看它（ISDestroyCursor.lua:293-361）。爬行殭屍對低柵欄不看 isThumpable（:1111-1117），所以 thumpDmg
 -- 也調到最大：每下只扣「圍著打的殭屍數 ÷ thumpDmg」（:1029-1041）。PROOF_DMG 減 0..3 同時是「照選項改過」的記號（引擎欄位、
 -- 隨存檔，不靠 modData），減的數記改之前的樣子：1＝原本可打，2＝原本 thumpDmg 是 1（不然是預設 8）。關掉時照它還原，
 -- 不重新分類（Rules 改版、圖塊換成損壞圖時分類會變）
 local PROOF_DMG = 2147483647
 local function proofDmg(thump, dmg) return PROOF_DMG - (thump and 1 or 0) - (dmg == 1 and 2 or 0) end
--- 沙盒「殭屍敲不破門」（ZombieProofDoors，使用者 2026-11-01 要求和上面分開）：門沒有不給打的旗標（IsoDoor.java:1246-1260），
+-- 沙盒「殭屍敲不破門」（ZombieProofDoors，使用者 2026-11-01 要求和上面分開）：門沒有不給打的旗標（IsoDoor.java:1042-1056），
 -- 只能把耐久調高；maxHealth 沒有 setter（:2401,2639），關掉時夾回 maxHealth（建構子照圖塊設的，:807-821）
 local DOOR_HP = 1000000000
 local function proof(key) return Entry.settings()[key] == true end
@@ -499,13 +499,13 @@ local function thumpable(c, kind, north)
     local p = spr:getProperties()
     local obj = IsoThumpable.new(getCell(), sq, spr:getName(), north, {})
     local solid = isSolid(kind, p)
-    -- 柱子照原版補的轉角柱（ISBuildUtil.lua:89-93）：轉角、不可穿過（IsoThumpable 預設 false，IsoThumpable.java:107）。
-    --   不設轉角的話 north＝false 的柱子會被當成這一格的西牆，殭屍走過西邊那條線時把它當目標打（IsoGridSquare.java:3816
-    --   getSpecialWall、:4027 testCollideSpecialObjects、IsoZombie.java:3681）。可穿過的話原生尋路找格邊能不能打時，
+    -- 柱子照原版補的轉角柱（ISBuildUtil.lua:89-93）：轉角、不可穿過（IsoThumpable 預設 false，IsoThumpable.java:112）。
+    --   不設轉角的話 north＝false 的柱子會被當成這一格的西牆，殭屍走過西邊那條線時把它當目標打（IsoGridSquare.java:3801
+    --   getSpecialWall、:4027 testCollideSpecialObjects、IsoZombie.java:3665）。可穿過的話原生尋路找格邊能不能打時，
     --   遇到它就回「不能打」，連同一格的牆也遮掉（nativeCode/SquareUpdateTask.java:356-381 遇到第一個 IsoThumpable 就回）。
-    --   斜走會被擋，和原版一樣（IsoThumpable.java:896-915）。擋格邊的圖 Rules 不列（BLOCKS_EDGE），柱子都不擋格邊
+    --   斜走會被擋，和原版一樣（IsoThumpable.java:911-930）。擋格邊的圖 Rules 不列（BLOCKS_EDGE），柱子都不擋格邊
     local corner = kind == "post"
-    -- 其餘屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:611-628）
+    -- 其餘屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:620-637）
     obj:setCanPassThrough(not corner and not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN)
         or p:has(F.WallNTrans) or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
     obj:setBlockAllTheSquare(solid or p:has("BlocksPlacement"))
@@ -537,38 +537,48 @@ local function thumpable(c, kind, north)
     -- NullPointerException、每幀一次、角色卡在窗框前（E2E builder-batch-1101rg2）。原版建造一律 setName（ISBuildUtil.lua:371）；
     -- 這裡用圖名（不是顯示名稱：物件名稱會存檔並同步）
     obj:setName(spr:getName())
-    -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2632-2636）
+    -- 水槽這類接水管的：照原版搬家具，放好要重新接水管才有水（ISMoveableSpriteProps.lua:2491-2494；IsoObject.java:2653-2657）
     if p:has(F.waterPiped) then obj:getModData().canBeWaterPiped = true end
     return obj
 end
 
--- 地毯：原版建地板照名稱認（buildRecipeCode.lua:242,381），搬動照 MoveType 認（ISMoveableSpriteProps.lua:1884）。圖塊包的
+-- 地毯：原版建地板照名稱認（buildRecipeCode.lua:248,387），搬動照 MoveType 認（ISMoveableSpriteProps.lua:1884）。圖塊包的
 -- 地毯沒有那個名稱、有的還帶 solidfloor（Rules.kindOf），兩種都認。Server.complete 換地板時掛回的地毯也照這份
 function Place.isRug(name, p)
     return (name or ""):find("floors_rugs", 1, true) ~= nil or (p ~= nil and p:get("MoveType") == "FloorRug")
 end
 local function isRug(o, p) return Place.isRug(o:getTextureName(), p) end
 
--- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:364-418），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
--- bt-authority §2.1-4），地毯留著、新地板插在地毯前面。舊物件只拆這一格的那片：多格的一組照原版整組拆
--- 會動到沒驗證過的格子（IsoGridSquare.java:5942-5965）。IsoThumpable 的地板照建的時候設的 isFloor 拆，不看現在的圖：
--- 地板帳本一格只記一筆（Floors）。
+-- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:372-437），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
+-- bt-authority §2.1-4），地毯留著、新地板插在地毯前面；沒有地毯時插回舊地板原本的位置（原版加在最後：同一格已有家具時
+-- 地板排到家具後面，之後蓋的牆照「插在最後一個地板後面」也跟著排到家具後面，見 edgeIndex）。舊物件只拆這一格的那片：
+-- 多格的一組照原版整組拆會動到沒驗證過的格子（IsoGridSquare.java:5933-5956）。IsoThumpable 的地板照建的時候設的
+-- isFloor 拆，不看現在的圖：地板帳本一格只記一筆（Floors）。回新地板該插的位置，或 nil（加在最後）
 function Place.clearFloor(sq)
-    local objects, rug = sq:getObjects(), nil
+    local objects, rug, at = sq:getObjects(), nil, nil
     for i = objects:size() - 1, 0, -1 do
         local o = objects:get(i)
         local p = o:getProperties()
         local tex = o:getTextureName() or ""
-        if instanceof(o, "IsoThumpable") and o:isFloor() then
-            sq:transmitRemoveItemFromSquare(o, false)
-        elseif isRug(o, p) then
+        local floor = instanceof(o, "IsoThumpable") and o:isFloor()
+        local remove = floor
+        if not floor and isRug(o, p) then
             rug = o
-        elseif p and (p:has(F.canBeRemoved) or p:has(F.solidfloor) or p:has(F.noStart) or p:has(F.taintedWater)
-            or (p:has(F.vegitation) and o:getType() ~= T.tree)) or tex:find("blends_grassoverlays", 1, true) then
+        elseif not floor then
+            remove = p and (p:has(F.canBeRemoved) or p:has(F.solidfloor) or p:has(F.noStart) or p:has(F.taintedWater)
+                or (p:has(F.vegitation) and o:getType() ~= T.tree)) or tex:find("blends_grassoverlays", 1, true)
+        end
+        if remove then
             sq:transmitRemoveItemFromSquare(o, false)
+            -- 由後往前拆：拆到地板記它的位置；之後拆掉它前面的東西，位置跟著往前一格
+            if floor or (p and p:has(F.solidfloor)) then
+                at = i
+            elseif at then
+                at = at - 1
+            end
         end
     end
-    return rug and objects:indexOf(rug) or nil
+    return rug and objects:indexOf(rug) or at
 end
 
 local function placeFloor(sq, obj)
@@ -593,23 +603,46 @@ local function placeFloor(sq, obj)
     if isServer() then sendServerCommand("erosion", "disableForSquare", { x = x, y = y, z = z }) end
 end
 
-local function placeWindow(sq, obj, north)
+-- 牆、柵欄、門框、窗框插在最後一個 solidfloor 物件後面；門插在同方向的門框後面，沒有門框照牆。照 42.22 原版建好後重插
+-- （buildRecipeCode.lua:625-674 的 fenceOrWall／door／doorFrame／windowFrame OnCreate）：加在格子最後時，同一格已經有
+-- 家具、地毯的話牆會畫在它們前面（42.22 更新說明「Fixed certain walls visually overlapping objects when built behind
+-- them」）。柱子照原版補的轉角柱加在最後（ISBuildUtil.lua:96，原版沒有重插）。AddSpecialObject 接著照
+-- placeWallAndDoorCheck 讓門排在牆後、牆排在門前（IsoGridSquare.java:5799-5811,5884-5918），42.21 與 42.22 相同。
+-- 客戶端照伺服器那份的位置插（AddItemToMap 帶 getObjectIndex，IsoObject.loadFromRemoteBuffer）
+local REINSERT = { wall = true, fence = true, doorFrame = true, windowFrame = true }
+local function edgeIndex(sq, kind, north)
+    local objects = sq:getObjects()
+    if kind == "door" then
+        local frame = north and T.doorFrN or T.doorFrW
+        for i = objects:size() - 1, 0, -1 do
+            if objects:get(i):getType() == frame then return i + 1 end
+        end
+    end
+    for i = objects:size() - 1, 0, -1 do
+        local p = objects:get(i):getProperties()
+        if p and p:has(F.solidfloor) then return i + 1 end
+    end
+    return -1
+end
+
+local function placeWindow(sq, obj, north, window)
     local index = -1
     local objects = sq:getObjects()
     -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）；牆型窗沒有窗框，
-    -- 照地圖加在最後（CellLoader.java:128-137）
+    -- 和牆一樣插在最後一個地板後面（地圖照讀檔順序，CellLoader.java:128-137）
     for i = 0, objects:size() - 1 do
         local p = objects:get(i):getProperties()
         if p and p:has(north and F.WindowN or F.WindowW) then index = i + 1 end
     end
+    if index < 0 and window then index = edgeIndex(sq, "wall", north) end
     finish(sq, obj, index)
 end
 
--- 樓梯：照原版 BuildRecipeCode.stairs.OnCreate（buildRecipeCode.lua:219-336）。三片都是 IsoThumpable，buildMaterials 都寫
+-- 樓梯：照原版 BuildRecipeCode.stairs.OnCreate（buildRecipeCode.lua:225-342）。三片都是 IsoThumpable，buildMaterials 都寫
 -- 整組的（Cost.forCells 收在頂片那一格；原版拆哪一片都照那片退）；照原版清掉這格的草（地毯留著）。頂端上一層補平台
--- 地板（addFloor 自己會同步，IsoGridSquare.java:4741-4789），記 ConnectedToStairs（同向的樓梯不能再蓋在平台上），
+-- 地板（addFloor 自己會同步，IsoGridSquare.java:4726-4776），記 ConnectedToStairs（同向的樓梯不能再蓋在平台上），
 -- 平台與頂片正上方那格重算。補地板前先照一般地板只拆這一格的舊東西：addFloor 自己拆用預設的 safelyRemove，
--- 伺服器上多格的一組會整組拆（IsoGridSquare.java:4746-4763,5939-5966），動到沒驗證過的格子。
+-- 伺服器上多格的一組會整組拆（IsoGridSquare.java:4731-4750,5930-5957），動到沒驗證過的格子。
 local function placeStairs(cells, placed)
     local set, west, top, landing = cells[1].cost, false, nil, nil
     for _, c in ipairs(cells) do
@@ -648,7 +681,7 @@ local function placeStairs(cells, placed)
 end
 
 -- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
--- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，原版只控制地圖房間的燈（IsoLightSwitch.java:73-99），線路上的燈由
+-- 有電才亮（客戶端每片自己判斷）；沒有 lightR 的是開關，原版只控制地圖房間的燈（IsoLightSwitch.java:74-100），線路上的燈由
 -- 伺服器 Circuits 切（放好後 Server.complete 呼叫 Circuits.placed 自動接線）。
 -- 能不能換燈泡由建構子照 IsMoveAble 設。擋路的照原版設 movedThumpable，殭屍打得壞（:2501-2504）；沙盒「殭屍打不壞」打開時不設。
 -- IsoLightSwitch 沒有 buildMaterials：拆了退什麼記在伺服器帳本（server/MinidoracatBuilder/Ledger.lua）。
@@ -658,7 +691,7 @@ local function newLight(c)
     local obj = IsoLightSwitch.new(getCell(), sq, spr, sq:getRoomID())
     obj:addLightSourceFromSprite()
     -- 燈蓋好就開（同原版搬燈，ISMoveableSpriteProps.lua:2329）。格子有房間時，開關（沒有 lightR）沿用建構子照房間設的狀態
-    -- （IsoLightSwitch.java:89-95）：強制開的話房間燈關著時開關顯示開、房間暗，第一次按看起來沒反應。有房間的是地圖房屋，
+    -- （IsoLightSwitch.java:90-96）：強制開的話房間燈關著時開關顯示開、房間暗，第一次按看起來沒反應。有房間的是地圖房屋，
     -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開
     if p:has("lightR") or not sq:getRoom() then obj:setActivated(true) end
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
@@ -669,7 +702,7 @@ end
 
 -- 家電（壁爐、爐子、烤肉架、洗衣機、烘衣機）：照地圖讀檔，依容器型別建原版類別（CellLoader.java:68-70,139-168,318-328；
 -- 那裡 camping_01_04..06 的 campfire 例外，目錄沒有這三張）。建成 IsoThumpable 的話原版認不得：生火選單只開給
--- isFireInteractionObject（IsoFireplace、IsoBarbecue，IsoObject.java:6801-6803），爐子、洗衣機的功能也在各自的類別裡。
+-- isFireInteractionObject（IsoFireplace、IsoBarbecue，IsoObject.java:6779-6781），爐子、洗衣機的功能也在各自的類別裡。
 -- 擋路的（solid／solidtrans）照原版搬家具放爐子、烤肉架、洗衣機、烘衣機設 movedThumpable（ISMoveableSpriteProps.lua:2246-2263,
 -- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時（審查 1109 Claude）；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
 -- 照當下的值改（同燈）。目錄的壁爐靠牆、不擋整格（collideN／W），原版搬家具也不設，照舊不打。沒有 buildMaterials：拆了退什麼記在伺服器帳本（同燈）。
@@ -718,7 +751,7 @@ end
 
 -- ---------------------------------------------------------------- 掛在地板上的地面覆蓋（Rules.onFloor）
 -- 圖掛在那格地板的附加圖上（地圖讀檔同一種，CellLoader.java:256-264），不建物件。transmitUpdatedSpriteToClients 把整串
--- 附加圖送給客戶端（IsoObject.java:4614-4645；客戶端照 sprite id 重掛、重畫那格，GameClient.java:1122-1162），跟著地板存檔。
+-- 附加圖送給客戶端（IsoObject.java:4603-4634；客戶端照 sprite id 重掛、重畫那格，GameClient.java:1044-1084），跟著地板存檔。
 -- 地板 modData 的 builderOverlays（{ [圖名] = true }）只決定右鍵選單列不列；拆了退什麼只看伺服器的覆蓋帳本
 -- （server/MinidoracatBuilder/Overlays.lua）。地板物件被移除（換地板、拆地板）時圖跟著舊地板走（地圖的標線也是），
 -- 帳本照 Place.onAboutToBeRemoved 整格清掉。不觸發移除事件的原版動作不清：鏟地只拿掉附加圖；火燒對一般地板只拿掉
@@ -817,12 +850,12 @@ function Place.build(kind, cells, placed)
             obj:getModData().builderEntry = spr:getName() -- 讀檔時認得出來（Place.harden）；拆除不認門（Dismantle.mine）
             if proof("ZombieProofDoors") then obj:setHealth(DOOR_HP) end
             placed[#placed + 1] = obj
-            finish(sq, obj)
+            finish(sq, obj, edgeIndex(sq, kind, north))
         elseif kind == "window" then
             obj = IsoWindow.new(getCell(), sq, spr, north)
             obj:setIsLocked(false)
             placed[#placed + 1] = obj
-            placeWindow(sq, obj, north)
+            placeWindow(sq, obj, north, true)
         elseif kind == "light" then
             obj = newLight(c)
             placed[#placed + 1] = obj
@@ -848,7 +881,11 @@ function Place.build(kind, cells, placed)
             -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對（bt-newkinds §5.2）
             if kind == "roof" then obj:setBlockAllTheSquare(false) end
             placed[#placed + 1] = obj
-            if kind == "floor" then placeFloor(sq, obj) else finish(sq, obj) end
+            if kind == "floor" then
+                placeFloor(sq, obj)
+            else
+                finish(sq, obj, REINSERT[kind] and edgeIndex(sq, kind, north) or nil)
+            end
             if kind == "roof" then getCell():checkHaveRoof(sq:getX(), sq:getY()) end
             local Floors = MinidoracatBuilder.Floors
             if Floors and kind == "floor" and sq:getZ() <= 0 and Cost.refund(kind, spr) == "builder" then
@@ -924,16 +961,16 @@ Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAbo
 --   一樓以下的地板：不給原版搬動工具拆（兩端）；只在伺服器、帳本建好時清掉 buildMaterials，本工具會拆的、圖和蓋的時候
 --     一樣的先記進地板帳本（沒付料的記空表：照樣能拆、不退）。
 --     ponytail: 帳本還沒建好就不搬、buildMaterials 留著（單機讀檔先 IsoWorld.init 讀格子、之後才建 GOS，
---     GameLoadingState.java:305,313；專用伺服器先建 GOS 再收連線，GameServer.java:816）。下次載入那格時再搬；要當場補再加排隊。
+--     GameLoadingState.java:307,316；專用伺服器先建 GOS 再收連線，GameServer.java:827）。下次載入那格時再搬；要當場補再加排隊。
 --   牆角柱（WallSE）：當時歸在牆，放成可穿過、不是轉角，原生尋路會連同一格的牆一起當成打不了（thumpable 的柱子說明）。
 --     現在歸柱子或不列（BLOCKS_EDGE 這類）的照原版轉角柱改；現在歸柵欄這類的不動。
 --   地面覆蓋（0.2.0 以前是獨立物件，Rules.onFloor）：只在伺服器排隊，帳本建好之後的下一個 tick 改掛到地板
 --     （Place.relink）。讀檔回呼裡不移除物件：這時正在列這一格的物件，單機的帳本也還沒建（同上）。
 --   本 MOD 蓋的（含門、燈）：「殭屍打不壞」「殭屍敲不破門」「容器容量倍率」照目前的沙盒值重設（Place.harden、
---     Place.fitContainers）。LoadGridsquare 早於註冊原生尋路（IsoChunk.java:3835,3865），尋路吃得到改過的值。兩端各自照
+--     Place.fitContainers）。LoadGridsquare 早於註冊原生尋路（IsoChunk.java:3834,3864），尋路吃得到改過的值。兩端各自照
 --     載入時的沙盒值算、不另外同步：多人中途改了選項，伺服器還載入著的那一帶照舊，送給客戶端的是記憶體裡的物件
 --     （PlayerDownloadServer.java:230-234），客戶端重新載入時卻照新值算，兩端不一致到伺服器也重新載入那一帶為止（重開服，或附近
---     沒人、伺服器卸載那一格後再載入，ServerMap.java:540-563）。
+--     沒人、伺服器卸載那一格後再載入，ServerMap.java:563-586）。
 --     改了選項後要重新載入才套用（使用者 2026-11-01 選）。
 local relinkQueue, relinking = {}, false
 local function relinkTick()
@@ -948,9 +985,9 @@ local function relinkTick()
     end
 end
 
--- 改之前可不可打：isThumpable() 在同一條邊有木板時一律回 true（IsoThumpable.java:1677-1679；isBarricaded 只比方向，
+-- 改之前可不可打：isThumpable() 在同一條邊有木板時一律回 true（IsoThumpable.java:1693-1695；isBarricaded 只比方向，
 -- :1615-1622），門框旁的門釘了木板也算，沒有讀原本欄位的方法。有木板時改照種類算（和建造時的 thumpable 同一份
--- durability），分類不到的當作不打：記成可打的話，關掉時門框這類會變成殭屍要打的牆（getSpecialWall，IsoGridSquare.java:3809,3816）
+-- durability），分類不到的當作不打：記成可打的話，關掉時門框這類會變成殭屍要打的牆（getSpecialWall，IsoGridSquare.java:3794,3801）
 local function wasThumpable(obj)
     if not obj:isBarricaded() then return obj:isThumpable() end
     local spr = obj:getSprite()
@@ -970,7 +1007,7 @@ function Place.harden(obj)
         else
             local k = PROOF_DMG - obj:getThumpDmg()
             obj:setIsThumpable(k % 2 == 1)
-            obj:setThumpDmg(k >= 2 and 1 or 8) -- 8＝IsoThumpable 的預設（IsoThumpable.java:101）
+            obj:setThumpDmg(k >= 2 and 1 or 8) -- 8＝IsoThumpable 的預設（IsoThumpable.java:106）
         end
     elseif Place.keyed(obj) then -- 燈、家電（擋路的打得壞，見 newLight、newAppliance）
         local p = obj:getSprite() and obj:getSprite():getProperties()
@@ -987,9 +1024,9 @@ function Place.harden(obj)
 end
 
 -- 沙盒「容器容量倍率」（ContainerCapacityMultiplier）：圖塊寫的容量 × 倍率（四捨五入），最多 100：世界容器的 getCapacity 夾在
--- 100（ItemContainer.java:168），伺服器搬東西照它檢查（TransactionManager.java:269-275,294-300），設更大也放不進去。原本的容量
--- 照引擎建容器的算法（IsoObject.java:5283-5302；沒寫時一般 50、冷凍庫 15，ItemContainer.java:91）；認不出來的不動，本來就 ≥100 的
--- 算出來也是 100，和 getCapacity 一樣，不動。容量隨存檔（ItemContainer.java:2439,2458）。建造時在送給玩家之前設，讀檔時兩端照目前的值重設
+-- 100（ItemContainer.java:170），伺服器搬東西照它檢查（TransactionManager.java:247-253,272-278），設更大也放不進去。原本的容量
+-- 照引擎建容器的算法（IsoObject.java:5272-5291；沒寫時一般 50、冷凍庫 15，ItemContainer.java:93）；認不出來的不動，本來就 ≥100 的
+-- 算出來也是 100，和 getCapacity 一樣，不動。容量隨存檔（ItemContainer.java:2487,2506）。建造時在送給玩家之前設，讀檔時兩端照目前的值重設
 function Place.fitContainers(obj)
     local n = obj:getContainerCount()
     if n == 0 then return end
@@ -1047,7 +1084,7 @@ function Place.migrate(obj)
         end
     end
 end
--- 特殊物件（IsoThumpable 都是）讀檔時另外列一份（IsoGridSquare.java:3247-3250），一般格子沒有
+-- 特殊物件（IsoThumpable 都是）讀檔時另外列一份（IsoGridSquare.java:3232-3235），一般格子沒有
 Events.LoadGridsquare.Add(function(sq)
     local list = sq:getSpecialObjects()
     for i = 0, list:size() - 1 do MinidoracatBuilder.Place.migrate(list:get(i)) end

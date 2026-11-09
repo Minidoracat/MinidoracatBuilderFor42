@@ -6,9 +6,9 @@
 --   反查表 byKey 不存，第一次用到時從 c 重建（只有一份真相）。
 -- 開關＝帳本裡（本工具蓋的）、sprite 過 Rules.switchProps（沒有 lightR、沒有 streetlight、不能搬）的 IsoLightSwitch。
 --   燈＝sprite 有 lightR 的 IsoLightSwitch，本工具蓋的或 sprite 能搬（IsMoveAble；建構子照它設 canBeModified，
---   IsoLightSwitch.java:76-79）。只認伺服器帳本與 sprite 屬性，不看物件 modData 與客戶端改得到的欄位（細節見知識庫 circuits.md）。
+--   IsoLightSwitch.java:77-80）。只認伺服器帳本與 sprite 屬性，不看物件 modData 與客戶端改得到的欄位（細節見知識庫 circuits.md）。
 -- 按：包原版 ISToggleLightAction 的 complete（點擊、右鍵、手把都走它）。線路裡的開關切整條線路；本工具蓋的燈切自己（不能搬
---   的燈在地圖房屋外原版切不了，IsoLightSwitch.java:497-498）；其他照原版。不要求有電：燈亮不亮由客戶端每片照電力判斷
+--   的燈在地圖房屋外原版切不了，IsoLightSwitch.java:498-499）；其他照原版。不要求有電：燈亮不亮由客戶端每片照電力判斷
 --   （LightingJNI.java:281-294），伺服器對自建屋一律算沒電（bt-switch §8）。原版開關切房間燈時線路上的燈不跟著動（設計稿）。
 -- 接線：客戶端送 circuit（查）／wire（改），身分只認 OnClientCommand 的連線玩家；回 circuit 給那位玩家。改帳本之前先把
 --   距離、每一格的建造權限、範圍、上限全部查完，任何一項不過就整筆不做。
@@ -132,7 +132,7 @@ function Circuits.isLamp(o)
     return p ~= nil and p:has("lightR") and (p:has("IsMoveAble") or Ledger.get(o) ~= nil)
 end
 
--- 一盞燈的每一片（同一組的燈；switchLight 連動多格用 setActive，不能搬的片會被擋，IsoLightSwitch.java:542-556）
+-- 一盞燈的每一片（同一組的燈；switchLight 連動多格用 setActive，不能搬的片會被擋，IsoLightSwitch.java:543-557）
 local function pieces(o)
     local out = {}
     local list = o:getSpriteGridObjectsIncludingSelf(ArrayList.new())
@@ -347,10 +347,10 @@ end
 -- ---------------------------------------------------------------- 按
 
 -- 把 list 切成 v。開關不用燈泡（沒燈泡也照樣切，不然拿掉燈泡的開關只開不關）；燈沒燈泡的照原版當成關
--- （IsoLightSwitch.java:490-493）。先把每個物件的狀態設好，再逐一 switchLight 並同步給附近玩家（開關在前；多格燈的其他片
+-- （IsoLightSwitch.java:491-494）。先把每個物件的狀態設好，再逐一 switchLight 並同步給附近玩家（開關在前；多格燈的其他片
 -- 已經是 v，不會再連動）。
 -- 客戶端替封閉的自建房間建的房間把房間裡每個 IsoLightSwitch（燈與開關都算）收進 lightSwitches（WorldRegionToMetaGrid.java:
--- 631-632），開關 switchLight 時把它們的 activated 全改成開關的狀態（IsoLightSwitch.java:517-523）。單機的世界只有一份，
+-- 631-632），開關 switchLight 時把它們的 activated 全改成開關的狀態（IsoLightSwitch.java:518-524）。單機的世界只有一份，
 -- MP 的客戶端收到開關同步時也會這樣改，伺服器那份不變（builder-circuits-1029b）。所以（只在 cascades 的區域）：
 --   先記下同一個區域裡不在名單上的物件（沿區域走，不受 RANGE、ROOM_MAX 限制），切完後狀態變了的照記下的還原（單機），
 --   燈再照伺服器狀態同步一次（MP 客戶端，封包照順序到）。別條線路的開關在 MP 客戶端上會被蓋掉、沒辦法用封包還原
