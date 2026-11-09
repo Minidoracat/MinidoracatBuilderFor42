@@ -265,8 +265,9 @@ function Cursor.start(playerNum, name, d)
         Messages.toast(player, Messages.refusal(code))
         return nil
     end
-    local old = Cursor.get(playerNum)
-    if old then old.replaced = true end -- 換項目：舊游標的 deactivate 不通知視窗回來
+    -- 換項目：舊游標（本工具的，或建造配方開的原版游標，Recipes.cursor）的 deactivate 不通知視窗回來
+    local old = Cursor.get(playerNum) or (B.Recipes and B.Recipes.cursor(playerNum))
+    if old then old.replaced = true end
     local o = Cursor.new(player, entry, d or 0)
     getCell():setDrag(o, playerNum)
     return o

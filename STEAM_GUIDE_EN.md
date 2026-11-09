@@ -1,12 +1,12 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
 https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
-Build with any loaded tile, including other mods' tile packs; you pay for what you build with materials.
+Build with any loaded tile, including other mods' tile packs; you pay for what you build with materials. Recipes from the vanilla build menu (rain collectors, forges and the like) are listed too and built with the vanilla recipe.
 {{img:01-overview-en.jpg}}
 [olist]
 [*] [b]Open the window[/b]: click the Build Anything button on the family toolbar (a hammer and a handsaw).
@@ -45,7 +45,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Other looks of a tile[/b]: an open door, a smashed window, a closed curtain, one square of a multi-square object and the like select the item they belong to.
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
-[*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds and Tilesets, with item counts in parentheses.
+[*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]One item per object[/b]: the facings of one object are one item.
 [*] [b]Different objects with the same name[/b]: each is listed separately.
@@ -113,6 +113,22 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Changing tab, source or search[/b]: leaves the set.
 [*] [b]Same tileset[/b]: when the tile sheet isn't laid out like vanilla walls, the button reads Same tileset and lists the walls, posts, frames, fences and wall overlays of that tileset.
 [*] [b]When it can't be pressed[/b]: the item isn't a wall piece, or the set has fewer than two items.
+[/list]
+[h3]Build recipes[/h3]
+[list]
+[*] [b]What's listed[/b]: every recipe you can see in the vanilla build menu, including ones other mods add, for example rain collectors, forges, wooden walls and stairs.
+[*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
+[*] [b]Details[/b]: the source and the vanilla category, then materials, tools (kept) and skills, counted the same way as in the vanilla build menu.
+[*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla; you place one at a time and can't drag a row.
+[*] [b]Wall paint, wallpaper and plaster[/b]: as in the vanilla build menu, the cursor doesn't open while materials, tools or skills are missing, and a notice says the details show what's missing.
+[*] [b]After placing[/b]: the cursor stays so you can place another, and it blocks when you run out of materials. Right-click (B on a gamepad) to go back to Build Anything.
+[*] [b]Recipes you haven't learned[/b]: they follow the vanilla sandbox option See Not Known Recipes. When it's on (the default) they're listed, and the cell and details say you haven't learned them yet; when it's off they appear once you learn them.
+[*] [b]Too dark[/b]: as in vanilla, recipes can't be built in the dark; the cell is marked missing and the details say it's too dark. A lit flashlight or lamp held in your hands or attached to you is enough.
+[*] [b]Recipes that change with skill[/b]: wooden walls and others that change with your skill level show only your tier, as in vanilla.
+[*] [b]Admin switches[/b]: kinds the admin turned off hide their recipes too; source and tileset switches don't apply to recipes.
+[*] [b]Recipe floors[/b]: still listed as tiles and built by this mod's rules, with no separate recipe item.
+[*] [b]Removing what a recipe built[/b]: dismantle it the vanilla way; Dismantle (Build Anything) doesn't remove it.
+[*] [b]Eyedropper and search[/b]: clicking with the eyedropper, Pick tile from the right-click menu, or searching a full tile name selects the recipe when the tile belongs to one.
 [/list]
 === 🧰 Placing and dragging
 {{img:04-cursor-en.jpg}}
@@ -196,14 +212,14 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]How they alternate[/b]: dragging a row, going around a rectangle and placing a single square all go by position, so a square always gets the same tile, whichever of the two you pick.
 [*] [b]Other fences[/b]: chain-link fences and tile-pack fences still use the tile you picked.
 [*] [b]Mall shutters[/b]: on the Walls tab, and what you build is a regular wall. As in vanilla, a window on the same square can't be opened, closed or climbed through with the interact key.
-[*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too.
+[*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too. They are built as tiles by this mod's rules, with no separate recipe item.
 [*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
 [*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
 [*] [b]Tile-pack rugs[/b]: some tile packs (UMCTP and Constown, for example) also mark their rugs as floors. These rugs are laid on top of the floor as in vanilla and don't replace it.
 [*] [b]Where those rugs are listed[/b]: movable ones under Furniture, the others under Floor overlay.
 [*] [b]Swapping the floor under them[/b]: those rugs stay.
 [*] [b]Rugs built as floors in 0.5.0 or earlier[/b]: dismantle them like floors, with Dismantle (Build Anything).
-[*] [b]Other recipe pieces[/b]: walls, fences and anything else with its own functions are still built from the vanilla build menu or that mod's menu.
+[*] [b]Other recipe pieces[/b]: walls, fences and anything else with its own functions are the items marked Recipe, built with the vanilla recipe; see Build recipes.
 [/list]
 [h3]With Basement Building[/h3]
 [list]
@@ -270,7 +286,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Containers[/b]: hold items right away.
 [*] [b]Fireplaces[/b]: work like the ones on the map once built, so you can add fuel and light them; stoves, ovens and similar appliances from tile packs are built the way the map builds them too.
 [*] [b]Fireplaces built in 0.6.1 or earlier[/b]: can't be lit; dismantle them with Dismantle (Build Anything) and build them again.
-[*] [b]Rain collector barrels and metal drums[/b]: not in the catalog. Built with this mod they can't collect rain, so build them from the vanilla build menu. Ones built before this update can be picked up as in vanilla if they're movable; the immovable one can only be smashed with a sledgehammer, for no materials.
+[*] [b]Rain collector barrels and metal drums[/b]: not listed as tiles, because built by this mod's rules they can't collect rain. For rain collectors, pick the item marked Recipe: it uses the vanilla recipe and collects rain. Ones built before this update can be picked up as in vanilla if they're movable; the immovable one can only be smashed with a sledgehammer, for no materials.
 [*] [b]Container capacity[/b]: the same as the vanilla piece; server owners can set Container capacity multiplier in the sandbox, up to 100.
 [/list]
 [h3]Lights[/h3]
@@ -651,7 +667,7 @@ Some mods give a tile its function by name (an ATM or a propane refill station, 
 These are not in the catalog either:
 [list]
 [*] [b]Tiles vanilla rewrites[/b]: tiles vanilla Lua changes when the map loads, for example feeding troughs and traps.
-[*] [b]Vanilla build menu facilities[/b]: facility tiles meant to be built from the vanilla build menu.
+[*] [b]Build recipe facilities[/b]: facility tiles meant to be built from a build recipe are not listed as tiles; they are listed as recipe items instead, see Build recipes.
 [*] [b]Tiles that never run dry[/b]: natural water, wells and the like.
 [*] [b]Others[/b]: unbreakable windows, stacked crate tiles (the game swaps them for another tile when a save loads), and the hidden floors and underground blocks the game uses internally.
 [*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like (cots and gurneys are the exception, listed under Furniture).
@@ -750,7 +766,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Set the source back to All sources, the tab to All, and untick Only what I can build.
 [*] Search its full tile name, use the eyedropper to click it in the world, or right-click the ground and choose Pick tile (Build Anything). Tiles you can't build tell you why, for example the admin turned off their kind, source or tileset.
-[*] Some things are never in the catalog, such as tents, sleeping bags and other things that turn into a special item when picked up, and rain collector barrels and metal drums (build them from the vanilla build menu); Lifestyle: Hobbies tiles are off by default in new worlds. See For server admins: other mods' facilities.
+[*] Some things are never in the catalog, such as tents, sleeping bags and other things that turn into a special item when picked up, and metal drums; Lifestyle: Hobbies tiles are off by default in new worlds. See For server admins: other mods' facilities. Rain collectors and other things from the vanilla build menu are the items marked Recipe.
 [/list]
 [h3]An item is dimmed. Can I still build it?[/h3]
 [list]

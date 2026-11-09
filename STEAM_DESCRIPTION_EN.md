@@ -24,7 +24,7 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 
 [h2]✨ Features[/h2]
 [list]
-[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, or use the eyedropper to click something in the world
+[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, with the vanilla build menu's recipes listed too
 [*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building and give XP, with optional hardcore skill levels and recipe consumables
 [*] [b]Drag rows and areas[/b]: walls and fences go around a rectangle, floors and roofs fill it, skipping tiles you can't afford
 [*] [b]Switches and wiring[/b]: choose which lights each switch controls, or let a switch in a closed room wire itself; two switches can share lights

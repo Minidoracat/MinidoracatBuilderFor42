@@ -1,6 +1,8 @@
--- 最愛：存 Zomboid/Lua/MinidoracatBuilder/favorites.txt，一行一個項目 ID（sprite 名稱；設計稿 DD:727），最後一行是 END。
+-- 最愛：存 Zomboid/Lua/MinidoracatBuilder/favorites.txt，一行一個項目 ID（sprite 名稱；設計稿 DD:727。建造配方項目是
+-- recipe:＋配方全名，例 recipe:Base.RainCollector_Tarp，Recipes.lua），最後一行是 END。
 -- 一個檔涵蓋所有伺服器：這個伺服器沒有的名稱照樣留在檔裡（換回有那個 MOD 的伺服器還在），
--- 只在視窗列出時略過（Window 的最愛分類逐項 Entry.resolve，解析不了的不列，DD:133）。
+-- 只在視窗列出時略過（Window 的最愛分類逐項 Entry.resolve，解析不了的不列，DD:133；配方項目照 Recipes.shown，這位玩家
+-- 看不到的不列）。
 -- getFileReader／getFileWriter 的路徑相對 Zomboid/Lua；寫入時自動建資料夾（LuaManager.java:5936-5963,6727-6759）。
 -- 引擎會吞掉讀寫錯誤：檔案在卻打不開時 getFileReader 回 nil（和檔案不存在一樣），讀到一半出錯時 readLine 回 nil
 -- （和讀完一樣，MethodCaller.java:34-42），寫入走 PrintWriter 不丟錯。所以讀要看到最後一行 END 才算完整，

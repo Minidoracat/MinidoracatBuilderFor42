@@ -421,6 +421,15 @@ function Rules.classify(spr)
     return Rules.kindOf(spr:getName(), spr:getProperties(), spr:getType(), spr)
 end
 
+-- 建造配方的主圖放哪個種類的頁籤（client Recipes.lua；使用者 2026-11-09 選照本 MOD 的頁籤）：配方由原版蓋，這裡只決定
+-- 列在哪裡，所以只照屬性分（kindOfProps），不跑名稱排除與「配方的圖只收地板」那一關。分不出種類回 nil（Recipes 放家具）
+function Rules.recipeKind(spr)
+    local p = spr:getProperties()
+    local kind = kindOfProps(spr:getName(), p, spr:getType())
+    if solidRug(kind, p, spr) then kind = "floor" end
+    return kind
+end
+
 -- 地面覆蓋裡帶 FloorOverlay 的單格圖：照地圖讀檔的做法掛在那格的地板上（CellLoader.java:256-264），不建物件。
 -- 獨立物件的話，原版 tileGeometry.txt 標 Translucent 的（交通標線、污漬、血跡這類）排進半透明層、深度和地板打平，
 -- 畫出來只剩一段一段（IsoSprite.java:1097,1142-1149；FBORenderCell.java:1713-1715,1927-1929）。Lua 讀不到這個旗標

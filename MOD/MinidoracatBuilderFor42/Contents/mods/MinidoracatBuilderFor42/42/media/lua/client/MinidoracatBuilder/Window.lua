@@ -6,6 +6,7 @@
 -- 配置只發生在「有事才做」的時候：停手 120 ms 後的搜尋、換頁籤／分類、整理進度每 0.5 秒、材料摘要每秒最多一次，
 -- 以及捲到新格子時補那幾格的字與貼圖（狀態列面板的 prerender，排在方格前面，同一幀方格就畫得到）。
 -- 入口（檔尾）：家族 Dock（id builder、order 80）、按鍵設定一個鍵（預設不綁）、ModOptions「顯示工具列按鈕」。
+-- 建造配方項目（Recipes.lua，使用者 2026-11-09 選）和圖塊列在同一個頁籤、分類、整套裡，排在圖塊前面；選了開原版的游標。
 if isServer() then return end
 
 require "MinidoracatBuilder/Entry"
@@ -18,13 +19,14 @@ require "MinidoracatBuilder/Favorites"
 require "MinidoracatBuilder/Sets"
 require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Place"
+require "MinidoracatBuilder/Recipes"
 
 local B = MinidoracatBuilder
 local first = B.Window == nil
 local W = B.Window or {}
 B.Window = W
 local Entry, Sources, Cost, Index = B.Entry, B.Sources, B.Cost, B.Index
-local Names, Favorites, Sets, Messages = B.Names, B.Favorites, B.Sets, B.Messages
+local Names, Favorites, Sets, Messages, Recipes = B.Names, B.Favorites, B.Sets, B.Messages, B.Recipes
 
 local LOG = "[MinidoracatBuilderFor42] "
 W.MIN_REV = 22
@@ -222,6 +224,7 @@ local function sortByKey(a)
     return a
 end
 W.sortByKey = sortByKey
+Recipes.sorter = sortByKey -- 配方項目照顯示名排（搜尋鍵開頭是小寫的顯示名；Recipes.scan 掃完排一次）
 
 local function counted(label, n)
     return getText("IGUI_MBLD_Count", label, tostring(n))
@@ -233,6 +236,20 @@ local function append(out, arr)
     for i = 1, arr.n do
         out.n = out.n + 1
         out[out.n] = arr[i]
+    end
+end
+
+-- 這位玩家看得到的配方項目（Recipes.shown）裡，對得上種類（want：種類 → true）、來源、圖塊組（fam）、原版分類（rcat）與
+-- 搜尋字的，照顯示名接在 out 後面（項目 ID）
+local function appendRecipes(out, st, want, fam, rcat, ql)
+    local list = Recipes.shown(W.playerNum).list
+    for i = 1, list.n do
+        local r = list[i]
+        if want[r.kind] and (st.source == "all" or r.source == st.source) and (not rcat or r.category == rcat)
+            and (not fam or r.family == fam) and (ql == "" or string.find(r.key, ql, 1, true)) then
+            out.n = out.n + 1
+            out[out.n] = r.id
+        end
     end
 end
 
@@ -323,6 +340,7 @@ end
 
 -- 最愛、最近使用：幾十項，逐項解析（這個伺服器沒有、被關掉的 resolve 回 nil，就不列；DD:133）。
 -- 搜尋除了一般清單的命中（來源、圖塊組、英文原名），清單短，另外逐項比顯示名與完整圖塊名。
+-- 配方項目照這位玩家看得到的（Recipes.shown），搜尋比它的搜尋鍵
 local function filterList(st, list, ql, kinds)
     local want = {}
     for _, k in ipairs(kinds) do want[k] = true end
@@ -331,13 +349,22 @@ local function filterList(st, list, ql, kinds)
         local _
         setHit, _, named = queryHits(ql)
     end
+    local shown = Recipes.shown(W.playerNum).set
     local out = { n = 0 }
     for i = 1, list.n do
         local name = list[i]
-        local e = Entry.resolve(name)
-        if e and want[e.kind] and (st.source == "all" or W.sourceOf(e.tileset) == st.source)
-            and (ql == "" or setHit[e.tileset] or named[name]
-                or string.find(string.lower(Names.of(name, e.kind) .. "|" .. name), ql, 1, true)) then
+        local r = shown[name]
+        local e = not r and Entry.resolve(name)
+        local hit
+        if r then
+            hit = want[r.kind] and (st.source == "all" or r.source == st.source)
+                and (ql == "" or string.find(r.key, ql, 1, true))
+        else
+            hit = e and want[e.kind] and (st.source == "all" or W.sourceOf(e.tileset) == st.source)
+                and (ql == "" or setHit[e.tileset] or named[name]
+                    or string.find(string.lower(Names.of(name, e.kind) .. "|" .. name), ql, 1, true))
+        end
+        if hit then
             out.n = out.n + 1
             out[out.n] = name
         end
@@ -350,11 +377,12 @@ function W.mineCount(list, kinds)
     return filterList({ source = W.st.source }, list, "", kinds).n
 end
 
--- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"f:圖塊組"）, source（"all"／"vanilla"／MOD ID）,
+-- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"f:圖塊組"／"r:原版分類"）, source（"all"／"vanilla"／MOD ID）,
 --          fav、recent（{ n, 名稱… }）}。回 names（{ n, 名稱… }）, jump（完整圖塊名命中時要選取的那一項；不在目錄時
---          改選同一件東西在目錄裡的那一項，listedAlt）。
+--          改選同一件東西在目錄裡的那一項，listedAlt；是這位玩家看得到的配方的圖時選那個配方項目）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
 -- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出（bt-perf §5.4）。
+-- 配方項目排在圖塊前面（設計稿 claim 4）；選原版分類（r:）時只列配方
 local function listFor(st)
     local q = trim(st.query)
     local ql = string.lower(q)
@@ -366,12 +394,14 @@ local function listFor(st)
             append(out, b)
             return out, jump
         end
+        local r = q:find("_%d+$") and Recipes.forSprite(W.playerNum, q)
+        if r then return { n = 1, r.id }, r.id end
     end
     local kinds = tabKinds(st.tab)
     local cat = st.cat or "all"
     if cat == "fav" then return filterList(st, st.fav or EMPTY, ql, kinds), nil end
     if cat == "recent" then return filterList(st, st.recent or EMPTY, ql, kinds), nil end
-    local fam
+    local fam, rcat
     if cat:sub(1, 2) == "k:" then
         local k = cat:sub(3)
         for _, t in ipairs(kinds) do
@@ -379,10 +409,16 @@ local function listFor(st)
         end
     elseif cat:sub(1, 2) == "f:" then
         fam = cat:sub(3)
+    elseif cat:sub(1, 2) == "r:" then
+        rcat = cat:sub(3)
     end
+    local want = {}
+    for _, k in ipairs(kinds) do want[k] = true end
+    local out = { n = 0 }
+    appendRecipes(out, st, want, fam, rcat, ql)
+    if rcat then return out, nil end
     local setHit, nameHit
     if ql ~= "" then setHit, nameHit = queryHits(ql) end
-    local out = { n = 0 }
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
     for _, k in ipairs(kinds) do
         local sets, byTs = kindSets[k], bucket[k]
@@ -424,8 +460,9 @@ function W.filter(st)
     return kept, jump
 end
 
--- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／圖塊組。數量照目前的頁籤與來源算，不含管理員關掉的；
--- 圖塊組只列這個來源有的（列別的來源的組，點下去是空清單）
+-- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／建造配方的原版分類／圖塊組。數量照目前的頁籤與來源算，不含管理員
+-- 關掉的；圖塊組只列這個來源有的（列別的來源的組，點下去是空清單）。配方項目照主圖算種類與圖塊組，另列原版的分類
+-- （「配方：木工」；攤平成下拉時和種類「家具」分得出來）
 function W.categories(tab)
     local kinds = tabKinds(tab)
     local src = W.st.source
@@ -447,6 +484,23 @@ function W.categories(tab)
             end
         end
     end
+    local want, rcN, rcList = {}, {}, {}
+    for _, k in ipairs(kinds) do want[k] = true end
+    local shown = Recipes.shown(W.playerNum).list
+    for i = 1, shown.n do
+        local r = shown[i]
+        if want[r.kind] and (src == "all" or r.source == src) then
+            kindN[r.kind] = (kindN[r.kind] or 0) + 1
+            total = total + 1
+            local f = r.family
+            if f then
+                if not famN[f] then famList[#famList + 1] = f end
+                famN[f] = (famN[f] or 0) + 1
+            end
+            if not rcN[r.category] then rcList[#rcList + 1] = r.category end
+            rcN[r.category] = (rcN[r.category] or 0) + 1
+        end
+    end
     -- 最愛、最近使用的數量＝這個頁籤、來源下列得出來的（檔裡有、這個伺服器沒有的不算）
     local mine = { { id = "fav", label = counted(getText("IGUI_MBLD_Cat_Fav"), W.mineCount(Favorites.list, kinds)), icon = "markerStar" },
         { id = "recent", label = counted(getText("IGUI_MBLD_Cat_Recent"), W.mineCount(W.st.recent, kinds)), icon = "clock" } }
@@ -460,12 +514,21 @@ function W.categories(tab)
         famItems[i] = { id = "f:" .. f, label = counted(label, famN[f]), key = string.lower(label) }
     end
     sortByKey(famItems)
-    return { { title = getText("IGUI_MBLD_Group_Mine"), items = mine },
-        { title = getText("IGUI_MBLD_Group_Kinds"), items = kindItems },
-        { title = getText("IGUI_MBLD_Group_Families"), items = famItems } }
+    local recItems = {}
+    for i, c in ipairs(rcList) do
+        local label = getText("IGUI_MBLD_Cat_Recipe", Recipes.categoryLabel(c))
+        recItems[i] = { id = "r:" .. c, label = counted(label, rcN[c]), key = string.lower(label) }
+    end
+    sortByKey(recItems)
+    local groups = { { title = getText("IGUI_MBLD_Group_Mine"), items = mine },
+        { title = getText("IGUI_MBLD_Group_Kinds"), items = kindItems } }
+    if #recItems > 0 then groups[#groups + 1] = { title = getText("IGUI_MBLD_Group_Recipes"), items = recItems } end
+    groups[#groups + 1] = { title = getText("IGUI_MBLD_Group_Families"), items = famItems }
+    return groups
 end
 
--- 來源下拉：全部、原版、各 MOD（附圖塊數，只算這一版能蓋的）；管理員關掉的列在提示裡（設計稿 DD:274）
+-- 來源下拉：全部、原版、各 MOD（附圖塊數，只算這一版能蓋的；配方項目照定義它的 MOD）；管理員關掉的列在提示裡
+-- （設計稿 DD:274）
 function W.sources()
     local counts, order, total = {}, {}, 0
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
@@ -483,6 +546,13 @@ function W.sources()
                 end
             end
         end
+    end
+    local shown = Recipes.shown(W.playerNum).list -- 看得到的都在全部頁籤的種類裡（Recipes 只給 Entry.BUILDABLE 的種類）
+    for i = 1, shown.n do
+        local src = shown[i].source
+        if not counts[src] then order[#order + 1] = src end
+        counts[src] = (counts[src] or 0) + 1
+        total = total + 1
     end
     local opts = { { id = "all", label = counted(getText("IGUI_MBLD_Source_All"), total) } }
     if counts.vanilla then opts[2] = { id = "vanilla", label = counted(W.sourceLabel("vanilla"), counts.vanilla) } end
@@ -512,8 +582,14 @@ end
 local function texOf(v, name)
     local t = v.tex[name]
     if t == nil then
-        local tex = getTexture(name) -- 世界圖塊的貼圖；splitIcon 裁掉透明邊，引擎自己快取（Texture.java:1193-1215）
-        if tex then tex = tex:splitIcon() end
+        local r = Recipes.byId[name]
+        local tex
+        if r then
+            tex = Recipes.icon(r) -- 原版建造視窗的圖示
+        else
+            tex = getTexture(name) -- 世界圖塊的貼圖；splitIcon 裁掉透明邊，引擎自己快取（Texture.java:1193-1215）
+            if tex then tex = tex:splitIcon() end
+        end
         t = tex or false
         if v.texN >= CACHE_MAX then v.tex, v.texN = {}, 0 end
         v.tex[name] = t
@@ -533,19 +609,28 @@ local function itemTexOf(ft)
     return t or nil
 end
 
--- 缺料、缺工具或技能不夠（硬核「需要技能」，使用者 2026-11-02）：true；項目解析不了（Check.affordable 回 total nil）也算不能蓋
+-- 缺料、缺工具或技能不夠（硬核「需要技能」，使用者 2026-11-02）：true；項目解析不了（Check.affordable 回 total nil）也算不能蓋。
+-- 配方項目照原版建造視窗的判斷（Recipes.state：技能、學過、材料、工具）。
 -- 每幀替看得到的格子補，所以包 pcall：哪個圖塊的屬性讓成本計算丟錯，標成缺料（不能蓋）並只記一次 log，
 -- 不要每幀重丟、整個狀態列停住
 local shortErrLogged = false
+local function shortErr(name, err)
+    if shortErrLogged then return end
+    shortErrLogged = true
+    print(LOG .. "cost check failed for " .. tostring(name) .. ": " .. tostring(err))
+end
 local function isShort(S, name)
+    local r = Recipes.byId[name]
+    if r then
+        local ok, valid, can = pcall(Recipes.state, W.playerNum, r)
+        if not ok then shortErr(name, valid) end
+        return not (ok and valid and can)
+    end
     local C = B.Check
     if not (C and C.affordable) then return false end
     local ok, missing, tools, total, skill = pcall(C.affordable, S, name)
     if not ok then
-        if not shortErrLogged then
-            shortErrLogged = true
-            print(LOG .. "cost check failed for " .. tostring(name) .. ": " .. tostring(missing))
-        end
+        shortErr(name, missing)
         return true
     end
     return total == nil or missing ~= nil or tools ~= nil or skill ~= nil
@@ -643,7 +728,13 @@ end
 function W.tipOf(v, name, short)
     if short == nil then short = v.dim[name] end
     local s = Names.of(name)
-    if short == true then return s .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Tip_Short") end
+    if short == true then
+        -- 沒學會的配方（檢視未知配方開著時照列）寫沒學會、太暗寫太暗，不寫缺材料（審查 1109 Grok、第 2 輪 Claude）
+        local r, why = Recipes.byId[name], "IGUI_MBLD_Tip_Short"
+        if r and not Recipes.learned(W.playerNum, r) then why = "IGUI_MBLD_Recipe_NotLearned"
+        elseif r and Recipes.dark(W.playerNum, r) then why = "IGUI_MBLD_Recipe_TooDark" end
+        return s .. getText("IGUI_MBLD_Sep") .. getText(why)
+    end
     if short == false then return s .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Tip_Ok") end
     return s
 end
@@ -760,8 +851,14 @@ end
 
 -- ===== 套用篩選 =====
 
--- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）
-function W.whyText(code, arg)
+-- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）。name＝那張圖：ENTITY 時查它有沒有建造配方
+function W.whyText(code, arg, name)
+    if code == "ENTITY" and name then
+        -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件；審查 1109 Claude）：別叫玩家去學配方。
+        -- Recipes.bySprite 收全部建造配方的每一張圖，這位玩家看不看得到都收
+        Recipes.all()
+        if not Recipes.bySprite[name] then code = "ENTITY_NONE" end
+    end
     if code == "DISABLED_KIND" then
         arg = Names.kind(arg)
     elseif code == "DISABLED_SOURCE" and arg then
@@ -774,20 +871,20 @@ function W.whyText(code, arg)
 end
 
 -- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（審查 1031 HIGH：原本叫玩家試較短的字，照做也找不到）：
--- 在目錄裡卻沒出現的，是被「只看能蓋的」濾掉；能蓋卻不在目錄的，是這版遊戲沒有它的貼圖（目錄只收有貼圖的），
--- 或目錄還在整理
+-- 在目錄裡（或是這位玩家看得到的配方的圖，審查 1109）卻沒出現的，是被「只看能蓋的」濾掉；能蓋卻不在目錄的，是這版
+-- 遊戲沒有它的貼圖（目錄只收有貼圖的），或目錄還在整理
 function W.emptyQuery(q)
     if not (q:find("_%d+$") and Entry.sprite(q)) then
         return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint")
     end
-    if exactBucket(q) or listedAlt(q) then return getText("IGUI_MBLD_Empty_Only"), nil end
+    if exactBucket(q) or listedAlt(q) or Recipes.forSprite(W.playerNum, q) then return getText("IGUI_MBLD_Empty_Only"), nil end
     local code, arg = Entry.why(q)
     if code == "UNKNOWN" then return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint") end
     if not code then
         if not (B.Catalog and B.Catalog.state == "ready") then return getText("IGUI_MBLD_Catalog_Wait"), nil end
         code = "NO_TEXTURE"
     end
-    return getText("IGUI_MBLD_Why_Title", q), W.whyText(code, arg)
+    return getText("IGUI_MBLD_Why_Title", q), W.whyText(code, arg, q)
 end
 
 local function prepareEmpty(v)
@@ -976,12 +1073,11 @@ local function toolName(tag)
     return getTextOrNull("IGUI_MBLD_Tool_" .. tag) or tag
 end
 
--- 材料一列：圖示、名稱（最多兩行）、靠右的「有／要」；缺的整列警告色、數量左邊加警告圖示。回下一行的 y
-local function matRow(v, ops, y, dw, ft, label, qty, short)
+-- 材料一列：圖示（itex，可以是 nil）、名稱（最多兩行）、靠右的「有／要」；缺的整列警告色、數量左邊加警告圖示。回下一行的 y
+local function matRow(v, ops, y, dw, itex, label, qty, short)
     local c, fh = v.colors, v.fh
     local col = short and c.warning or c.text
     local qtyW = getTextManager():MeasureStringX(v.font, qty)
-    local itex = itemTexOf(ft)
     if itex then add(ops, { t = "tex", tex = itex, x = 0, y = y + math.floor((fh - 16) / 2), w = 16, h = 16 }) end
     add(ops, { t = "textR", s = qty, x = dw, y = y, c = col, f = v.font })
     if short then add(ops, { t = "icon", key = "warning", x = dw - qtyW - 20, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
@@ -1095,13 +1191,13 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     local any = false
     for ft, need in pairs(total.items) do
         any = true
-        y = matRow(v, ops, y, dw, ft, getItemName(ft) or ft,
+        y = matRow(v, ops, y, dw, itemTexOf(ft), getItemName(ft) or ft,
             getText("IGUI_MBLD_HaveNeed", tostring(v.S and v.S.items[ft] or 0), tostring(need)), missing and missing[ft])
     end
     -- 硬核「原版材料」的耗材寫次數（一桶黏土漿 4 次、噴槍 10 次、焊條 20 次）
     for key, need in pairs(total.uses or EMPTY) do
         any = true
-        y = matRow(v, ops, y, dw, USE_ICON[key] or key, Messages.useName(key),
+        y = matRow(v, ops, y, dw, itemTexOf(USE_ICON[key] or key), Messages.useName(key),
             getText("IGUI_MBLD_UsesHaveNeed", tostring(v.S and v.S.uses[key] or 0), tostring(need)),
             missing and missing[B.Materials.USE .. key])
     end
@@ -1207,13 +1303,128 @@ local function detailRow(v, ops, e, total, missing, tools)
     text(ops, Text.fit(line, dw - tx, v.font), tx, y + fh + 4, short and c.warning or c.textMuted, v.font)
 end
 
+-- ===== 建造配方項目的詳情（Recipes.lua；設計稿 claim 2）=====
+
+-- 材料、工具與技能（Recipes.needs）和還缺不缺（Recipes.state，方格的缺料標示同一個判斷）。哪個 MOD 的配方讓原版的判斷
+-- 丟錯：當不能蓋，只記一次 log（同 isShort）
+local NO_NEEDS = { items = {}, tools = {}, skills = {}, learned = true } -- 丟錯不是沒學會（審查 1109 第 2 輪）
+local function recipeNeeds(r)
+    local ok, need = pcall(Recipes.needs, W.playerNum, r)
+    if not ok then
+        shortErr(r.id, need)
+        need = NO_NEEDS
+    end
+    local okS, valid, can = pcall(Recipes.state, W.playerNum, r)
+    if not okS then shortErr(r.id, valid) end
+    return need, not (okS and valid and can)
+end
+
+-- 寬、中版：縮圖（原版的圖示＋佔地格線）、名稱、「建造配方 · 來源 · 原版分類」、照原版建造的說明、佔地與朝向數、
+-- 材料（有／要）、工具（用完還在）、技能。缺的整列警告色，和原版建造視窗標紅的是同一份（Recipes.needs）。回內容高
+local function recipeFull(v, ops, r, need)
+    local c, fh, s = v.colors, v.fh, v.s
+    local dw = v.detail.width
+    local Text, lh = v.UI.Text, fh + 4
+    local boxH = math.min(math.floor(150 * s), math.floor(dw * 0.75))
+    add(ops, { t = "box", x = 0, y = 0, w = dw, h = boxH, c = c.border or c.textFaint })
+    local tex = texOf(v, r.id)
+    if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
+    local fw, fd, faces = Recipes.size(r)
+    if r.info then
+        local cell = math.max(6, math.floor(10 * s))
+        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
+    end
+    local y = boxH + GAP
+    local fhM = getTextManager():getFontHeight(UIFont.Medium)
+    for _, line in ipairs(wrapMax(Text, r.name, dw, UIFont.Medium, 3)) do
+        text(ops, line, 0, y, c.text, UIFont.Medium)
+        y = y + fhM + 2
+    end
+    y = y + 2
+    -- 來源、原版分類與「照原版建造」的說明：放不下就換行、不截字（詳情可以捲動）
+    for _, s2 in ipairs({ getText("IGUI_MBLD_Recipe_Sub", W.sourceLabel(r.source), Recipes.categoryLabel(r.category)),
+        getText("IGUI_MBLD_Recipe_Note") }) do
+        for _, line in ipairs(Text.wrap(s2, dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+    end
+    if r.info then
+        y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faces)), 0, y, dw, c.textMuted)
+    end
+    if not need.learned then y = warnLines(v, ops, getText("IGUI_MBLD_Recipe_NotLearned"), y + 4, dw) end
+    if need.dark then y = warnLines(v, ops, getText("IGUI_MBLD_Recipe_TooDark"), y + 4, dw) end
+    y = y + 4
+    text(ops, getText("IGUI_MBLD_Detail_Materials"), 0, y, c.textMuted, v.font)
+    y = y + lh
+    for _, m in ipairs(need.items) do
+        y = matRow(v, ops, y, dw, m.tex, m.name, getText("IGUI_MBLD_HaveNeed", tostring(m.have), tostring(m.need)), not m.ok)
+    end
+    if #need.items == 0 then
+        text(ops, getText("IGUI_MBLD_Detail_NoMaterials"), 0, y, c.text, v.font)
+        y = y + lh
+    end
+    if #need.tools > 0 then
+        y = y + 4
+        text(ops, getText("IGUI_MBLD_Recipe_Tools"), 0, y, c.textMuted, v.font)
+        y = y + lh
+        for _, t in ipairs(need.tools) do
+            y = matRow(v, ops, y, dw, t.tex, t.name, getText("IGUI_MBLD_HaveNeed", tostring(t.have), tostring(t.need)), not t.ok)
+        end
+    end
+    for _, k in ipairs(need.skills) do
+        y = y + 4
+        if k.ok then
+            y = para(v, ops, getText("IGUI_MBLD_Detail_Skill", k.name, tostring(k.level)), 0, y, dw, c.textMuted)
+        else
+            y = warnLines(v, ops, getText("IGUI_MBLD_Detail_SkillShort", k.name, tostring(k.level), tostring(k.have)), y, dw)
+        end
+    end
+    return y
+end
+
+-- 窄版選取列：縮圖、名稱、「配方 · 木板 4、釘子 4、鐵鎚」（還缺的整行用警告色＋警告圖示）
+local function recipeRow(v, ops, r, need, short)
+    local c, fh = v.colors, v.fh
+    local dw, dh = v.detail.width, v.detailBox.height
+    local thumb = dh - 8
+    local tex = texOf(v, r.id)
+    if tex then add(ops, { t = "tex", tex = tex, x = 0, y = 4, w = thumb, h = thumb }) end
+    local x = thumb + GAP
+    local Text = v.UI.Text
+    local y = math.floor((dh - 2 * fh - 4) / 2)
+    text(ops, Text.fit(r.name, dw - x, v.font), x, y, c.text, v.font)
+    local parts = {}
+    if not need.learned then parts[1] = getText("IGUI_MBLD_Recipe_NotLearned") end
+    if need.dark then parts[#parts + 1] = getText("IGUI_MBLD_Recipe_TooDark") end
+    for _, m in ipairs(need.items) do parts[#parts + 1] = getText("IGUI_MBLD_RowItem", m.name, tostring(m.need)) end
+    for _, t in ipairs(need.tools) do parts[#parts + 1] = t.name end
+    for _, k in ipairs(need.skills) do
+        if not k.ok then parts[#parts + 1] = getText("IGUI_MBLD_Detail_SkillShort", k.name, tostring(k.level), tostring(k.have)) end
+    end
+    local line = getText("IGUI_MBLD_Recipe_Badge")
+    if #parts > 0 then line = line .. getText("IGUI_MBLD_Sep") .. table.concat(parts, getText("IGUI_MBLD_ListSep")) end
+    if short then add(ops, { t = "icon", key = "warning", x = x, y = y + fh + 4 + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
+    local tx = short and x + 20 or x
+    text(ops, Text.fit(line, dw - tx, v.font), tx, y + fh + 4, short and c.warning or c.textMuted, v.font)
+end
+
 local function prepareDetail(v)
     local ops = { n = 0 }
     local name = v.selName
-    local e = name and Entry.resolve(name)
+    local r = name and Recipes.get(name)
+    local e = not r and name and Entry.resolve(name) or nil
     local short
     local h = v.detailBox.height -- 面板高＝內容高（至少可視高）：捲動容器照子元件下緣量捲動範圍
-    if e then
+    if r then
+        local need
+        need, short = recipeNeeds(r)
+        if v.mode == "narrow" then
+            recipeRow(v, ops, r, need, short)
+        else
+            h = math.max(h, recipeFull(v, ops, r, need))
+        end
+    elseif e then
         local total, costs, missing, tools = costInfo(v, e)
         local _, skillOk = skillInfo(e) -- 技能不夠也算「還缺」，和方格的缺料標示一樣（isShort）
         short = v.S ~= nil and (missing ~= nil or tools ~= nil or skillOk == false)
@@ -1226,7 +1437,7 @@ local function prepareDetail(v)
         -- 目錄裡有、現在解析不了：管理員剛關掉種類、來源或圖塊組，或規則改了（Entry.why 說是哪一個）
         -- 名稱（窄版一行）＋為什麼不能蓋，兩行；「建造」不能按的原因只寫在這裡，不能截掉
         local code, arg = Entry.why(name)
-        local why = code and W.whyText(code, arg) or getText("IGUI_MBLD_Detail_Gone")
+        local why = code and W.whyText(code, arg, name) or getText("IGUI_MBLD_Detail_Gone")
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
         h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning, math.huge)) -- 詳情會捲動，原因不截
     end
@@ -1243,10 +1454,12 @@ local function prepareDetail(v)
     local fw = v.favBtn.width
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
     v.favBtn:setWidth(fw)
-    v.buildBtn:setEnabled(e ~= nil)
+    v.buildBtn:setEnabled(e ~= nil or r ~= nil)
     -- 「整套」：選著的是牆類而且湊得到兩項才能按，表的排法不同時寫「同一組」（W.setOf）。窄版只有圖示，字在提示框。
-    -- 換了項目、設定或目錄（catAt：整理狀態變了、進度重整）才重算：同一組那條要排整個 tileset，這裡每秒跑
-    local setKey = e and (name .. "|" .. tostring(v.digest) .. "|" .. tostring(v.catAt)) or nil
+    -- 換了項目、設定、目錄（catAt：整理狀態變了、進度重整）或看得到的配方（recipeSig）才重算：同一組那條要排整個
+    -- tileset，這裡每秒跑
+    local setKey = (e or r) and (name .. "|" .. tostring(v.digest) .. "|" .. tostring(v.catAt) .. "|" .. tostring(v.recipeSig))
+        or nil
     if setKey ~= v.setKey then v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil end
     local set = v.setInfo
     local key = set and set.button or "IGUI_MBLD_Set"
@@ -1345,8 +1558,12 @@ function W.pump(panel)
         local S = M and M.summary and M.summary(p) or nil
         v.sumAt = now
         v.detailDirty = v.detailDirty or v.selName ~= nil -- 經驗照技能等級打折，等級變了材料不一定變
+        -- 建造配方：原版的容器（背包、旁邊的容器與地上）裡的東西變了，配方的缺料標示也要重算；看得到的配方（學會新的、
+        -- 升級換階的牆與地板）變了就重排分類與清單（Recipes.refresh）
+        local okR, moved, sig = pcall(Recipes.refresh, W.playerNum)
+        if not okR then shortErr("recipes", moved) end
         -- 大多時候沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
-        if not (S and M.same(v.S, S)) then
+        if not (S and M.same(v.S, S)) or (okR and moved) then
             v.S = S
             v.dim, v.dimN = {}, 0
             v.detailDirty = true
@@ -1354,6 +1571,7 @@ function W.pump(panel)
                 if v.aff then v.affStale = true else W.refilter(true) end
             end
         end
+        if okR and sig ~= v.recipeSig then W.refreshCatalog(v) end
     end
     if v.detailDirty then
         v.detailDirty = false
@@ -1414,6 +1632,13 @@ function W.drawTile(v, el, name, x, y, w, h, state)
     -- 缺料的格子照樣能選、能按建造，不是停用：縮圖只淡一點、名稱用次要字色（審查 1029 #6：原本 0.45 與
     -- textDisabled 量到 1.83:1、3.45:1）。缺料靠右上的警告圖示標（設計稿 DD:131）
     if tex then el:drawTextureScaledAspect(tex, x + 4, y + 4, w - 8, v.iconH, dim and 0.8 or 1, 1, 1, 1) end
+    -- 建造配方項目：縮圖左下角標「配方」（accent 底；左上留給手把的已選取勾、右上是缺料）
+    if Recipes.byId[name] then
+        local ac, on = c.accent, c.onAccent or c.text
+        local by = y + 4 + v.iconH - v.fh
+        el:drawRect(x + 3, by, v.badgeW, v.fh, 0.9, ac.r, ac.g, ac.b)
+        el:drawText(v.badge, x + 6, by, on.r, on.g, on.b, 1, v.font)
+    end
     local lines = v.text[name]
     if lines then
         local col = dim and c.textMuted or c.text
@@ -1565,29 +1790,53 @@ local function listedKind(name)
     return nil
 end
 
+-- 同一個 tileset、牆類的配方項目（這位玩家看得到的，照顯示名）：設計稿 claim 4「整套照主圖的圖塊組，列同一組的配方和
+-- 圖塊」，排在圖塊前面
+local function setRecipes(tileset)
+    local out = { n = 0 }
+    local list = Recipes.shown(W.playerNum).list
+    for i = 1, list.n do
+        local r = list[i]
+        if r.tileset == tileset and IS_SET_KIND[r.kind] then
+            out.n = out.n + 1
+            out[out.n] = r.id
+        end
+    end
+    return out
+end
+
 -- 選著的這一項的整套：{ name, list = { n, 名稱… }, at（名稱 → 套裡的位置；同一組沒有）, button（按鈕的翻譯鍵）,
--- chip（條件鈕標題） }；不是牆類、圖塊組被關、或湊不到兩項回 nil。表的排法不是原版牆的（Sets.of 回 nil）時改列
--- 同一個 tileset 的牆類，照編號排，按鈕寫「同一組」
+-- chip（條件鈕標題） }；不是牆類、或湊不到兩項回 nil。表的排法不是原版牆的（Sets.of 回 nil）時改列同一個 tileset 的
+-- 牆類，照編號排，按鈕寫「同一組」。配方項目照主圖的 tileset 排在前面；選著的是配方時一律「同一組」
 function W.setOf(name)
-    local e = Entry.resolve(name)
-    if not (e and IS_SET_KIND[e.kind]) or W.blocked(e.tileset) then return nil end
-    local list, at = Sets.of(name, listedKind)
-    if list then
-        local _, base = Sets.locate(name)
-        return { name = name, list = list, at = at, button = "IGUI_MBLD_Set", chip = getText("IGUI_MBLD_Set_Chip",
-            Names.tileset(e.tileset) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Name_Num", tostring(base))) }
+    local r = Recipes.get(name)
+    local e = not r and Entry.resolve(name) or nil
+    local kind, ts
+    if r then kind, ts = r.kind, r.tileset elseif e then kind, ts = e.kind, e.tileset end
+    if not (ts and IS_SET_KIND[kind]) then return nil end
+    local list = setRecipes(ts)
+    if e then
+        local tiles, at = Sets.of(name, listedKind)
+        if tiles then
+            append(list, tiles)
+            local _, base = Sets.locate(name)
+            return { name = name, list = list, at = at, button = "IGUI_MBLD_Set", chip = getText("IGUI_MBLD_Set_Chip",
+                Names.tileset(ts) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Name_Num", tostring(base))) }
+        end
     end
     local rows, s = {}, Entry.settings()
     for _, k in ipairs(SET_KINDS) do
-        local arr = Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][e.tileset]
+        local arr = not W.blocked(ts) and Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][ts]
         for i = 1, arr and arr.n or 0 do rows[#rows + 1] = { key = tonumber(arr[i]:match("_(%d+)$")), name = arr[i] } end
     end
-    if #rows < 2 then return nil end
     sortByKey(rows)
-    list = { n = #rows }
-    for i, r in ipairs(rows) do list[i] = r.name end
+    for _, x in ipairs(rows) do
+        list.n = list.n + 1
+        list[list.n] = x.name
+    end
+    if list.n < 2 then return nil end
     return { name = name, list = list, button = "IGUI_MBLD_SetTileset",
-        chip = getText("IGUI_MBLD_SetTileset_Chip", Names.tileset(e.tileset)) }
+        chip = getText("IGUI_MBLD_SetTileset_Chip", Names.tileset(ts)) }
 end
 
 -- 「整套」：清單換成選著那一項的那一套（prepareDetail 算好的 v.setInfo）；頁籤、分類、來源回「全部」、清搜尋（同
@@ -1643,12 +1892,13 @@ local function leaveSet(v)
     W.layout()
 end
 
--- 搜尋字是完整圖塊名（右鍵挑圖塊、吸管填的，或玩家自己打的）時，清單停在那張圖所在的一桶（listFor 不看頁籤、分類、
--- 來源）。玩家換頁籤、分類或來源就是要看別的：清掉它，清單照新的條件列；選著的那格在新清單裡就留著（applyItems）。
--- 2026-11-03 Workshop 回報：挑圖塊之後換什麼清單都不動
+-- 搜尋字是完整圖塊名（右鍵挑圖塊、吸管填的，或玩家自己打的）時，清單停在那張圖所在的一桶或那個配方項目（listFor 不看
+-- 頁籤、分類、來源）。玩家換頁籤、分類或來源就是要看別的：清掉它，清單照新的條件列；選著的那格在新清單裡就留著
+-- （applyItems）。2026-11-03 Workshop 回報：挑圖塊之後換什麼清單都不動
 local function leaveJump(v)
     local q = trim(W.st.query)
-    if not (exactBucket(q) or (q:find("_%d+$") and listedAlt(q))) then return end
+    local full = q:find("_%d+$") ~= nil
+    if not (exactBucket(q) or (full and (listedAlt(q) or Recipes.forSprite(W.playerNum, q)))) then return end
     v.search:setText("") -- 靜默，不觸發 onChange
     W.st.query, v.typedAt = "", nil
 end
@@ -1712,6 +1962,7 @@ function W.refreshSources(v)
 end
 
 function W.refreshCatalog(v)
+    v.recipeSig = Recipes.shown(W.playerNum).sig -- W.pump 每秒比它：看得到的配方變了才重整
     refreshSet(v)
     W.refreshSources(v)
     W.refreshCats(v)
@@ -1817,25 +2068,34 @@ end
 -- 建造：交給 Cursor，視窗收起、直接進放置（使用者 2026-10-29：按建造後視窗應該自動關閉）；游標結束時
 -- （右鍵取消、項目不能蓋）W.onCursorEnd 把視窗叫回來。手把玩家另外交還手把（原版只在沒有 UI 焦點時把按鍵交給游標，
 -- JoyPadSetup.lua:323,363-366）：Window:setVisible(false) 會 Focus.releaseJoypad（Widgets/Window.lua:336-348）。
+-- 建造配方項目開原版的游標（Recipes.build），結束時一樣叫回視窗
 function W.build()
     local v = W.v
     local name = v and v.selName
     if not name then return end
+    local r = Recipes.get(name)
     local C = B.Cursor
-    if not (C and C.start) then
+    if not r and not (C and C.start) then
         print(LOG .. "Cursor is missing, cannot start building")
         return
     end
     W.addRecent(name)
     W.st.picked = nil
-    C.onEnd = W.onCursorEnd
+    if C then C.onEnd = W.onCursorEnd end
+    Recipes.onEnd = W.onCursorEnd
     v.hiddenForBuild = true
     v.win:setVisible(false)
-    -- start 回 nil＝沒開游標（項目不能蓋，Cursor 已發通知），不會有 onEnd：收起的視窗要自己回來
+    -- 回 nil＝沒開游標（項目不能蓋，Cursor 已發通知），不會有 onEnd：收起的視窗要自己回來
     -- 換成條件下，朝向先轉到換得掉那件的那一面（W.startReplace 記的）
-    local rp = W.st.replace
-    local ok, res = pcall(C.start, W.playerNum, name, rp and rp.match and rp.match[name] or 0)
-    if not ok then print(LOG .. "Cursor.start failed: " .. tostring(res)) end
+    local ok, res
+    if r then
+        ok, res = pcall(Recipes.build, W.playerNum, name)
+        if not ok then print(LOG .. "Recipes.build failed: " .. tostring(res)) end
+    else
+        local rp = W.st.replace
+        ok, res = pcall(C.start, W.playerNum, name, rp and rp.match and rp.match[name] or 0)
+        if not ok then print(LOG .. "Cursor.start failed: " .. tostring(res)) end
+    end
     if not (ok and res) then
         W.onCursorEnd(W.playerNum)
     end
@@ -2290,6 +2550,8 @@ function W.create(UI)
     v.buildBtn = button(v, getText("IGUI_MBLD_Build"), "primary", function() MinidoracatBuilder.Window.build() end)
     v.buildW = v.buildBtn.width
     v.padHint = getText("IGUI_MBLD_PadHint")
+    v.badge = getText("IGUI_MBLD_Recipe_Badge") -- 方格裡配方項目左下角的標記（W.drawTile 每幀只讀這兩個）
+    v.badgeW = tm:MeasureStringX(font, v.badge) + 6
     -- 「管理」與詳情的管理員快捷鈕：建好先藏著，W.layout 只在管理員時排出來（Admin.lua）。快捷鈕用有框的預設樣式
     -- （審查 1101 #9：ghost 沒有框，看起來像說明文字）；不 setTitle，W.layout 給的寬度不會被重算
     v.adminBtn = UI.Button.new({ x = 0, y = 0, title = getText("IGUI_MBLD_Admin_Button"), icon = "settings", style = "ghost",

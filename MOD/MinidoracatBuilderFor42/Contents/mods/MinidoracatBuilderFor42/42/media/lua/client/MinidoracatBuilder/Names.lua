@@ -5,13 +5,15 @@
 --      方格用的短名（Names.short）不帶種類（頁籤已經寫了種類；使用者 2026-10-29），分兩段「tileset 顯示名」換行「編號」：
 --      方格第一行放圖塊組、第二行放編號，各自截短，編號一定看得到（照字斷行時，窄格子會把編號截掉：builder-ui-1029c ui-door）。
 --   3. 多格項目接「（n 格）」。4. 都不行就用 sprite 名稱。不顯示 Tooltip_ 鍵（BC 痛點 P1）。
+--   建造配方項目（ID 是 recipe: 開頭，Recipes.lua）用原版的顯示名稱，方格也一樣。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Rules"
+require "MinidoracatBuilder/Recipes"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Names = MinidoracatBuilder.Names or {}
 MinidoracatBuilder.Names = Names
-local Entry, Rules = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules
+local Entry, Rules, Recipes = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules, MinidoracatBuilder.Recipes
 
 -- 最近 256 項（設計稿 DD:720-726），完整名與短名共用。ponytail：滿了整張清掉，不做 LRU；捲動時看得到的不到百格，清掉只多組一輪。
 local MAX = 256
@@ -40,6 +42,8 @@ function Names.tileset(ts)
 end
 
 local function compose(name, kind, short)
+    local r = Recipes.get(name)
+    if r then return r.name end
     local spr = Entry.sprite(name)
     if not spr then return name end
     local p = spr:getProperties()
@@ -84,7 +88,7 @@ local function lookup(short, name, kind)
     return s
 end
 
--- name＝項目 ID（sprite 名稱）；kind 選填（呼叫端已經知道就傳，省一次分類）
+-- name＝項目 ID（sprite 名稱，或建造配方的 recipe:…）；kind 選填（呼叫端已經知道就傳，省一次分類）
 function Names.of(name, kind)
     return lookup(false, name, kind)
 end

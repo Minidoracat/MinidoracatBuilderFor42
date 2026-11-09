@@ -136,6 +136,8 @@ SpriteConfigManager = { corners = {}, GetObjectInfoList = function()
     infos[#infos + 1] = { getScript = function() return nil end } -- 沒有 SpriteConfig 腳本的
     return javaList(infos)
 end }
+-- 預設沒有本機玩家：建造配方項目（Recipes.lua）要有玩家才掃，配方的情境自己換成假玩家與假配方
+function getSpecificPlayer() return nil end
 
 -- 假 MOD 清單與 mod.info
 local modInfos = {}
@@ -6636,6 +6638,395 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
         "它的判斷丟錯：照沒裝它，照舊擋、不丟出去；同一份之後別格也不再呼叫它（只丟一次，審查 1107 Grok）")
     aparosa_BD_DirtLayer = nil
     isServer, isClient = realS, realC
+end)()
+
+print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 選 all／mix／kinds／tile）：清單與篩法、頁籤、搜尋、最愛、整套、開原版游標")
+;(function()
+    local B = MinidoracatBuilder
+    local W, Recipes, Names = B.Window, B.Recipes, B.Names
+    local realSpecific, realCell, realInfos, realGetText = getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText
+    local realDoing, realOnEnd = ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd
+    getText = function(k, ...)
+        local a = { ... }
+        if #a == 0 then return k end
+        return k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local ES = { "EntityScript" }
+    world({ sprite("rcp_walls_01_0", 4201, { flags = ES, keys = { WallN = "" } }),
+        sprite("rcp_walls_01_4", 4202, { flags = ES, keys = { WallN = "" } }),
+        sprite("rcp_walls_01_8", 4203, { flags = ES, keys = { WindowN = "" } }),
+        sprite("rcp_walls_01_16", 4204, { flags = { "WallN" }, keys = { WallN = "" } }), -- 本工具目錄的牆，同一個 tileset
+        sprite("rcp_barrel_01_0", 4205, { flags = ES, keys = { IsWaterCollector = "" } }),
+        sprite("rcp_barrel_01_1", 4206, { flags = ES, keys = { IsWaterCollector = "" } }),
+        sprite("rcp_floor_01_0", 4207, { flags = { "EntityScript", "solidfloor" } }),
+        sprite("rcp_metal_01_0", 4208, { flags = ES, keys = { WallN = "" } }),
+        sprite("neat_bench_01_0", 4209, { flags = ES, keys = { IsMoveAble = "" } }),
+        sprite("rcp_chair_01_0", 4210, { keys = { IsMoveAble = "" } }),
+        sprite("rcp_coffee_01_0", 4211, { flags = ES }) }) -- 有功能、沒有建造配方的 entity（原版咖啡機這類）
+    Index.reset()
+    Index.add("wall", "rcp_walls_01_16", "rcp_walls_01", 16, 1)
+    Index.add("furniture", "rcp_chair_01_0", "rcp_chair_01", 0, 1)
+    for i = 1, Index.setName.n do Index.addSetKey(i, "") end
+    sb.DisabledSources, sb.DisabledTilesets = "", ""
+    W.playerNum = 0
+
+    ResourceType = { Item = { name = "Item" } }
+    local function input(name, need, keep, ok)
+        local it = {}
+        function it:getDisplayName() return name end
+        function it:getFullName() return "Base." .. name end
+        function it:getNormalTexture() return "tex:" .. name end
+        local inp = { need = need, ok = ok, item = it }
+        function inp:getResourceType() return ResourceType.Item end
+        function inp:getPossibleInputItems() return javaList({ it }) end
+        function inp:getIntAmount() return need end
+        function inp:isKeep() return keep end
+        return inp
+    end
+    local function recipe(full, o)
+        local cr = { o = o }
+        function cr:getScriptObjectFullType() return full end
+        function cr:getName() return (full:match("%.(.*)$")) end
+        function cr:getTranslationName() return o.label end
+        function cr:getCategory() return o.cat end
+        function cr:getModID() return o.mod or "pz-vanilla" end
+        function cr:needToBeLearn() return o.learn == true end
+        function cr:getOnAddToMenu() return o.onAdd end
+        function cr:canBeDoneInDark() return o.inDark == true end
+        function cr:getIconTexture() return "icon:" .. full end
+        function cr:getInputs() return javaList(o.inputs or {}) end
+        function cr:getRequiredSkillCount() return #(o.skills or {}) end
+        function cr:getRequiredSkill(i)
+            local s = o.skills[i + 1]
+            return { getPerk = function() return s[1] end, getLevel = function() return s[2] end }
+        end
+        function cr:getToolRight() return o.right end
+        function cr:getToolLeft() return nil end
+        function cr:getToolBoth() return nil end
+        return cr
+    end
+    local hammer = input("Hammer", 1, true, true)
+    local rWall = recipe("Base.WoodWall", { label = "Wood Wall", cat = "Carpentry", skills = { { "Woodwork", 2 } },
+        inputs = { input("Plank", 4, false, true), hammer }, right = hammer })
+    local rFrame = recipe("Base.WoodFrame", { label = "Window Frame", cat = "Carpentry", onAdd = "tierOk" })
+    local rBarrel = recipe("Base.RainCollector_Tarp", { label = "Rain Collector (Tarp)", cat = "Outdoors", can = false,
+        inputs = { input("Tarp", 1, false, false) } })
+    local rFloor = recipe("Base.WoodFloor", { label = "Wood Floor", cat = "Carpentry" })
+    local rLearn = recipe("Base.MetalWall", { label = "Metal Wall", cat = "Welding", learn = true })
+    local rTier = recipe("Base.WoodWallLvl2", { label = "Wood Wall Lvl2", cat = "Carpentry", onAdd = "tierNo" })
+    local rPaint = recipe("Base.PaintWall", { label = "Paint Wall", cat = "Wall Coverings" })
+    local rOdd = recipe("Base.Mystery", { label = "Mystery", cat = "Miscellaneous" })
+    local rMod = recipe("Neat.Bench", { label = "Neat Bench", cat = "Furniture", mod = "Neat_Building" })
+    local function info(cr, names, w, h)
+        local face = { getWidth = function() return w end, getHeight = function() return h end }
+        local script = { getAllTileNames = function() return javaList(names) end, getCornerSprite = function() return nil end }
+        return { getScript = function() return script end, getRecipe = function() return { getCraftRecipe = function() return cr end } end,
+            getFace = function(_, f) return (f == 0 or f == 1) and face or nil end }
+    end
+    local infos = { info(rWall, { "rcp_walls_01_0" }, 1, 1), info(rFrame, { "rcp_walls_01_8" }, 1, 1),
+        info(rBarrel, { "rcp_barrel_01_0", "rcp_barrel_01_1" }, 2, 1), info(rFloor, { "rcp_floor_01_0" }, 1, 1),
+        info(rLearn, { "rcp_metal_01_0" }, 1, 1), info(rTier, { "rcp_walls_01_4" }, 1, 1), info(rMod, { "neat_bench_01_0" }, 1, 1) }
+    SpriteConfigManager.GetObjectInfoList = function() return javaList(infos) end
+    local all = { rWall, rFrame, rBarrel, rFloor, rLearn, rTier, rPaint, rOdd, rMod }
+    local invVer = 1 -- 容器裡的東西每變一次加一；每個 logic 記自己看過的版本（setContainers 回有沒有變）
+    BuildLogic = { new = function(player)
+        local L = { player = player, listeners = {} }
+        function L:getAllBuildableRecipes() self.scanned = true return javaList(all) end
+        function L:setManualSelectInputs(b) self.manual = b end
+        function L:setContainers() -- 東西變了：原版清掉配方快取（BaseCraftingLogic.java:617）
+            local changed = self.ver ~= invVer
+            self.ver = invVer
+            if changed then self.cache = nil end
+            return changed
+        end
+        function L:setRecipes() self.cache = nil end -- :578
+        function L:setRecipe(cr) self.cr, self.filled = cr, invVer end -- 原版 setRecipe 會 autoPopulateInputs
+        function L:getRecipe() return self.cr end
+        function L:getWallCoveringParams()
+            if not self.scanned then error("NPE: getAllBuildableRecipes first") end -- BuildLogic.java:90-97
+            if self.cr == rPaint then return { actionType = WallCoveringType.PAINT_THUMP, paintType = "PaintBlue" } end
+            return nil
+        end
+        -- 照原版快取：canPerform 先查技能、學過與太暗（CraftRecipeData.canPerform，:753-754），之後容器變了或 setRecipes 才重算
+        local function lit(L, cr) return cr:canBeDoneInDark() or not L.player:tooDarkToRead() end
+        function L:getCachedRecipeInfo(cr)
+            self.cache = self.cache or {}
+            local c = self.cache[cr]
+            if not c then
+                local valid = CraftRecipeManager.isValidRecipeForCharacter(cr, self.player)
+                local can = valid and cr.o.can ~= false and lit(self, cr)
+                c = { isValid = function() return valid end, isCanPerform = function() return can end }
+                self.cache[cr] = c
+            end
+            return c
+        end
+        function L:canPerformCurrentRecipe() return self.cr.o.can ~= false and lit(self, self.cr) end
+        function L:addEventListener(ev, fn, target) self.listeners[#self.listeners + 1] = { ev, fn, target } end
+        function L:stopCraftAction() -- 照 BuildLogic.java:246-250：先清掉進行中，再通知
+            self.busy = false
+            for _, l in ipairs(self.listeners) do if l[1] == "onStopCraft" then l[2](l[3]) end end
+        end
+        function L:isCraftActionInProgress() return self.busy == true end
+        function L:autoPopulateInputs() self.populated, self.filled = (self.populated or 0) + 1, invVer end
+        function L:refresh() self.refreshed = (self.refreshed or 0) + 1 end
+        function L:isInputSatisfied(inp) return inp.ok end
+        -- 選進去的件數：setContainers 只留還在的、不補新的；setRecipe／autoPopulateInputs 才照現在的容器填
+        function L:getInputCount(inp) return (inp.ok and self.filled == invVer) and inp.need or 0 end
+        function L:getSatisfiedInputItems(inp) return javaList(inp.ok and { inp.item } or {}) end
+        return L
+    end }
+    local P = { cheat = false, levels = { Woodwork = 1 } }
+    function P:getPlayerNum() return 0 end
+    function P:isBuildCheat() return self.cheat end
+    function P:getPerkLevel(perk) return self.levels[perk] or 0 end
+    function P:isRecipeKnown(cr) return not cr.o.learn or cr.o.learned == true end -- (recipe, true)：不看沙盒
+    function P:tooDarkToRead() return self.dark == true end
+    function P:getCurrentSquare() return nil end
+    P.inv = {} -- 背包裡有的完整類型 → true
+    function P:getInventory()
+        return { getAllTypeEvalRecurse = function(_, ft)
+            return javaList(P.inv[ft] and { { getFullType = function() return ft end } } or {})
+        end }
+    end
+    getSpecificPlayer = function(pn) return pn == 0 and P or nil end
+    PerkFactory = { getPerkName = function(perk) return "perk:" .. tostring(perk) end }
+    local seeNotLearnt = false -- 沙盒「檢視未知配方」：hasPlayerLearnedRecipe 看它，isValidRecipeForCharacter 不看
+    CraftRecipeManager = { hasPlayerLearnedRecipe = function(cr) return cr.o.learned == true or seeNotLearnt end,
+        isValidRecipeForCharacter = function(cr, p) -- 先技能、再學過（不看沙盒；CraftRecipeManager.java:335-358）
+            for _, s in ipairs(cr.o.skills or {}) do if p:getPerkLevel(s[1]) < s[2] then return false end end
+            return p:isRecipeKnown(cr, true)
+        end }
+    local onAdd = { tierOk = true, tierNo = false }
+    callLuaBool = function(f, t) return t.player == P and t.recipe ~= nil and onAdd[f] end
+    ISInventoryPaneContextMenu = { getContainers = function() return javaList({}) end }
+    WallCoveringType = { WALLPAPER = { name = "WALLPAPER" }, PAINT_THUMP = { toString = function() return "paintThump" end } }
+    local drag = {}
+    getCell = function()
+        local c = realCell()
+        c.getDrag = function(_, pn) return drag[pn] end
+        -- 照引擎：換掉時先叫舊游標身上的 deactivate，再換、替新的記 player（IsoCell.java:2558-2573）
+        c.setDrag = function(_, o, pn)
+            local old = drag[pn]
+            if old == o then return end
+            if old and old.deactivate then old.deactivate(old) end
+            drag[pn] = o
+            if o then o.player = pn end
+        end
+        return c
+    end
+    ISBuildIsoEntity = { new = function(_, player, objectInfo, n, containers, logic)
+        return { character = player, objectInfo = objectInfo, nSprite = n, containers = containers, buildPanelLogic = logic,
+            dragNilAfterPlace = true, blockAfterPlace = false }
+    end }
+    ISPaintCursor = { new = function(_, player, action, args) return { character = player, action = action, args = args } end }
+    ISTimedActionQueue.isPlayerDoingAction = function() return false end
+    Recipes.list = nil
+    Names.reset()
+
+    local A = Recipes.all()
+    local byId = Recipes.byId
+    local barrel = byId["recipe:Base.RainCollector_Tarp"]
+    check(A.n == 7 and barrel and barrel.kind == "furniture" and barrel.source == "vanilla" and not barrel.cover
+        and Recipes.bySprite["rcp_barrel_01_1"] == barrel,
+        "掃描：ID 是 recipe:＋配方全名；集雨桶分不出種類放家具；配方的每一張圖都對得到它")
+    check(byId["recipe:Base.WoodWall"].kind == "wall" and byId["recipe:Base.WoodWall"].family == "rcp_walls"
+        and byId["recipe:Base.WoodFrame"].kind == "windowFrame",
+        "配方照主圖的屬性分種類（Rules.recipeKind），不跑「配方的圖不收」那一關")
+    check(byId["recipe:Base.PaintWall"].cover and byId["recipe:Base.PaintWall"].kind == "wallOverlay"
+        and byId["recipe:Neat.Bench"].source == "Neat_Building",
+        "牆面油漆（沒有圖塊設定、有牆面參數）放牆面疊圖；MOD 的配方來源記那個 MOD")
+    check(byId["recipe:Base.WoodFloor"] == nil and byId["recipe:Base.Mystery"] == nil,
+        "反面：主圖本工具目錄已經列了的地板配方不另列（使用者選 tile）；沒有圖塊設定又不是牆面的不列")
+
+    local shown = Recipes.shown(0)
+    check(shown.list.n == 5 and not shown.set["recipe:Base.MetalWall"] and not shown.set["recipe:Base.WoodWallLvl2"]
+        and shown.set["recipe:Base.WoodFrame"], "照原版篩：沒學過的、OnAddToMenu 回 false 的不列，回 true 的列")
+    sb.KindWallOverlay = false
+    check(not Recipes.shown(0).set["recipe:Base.PaintWall"], "管理員關掉的種類，配方也不列（使用者選 kinds）")
+    sb.KindWallOverlay = nil
+    Recipes.refresh(0) -- 建好視窗用的 logic
+    local sig = Recipes.shown(0).sig
+    rLearn.o.learned = true
+    invVer = invVer + 1
+    local moved, sig2 = Recipes.refresh(0)
+    check(moved == true and sig2 ~= sig and Recipes.shown(0).set["recipe:Base.MetalWall"] and Recipes.refresh(0) == false,
+        "Recipes.refresh：容器裡的東西變了回 true、沒變回 false；學會了就列出來、sig 跟著變")
+    rLearn.o.learned = nil
+    Recipes.refresh(0)
+
+    local function st(o)
+        local s = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+        for k, v in pairs(o or {}) do s[k] = v end
+        return s
+    end
+    local L = W.filter(st())
+    check(L.n == 7 and L[1] == "recipe:Neat.Bench" and L[5] == "recipe:Base.WoodWall" and L[6] == "rcp_walls_01_16"
+        and L[7] == "rcp_chair_01_0", "全部頁：配方排在圖塊前面、照顯示名")
+    local fu = W.filter(st({ tab = "furniture" }))
+    check(fu.n == 3 and fu[1] == "recipe:Neat.Bench" and fu[2] == "recipe:Base.RainCollector_Tarp" and fu[3] == "rcp_chair_01_0",
+        "家具頁：集雨桶、MOD 的長椅（配方）和椅子（圖塊）")
+    local wa = W.filter(st({ tab = "wall" }))
+    check(wa.n == 3 and wa[1] == "recipe:Base.PaintWall" and wa[2] == "recipe:Base.WoodWall" and wa[3] == "rcp_walls_01_16",
+        "牆頁：牆與牆面油漆的配方，窗框配方不在牆頁")
+    local rc = W.filter(st({ tab = "furniture", cat = "r:Outdoors" }))
+    check(rc.n == 1 and rc[1] == "recipe:Base.RainCollector_Tarp", "原版分類（r:Outdoors）：只列那個分類的配方")
+    local nm = W.filter(st({ source = "Neat_Building" }))
+    local va = W.filter(st({ tab = "furniture", source = "vanilla" }))
+    check(nm.n == 1 and nm[1] == "recipe:Neat.Bench" and va.n == 2 and va[1] == "recipe:Base.RainCollector_Tarp",
+        "來源：配方照定義它的 MOD；原版配方算原版")
+    local q1, q2, q3 = W.filter(st({ query = "rain" })), W.filter(st({ query = "outdoors" })), W.filter(st({ query = "neat_b" }))
+    check(q1.n == 1 and q2.n == 1 and q2[1] == q1[1] and q3.n == 1 and q3[1] == "recipe:Neat.Bench",
+        "搜尋比顯示名、原版分類、來源")
+    local ex, jump = W.filter(st({ tab = "wall", query = "rcp_barrel_01_1" }))
+    check(jump == "recipe:Base.RainCollector_Tarp" and ex.n == 1, "完整圖塊名是配方的圖：選到那個配方項目（吸管、右鍵挑圖塊）")
+    local hid, jumpHid = W.filter(st({ query = "rcp_metal_01_0" }))
+    check(jumpHid == nil and hid.n == 0, "反面：看不到的配方（沒學過）的圖不跳")
+    -- 空結果：看得到的配方的圖被「只看能蓋的」濾掉時說是那個勾選（審查 1109 Codex、Claude）；沒有建造配方的設施不叫人
+    -- 去學配方（審查 1109 Claude）
+    local realTON = getTextOrNull
+    getTextOrNull = function(k, ...) if k:find("^IGUI_MBLD_Why_") then return getText(k, ...) end return nil end
+    local t1 = W.emptyQuery("rcp_barrel_01_1")
+    local _, h2 = W.emptyQuery("rcp_metal_01_0")
+    local _, h3 = W.emptyQuery("rcp_coffee_01_0")
+    getTextOrNull = realTON
+    check(t1 == "IGUI_MBLD_Empty_Only" and h2 == "IGUI_MBLD_Why_ENTITY(?)" and h3 == "IGUI_MBLD_Why_ENTITY_NONE(?)",
+        "空結果：看得到的配方的圖是被「只看能蓋的」濾掉；看不到的配方說原因；沒有建造配方的設施另一句")
+    local fv = W.filter(st({ cat = "fav", fav = { n = 3, "recipe:Base.RainCollector_Tarp", "recipe:Base.MetalWall", "rcp_chair_01_0" } }))
+    check(fv.n == 2 and fv[1] == "recipe:Base.RainCollector_Tarp" and fv[2] == "rcp_chair_01_0",
+        "最愛：配方 ID 照看得到的列，看不到的略過（留在檔裡）")
+
+    W.st.source = "all"
+    local recG, kindsG
+    for _, g in ipairs(W.categories("furniture")) do
+        if g.title == "IGUI_MBLD_Group_Recipes" then recG = g end
+        if g.title == "IGUI_MBLD_Group_Kinds" then kindsG = g end
+    end
+    local ids = {}
+    for _, it in ipairs(recG and recG.items or {}) do ids[it.id] = it.label end
+    check(recG and ids["r:Outdoors"] == "IGUI_MBLD_Count(IGUI_MBLD_Cat_Recipe(Outdoors),1)" and ids["r:Furniture"]
+        and kindsG.items[1].label == "IGUI_MBLD_Count(IGUI_MBLD_Cat_All,3)",
+        "分類：多一組原版分類（配方：戶外），全部的數量算進配方")
+    local hasNeat = false
+    for _, o in ipairs((W.sources())) do if o.id == "Neat_Building" then hasNeat = true end end
+    check(hasNeat, "來源下拉：只有配方的 MOD 也列出")
+    check(Names.of("recipe:Base.RainCollector_Tarp") == "Rain Collector (Tarp)" and Names.short("recipe:Neat.Bench") == "Neat Bench",
+        "名稱：配方項目用原版的顯示名稱")
+
+    local set = W.setOf("recipe:Base.WoodWall")
+    check(set and set.list.n == 3 and set.list[1] == "recipe:Base.WoodFrame" and set.list[2] == "recipe:Base.WoodWall"
+        and set.list[3] == "rcp_walls_01_16" and set.button == "IGUI_MBLD_SetTileset",
+        "整套（同一組）：照主圖的 tileset 列同一組的配方和圖塊，配方在前")
+    local setT = W.setOf("rcp_walls_01_16")
+    check(setT and setT.list.n == 3 and setT.list[1] == "recipe:Base.WoodFrame", "選圖塊的同一組也列同 tileset 的配方")
+    check(W.setOf("recipe:Base.RainCollector_Tarp") == nil, "反面：不是牆類的配方沒有整套")
+
+    local wall = byId["recipe:Base.WoodWall"]
+    local valid, can = Recipes.state(0, wall)
+    check(W.isShort(nil, wall.id) and not valid and not can, "能不能蓋：技能不夠算還缺（原版快取的 canPerform 也先查技能）")
+    local need = Recipes.needs(0, wall)
+    check(need.items[1].name == "Plank" and need.items[1].need == 4 and need.items[1].ok and need.tools[1].name == "Hammer"
+        and need.skills[1].name == "perk:Woodwork" and need.skills[1].level == 2 and not need.skills[1].ok,
+        "詳情：材料、用完還在的工具、技能（夠不夠照原版）")
+    local tarp = rBarrel.o.inputs[1]
+    local before = Recipes.needs(0, barrel).items[1].have
+    tarp.ok = true
+    invVer = invVer + 1
+    Recipes.refresh(0)
+    local after = Recipes.needs(0, barrel).items[1].have
+    tarp.ok = false
+    invVer = invVer + 1
+    Recipes.refresh(0)
+    check(before == 0 and after == 1,
+        "詳情選著同一個配方時拿到材料：換容器後照原版重填，「有」的數量跟著變（審查 1109 Codex）")
+    local metal = byId["recipe:Base.MetalWall"]
+    check(Recipes.needs(0, metal).learned == false and Recipes.needs(0, wall).learned == true
+        and W.tipOf({ dim = {} }, metal.id, true):find("IGUI_MBLD_Recipe_NotLearned", 1, true) ~= nil,
+        "沒學會的配方：詳情與提示寫沒學會，不寫缺材料（審查 1109 Grok）")
+    W.isShort(nil, wall.id) -- 原版快取記下升級前的判斷（前面換容器時清過）
+    P.levels.Woodwork = 2
+    local stale = W.isShort(nil, wall.id)
+    local moved = Recipes.refresh(0)
+    check(stale and moved == true and not W.isShort(nil, wall.id) and W.isShort(nil, barrel.id),
+        "升級後（容器沒變）：Recipes.refresh 看到技能變了就清原版快取、回有變（視窗清缺料標示），不缺；集雨桶照樣缺")
+    -- 「檢視未知配方」開著、沒學會的照列；只學會、背包與技能都沒變：原版快取的 canPerform 也查學過（審查 1109 第 2 輪 Codex）
+    seeNotLearnt = true
+    Recipes.refresh(0)
+    local listedL, shortL = Recipes.shown(0).set[metal.id] ~= nil, W.isShort(nil, metal.id)
+    rLearn.o.learned = true
+    local movedL = Recipes.refresh(0)
+    local _, canL = Recipes.state(0, metal)
+    check(listedL and shortL and movedL == true and canL and not W.isShort(nil, metal.id),
+        "學會配方（容器、技能沒變）：Recipes.refresh 清原版快取、回有變；不再標缺")
+    rLearn.o.learned, seeNotLearnt = nil, false
+    Recipes.refresh(0)
+    -- 太暗：原版 canPerform 也先查（沒有 CanBeDoneInDark 標籤的配方），容器、技能都沒變也要清快取（審查 1109 第 2 輪 Claude）
+    local litBefore = not W.isShort(nil, wall.id)
+    P.dark = true
+    local movedD = Recipes.refresh(0)
+    check(litBefore and movedD == true and W.isShort(nil, wall.id) and Recipes.needs(0, wall).dark == true
+        and W.tipOf({ dim = {} }, wall.id, true):find("IGUI_MBLD_Recipe_TooDark", 1, true) ~= nil,
+        "變暗（容器、技能沒變）：Recipes.refresh 清原版快取、回有變；標缺，詳情與提示寫太暗")
+    P.dark = false
+    local movedLit = Recipes.refresh(0)
+    check(movedLit == true and not W.isShort(nil, wall.id) and Recipes.needs(0, wall).dark == false,
+        "亮回來：清快取、不缺，詳情不寫太暗")
+    P.cheat = true
+    check(not W.isShort(nil, barrel.id) and Recipes.needs(0, barrel).items[1].ok, "建造作弊（isBuildCheat）都算夠")
+    P.cheat = false
+
+    local ended
+    Recipes.onEnd = function(pn) ended = pn end
+    local ticks, step0 = count("OnTick"), clockStep
+    clockStep = 0
+    local o = Recipes.build(0, barrel.id)
+    local BL = o and o.buildPanelLogic
+    check(o and drag[0] == o and o.dragNilAfterPlace == false and o.blockAfterPlace == true and o.blockBuild == true
+        and o.mbldRecipe and BL.cr == rBarrel and BL.manual == false and o.firstItem == nil
+        and count("OnTick") == ticks + 1, "開原版游標：帶自己的 logic，材料不夠游標擋住；放完留著、跑完才再放")
+    rBarrel.o.can = true
+    invVer = invVer + 1
+    fire("OnTick")
+    local early = o.blockBuild
+    nowMs = nowMs + 1000
+    fire("OnTick")
+    check(early == true and o.blockBuild == false and BL.populated == 1,
+        "站著不動拿到材料：一秒內換容器、重填材料、游標解除（同原版背包一變就重建游標）")
+    BL.busy = true
+    nowMs = nowMs + 1000
+    fire("OnTick")
+    check(o.blockBuild == true, "放下後動作還在跑：游標擋住（同原版）")
+    BL:stopCraftAction()
+    check(o.blockBuild == false and BL.refreshed == 1, "動作跑完（onStopCraft）：用掉的材料換成還在的、重算擋不擋")
+    P.inv["Base.Hammer"] = true
+    local o2 = Recipes.build(0, "recipe:Base.WoodWall")
+    check(o2 and o2.firstItem == "Base.Hammer" and o2.secondItem == nil and o2.equipBothHandItem == nil,
+        "要拿在手上的工具照原版視窗：背包裡有的那件")
+    check(o2 and drag[0] == o2 and o.replaced and ended == nil, "換成本 MOD 另一個游標：舊的不算結束，視窗不回來")
+    getCell():setDrag(nil, 0)
+    check(ended == 0, "游標清掉（右鍵、手把 B）：視窗回來")
+    fire("OnTick")
+    check(count("OnTick") == ticks, "游標不在、動作也不在跑：不再追容器")
+    rPaint.o.can = false
+    local toasts, realToast = {}, B.Messages.toast
+    B.Messages.toast = function(_, text) toasts[#toasts + 1] = text end
+    local blockedPaint = Recipes.build(0, "recipe:Base.PaintWall")
+    rPaint.o.can = nil
+    P.dark = true
+    local darkPaint = Recipes.build(0, "recipe:Base.PaintWall")
+    P.dark = false
+    B.Messages.toast = realToast
+    check(blockedPaint == nil and darkPaint == nil and drag[0] == nil and toasts[1] == "IGUI_MBLD_Recipe_Blocked"
+        and toasts[2] == "IGUI_MBLD_Recipe_TooDark",
+        "反面：牆面油漆的技能、工具或材料不夠，或太暗：照原版建造鈕不開游標；通知寫缺什麼或太暗（審查 1109 Codex、第 2 輪 Claude）")
+    local paint = Recipes.build(0, "recipe:Base.PaintWall")
+    check(paint and paint.action == "paintThump" and paint.args.paintType == "PaintBlue" and paint.mbldRecipe and drag[0] == paint,
+        "牆面油漆開原版的油漆游標")
+    getCell():setDrag(nil, 0)
+
+    getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText = realSpecific, realCell, realInfos, realGetText
+    ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep = realDoing, realOnEnd, step0
+    Recipes.list = nil
+    Names.reset()
 end)()
 
 print()

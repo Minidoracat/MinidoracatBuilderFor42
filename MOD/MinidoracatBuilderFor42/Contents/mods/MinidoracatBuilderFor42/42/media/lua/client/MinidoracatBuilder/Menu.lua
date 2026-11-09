@@ -5,15 +5,17 @@
 -- 右鍵「拆除一區...（建造工坊）」（Area.start，只用滑鼠）與「換成...（建造工坊）」（Window.openReplace）：設計稿 claim 3、4。
 -- 右鍵「挑圖塊（建造工坊）」（使用者 2026-10-31 定案）：點到的格子上每一張圖，選了就打開建造視窗、用完整圖塊名搜尋，
 -- 選到那一項；不能蓋的照樣列出、變紅並寫原因（Entry.why）。建造視窗的吸管（Window.startPick → Menu.pickAt）用同一份清單。
+-- 建造配方的圖（玩家看得到那個配方時）選到那個配方項目（使用者 2026-11-09 設計稿 claim 4）。
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Client"
 require "MinidoracatBuilder/Area"
+require "MinidoracatBuilder/Recipes"
 
 local Dismantle, Names = MinidoracatBuilder.Dismantle, MinidoracatBuilder.Names
 local Messages, Client = MinidoracatBuilder.Messages, MinidoracatBuilder.Client
-local Entry, Area = MinidoracatBuilder.Entry, MinidoracatBuilder.Area
+local Entry, Area, Recipes = MinidoracatBuilder.Entry, MinidoracatBuilder.Area, MinidoracatBuilder.Recipes
 local Menu = MinidoracatBuilder.Menu or {}
 MinidoracatBuilder.Menu = Menu
 
@@ -155,8 +157,13 @@ function Menu.pickTile(playerNum, name)
 end
 
 -- 子選單一列：能蓋的「種類：名稱」；同一件東西有能蓋的那一項時（開著的門、多格的其他格…）照樣能選，寫那一項的種類；
--- 其他不能蓋的變紅、停上去寫原因（紅字是原版「不能選」的顏色，ISContextMenu.lua:441-443）
+-- 建造配方的圖寫「配方：配方名」；其他不能蓋的變紅、停上去寫原因（紅字是原版「不能選」的顏色，ISContextMenu.lua:441-443）
 local function addPick(sub, playerNum, name)
+    local r = Recipes.forSprite(playerNum, name)
+    if r then
+        sub:addOption(getText("IGUI_MBLD_Menu_Named", getText("IGUI_MBLD_Recipe_Badge"), r.name), playerNum, Menu.pickTile, name)
+        return
+    end
     local e = Entry.resolve(name)
     local code, arg, alt
     if not e then
@@ -168,7 +175,7 @@ local function addPick(sub, playerNum, name)
     if code and not alt then
         opt.notAvailable = true
         local tip = ISWorldObjectContextMenu.addToolTip()
-        tip.description = MinidoracatBuilder.Window.whyText(code, arg)
+        tip.description = MinidoracatBuilder.Window.whyText(code, arg, name)
         opt.toolTip = tip
     end
 end
@@ -188,8 +195,8 @@ end
 
 -- 吸管（Window.startPick）點了一格：按下時引擎照圖點到的物件（obj，Cursor.onObjectLeftMouseButtonDown）在哪一格就列那一格
 -- （指著牆、門的上半時滑鼠下的地板格是牆後那一格；別層看得到的東西也拿得到），沒點到物件時列滑鼠那格（sq）。
--- 只有一張能蓋（或同一件東西有能蓋的那一項）就直接選；好幾張就在滑鼠旁跳出和右鍵「挑圖塊」子選單同一份清單（addPick）；
--- 格子上沒有圖就說一聲
+-- 只有一張能蓋（或同一件東西有能蓋的那一項、或是看得到的配方的圖）就直接選；好幾張就在滑鼠旁跳出和右鍵「挑圖塊」子選單
+-- 同一份清單（addPick）；格子上沒有圖就說一聲
 function Menu.pickAt(playerNum, sq, obj)
     sq = obj and obj:getSquare() or sq
     local tiles = {}
@@ -201,7 +208,7 @@ function Menu.pickAt(playerNum, sq, obj)
     local only, n = nil, 0
     for _, name in ipairs(tiles) do
         local code, _, alt = Entry.why(name) -- 能蓋的回 nil
-        if not code or alt then only, n = name, n + 1 end
+        if not code or alt or Recipes.forSprite(playerNum, name) then only, n = name, n + 1 end
     end
     if n == 1 then return Menu.pickTile(playerNum, only) end
     local menu = ISContextMenu.get(playerNum, getMouseX(), getMouseY())
