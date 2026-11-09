@@ -4746,7 +4746,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         "讀檔、容器：.5 邊界照四捨五入進位（50×1.15＝58、冷凍庫 15×4.1＝62）")
 
     -- 插入位置（42.22.2 原版 fenceOrWall／door OnCreate，buildRecipeCode.lua:625-658）：格上已有地板與家具時，牆插在
-    -- 最後一個地板後面（不畫在家具上），門插在同方向門框後面
+    -- 最後一個地板後面（和原版蓋的順序一樣），門插在同方向門框後面
     local function obj(spr) return { getProperties = function() return spr:getProperties() end,
         getType = function() return spr:getType() end, getSprite = function() return spr end,
         getTextureName = function() return spr:getName() end } end
@@ -4764,7 +4764,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     local doorAt = doorSq.objects[3] and doorSq.objects[3].name
     check(wallAt == "zp_wall_01_0" and orderSq.objects[1] == F0 and orderSq.objects[3] == CH
         and doorSq.objects[2] == FR and doorAt == "zp_door_01_0",
-        "牆插在地板後、家具前；門插在同方向門框後（照 42.22 原版，牆不畫在家具上）")
+        "牆插在地板後、家具前；門插在同方向門框後（照 42.22 原版的順序）")
     -- 換地板（沒有地毯）：新地板插回舊地板的位置，不加在最後。加在最後的話地板排到家具後面，之後蓋的柵欄照「最後一個
     -- 地板後面」也跟著排到家具後面（審查 1110 Claude）
     local swapSq = squares["96,97,0"]

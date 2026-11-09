@@ -604,9 +604,10 @@ local function placeFloor(sq, obj)
 end
 
 -- 牆、柵欄、門框、窗框插在最後一個 solidfloor 物件後面；門插在同方向的門框後面，沒有門框照牆。照 42.22 原版建好後重插
--- （buildRecipeCode.lua:625-674 的 fenceOrWall／door／doorFrame／windowFrame OnCreate）：加在格子最後時，同一格已經有
--- 家具、地毯的話牆會畫在它們前面（42.22 更新說明「Fixed certain walls visually overlapping objects when built behind
--- them」）。柱子照原版補的轉角柱加在最後（ISBuildUtil.lua:96，原版沒有重插）。AddSpecialObject 接著照
+-- （buildRecipeCode.lua:625-674 的 fenceOrWall／door／doorFrame／windowFrame OnCreate；42.22 更新說明「Fixed certain walls
+-- visually overlapping objects when built behind them」），格上物件的順序和原版蓋的一樣。實機同一格先放櫃子再蓋北牆，
+-- 牆排在櫃子前後畫面沒有差別（E2E pz42222-sp 的 wallOrder，42.22.2），所以這只是和原版一致，不是看得到的修正。
+-- 柱子照原版補的轉角柱加在最後（ISBuildUtil.lua:96，原版沒有重插）。AddSpecialObject 接著照
 -- placeWallAndDoorCheck 讓門排在牆後、牆排在門前（IsoGridSquare.java:5799-5811,5884-5918），42.21 與 42.22 相同。
 -- 客戶端照伺服器那份的位置插（AddItemToMap 帶 getObjectIndex，IsoObject.loadFromRemoteBuffer）
 local REINSERT = { wall = true, fence = true, doorFrame = true, windowFrame = true }
