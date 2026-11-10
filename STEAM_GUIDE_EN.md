@@ -114,7 +114,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Same tileset[/b]: when the tile sheet isn't laid out like vanilla walls, the button reads Same tileset and lists the walls, posts, frames, fences and wall overlays of that tileset.
 [*] [b]When it can't be pressed[/b]: the item isn't a wall piece, or the set has fewer than two items.
 [/list]
-[h3]Build recipes[/h3]
+=== 🧰 Build recipes
 [list]
 [*] [b]What's listed[/b]: every recipe you can see in the vanilla build menu, including ones other mods add, for example rain collectors, forges, wooden walls and stairs.
 [*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
