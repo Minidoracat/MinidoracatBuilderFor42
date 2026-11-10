@@ -90,7 +90,7 @@
   "IGUI_MBLD_Note_roofOpen": "Ten element nie chroni przed deszczem (okap, ozdoba); pole pod nim zostaje na zewnątrz. PgUp/PgDn zmienia poziom; rząd przeciągaj od podpartego końca.",
   "IGUI_MBLD_Note_light": "Świeci tylko z zasilaniem: zbudowane przez ciebie domy nie są podłączone do sieci, więc użyj agregatu prądotwórczego. Postawiony przełącznik sam łączy się z lampami w tym samym zamkniętym pokoju; kliknij go PPM i wybierz „Podłączanie…”, by dodać lub usunąć lampy.",
   "IGUI_MBLD_Note_lightStreet": "Świeci tylko nocą i tylko z zasilaniem: zbudowane przez ciebie domy nie są podłączone do sieci, więc użyj agregatu prądotwórczego. Postawiony przełącznik sam łączy się z lampami w tym samym zamkniętym pokoju; kliknij go PPM i wybierz „Podłączanie…”, by dodać lub usunąć lampy.",
-  "IGUI_MBLD_WhatsNew": "Rozmontowanie schodów usuwa teraz też ich podest, nawet obok innych podłóg. Pozostałe podesty rozbij młotem wyburzeniowym.",
+  "IGUI_MBLD_WhatsNew": "Przepisy budowy z gry są teraz na liście (\"Przepis\"). Kominek da się rozpalić, a A na padzie znów buduje.",
   "IGUI_MBLD_Note_curtain": "Wisi po wewnętrznej stronie ramy okna. Pole musi mieć nad sobą dach lub podłogę.",
   "IGUI_MBLD_Note_plumb": "Nie ma bieżącej wody, tak jak sprzęt przeniesiony samodzielnie. W zamkniętym pomieszczeniu podłącz go do rur kluczem do rur: będzie brał wodę z beczki na deszczówkę lub innego pojemnika z wodą piętro wyżej, dokładnie nad nim albo na sąsiednim polu.",
   "IGUI_MBLD_Note_shutter": "Okna na tym samym polu nie da się otworzyć ani przez nie przejść klawiszem interakcji (zasada z gry).",

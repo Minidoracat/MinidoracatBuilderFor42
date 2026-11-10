@@ -2711,7 +2711,7 @@ if first then
     if news and news.WhatsNew then
         news.WhatsNew.register({
             modId = "MinidoracatBuilderFor42",
-            since = "0.6.1",
+            since = "0.7.0",
             name = "UI_MinidoracatBuilder_Options",
             text = "IGUI_MBLD_WhatsNew",
         })
