@@ -374,8 +374,12 @@ end
 -- ISMoveableCursor.lua:1053-1057）。這裡照手把游標現在那一格（xJoypad…）重算可不可蓋、記成 square，再設建造旗標；
 -- 下一幀 DoTileBuilding 照 square 那格呼叫 tryBuild（:133-136,171-174）。不沿用上一幀的 square／canBeBuild：方向鍵
 -- 連跳和 A 落在同一次手把輪詢時（先跑方向、再掃按鍵，JoyPadSetup.lua:940-963）它們還是剛離開的那一格（審查 1110 Grok）。
--- 那一格還沒建出來（原版下一幀才補）就不蓋。接線游標、配方項目開的原版游標實例共用（Wiring.lua、Recipes.lua）
+-- 那一格還沒建出來（原版下一幀才補）就不蓋。接線游標、配方項目開的原版游標實例共用（Wiring.lua、Recipes.lua）。
+-- 42.21 的 DoTileBuilding 還會替手把讀建造鍵，放開 A 時自己蓋（那一版 ISBuildingObject.lua:114-121 的
+-- isBuildButtonReleased）；這裡再設旗標會蓋兩次，所以 42.22 以前交回原版。讀碼推論，沒有在 42.21 實測
 function Cursor.padBuild(c)
+    local v = getCore():getGameVersion()
+    if v:getMajor() == 42 and v:getMinor() < 22 then return end
     local sq = c.xJoypad and c.zJoypad and getCell():getGridSquare(c.xJoypad, c.yJoypad, c.zJoypad)
     if not sq then return end
     c.square = sq

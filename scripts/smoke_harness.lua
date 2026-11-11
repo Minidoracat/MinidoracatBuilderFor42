@@ -36,6 +36,13 @@ function isServer() return true end
 function getText(key) return key end
 function getTextOrNull() return nil end
 function getRecipeDisplayName(name) return "R:" .. name end -- 標出有翻成配方顯示名稱
+-- 遊戲版本（Cursor.padBuild 看）：預設 42.22，情境十八換成 42.21。全域：主函式的 local 已經到 200 個上限
+GAME_MINOR = 22
+function getCore()
+    return { getGameVersion = function()
+        return { getMajor = function() return 42 end, getMinor = function() return GAME_MINOR end }
+    end }
+end
 
 function table.isempty(t) return next(t) == nil end -- Kahlua TableLib 有（TableLib.java:76-78），標準 Lua 沒有
 local handlers = {}
@@ -2009,6 +2016,13 @@ do
         and gone.asked == nil, "手把 A：游標剛移走時不照上一格蓋（審查 1110 Grok）；那一格還沒建出來不蓋")
     pad:onJoypadPressButton(0, {}, Joypad.BButton)
     check(baseCalls == 1, "手把 B：照舊交給原版（取消游標）")
+    -- 42.21：原版 DoTileBuilding 還會替手把讀建造鍵、放開 A 時自己蓋，這裡不設旗標也不重算（不然蓋兩次）
+    GAME_MINOR = 21
+    local old = padCursor(true, { square = oldSq, canBeBuild = false, xJoypad = 59, yJoypad = 41, zJoypad = 0 })
+    old:onJoypadPressButton(0, {}, Joypad.AButton)
+    GAME_MINOR = 22
+    check(not old.build and old.square == oldSq and old.asked == nil and baseCalls == 1,
+        "42.21 的手把 A：不設建造旗標，交給原版讀建造鍵")
     Joypad, ISBuildingObject = realJoypad, realBase
 end
 

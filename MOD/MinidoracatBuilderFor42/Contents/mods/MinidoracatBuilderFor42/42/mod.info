@@ -4,4 +4,4 @@ description=[B42]用任何已載入的圖塊建造，包含其他 MOD 的材質�
 poster=poster.png
 require=MinidoracatUIFor42
 modversion=42.22.2-0.7.0
-versionMin=42.22.0
+versionMin=42.21.0
