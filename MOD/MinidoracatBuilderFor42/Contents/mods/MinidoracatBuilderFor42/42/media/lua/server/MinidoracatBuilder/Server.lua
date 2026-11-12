@@ -236,15 +236,15 @@ local function drop(player, sq, refund)
 end
 
 -- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
--- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；掛在地板上的地面覆蓋拿掉那張、清覆蓋帳本。移除時引擎丟的
+-- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；掛上去的地面覆蓋、牆面疊圖拿掉那張、清覆蓋帳本。移除時引擎丟的
 -- 例外 Kahlua 只記 log、不往上丟（MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
 local function removeAll(kind, plan)
     local t = plan.overlay
     if t then
-        if not Place.detach(t.floor, t.name) then
+        if not Place.detach(t.host, t.name) then
             error("overlay not removed at " .. t.sq:getX() .. "," .. t.sq:getY() .. "," .. t.sq:getZ())
         end
-        Overlays.forget(t.sq, t.name)
+        Overlays.forget(t.sq, t.name, t.edge)
     end
     local top, west, squares = nil, false, {}
     for i, o in ipairs(plan.remove) do
@@ -302,22 +302,27 @@ local function whole(t)
     return out
 end
 
--- 換一樓地板時，舊地板上本工具掛的地面覆蓋（換之前 Overlays.at 記下的）：Place.clearFloor 拆掉舊片時帳本整格清掉
--- （Overlays.dropFloor）。換好、或失敗後蓋回舊地板之後，照記下的圖與退料表掛回去；掛不回去（地板沒了、出錯）就整份退
+-- 換一樓地板、原地換牆時，舊的那件上本工具掛的圖（換之前 Overlays.at 記下的，saved＝{ { e＝邊（地板是 nil）, list＝{ [圖名]
+-- = 退料表 } }, ... }）：舊地板移除時帳本跟著清（Overlays.drop）；舊牆移除時新牆已插在它前面、不是宿主，帳本留著由這裡覆寫。
+-- 換好、或失敗後蓋回舊的之後，照記下的圖與退料表掛回現在那一件（Place.host）；掛不回去（那一件沒了、出錯）就整份退、
+-- 帳本清掉
 local function rehang(player, sq, saved)
-    for name, items in pairs(saved or {}) do
-        if Dismantle.hung(sq, name) then
-            -- 圖還掛著（舊地板沒移掉）：引擎先發移除事件才移除，帳本可能已被 dropFloor 清掉，照記下的補回
-            if not Overlays.get(sq, name) then Overlays.put(sq, name, items) end
-        else
-            local spr = Entry.sprite(name)
-            local rec = {}
-            local ok = sq:getFloor() ~= nil and spr ~= nil and pcall(Place.attach, sq, spr, items, rec)
-            if not ok then
-                Place.undo(rec) -- 掛到一半的拿掉，免得圖還在又退料
-                Overlays.forget(sq, name) -- 照理 Overlays.dropFloor 已清；沒清到也不留一筆退料給掛不上的圖
-                drop(player, sq, whole(items))
-                print(LOG .. "REPLACE OVERLAY LOST user=" .. who(player) .. " e=" .. name .. " refund=" .. costLine(whole(items)))
+    for _, s in ipairs(saved or {}) do
+        for name, items in pairs(s.list or {}) do
+            local t = Dismantle.hung(sq, name)
+            if t then
+                -- 圖還掛著（舊的沒移掉）：引擎先發移除事件才移除，帳本可能已被 drop 清掉，照記下的補回
+                if not Overlays.get(sq, name, t.edge) then Overlays.put(sq, name, items, t.edge) end
+            else
+                local spr = Entry.sprite(name)
+                local rec = {}
+                local ok = spr ~= nil and pcall(Place.attach, sq, spr, items, rec)
+                if not ok then
+                    Place.undo(rec) -- 掛到一半的拿掉，免得圖還在又退料
+                    Overlays.forget(sq, name, s.e) -- 照理 Overlays.drop 已清；沒清到也不留一筆退料給掛不上的圖
+                    drop(player, sq, whole(items))
+                    print(LOG .. "REPLACE OVERLAY LOST user=" .. who(player) .. " e=" .. name .. " refund=" .. costLine(whole(items)))
+                end
             end
         end
     end
@@ -332,6 +337,18 @@ local function rugsOf(sq, saved)
         if spr and Place.isRug(name, spr:getProperties()) and Dismantle.hung(sq, name) then out[name] = items end
     end
     return out
+end
+
+-- 換牆前記下的那條邊帳本（list）裡，圖已經不在舊牆（host）上的是殘帳（原版清除塗鴉、污垢只拿掉附加圖，不發移除事件）：
+-- 當場清掉，不跟著換到新牆（審查 1112 Claude）。圖塊已經不在的（拿掉了圖塊 MOD）照換地板的做法留著：掛不回去時整份退
+local function hungOn(sq, list, host, edge)
+    for name in pairs(list or {}) do
+        if Entry.sprite(name) and not Place.attachedAt(host, name) then
+            list[name] = nil
+            Overlays.forget(sq, name, edge)
+        end
+    end
+    return list
 end
 
 -- 替換的經驗只照補的料給（舊的料拿回來再用，不算新付的）：新的那格成本複製一份，items 換成 pay；電器費不超過補的件數
@@ -397,13 +414,19 @@ function Server.complete(player, n, i)
         cells[1].wear = math.min(1, rep.obj:getHealth() / rep.obj:getMaxHealth()) -- Place.thumpable 照比例給新的耐久
     end
     -- 換一樓地板：每格舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）。舊地板不是本工具的（不算替換）
-    -- 時只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex，多格的每格各記）
+    -- 時只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex，多格的每格各記）。
+    -- 原地換牆這類：舊的那件是哪條邊的牆（Place.wallAt），那條邊本工具掛的牆面疊圖照樣記下來、掛回新的
     local saved = {}
-    if entry.kind == "floor" and Overlays then
+    if Overlays then
         for j, c in ipairs(cells) do
-            local s = Overlays.at(c.sq)
+            local s = entry.kind == "floor" and Overlays.at(c.sq, nil) or nil
             if s and not rep then s = rugsOf(c.sq, s) end
-            saved[j] = s
+            saved[j] = { { list = s } }
+        end
+        for _, e in ipairs(rep and Place.EDGES or {}) do
+            if Place.wallAt(oldSq, e) == rep.obj then
+                saved[1][#saved[1] + 1] = { e = e, list = hungOn(oldSq, Overlays.at(oldSq, e), rep.obj, e) }
+            end
         end
     end
     local placed = {}
@@ -530,13 +553,14 @@ function Server.dismantleDuration(player, n, i)
     local a = it.list[i]
     local sq = getCell():getGridSquare(a[1], a[2], a[3])
     local obj = sq and Dismantle.find(sq, a[4])
-    local kind = obj and Dismantle.kindOf(obj) or (sq and Dismantle.hung(sq, a[4]) and "floorOverlay") or nil
+    local t = not obj and sq and Dismantle.hung(sq, a[4])
+    local kind = obj and Dismantle.kindOf(obj) or (t and t.kind) or nil
     if not kind then return 1 end
     return Entry.duration(kind, player)
 end
 
 -- 樓梯平台留著的情況：不是本 MOD 補的（帳本沒記：蓋樓梯時那格原本就有地板）、上面還有別的東西（同一格別的物件，或掛在
--- 它上面的地面覆蓋：拆平台時覆蓋跟著消失、不退料，Overlays.dropFloor）、或沒有 BUILD 權限。
+-- 它上面的地面覆蓋：拆平台時覆蓋跟著消失、不退料，Overlays.drop）、或沒有 BUILD 權限。
 -- 平台不退料，留著只是一塊地板；安全屋照預覽查（只決定留不留，不推通知、不寫稽核）。
 local function keepLanding(player, l)
     local s, hung = l:getSquare(), l:getAttachedAnimSprite()
@@ -544,10 +568,10 @@ local function keepLanding(player, l)
         or Check.safehouse(player, { x = s:getX(), y = s:getY(), z = s:getZ(), sq = s }, true, "dismantle") ~= nil
 end
 
--- 拆一件：拆那格上 sprite 名稱相同、本 MOD 蓋的那件；格上沒有那件物件時，找那格地板上掛的那張地面覆蓋
+-- 拆一件：拆那格上 sprite 名稱相同、本 MOD 蓋的那件；格上沒有那件物件時，找那格掛著的那張地面覆蓋或牆面疊圖
 -- （Dismantle.hung，不看記號）。物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
 -- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈與家電）：同一件被兩個動作拆時，後到的
--- 找不到物件（GONE），不會再退。燈、家電與平台只認帳本；地面覆蓋只認覆蓋帳本（Overlays）；其他照 Place.refundOf
+-- 找不到物件（GONE），不會再退。燈、家電與平台只認帳本；掛上去的圖只認覆蓋帳本（Overlays）；其他照 Place.refundOf
 -- （一樓以下的地板在地板帳本）。查不到退料表的不拆（NOT_OURS，平台留著）。移除出錯時不退料（只會少，不會多）。不給經驗。
 -- 拆好回 nil, nil, refund, kind, 片數；拆不了回 code, extra。
 local function unbuildOne(player, x, y, z, name)
@@ -562,13 +586,13 @@ local function unbuildOne(player, x, y, z, name)
     else
         local t = Dismantle.hung(sq, name)
         if not t then return "GONE", at end
-        kind, plan = "floorOverlay", Dismantle.overlayPlan(t)
+        kind, plan = t.kind, Dismantle.overlayPlan(t)
     end
     local code, extra = Dismantle.check(player, kind, plan)
     if code then return code, extra end
     local refund = {}
     if plan.overlay then
-        local mats = Overlays.get(sq, name)
+        local mats = Overlays.get(sq, name, plan.overlay.edge)
         if not mats then return "NOT_OURS", at end
         rollInto(refund, mats)
     end

@@ -118,9 +118,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 === 🧰 Build recipes
 [list]
 [*] [b]What's listed[/b]: every recipe you can see in the vanilla build menu, including ones other mods add, for example rain collectors, forges, wooden walls and stairs.
-[*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
+[*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell, listed after the tiles on that tab. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
 [*] [b]Details[/b]: the source and the vanilla category, then materials, tools (kept) and skills, counted the same way as in the vanilla build menu.
-[*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla; you place one at a time and can't drag a row.
+[*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla; you place one at a time and can't drag a row. To drag a row of walls or fences, pick a tile without the Recipe badge.
 [*] [b]Wall paint, wallpaper and plaster[/b]: as in the vanilla build menu, the cursor doesn't open while materials, tools or skills are missing, and a notice says the details show what's missing.
 [*] [b]After placing[/b]: the cursor stays so you can place another, and it blocks when you run out of materials. Right-click (B on a gamepad) to go back to Build Anything.
 [*] [b]Recipes you haven't learned[/b]: they follow the vanilla sandbox option See Not Known Recipes. When it's on (the default) they're listed, and the cell and details say you haven't learned them yet; when it's off they appear once you learn them.
@@ -209,7 +209,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Building settings have changed[/b]: the admin changed a sandbox option, so reopen the window, and no materials were used.
 [*] [b]When you pay[/b]: the server checks everything before placing and takes the materials only once it is placed, so a failure costs nothing.
 [/list]
-=== 🧰 Rules for each kind: walls, windows, stairs and roofs
+=== 🧰 Rules for each kind: walls, floors and fences
 [h3]Walls, floors and fences[/h3]
 [list]
 [*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300. Server owners can turn on Zombies can't break builds in the sandbox.
@@ -217,17 +217,20 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
-[*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use.
+[*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
 [*] [b]Railing ends[/b]: railing ends that block only one side of a square are not listed (zombies would not come to break them), and a search tells you why.
-[*] [b]Fences that alternate[/b]: the tall wooden fence with a slanted top, the low wooden fence and the black iron railing (both directions) alternate between their two tiles by square position (ABAB), as on the map.
+[*] [b]Fences that alternate[/b]: vanilla fences that come as a pair of tiles (the tall wooden fence with a slanted top, the low wooden fence, the black iron railing, the tall green barbed fence, construction fences and crowd barriers, both directions) alternate between their two tiles by square position (ABAB), as on the map. Fences from other mods' tile packs use the tile you picked.
 [*] [b]How they alternate[/b]: dragging a row, going around a rectangle and placing a single square all go by position, so a square always gets the same tile, whichever of the two you pick.
 [*] [b]Other fences[/b]: chain-link fences and tile-pack fences still use the tile you picked.
 [*] [b]Mall shutters[/b]: on the Walls tab, and what you build is a regular wall. As in vanilla, a window on the same square can't be opened, closed or climbed through with the interact key.
 [*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too. They are built as tiles by this mod's rules, with no separate recipe item.
 [*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
 [*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
+[*] [b]Wall overlays[/b]: baseboards, grime, graffiti and other pictures that go on a wall stick to the wall (or window, or garage door) on that side of the square, the same way the map does it; with no wall there they are placed on their own. Signs and pictures you can pick up are still normal objects.
+[*] [b]When the wall is dismantled or destroyed[/b]: wall overlays on it go with it, without refund. Replacing the wall in place with Build Anything puts them on the new wall; replacing it with something they can't stick to, such as a fence, refunds their materials in full. Vanilla Clean Graffiti and Clean Blood also wash them off, without refund.
+[*] [b]Wall overlays placed on their own before[/b]: ones built before 0.8.0 move onto the wall when their area loads, if that side has a wall, and dismantling them with Build Anything still refunds what you paid; ones without a wall stay as they are.
 [*] [b]Tile-pack rugs[/b]: some tile packs (UMCTP and Constown, for example) also mark their rugs as floors. These rugs are laid on top of the floor as in vanilla and don't replace it.
 [*] [b]Where those rugs are listed[/b]: movable ones under Furniture, the others under Floor overlay.
 [*] [b]Swapping the floor under them[/b]: those rugs stay.
@@ -240,6 +243,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
 [*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
 [/list]
+=== 🧰 Rules for each kind: doors, windows, stairs and roofs
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
@@ -251,7 +255,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Windows drawn together with their frame[/b]: such as the large glass windows of shops and diners, go straight on an empty wall edge, with no window frame first.
 [*] [b]When the edge is taken[/b]: they can't go where there is already a window frame, wall or window.
 [*] [b]Locking[/b]: they are all permanently locked, so they can't be opened but can be smashed.
-[*] [b]Their cost[/b]: a window frame plus a window, see Materials, tools and XP.
+[*] [b]Their cost[/b]: a window frame plus a window, see Materials.
 [*] [b]Removing and replacing[/b]: like windows, they can only be smashed, and they can't be replaced in place.
 [*] [b]Ordinary windows[/b]: still go into a window frame.
 [/list]
@@ -278,7 +282,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]From the second floor up[/b]: needs a wall below, or a floor or roof beside it holding it up.
 [*] [b]Above stairs[/b]: not allowed directly above stairs.
 [*] [b]Which level[/b]: the cursor builds one level up at the same spot on screen by default.
-[*] [b]Changing level[/b]: PgUp/PgDn switches between one level up and this level.
+[*] [b]Changing level[/b]: PgUp/PgDn switches between one level up and this level. If your keyboard has no such keys, rebind them under Options, Key Bindings, "Minidoracat Build Anything".
 [*] [b]Dragging a row[/b]: start from the supported end, since each tile holds up the next.
 [*] [b]Keeping rain out[/b]: once a rain-proof roof is built, the square below is no longer outdoors.
 [*] [b]Counting as indoors (temperature)[/b]: the level above also needs a floor.
@@ -312,7 +316,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Furniture, signs and floor lights with a built-in light[/b]: like lights, they only glow with power, but they have no switch.
 [*] [b]Switches[/b]: a switch in a closed room tries to wire itself to the lights in that room, see Switches and wiring.
 [/list]
-=== 🧰 Materials, tools and XP
+=== 🧰 Materials
 [h3]What it costs[/h3]
 [list]
 [*] [b]Tiles with vanilla dismantle materials[/b]: cost what dismantling them gives, never less than you could get back.
@@ -320,8 +324,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Electrical things[/b]: 1 extra Scrap Electronics (one per tile for multi-tile ones), which you don't get back when dismantling.
 [*] [b]Light bulbs[/b]: every light costs 1 extra Light Bulb, with no XP.
 [*] [b]Street lights that can't be moved[/b]: 2 extra Iron Pipe (tilesets lighting_outdoor_01 and lighting_outdoor_tk_01).
+[*] [b]Floor tiles and carpets you can pick up[/b]: the wooden subfloor under them costs 1 plank and 1 nail, plus an amount by material: 1 sheet for carpets and other fabric floors; 4 Clay Tile and a Mason's Trowel for ceramic and brick tiles; 1 more plank and 1 more nail for wooden floor tiles and the rest. The by-material part is not refunded, and the details list it as "Not returned on removal".
 [*] [b]Material multiplier[/b]: every amount is multiplied by the admin's multiplier and rounded up.
-[*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains and light bulbs still cost at least 1×.
+[*] [b]Exceptions below 1[/b]: tiles with dismantle materials, curtains, light bulbs and the wooden subfloor of floor tiles and carpets you can pick up still cost at least 1×.
 [*] [b]Build cheat[/b]: no materials and no tools. In multiplayer an admin turns on Build Cheat mode in Edit your Admin Powers; in singleplayer the Build Cheat switch in the debug menu and Enable Build Cheat Mode in the admin panel count too.
 [*] [b]Consumables[/b]: when the server turns on Vanilla recipe materials, clay cement, torch fuel and welding rods are also used, see Hardcore options.
 [*] [b]Exact amounts[/b]: Materials (have / need) in the details is what counts.
@@ -369,6 +374,7 @@ These tiles don't say what they are made of. They used to cost as wood, and now 
 [*] [b]Behind a wall[/b]: nothing there is taken.
 [*] [b]Box of Nails[/b]: when you are short of nails, a Box of Nails in your inventory is opened and the leftovers go back into your inventory.
 [/list]
+=== 🧰 Tools and XP
 [h3]Tools[/h3]
 [list]
 [*] [b]Tiles with dismantle materials[/b]: carry the main tool vanilla uses to dismantle the first material, for example a hammer for brick.
@@ -731,7 +737,7 @@ end)
 [*] [b]Disassembling containers the vanilla way[/b]: vanilla Disassemble on a container that can't be moved loses what is inside, the same for vanilla-built ones.
 [*] [b]Before removing a container[/b]: empty it first, or use Dismantle (Build Anything), which asks you to empty it.
 [*] [b]After a server crash[/b]: lights that can't be moved and were built after the last save can't be dismantled with Build Anything, only smashed with a sledgehammer.
-[*] [b]Floor overlays after a server crash[/b]: overlays built after the last save, if still there, can't be dismantled with Build Anything; they go away when that square's floor is replaced.
+[*] [b]Floor overlays after a server crash[/b]: overlays built after the last save, if still there, can't be dismantled with Build Anything; they go away when that square's floor is replaced. Wall overlays stuck to a wall behave the same: they go away when that wall is replaced or dismantled.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
@@ -742,7 +748,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Remove ground floors[/b]: dismantle ground floors you don't want with Dismantle (Build Anything), since after removal neither vanilla Disassemble nor a sledgehammer can remove them.
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove fireplaces and stoves you don't want[/b]: fireplaces and immovable stoves built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
-[*] [b]Remove floor overlays you don't want[/b]: road markings, cracks and similar overlays built with Build Anything can't be removed after removal.
+[*] [b]Remove floor overlays and wall overlays you don't want[/b]: road markings, cracks, and baseboards or graffiti stuck to walls, built with Build Anything, can't be removed after removal.
 [*] [b]Zombie-proof builds and container capacity[/b]: to turn what you built back to vanilla, switch off Zombies can't break builds and Zombies can't break doors, set Container capacity multiplier back to 1, restart the server (reload the save in singleplayer), then visit every place you built so the area loads again. This can't be changed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
 [*] [b]Singleplayer[/b]: back up the save, remove this mod from that save's mod list, then load it.
@@ -768,7 +774,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Walls[/b]: vanilla Disassemble or a sledgehammer.
 [*] [b]Immovable lights, fireplaces and immovable stoves[/b]: only by smashing with a sledgehammer.
 [*] [b]Ground floors[/b]: can't be removed.
-[*] [b]Floor overlays[/b]: can't be removed, like the map's own road markings; they go away when that square's floor is replaced.
+[*] [b]Floor overlays[/b]: can't be removed, like the map's own road markings; they go away when that square's floor is replaced. Wall overlays stuck to a wall can't be removed either; they go away when the wall is dismantled or sledgehammered.
 [/list]
 [h3]Adding the mod back[/h3]
 [list]

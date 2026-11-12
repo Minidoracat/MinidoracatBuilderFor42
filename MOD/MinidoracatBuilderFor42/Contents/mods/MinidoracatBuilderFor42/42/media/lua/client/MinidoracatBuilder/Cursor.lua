@@ -25,7 +25,7 @@ local LOG = "[MinidoracatBuilderFor42] "
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
 local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", wall = "ring", fence = "ring", post = "edge" }
--- 能換層的種類（PgUp／PgDn、手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
+-- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
 -- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
 local LAYERED = { roof = true, floor = true }
 local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64，再遠的都是 OVER_MAX）
@@ -340,14 +340,24 @@ function Cursor:getSprite()
     return self.sprName
 end
 
+-- 翻譯寫的是預設鍵名 PgUp／PgDn；玩家改過換層鍵（Window.initBinds 登記）時換成實際的鍵名，沒綁寫「-」
+function Cursor.keyText(s)
+    local core = getCore()
+    local up, down = core:getKey("MinidoracatBuilder_LayerUp"), core:getKey("MinidoracatBuilder_LayerDown")
+    if up ~= Keyboard.KEY_PRIOR then s = (s:gsub("PgUp", up > 0 and getKeyName(up) or "-")) end
+    if down ~= Keyboard.KEY_NEXT then s = (s:gsub("PgDn", down > 0 and getKeyName(down) or "-")) end
+    return s
+end
+
 -- R：原版全域按鍵處理只轉 getDrag(0)（ISBuildingObject.lua:592-596），所以只有玩家 0 能用鍵盤轉、換層
 function Cursor:rotateKey(key)
     if self.area then return end
     if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
     if not LAYERED[self.entry.kind] then return end
-    if key == Keyboard.KEY_PRIOR then
+    -- isKey 連修飾鍵、替代鍵一起比（Core.java:2405-2408），同 R 那一行
+    if getCore():isKey("MinidoracatBuilder_LayerUp", key) then
         self.up = true
-    elseif key == Keyboard.KEY_NEXT then
+    elseif getCore():isKey("MinidoracatBuilder_LayerDown", key) then
         self.up = false
     end
 end
@@ -680,7 +690,7 @@ function Cursor:texts()
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
         if LAYERED[self.entry.kind] then
-            parts[#parts + 1] = getText(self.up and "IGUI_MBLD_HintLayerHere" or "IGUI_MBLD_HintLayerUp")
+            parts[#parts + 1] = Cursor.keyText(getText(self.up and "IGUI_MBLD_HintLayerHere" or "IGUI_MBLD_HintLayerUp"))
         end
         parts[#parts + 1] = getText("IGUI_MBLD_HintCancel")
         hint = table.concat(parts, getText("IGUI_MBLD_HintSep"))

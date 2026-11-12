@@ -408,6 +408,9 @@ local function joypadPress(self, joypadIndex, joypadData, button)
     return MinidoracatBuilder.Cursor.padBuild(self)
 end
 
+-- 圖塊的同種類能拖一排、配方項目不能的種類：提示與通知寫明（地板、屋頂的配方不在內：不讓它們把這一次通知用掉）
+Recipes.NO_DRAG = { wall = true, fence = true, post = true }
+
 -- 開原版的游標，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，材料、工具、技能或學過不夠時游標擋住
 -- （客戶端的游標本身只擋地形；伺服器 create 再驗一次、不夠就不蓋，ISBuildIsoEntity.lua:543-563）；放完游標留著，動作跑完
 -- 才再放得下。牆面油漆、壁紙、灰泥開原版的油漆和壁紙游標。回游標，或 nil（沒開）
@@ -430,6 +433,11 @@ function Recipes.build(pn, id)
         o.blockBuild = blocked(L, player)
         L:addEventListener("onStopCraft", onStopCraft, o)
         if #live == 0 then Events.OnTick.Add(follow) end
+        -- 牆、柵欄、柱子的配方不能拖一排（原版游標）：每次進遊戲第一次開這類游標時說一次，並指到能拖的圖塊項目
+        if not Recipes.toldNoDrag and Recipes.NO_DRAG[r.kind] then
+            Recipes.toldNoDrag = true
+            Messages.toast(player, getText("IGUI_MBLD_Recipe_NoDragToast"), r.name)
+        end
         live[#live + 1] = { pn = pn, cursor = o, L = L, player = player, sq = player:getCurrentSquare(), at = getTimestampMs() }
     else
         -- 牆面油漆、壁紙、灰泥：照原版視窗的建造鈕擋（ISWidgetBuildControl.lua:165-171），不夠就不開，發通知（審查 1109 Codex）；

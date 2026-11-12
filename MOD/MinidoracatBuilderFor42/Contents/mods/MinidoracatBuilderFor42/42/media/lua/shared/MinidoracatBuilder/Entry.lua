@@ -9,7 +9,7 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 11
+Entry.VERSION = 12
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
@@ -123,11 +123,13 @@ local function offset(name, d)
     return tileset and (tileset .. "_" .. (tonumber(num) + d)) or nil
 end
 
--- 原版兩張一組、交替排的柵欄：BrokenFences.lua 註解寫「2-tile」的五族（BentFences.lua 的 stage 也照 ABAB 排），
--- 北向、西向各一對 { A, B }。圖塊包的柵欄不猜。鐵絲網兩族（24/25、26/27、56/57、58/59）不換：每對有一張
--- （fencing_01_25/26/57/58）是原版建造配方的圖（Rules 回 ENTITY），使用者 2026-10-31 定配方的圖只收地板與地面覆蓋
+-- 原版兩張一組、交替排的柵欄與圍牆，北向、西向各一對 { A, B }：BrokenFences.lua 註解寫「2-tile」的五族（8–11、32–35、64–67；
+-- BentFences.lua 的 stage 也照 ABAB 排），加上原版地圖上交替排的 8 對（48–51 帶刺高圍欄、80–83、88–91、112–115；
+-- 使用者 2026-11-12 選，離線掃 Muldraugh 相鄰兩件 97% 以上交替）。圖塊包的柵欄不猜。鐵絲網兩族（24/25、26/27、56/57、
+-- 58/59）不換：每對有一張（fencing_01_25/26/57/58）是原版建造配方的圖（Rules 回 ENTITY），使用者 2026-10-31 定配方的圖
+-- 只收地板與地面覆蓋
 local ALTERNATE = {}
-for _, n in ipairs({ 8, 10, 32, 34, 64, 66 }) do
+for _, n in ipairs({ 8, 10, 32, 34, 64, 66, 48, 50, 80, 82, 88, 90, 112, 114 }) do
     local pair = { "fencing_01_" .. n, "fencing_01_" .. (n + 1) }
     ALTERNATE[pair[1]], ALTERNATE[pair[2]] = pair, pair
 end
@@ -140,9 +142,10 @@ function Entry.alternate(spr, x, y)
     if not pair then return spr end
     local alt = Entry.sprite(pair[(x + y) % 2 + 1])
     if not alt or alt == spr then return spr end
-    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋（審查 1107 Codex）
-    local other = Entry.resolve(alt:getName())
-    return other and other.kind == "fence" and alt or spr
+    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋（審查 1107 Codex）。
+    -- 48–51、88–91 帶牆的屬性，目錄歸在牆；兩張要同一個種類（Check.item 換圖後照原本那張的種類蓋，審查 1112 Claude）
+    local other, mine = Entry.resolve(alt:getName()), Entry.resolve(spr:getName())
+    return other and mine and other.kind == mine.kind and (other.kind == "fence" or other.kind == "wall") and alt or spr
 end
 
 -- 樓梯中片、頂片所屬那一組的底片（Rules.stairsSet 的 B 片在 ±1、±2）

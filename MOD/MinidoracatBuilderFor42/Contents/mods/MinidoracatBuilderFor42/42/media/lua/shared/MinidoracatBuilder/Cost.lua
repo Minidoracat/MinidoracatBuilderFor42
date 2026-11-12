@@ -176,6 +176,17 @@ setMaterial("Cinderblock", "location_shop_mall_01", { 16, 17 })
 setMaterial("Log", "walls_logs", { { 16, 33 }, { 56, 73 } }) -- 圓木屋、立木屋的山牆（窗框、門框照拆解價，不動）
 setMaterial("Metal", "fixtures_railings_01", { 16, 17, 19, 20, 22, 23, 38 }) -- 鐵欄杆（39 是柱子，照牆價不動）
 local EMPTY = {}
+-- 能撿起的地磚、地毯（地板、能搬、MoveType=FloorTile；使用者 2026-11-12 選 tiles=mat）：原版撿起時那一格留下木底板
+-- （ISMoveableSpriteProps.lua:1465-1477），所以分兩部分收：木底板（木地板價，照一般地板寫進退料，倍率低於 1 也照 1 收）
+-- ＋照第一個 Material 的材質料（記在 fee：不寫進退料，經驗照件數全給，倍率照乘）。布面 Fabric 床單 1；磚 Brick
+-- 黏土瓦 4（同磚石地板）、另要抹刀；木頭、沒寫 Material 與其他材質再一份木板釘子。不照拆解價收；技能、硬核耗材照舊看 family
+local TILE_FEE = { Fabric = { ["Base.Sheet"] = 1 }, Brick = MASONRY.floor }
+local TILE_OTHER = { [PLANK] = 1, [NAILS] = 1 }
+local TILE_TOOLS = { Brick = { "HAMMER", "MASONS_TROWEL" } }
+local TILE_PERK = { Brick = "Masonry" }
+local function floorTile(kind, p)
+    return kind == "floor" and p:has("IsMoveAble") and p:get("MoveType") == "FloorTile"
+end
 
 local function recipeOn()
     local s = SandboxVars and SandboxVars.MinidoracatBuilder
@@ -314,12 +325,25 @@ function Cost.of(kind, spr, multiplier)
     -- 本工具拆除的（Cost.refund 的 "builder"）照退料表退 1..v 件、經驗照 uniform 給（Cost.xp）
     local builder = Cost.refund(kind, spr) == "builder"
     if builder then back = false end
-    if kind == "stairs" then
-        -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）
+    local tile = floorTile(kind, p)
+    if kind == "stairs" or tile then
+        -- 樓梯整組照原版配方收（Cost.forCells 收在頂片那一格）；能撿起的地磚照 TILE_FEE
         items, perkOf, chanceOf, scrapped, elec = {}, {}, {}, false, false
     end
-    local toolSet, framed
-    if scrapped then
+    local toolSet, framed, extra, extraPerk
+    if tile then
+        if m < 1 then m = 1 end -- 木底板拆得回來，最低照 1 收
+        back = false
+        copyInto(WOOD.floor, items)
+        -- 經驗：木底板撿起再拆可能整份退回，一律不給——記成一定全退（Cost.xp 照 chanceOf 打折，退料率夾到 100%）；
+        -- 材質料（fee）照件數全給。木地磚的材質料也是木板釘子，同一種物品只有 fee 那幾件給
+        for ft in pairs(items) do
+            perkOf[ft] = PERK.wood
+            chanceOf[ft] = 100
+        end
+        local mat = p:get("Material")
+        extra, toolSet, extraPerk = TILE_FEE[mat] or TILE_OTHER, TILE_TOOLS[mat] or TOOLS.wood, TILE_PERK[mat] or PERK.wood
+    elseif scrapped then
         -- 有拆解材質的圖塊：能搬或 CanScrap 的，原版拆解照圖塊材質重查（ISMoveableSpriteProps.lua:3690-3720,3318-3330）；
         -- 不能搬、沒有 CanScrap 的（builder）照退料表退 1..v 件。兩種都不會退得比這裡收的多。
         -- 倍率低於 1 時拆掉拿到的會比付的多，所以這類最低照拆解上限收。
@@ -359,6 +383,14 @@ function Cost.of(kind, spr, multiplier)
     if elec then
         local f = (out[ESCRAP] or 0) - math.ceil((items[ESCRAP] - 1) * m - 1e-9)
         if f > 0 then fee[ESCRAP] = f end
+    end
+    for ft, n in pairs(extra or EMPTY) do -- 地磚的材質料：照原本的倍率
+        local v = math.ceil(n * (multiplier or 1) - 1e-9)
+        if v > 0 then
+            out[ft] = (out[ft] or 0) + v
+            fee[ft] = v
+            mark(perkOf, ft, extraPerk)
+        end
     end
     -- 耗材不退料，照原本的倍率（上面「最低照 1 收」只為了退料不多於付的）
     local uses = {}
@@ -482,8 +514,8 @@ end
 --   "scrap"：CanScrap 且 Material 有定義（:104-123）、有拆解產出：照圖塊材質重查產出（getScrapItemsList，:3304-3348）。
 --   "builder"：其他不能搬的 IsoThumpable 與燈：本工具拆除（Server.dismantle），每項退 1..v（v＝退料表）。第一個
 --     Material 有拆解定義的，原版搬動工具也能拆（ISThumpableSpriteProps，:4320-4340），同樣 1..v；一樓以下的地板不給它拆
---     （Place.thumpable 的 isDismantable）。掛在地板上的地面覆蓋（Rules.onFloor）不是物件，原版拆解點不到，
---     帶 CanScrap 的也歸本工具拆。
+--     （Place.thumpable 的 isDismantable）。掛上去的地面覆蓋與牆上疊圖（Rules.onFloor、Rules.onWall）不是物件，原版拆解點
+--     不到，帶 CanScrap 的也歸本工具拆（牆上疊圖那條邊沒有牆、建成獨立物件時也一樣，拆除方式只看圖）。
 --   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
 --   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
@@ -491,7 +523,8 @@ function Cost.refund(kind, spr)
     local p = spr:getProperties()
     if p:has("IsMoveAble") then return "pickup" end
     if kind == "curtain" then return "sheet" end
-    if MinidoracatBuilder.Rules.onFloor(kind, spr) then return "builder" end
+    local R = MinidoracatBuilder.Rules
+    if R.onFloor(kind, spr) or R.onWall(kind, spr) then return "builder" end
     local mat = p:get("Material")
     if p:has("CanScrap") and mat and mat ~= "Undefined" and scrapInto(kind, p, {}, {}) then return "scrap" end
     if NOT_BUILDER[kind] then return "none" end

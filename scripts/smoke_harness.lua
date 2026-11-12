@@ -258,7 +258,8 @@ square = function(x, y, z, o)
         if failAdd then error("injected failure after AddSpecialObject") end
     end
     function sq:getWall(north) if north then return o.wallN end return o.wallW end
-    function sq:getWallSE() return nil end
+    function sq:getWallSE() return o.wallSE end
+    function sq:getGarageDoor(north) if north then return o.garageN end return o.garageW end
     function sq:hasModData() return sq.md ~= nil end
     function sq:getModData() sq.md = sq.md or {}; return sq.md end
     function sq:getRoomID() return -1 end
@@ -347,6 +348,7 @@ IsoThumpable = { new = function(_, sq, name, north)
         o[s] = function(self, v) self.set[s] = v end -- 記最後一次設的值
     end
     function o:getSprite() return spriteMap[name] end
+    function o:getProperties() local s = spriteMap[name] return s and s:getProperties() end
     function o:getBuildMaterials() return self.mats end
     function o:getModData() return self.md end
     function o:hasModData() return next(self.md) ~= nil end -- 照引擎：表不是空的才 true
@@ -2503,7 +2505,7 @@ local function newKinds()
         local props = { has = function(_, k) return (type(k) == "table" and k.name or k) == "WindowW" end,
             get = function() return nil end }
         sq.objects[1] = { getProperties = function() return props end, getSprite = function() return nil end,
-            hasModData = function() return false end }
+            hasModData = function() return false end, getSprite = function() return nil end }
         return sq
     end
     local cq = framed(53, 57)
@@ -2553,7 +2555,7 @@ local function newKinds()
     local free = cur("cur_01_4", 55, 59)
     sheet.objects[2] = { getProperties = function() return { has = function() return false end, get = function() return nil end } end,
         getType = function() return T.curtainW end, getSprite = function() return nil end, isCurtain = true,
-        hasModData = function() return false end }
+        hasModData = function() return false end, getSprite = function() return nil end }
     local realInstanceof = instanceof
     instanceof = function(o, cls) return cls == "IsoCurtain" and o.isCurtain == true end
     check(free == nil and cur("cur_01_4", 55, 59) == "BLOCKED", "同一面掛著床單窗簾：擋下（原版搬家具同規則）")
@@ -2676,6 +2678,7 @@ local function dismantleScenario()
         function o:setName(v) self.name = v end
         function o:getKeyId() return self.keyId end
         function o:setKeyId(v) self.keyId = v end
+        function o:getAttachedAnimSprite() return nil end -- 引擎：沒有附加圖時是 null
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -4606,6 +4609,371 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     scrapDefs.OvMetal = nil
 end)()
 
+print("情境二十六之二：牆上疊圖照地圖掛在牆上（使用者 2026-11-12 選 trim=attach；B 站 3t47k 斜條紋）：掛、沒牆照舊、同名、拆、牆移除、換牆掛回、讀檔改掛")
+;(function()
+    nowMs = nowMs + 180000
+    local Place, Overlays, Menu = MinidoracatBuilder.Place, MinidoracatBuilder.Overlays, MinidoracatBuilder.Menu
+    local realInst, realNew = instanceof, IsoThumpable.new
+    instanceof = function(o, cls) return type(o) == "table" and o.class ~= nil and (o.class == cls or cls == "IsoObject") end
+    local wallS = sprite("wo_wall_01_1", 2701, { flags = { "WallN", "cutN" }, keys = { WallN = "" } })
+    local wall2S = sprite("wo_wall_01_2", 2702, { flags = { "WallN", "cutN" }, keys = { WallN = "" } })
+    local wallWS = sprite("wo_wall_01_0", 2703, { flags = { "WallW", "cutW" }, keys = { WallW = "" } })
+    local trimN = sprite("wo_trim_01_14", 2704, { flags = { "WallOverlay", "attachedN" } })
+    local trimW = sprite("wo_trim_01_13", 2705, { flags = { "WallOverlay", "attachedW" } })
+    local trimSE = sprite("wo_trim_01_20", 2706, { flags = { "WallOverlay", "attachedSE", "attachedN" } })
+    local signS = sprite("wo_sign_01_0", 2707, { flags = { "WallOverlay", "attachedN" },
+        keys = { IsMoveAble = "", MoveType = "WallObject" } })
+    local gridT = sprite("wo_trim_01_30", 2708, { flags = { "WallOverlay", "attachedN" } })
+    gridT.grid = { getAnchorSprite = function() return gridT end }
+    world({ wallS, wall2S, wallWS, trimN, trimW, trimSE, signS, gridT })
+    local TN, TW = "wo_trim_01_14", "wo_trim_01_13"
+    check(Rules.classify(trimN) == "wallObject" and Rules.onWall("wallObject", trimN) == "N"
+        and Rules.onWall("wallObject", trimW) == "W" and Rules.onWall("wallObject", trimSE) == "SE"
+        and Rules.onWall("wallObject", signS) == nil and Rules.onWall("wallObject", gridT) == nil and Rules.onWall("attached", trimN) == nil,
+        "照地圖（CellLoader）：帶 WallOverlay 的單格掛牆物照 attachedSE → W → N 掛；能搬的、多格的、別的種類不掛")
+    check(Cost.refund("wallObject", trimN) == "builder" and Cost.refund("wallObject", signS) == "pickup",
+        "掛在牆上的歸本工具拆（原版拆解點不到）；能搬的照舊原版撿起")
+
+    -- 牆：附加圖、modData、兩種同步各送幾次。ours＝本工具蓋的（替換用）
+    local function wallOf(sq, spr, ours)
+        local w = { class = ours and "IsoThumpable" or "IsoObject", spr = spr, att = {}, md = {}, sprites = 0, mds = 0,
+            mats = { ["Base.Plank"] = "3" } }
+        if ours then w.md.builderEntry = spr:getName() end
+        function w:getSprite() return self.spr end
+        function w:getProperties() return self.spr:getProperties() end
+        function w:getSquare() return sq end
+        function w:getAttachedAnimSprite() return javaList(self.att) end
+        function w:addAttachedAnimSprite(s) self.att[#self.att + 1] = { getParentSprite = function() return s end } end
+        function w:RemoveAttachedAnim(i) table.remove(self.att, i + 1) end
+        function w:hasModData() return next(self.md) ~= nil end
+        function w:getModData() return self.md end
+        function w:transmitUpdatedSpriteToClients() self.sprites = self.sprites + 1 end
+        function w:transmitModData() self.mds = self.mds + 1 end
+        function w:isFloor() return false end
+        function w:isDismantable() return true end
+        function w:getBuildMaterials() return self.mats end
+        function w:hasBuildMaterials() return next(self.mats) ~= nil end
+        function w:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function w:isConnectedSpriteGridObject(y) return y == self end
+        function w:isObjectNoContainerOrEmpty() return true end
+        function w:isBarricaded() return false end
+        function w:getMaxHealth() return 450 end
+        function w:getHealth() return 450 end
+        function w:getContainer() return nil end
+        sq.objects[#sq.objects + 1] = w
+        return w
+    end
+    local function hung(w)
+        local out = {}
+        for i, a in ipairs(w.att) do out[i] = a:getParentSprite():getName() end
+        return table.concat(out, ",")
+    end
+    -- 格子：getWall／getWallSE 照引擎掃格上物件（IsoGridSquare.java:4590-4610）；移除物件前照引擎觸發 OnObjectAboutToBeRemoved
+    local function edgeSq(x, y, flags)
+        local sq = square(x, y, 0, { flags = flags })
+        sq.dropped = {}
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        local function find(k, notSE)
+            for _, o in ipairs(sq.objects) do
+                local p = o.getProperties and o:getProperties()
+                if p and p:has(k) and not (notSE and p:has(F.WallSE)) then return o end
+            end
+            return nil
+        end
+        function sq:getWall(north) return find(north and F.cutN or F.cutW, true) end
+        function sq:getWallSE() return find(F.WallSE) end
+        local orig = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        return sq
+    end
+    local function unbuild(p, n, x, y, e)
+        sent = {}
+        Server.dismantleIntent(p, { n = n, t = { x, y, 0, e } })
+        sent = {}
+        Server.dismantle(p, n, 1)
+        return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {}
+    end
+    local here = edgeSq(45, 49)
+    local Pl = player({ id = 2701, x = 45.5, y = 49.5, here = here })
+    Pl.inv:add(item("Base.Hammer", { HAMMER = true }))
+    local pay = Cost.of("wallObject", trimN, 1).items
+    local function samePay(rec)
+        if not rec then return false end
+        for ft, n in pairs(pay) do if rec[ft] ~= n then return false end end
+        return true
+    end
+
+    -- 地圖原有的北牆：掛上去，格子不多物件，帳本記在那條邊
+    local A = edgeSq(45, 48)
+    local wA = wallOf(A, wallS)
+    give(Pl, pay)
+    local ok, cmd = build(Pl, 2701, TN, { 45, 48, 0 })
+    check(ok and cmd == "placed" and #A.objects == 1 and hung(wA) == TN and wA.md.builderOverlays[TN] == true
+        and wA.sprites == 1 and wA.mds == 1 and samePay(Overlays.get(A, TN, "N")) and Overlays.get(A, TN) == nil,
+        "蓋在地圖原有的北牆：掛在牆上（附加圖 +1）、格子不多物件，附加圖與記號送給客戶端，帳本記在那條邊（不是地板的鍵）")
+    give(Pl, pay)
+    local ok2, _, a2 = build(Pl, 2702, TN, { 45, 48, 0 })
+    check(not ok2 and a2.code == "SAME_TILE" and hung(wA) == TN and #A.objects == 1, "同一面牆已經掛著同一張：SAME_TILE")
+    local B = edgeSq(46, 48)
+    local wB = wallOf(B, wallS)
+    wB:addAttachedAnimSprite(trimN) -- 地圖原有的
+    local ok3, _, a3 = build(Pl, 2703, TN, { 46, 48, 0 })
+    check(not ok3 and a3.code == "SAME_TILE" and hung(wB) == TN, "地圖原本就掛著同一張：SAME_TILE")
+    -- 那條邊沒有牆：照舊建獨立物件（地圖同一條退路）；只有西牆時北邊的圖也照舊
+    local C = edgeSq(44, 48)
+    local okC = build(Pl, 2704, TN, { 44, 48, 0 })
+    local Cw = edgeSq(44, 49)
+    local wCw = wallOf(Cw, wallWS)
+    give(Pl, pay)
+    local okCw = build(Pl, 2705, TN, { 44, 49, 0 })
+    check(okC and #C.objects == 1 and C.objects[1].name == TN and C.objects[1].set ~= nil and Overlays.get(C, TN, "N") == nil
+        and okCw and #Cw.objects == 2 and hung(wCw) == "" and Overlays.get(Cw, TN, "N") == nil,
+        "那條邊沒有牆（或只有另一條邊的牆）：照舊建成獨立物件，不記覆蓋帳本")
+    local D = edgeSq(46, 49)
+    local wD = wallOf(D, wallWS)
+    give(Pl, Cost.of("wallObject", trimW, 1).items)
+    local okD = build(Pl, 2706, TW, { 46, 49, 0 })
+    check(okD and hung(wD) == TW and #D.objects == 1 and Overlays.get(D, TW, "W") ~= nil, "西邊的圖掛在西牆，帳本記在 W")
+
+    -- 右鍵選單、拆除照帳本退、牆留著
+    local tg = Menu.targets({ { getSquare = function() return A end } })
+    check(#tg == 1 and tg[1].kind == "wallObject" and tg[1].overlay and tg[1].overlay.host == wA and tg[1].name == TN
+        and #Menu.targets({ { getSquare = function() return B end } }) == 0,
+        "右鍵選單：列出本 MOD 掛在牆上的那張（種類照掛牆物）；地圖原有的不列")
+    function Pl.inv:getItems() return javaList(self.items) end
+    local Area = MinidoracatBuilder.Area
+    local st1 = Area.stamp(45, 48, 45, 48, 0, Pl)
+    wA:addAttachedAnimSprite(trimW)
+    local st2 = Area.stamp(45, 48, 45, 48, 0, Pl)
+    table.remove(wA.att)
+    check(st1 ~= st2 and Area.stamp(45, 48, 45, 48, 0, Pl) == st1,
+        "一區拆除的預覽戳記算進牆上的附加圖：物件數不變、牆上多一張也會重算")
+    wB.md.builderOverlays = { [TN] = true } -- 記號在、帳本沒有
+    local cB, aB = unbuild(Pl, 2707, 46, 48, TN)
+    check(cB == "dismantleSkipped" and aB.code == "NOT_OURS" and hung(wB) == TN, "記號在、覆蓋帳本沒有：NOT_OURS、不拿掉")
+    HARNESS_ROLL = "max"
+    here.dropped = {}
+    local cA = unbuild(Pl, 2708, 45, 48, TN)
+    local back = true
+    for ft, n in pairs(pay) do if here.dropped[ft] ~= n then back = false end end
+    check(cA == "dismantled" and hung(wA) == "" and wA.md.builderOverlays == nil and Overlays.get(A, TN, "N") == nil and back
+        and A.objects[1] == wA and #A.objects == 1, "拆：拿掉牆上那張與記號、清帳本、照帳本退（最多全部），牆還在")
+    local cA2, aA2 = unbuild(Pl, 2709, 45, 48, TN)
+    check(cA2 == "dismantleSkipped" and aA2.code == "GONE", "拆過的再拆一次：GONE、不再退")
+
+    -- 牆移出世界（打壞、大錘、本工具拆牆）：圖跟著消失，那條邊的帳本清掉，之後同名圖再出現也領不到
+    local E = edgeSq(43, 48)
+    local wE = wallOf(E, wallS)
+    local junk = wallOf(E, sprite("wo_junk_01_0", 2709, {})) -- 同格別的物件（沒有附加圖）
+    local fl = { getSquare = function() return E end, getAttachedAnimSprite = function() return nil end,
+        hasModData = function() return false end, getSprite = function() return nil end }
+    function E:getFloor() return fl end
+    give(Pl, pay)
+    local okE = build(Pl, 2710, TN, { 43, 48, 0 })
+    E:transmitRemoveItemFromSquare(junk)
+    local kept = Overlays.get(E, TN, "N") ~= nil
+    fire("OnObjectAboutToBeRemoved", fl)
+    local keptF = Overlays.get(E, TN, "N") ~= nil
+    E:transmitRemoveItemFromSquare(wE)
+    local gone = Overlays.get(E, TN, "N") == nil
+    local wE2 = wallOf(E, wallS) -- 同一條邊又有牆、掛著同名的圖（同名圖再出現）：沒有帳本
+    wE2:addAttachedAnimSprite(trimN)
+    wE2.md.builderOverlays = { [TN] = true }
+    here.dropped = {}
+    local cE, aE = unbuild(Pl, 2711, 43, 48, TN)
+    check(okE and kept and keptF and gone and cE == "dismantleSkipped" and aE.code == "NOT_OURS" and next(here.dropped) == nil,
+        "牆移除：那條邊的帳本清掉（別的物件移除不動）；同名的圖再掛回去也領不到退料（NOT_OURS）")
+    local E2 = edgeSq(43, 49)
+    local wE3 = wallOf(E2, wallS)
+    give(Pl, pay)
+    build(Pl, 2715, TN, { 43, 49, 0 })
+    local realDrop = Overlays.drop
+    Overlays.drop = function() end -- 植入違規：牆移除時不清帳本（只認地板的舊版）
+    E2:transmitRemoveItemFromSquare(wE3)
+    Overlays.drop = realDrop
+    check(Overlays.get(E2, TN, "N") ~= nil, "植入違規：移除牆時不清帳本會留下殘帳（上一條測得到）")
+    Overlays.forget(E2, TN, "N")
+
+    local function attNew(...) -- 新牆要能掛附加圖
+        local o = realNew(...)
+        o.att = {}
+        function o:getAttachedAnimSprite() return javaList(self.att) end
+        function o:addAttachedAnimSprite(s) self.att[#self.att + 1] = { getParentSprite = function() return s end } end
+        function o:RemoveAttachedAnim(i) table.remove(self.att, i + 1) end
+        function o:transmitUpdatedSpriteToClients() end
+        function o:transmitModData() end
+        return o
+    end
+    -- 原地換牆（本工具蓋的牆換另一款）：舊牆上本工具掛的圖照帳本掛回新牆。格上先有地板：新牆照原版插在地板後面、舊牆前面，
+    -- 舊牆移除時它已經不是宿主（帳本不清），Server.complete 照換之前記下的掛回新牆
+    local H = edgeSq(45, 50, { WallN = true })
+    local fH = wallOf(H, sprite("wo_floor_01_0", 2716, { flags = { "solidfloor" } }))
+    local OW = wallOf(H, wallS, true)
+    give(Pl, pay)
+    local okH = build(Pl, 2712, TN, { 45, 50, 0 })
+    local recH = Overlays.get(H, TN, "N")
+    IsoThumpable.new = attNew
+    local total = Cost.sum(Cost.forCells("wall", { wall2S }, 1))
+    give(Pl, (Check.net(total.items, OW.mats)))
+    local okR, cmdR, aR = build(Pl, 2713, "wo_wall_01_2", { 45, 50, 0 })
+    IsoThumpable.new = realNew
+    local NW
+    for _, o in ipairs(H.objects) do if o.name == "wo_wall_01_2" then NW = o end end
+    local recR = Overlays.get(H, TN, "N")
+    check(okH and recH and okR and cmdR == "placed" and aR.replaced == true and NW and hung(NW) == TN
+        and NW.md.builderOverlays and NW.md.builderOverlays[TN] == true and recR and samePay(recR)
+        and #H.objects == 2 and H.objects[1] == fH and H.objects[2] == NW,
+        "原地換牆：舊牆上本工具掛的圖照帳本掛回新牆（同一筆退料），舊牆移除")
+    -- 不是宿主的物件身上掛著同名的圖：移除它不動真正宿主那一筆
+    local J = edgeSq(46, 50)
+    local hJ = wallOf(J, wall2S) -- getWall 先找到這件：宿主
+    hJ:addAttachedAnimSprite(trimN)
+    local oJ = wallOf(J, wallS)
+    oJ:addAttachedAnimSprite(trimN)
+    Overlays.put(J, TN, { ["Base.Plank"] = 1 }, "N")
+    J:transmitRemoveItemFromSquare(oJ)
+    check(Overlays.get(J, TN, "N") ~= nil and hung(hJ) == TN, "不是宿主的物件掛著同名的圖：移除它不動宿主那一筆帳本")
+    Overlays.forget(J, TN, "N")
+    -- 獨立放的帶 cutN 疊圖（那條邊沒牆時建的物件）不算牆：之後蓋了真的牆，宿主是真的牆；只有它時照舊建獨立物件
+    local cutS = sprite("wo_cut_01_40", 2717, { flags = { "WallOverlay", "attachedN", "cutN" } })
+    local K = edgeSq(47, 50)
+    local cK = wallOf(K, cutS)
+    local alone = Place.wallAt(K, "N")
+    give(Pl, pay)
+    local okK = build(Pl, 2716, TN, { 47, 50, 0 })
+    local wK = wallOf(K, wallS)
+    check(alone == nil and okK and hung(cK) == "" and #K.objects == 3 and Place.wallAt(K, "N") == wK,
+        "獨立放的帶 cutN 疊圖不當宿主：只有它時照舊建獨立物件；後面有真的牆時宿主是真的牆")
+    -- 只帶 cutN 的裝飾片（wallOverlay 種類，不佔那條邊）也不當宿主：之後那條邊還能蓋牆，會插在它前面
+    local D2 = edgeSq(43, 47)
+    wallOf(D2, sprite("wo_deco_01_0", 2718, { flags = { "cutN" } }))
+    local decoOnly = Place.wallAt(D2, "N")
+    local wD2 = wallOf(D2, wallS)
+    check(decoOnly == nil and Place.wallAt(D2, "N") == wD2, "只帶 cutN 的裝飾片不當宿主；同一條邊有真的牆時宿主是牆")
+    local Dw = edgeSq(43, 51)
+    wallOf(Dw, sprite("wo_deco_01_1", 2725, { flags = { "cutN" } }))
+    local dwWin = wallOf(Dw, sprite("wo_win_01_1", 2726, { flags = { "WindowN" }, keys = { WindowN = "" } }))
+    function Dw:getWindow(dir) if dir == GridSquareEdgeFacingDirection.NORTH_SOUTH then return dwWin end return nil end
+    check(Place.wallAt(Dw, "N") == nil, "getWall 找到的裝飾片被拒掉時不往窗、車庫門找（地圖只在 getWall 是 nil 時才查窗）")
+    -- 牆角柱（SE）與只有窗的那條邊（地圖的退路：沒有牆時掛在同方向的窗上）
+    local SEq = edgeSq(44, 47)
+    local post = wallOf(SEq, sprite("wo_post_01_0", 2719, { flags = { "WallSE" } }))
+    give(Pl, pay)
+    local okSE = build(Pl, 2717, "wo_trim_01_20", { 44, 47, 0 })
+    local Wq = edgeSq(45, 47)
+    local win = wallOf(Wq, sprite("wo_win_01_0", 2720, { flags = { "WindowN" }, keys = { WindowN = "" } }))
+    function Wq:getWindow(dir) if dir == GridSquareEdgeFacingDirection.NORTH_SOUTH then return win end return nil end
+    give(Pl, pay)
+    local okWin = build(Pl, 2718, TN, { 45, 47, 0 })
+    check(okSE and hung(post) == "wo_trim_01_20" and Overlays.get(SEq, "wo_trim_01_20", "SE") ~= nil and #SEq.objects == 1
+        and okWin and hung(win) == TN and Overlays.get(Wq, TN, "N") ~= nil and #Wq.objects == 1,
+        "attachedSE 掛在牆角柱、帳本記在 SE；那條邊只有窗時掛在窗上（地圖同一條退路）")
+    -- 換牆失敗（新牆加進格子後出錯）：收回新牆時那條邊的帳本整份清掉，舊牆上的圖還在，照記下的補回；不扣不退
+    local H2 = edgeSq(46, 47, { WallN = true })
+    wallOf(H2, sprite("wo_floor_01_1", 2721, { flags = { "solidfloor" } }))
+    local OW2 = wallOf(H2, wallS, true)
+    give(Pl, pay)
+    build(Pl, 2719, TN, { 46, 47, 0 })
+    give(Pl, (Check.net(Cost.sum(Cost.forCells("wall", { wall2S }, 1)).items, OW2.mats)))
+    here.dropped = {}
+    local held = #Pl.inv.items
+    failAdd = true
+    local okF2, _, aF2 = build(Pl, 2720, "wo_wall_01_2", { 46, 47, 0 })
+    failAdd = false
+    check(not okF2 and aF2.code == "INTERNAL" and hung(OW2) == TN and samePay(Overlays.get(H2, TN, "N")) and #H2.objects == 2
+        and next(here.dropped) == nil and #Pl.inv.items == held, "換牆失敗：舊牆與牆上的圖都在、帳本照舊，背包不扣、地上不退")
+    -- 殘帳（圖已被原版清除塗鴉這類拿掉、帳本還在）不跟著換牆：換好之後新牆上沒有、帳本清掉
+    local H3 = edgeSq(47, 47, { WallN = true })
+    wallOf(H3, sprite("wo_floor_01_2", 2722, { flags = { "solidfloor" } }))
+    local OW3 = wallOf(H3, wallS, true)
+    Overlays.put(H3, TN, pay, "N")
+    give(Pl, (Check.net(Cost.sum(Cost.forCells("wall", { wall2S }, 1)).items, OW3.mats)))
+    IsoThumpable.new = attNew
+    local okR3 = build(Pl, 2721, "wo_wall_01_2", { 47, 47, 0 })
+    IsoThumpable.new = realNew
+    local NW3 = H3.objects[2]
+    check(okR3 and NW3 and NW3.name == "wo_wall_01_2" and hung(NW3) == "" and Overlays.get(H3, TN, "N") == nil,
+        "換牆時圖已經不在舊牆上的殘帳：不掛回新牆，帳本清掉")
+    -- 牆換成沒有 cutN 的柵欄（同一組、能原地換）：那條邊沒有宿主，牆上的圖掛不回去：整份退、帳本清掉
+    nowMs = nowMs + 60000 -- 避開收請求的頻率限制
+    local fenceS = sprite("wo_fence_01_1", 2723, { flags = { "HoppableN" }, keys = { HoppableN = "" } })
+    world({ wallS, wall2S, wallWS, trimN, trimW, trimSE, signS, gridT, fenceS })
+    local H4 = edgeSq(46, 51, { WallN = true })
+    wallOf(H4, sprite("wo_floor_01_3", 2724, { flags = { "solidfloor" } }))
+    local OW4 = wallOf(H4, wallS, true)
+    give(Pl, pay)
+    local okT4 = build(Pl, 2722, TN, { 46, 51, 0 })
+    give(Pl, (Check.net(Cost.sum(Cost.forCells("fence", { fenceS }, 1)).items, OW4.mats)))
+    here.dropped = {}
+    local okF4, cmdF4, aF4 = build(Pl, 2723, "wo_fence_01_1", { 46, 51, 0 })
+    local whole4 = true
+    for ft, n in pairs(pay) do if (here.dropped[ft] or 0) < n then whole4 = false end end
+    check(okT4 and #H4.objects == 2 and H4.objects[1] ~= OW4 and okF4 and cmdF4 == "placed" and aF4.replaced == true and H4.objects[2]
+        and H4.objects[2].name == "wo_fence_01_1" and Place.wallAt(H4, "N") == nil and Overlays.get(H4, TN, "N") == nil
+        and whole4, "牆換成沒有 cutN 的柵欄：牆上的圖掛不回去，整份退（不擲 1..v）、那條邊的帳本清掉")
+
+    -- 讀檔改掛：42.22.2-0.8.0 以前蓋的獨立牆上疊圖，帳本建好後的下一個 tick 掛到那條邊的牆；沒有牆的照舊
+    local function legacy(sq, spr)
+        local o = { class = "IsoThumpable", spr = spr, mats = { ["Base.Plank"] = "2", ["Base.Nails"] = "1" },
+            md = { builderEntry = spr:getName() } }
+        function o:getSprite() return self.spr end
+        function o:getSquare() return sq end
+        function o:hasModData() return true end
+        function o:getModData() return self.md end
+        function o:getBuildMaterials() return self.mats end
+        function o:isFloor() return false end
+        function o:hasBuildMaterials() return next(self.mats) ~= nil end
+        function o:isCorner() return false end
+        function o:isThumpable() return false end
+        function o:isCanPassThrough() return true end
+        function o:getThumpDmg() return 8 end
+        function o:getContainerCount() return 0 end
+        function o:getName() return self.name end
+        function o:setName(v) self.name = v end
+        function o:getAttachedAnimSprite() return nil end -- 引擎：沒有附加圖時是 null
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    local L = edgeSq(43, 50)
+    local wL = wallOf(L, wallS)
+    local old = legacy(L, trimN)
+    local LN = edgeSq(44, 50)
+    local alone = legacy(LN, trimN)
+    fire("LoadGridsquare", L)
+    fire("LoadGridsquare", LN)
+    fire("OnTick")
+    local r = Overlays.get(L, TN, "N")
+    check(hung(wL) == TN and wL.md.builderOverlays[TN] == true and #L.objects == 1 and L.objects[1] == wL and r
+        and r["Base.Plank"] == 2 and r["Base.Nails"] == 1 and LN.objects[1] == alone and Overlays.get(LN, TN, "N") == nil
+        and old ~= nil, "讀檔改掛：舊的獨立牆上疊圖掛到北牆、拿掉舊物件，退料照 buildMaterials；那條邊沒有牆的照舊留著")
+    local LR = edgeSq(45, 51)
+    local wLR = wallOf(LR, wallS)
+    local stuck = legacy(LR, trimN)
+    local baseLR = LR.transmitRemoveItemFromSquare
+    function LR:transmitRemoveItemFromSquare(o, safely)
+        if o == stuck then return -1 end -- 移除失敗：物件還在
+        return baseLR(self, o, safely)
+    end
+    fire("LoadGridsquare", LR)
+    fire("OnTick")
+    check(LR.objects[2] == stuck and hung(wLR) == "" and wLR.md.builderOverlays == nil and Overlays.get(LR, TN, "N") == nil,
+        "讀檔改掛時舊物件移不掉：拿掉剛掛到牆上的那張、清記號與那條邊的帳本，舊物件留著")
+
+    -- 安全屋照舊（時間往後撥：前面送了很多請求，避開收請求的頻率限制）
+    nowMs = nowMs + 60000
+    local SH = edgeSq(47, 48)
+    SH.owner = "someone"
+    local wSH = wallOf(SH, wallS)
+    give(Pl, pay)
+    local okSH, _, aSH = build(Pl, 2730, TN, { 47, 48, 0 })
+    check(not okSH and aSH.code == "SAFEHOUSE" and hung(wSH) == "" and Overlays.get(SH, TN, "N") == nil,
+        "別人的安全屋：SAFEHOUSE、不掛、不記帳本")
+    instanceof = realInst
+end)()
+
 print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「容器容量倍率」（2026-11-01 B 站許願）：建造與讀檔照目前的值，關掉還原，都關時不動")
 ;(function()
     nowMs = nowMs + 180000
@@ -6371,7 +6739,17 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local pack = fence("packfence_01_8", 4009, "N")       -- 圖塊包的同號柵欄：不猜
     local f64, f65 = fence("fencing_01_64", 4010, "N"), fence("fencing_01_65", 4011, "N", true) -- 65 被配方佔走
     local f34, f35 = fence("fencing_01_34", 4012, "W"), fence("fencing_01_35", 4013, "W")       -- 35 被排除
-    world({ f8, f9, f10, f11, f24, f25, f32, f16, pack, f64, f65, f34, f35 })
+    -- 2026-11-12 加的 8 對：48／49 帶牆的屬性（目錄歸在牆）；53 是那組的立柱，沒有任何種類屬性
+    local function hiwall(name, id)
+        return sprite(name, id, { flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "", CanScrap = "", Material = "MetalBars" } })
+    end
+    local f48, f49 = hiwall("fencing_01_48", 4020), hiwall("fencing_01_49", 4021)
+    local f53 = sprite("fencing_01_53", 4022, { flags = {}, keys = { CanScrap = "", Material = "MetalBars" } })
+    local p53 = sprite("packfence_01_53", 4023, { flags = {}, keys = { CanScrap = "", Material = "MetalBars" } })
+    world({ f8, f9, f10, f11, f24, f25, f32, f16, pack, f64, f65, f34, f35, f48, f49, f53, p53 })
+    check(Rules.classify(f48) == "wall", "假圖塊：48 帶牆的屬性，種類是牆")
+    check(Rules.classify(f53) == "post" and Rules.classify(p53) == nil,
+        "fencing_01_53 沒有種類屬性，照名稱列成柱子；圖塊包的同號圖不猜")
     check(Rules.classify(f8) == "fence" and Rules.classify(f10) == "fence" and Rules.classify(f25) == nil,
         "假圖塊：8、10 是柵欄；25 是建造配方的圖（ENTITY，目錄不列）")
     local function alt(name, x, y)
@@ -6383,6 +6761,8 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
         "北向一排：(x+y) 偶數放 A（8）、奇數放 B（9）；挑 A 或 B 都照座標")
     check(alt("fencing_01_10", 210, 211) == "fencing_01_11" and alt("fencing_01_11", 210, 212) == "fencing_01_10",
         "西向一排：同一條規則（10／11）")
+    check(alt("fencing_01_48", 210, 210) == "fencing_01_48" and alt("fencing_01_48", 211, 210) == "fencing_01_49"
+        and alt("fencing_01_49", 210, 212) == "fencing_01_48", "牆種類的一對（48／49）也照座標交替（使用者 2026-11-12）")
     check(alt("fencing_01_24", 211, 210) == "fencing_01_24" and alt("fencing_01_25", 210, 210) == "fencing_01_25",
         "鐵絲網不換：另一張（25）是原版建造配方的圖，配方的圖只收地板與地面覆蓋（使用者 2026-10-31）")
     check(alt("fencing_01_32", 211, 210) == "fencing_01_32", "另一張（33）不在圖塊表：照原圖")
@@ -6478,6 +6858,23 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local q = {}
     for i, ps in ipairs(parts or {}) do q[i] = ps[1][4]:getName():match("_(%d+)$") end
     check(table.concat(q, ",") == "9,8,9,8", "送出後的排隊虛影也照座標交替：" .. table.concat(q, ","))
+    -- 換層鍵：預設 PgUp／PgDn 時提示照翻譯原文；改了鍵換成實際鍵名，沒綁寫「-」；游標照綁的鍵換層
+    local realCore2, realKeyName, realKb, realKid = getCore, getKeyName, Keyboard, KeybindId
+    KeybindId = KeybindId or {}
+    local binds = { MinidoracatBuilder_LayerUp = 201, MinidoracatBuilder_LayerDown = 209 }
+    Keyboard = { KEY_PRIOR = 201, KEY_NEXT = 209 }
+    getKeyName = function(k) return "K" .. k end
+    getCore = function() return { getKey = function(_, name) return binds[name] or 0 end,
+        isKey = function(_, name, k) return type(name) == "string" and binds[name] == k end } end
+    check(Cursor.keyText("PgUp a PgDn") == "PgUp a PgDn", "換層鍵是預設：提示不動")
+    binds.MinidoracatBuilder_LayerUp, binds.MinidoracatBuilder_LayerDown = 19, 0
+    check(Cursor.keyText("PgUp a PgDn") == "K19 a -", "改了鍵：提示寫實際鍵名，沒綁寫「-」")
+    local lc = setmetatable({ entry = { kind = "roof" }, up = false }, { __index = Cursor })
+    lc:rotateKey(201)
+    local stay = lc.up
+    lc:rotateKey(19)
+    check(stay == false and lc.up == true, "游標照綁的鍵換層：舊的 PgUp 不再有用，新鍵換到上一層")
+    getCore, getKeyName, Keyboard, KeybindId = realCore2, realKeyName, realKb, realKid
     sb.MaxCellsPerDrag = realMax
 end)()
 
@@ -7029,19 +7426,19 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         return s
     end
     local L = W.filter(st())
-    check(L.n == 7 and L[1] == "recipe:Neat.Bench" and L[5] == "recipe:Base.WoodWall" and L[6] == "rcp_walls_01_16"
-        and L[7] == "rcp_chair_01_0", "全部頁：配方排在圖塊前面、照顯示名")
+    check(L.n == 7 and L[1] == "rcp_walls_01_16" and L[2] == "rcp_chair_01_0" and L[3] == "recipe:Neat.Bench"
+        and L[7] == "recipe:Base.WoodWall", "全部頁：圖塊在前，配方接在後面、照顯示名（使用者 2026-11-12）")
     local fu = W.filter(st({ tab = "furniture" }))
-    check(fu.n == 3 and fu[1] == "recipe:Neat.Bench" and fu[2] == "recipe:Base.RainCollector_Tarp" and fu[3] == "rcp_chair_01_0",
+    check(fu.n == 3 and fu[1] == "rcp_chair_01_0" and fu[2] == "recipe:Neat.Bench" and fu[3] == "recipe:Base.RainCollector_Tarp",
         "家具頁：集雨桶、MOD 的長椅（配方）和椅子（圖塊）")
     local wa = W.filter(st({ tab = "wall" }))
-    check(wa.n == 3 and wa[1] == "recipe:Base.PaintWall" and wa[2] == "recipe:Base.WoodWall" and wa[3] == "rcp_walls_01_16",
+    check(wa.n == 3 and wa[1] == "rcp_walls_01_16" and wa[2] == "recipe:Base.PaintWall" and wa[3] == "recipe:Base.WoodWall",
         "牆頁：牆與牆面油漆的配方，窗框配方不在牆頁")
     local rc = W.filter(st({ tab = "furniture", cat = "r:Outdoors" }))
     check(rc.n == 1 and rc[1] == "recipe:Base.RainCollector_Tarp", "原版分類（r:Outdoors）：只列那個分類的配方")
     local nm = W.filter(st({ source = "Neat_Building" }))
     local va = W.filter(st({ tab = "furniture", source = "vanilla" }))
-    check(nm.n == 1 and nm[1] == "recipe:Neat.Bench" and va.n == 2 and va[1] == "recipe:Base.RainCollector_Tarp",
+    check(nm.n == 1 and nm[1] == "recipe:Neat.Bench" and va.n == 2 and va[2] == "recipe:Base.RainCollector_Tarp",
         "來源：配方照定義它的 MOD；原版配方算原版")
     local q1, q2, q3 = W.filter(st({ query = "rain" })), W.filter(st({ query = "outdoors" })), W.filter(st({ query = "neat_b" }))
     check(q1.n == 1 and q2.n == 1 and q2[1] == q1[1] and q3.n == 1 and q3[1] == "recipe:Neat.Bench",
@@ -7082,11 +7479,11 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         "名稱：配方項目用原版的顯示名稱")
 
     local set = W.setOf("recipe:Base.WoodWall")
-    check(set and set.list.n == 3 and set.list[1] == "recipe:Base.WoodFrame" and set.list[2] == "recipe:Base.WoodWall"
-        and set.list[3] == "rcp_walls_01_16" and set.button == "IGUI_MBLD_SetTileset",
-        "整套（同一組）：照主圖的 tileset 列同一組的配方和圖塊，配方在前")
+    check(set and set.list.n == 3 and set.list[1] == "rcp_walls_01_16" and set.list[2] == "recipe:Base.WoodFrame"
+        and set.list[3] == "recipe:Base.WoodWall" and set.button == "IGUI_MBLD_SetTileset",
+        "整套（同一組）：照主圖的 tileset 列同一組的圖塊和配方，圖塊在前")
     local setT = W.setOf("rcp_walls_01_16")
-    check(setT and setT.list.n == 3 and setT.list[1] == "recipe:Base.WoodFrame", "選圖塊的同一組也列同 tileset 的配方")
+    check(setT and setT.list.n == 3 and setT.list[3] == "recipe:Base.WoodWall", "選圖塊的同一組也列同 tileset 的配方")
     check(W.setOf("recipe:Base.RainCollector_Tarp") == nil, "反面：不是牆類的配方沒有整套")
 
     local wall = byId["recipe:Base.WoodWall"]
@@ -7512,6 +7909,80 @@ print("情境四十三：疊放模式（使用者 2026-11-12 選 overlap、每�
         and W.materialsOf("ov_none_01_0") == nil,
         "材料分類：木牆歸木板、磚牆歸磚石、燈（電子零件）歸其他；同一種分類共用一張表；不存在的項目回 nil")
     ISMoveableSpriteProps, instanceof = realProps, realInst
+end)()
+
+print("情境四十四：能撿起的地磚、地毯照材質另外收料（使用者 2026-11-12 選 tiles=mat）：木底板寫進退料、材質料記在 fee")
+;(function()
+    nowMs = nowMs + 180000
+    local keepBrick = scrapDefs.Brick
+    scrapDefs.Brick = { perk = perkObj("Masonry"), tools = { "Base.Hammer" },
+        returnItemsStatic = { { returnItem = "Base.ClayBrick", maxAmount = 1, chancePerRoll = 80 } } }
+    local TILE = { IsMoveAble = "", MoveType = "FloorTile" }
+    local function tileKeys(mat)
+        local k = { Material = mat }
+        for a, b in pairs(TILE) do k[a] = b end
+        return k
+    end
+    local function tc(mat, mult) return cost("floor", { flags = { "solidfloor" }, keys = tileKeys(mat) }, mult) end
+    local function show(t) -- 排序後的「物品=數量」，比對用
+        local list = {}
+        for k, v in pairs(t) do list[#list + 1] = k .. "=" .. v end
+        table.sort(list)
+        return table.concat(list, ",")
+    end
+    local carpet, brick, wood, bare = tc("Fabric"), tc("Brick"), tc("Wood"), tc(nil)
+    check(show(carpet.items) == "Base.Nails=1,Base.Plank=1,Base.Sheet=1" and show(carpet.fee) == "Base.Sheet=1"
+        and table.concat(carpet.tools, ",") == "HAMMER" and carpet.scrap == false,
+        "地毯、布面地板：木底板 1＋1、床單 1（記在 fee）、鐵鎚；不照拆解價")
+    check(show(brick.items) == "Base.ClayTile=4,Base.Nails=1,Base.Plank=1" and show(brick.fee) == "Base.ClayTile=4"
+        and table.concat(brick.tools, ",") == "HAMMER,MASONS_TROWEL",
+        "磚材質磁磚：木底板 1＋1、黏土瓦 4（fee）、鐵鎚＋抹刀；不再照拆解價收黏土磚")
+    check(show(wood.items) == "Base.Nails=2,Base.Plank=2" and show(wood.fee) == "Base.Nails=1,Base.Plank=1"
+        and show(bare.items) == show(wood.items) and show(bare.fee) == show(wood.fee) and bare.tools[1] == "HAMMER",
+        "木地磚、沒寫 Material：木板 2、釘子 2，其中 1＋1 是材質料（fee）")
+    local c0, cH, b0, bH, wH = tc("Fabric", 0), tc("Fabric", 0.5), tc("Brick", 0), tc("Brick", 0.5), tc("Wood", 0.5)
+    check(show(c0.items) == "Base.Nails=1,Base.Plank=1" and next(c0.fee) == nil
+        and show(cH.items) == "Base.Nails=1,Base.Plank=1,Base.Sheet=1" and show(b0.items) == "Base.Nails=1,Base.Plank=1"
+        and bH.items["Base.ClayTile"] == 2 and bH.fee["Base.ClayTile"] == 2
+        and show(wH.items) == "Base.Nails=2,Base.Plank=2" and show(wH.fee) == "Base.Nails=1,Base.Plank=1",
+        "倍率 0、0.5：木底板最低照 1 收；材質料照倍率（0 不收、0.5 進位）")
+    local c2 = tc("Fabric", 2)
+    check(show(c2.items) == "Base.Nails=2,Base.Plank=2,Base.Sheet=2" and show(c2.fee) == "Base.Sheet=2", "倍率 2：兩部分都照乘")
+    local xc, xb, x0 = Cost.xp({ carpet }, player()), Cost.xp({ brick }, player()), Cost.xp({ c0 }, player())
+    local xw, x2, xh = Cost.xp({ wood }, player()), Cost.xp({ c2 }, player()), Cost.xp({ carpet }, player({ movCheat = true }))
+    local xw2, xb2 = Cost.xp({ tc("Wood", 2) }, player()), Cost.xp({ tc("Brick", 2) }, player())
+    check(xc.Woodwork == 5 and xc.Masonry == nil and xb.Woodwork == nil and xb.Masonry == 20 and xw.Woodwork == 10
+        and xh.Woodwork == 5 and carpet.uniform == false,
+        "經驗只給材質料（fee）、照件數全給：地毯床單木工 5、磁磚黏土瓦石工 20、木地磚多收的木板釘子木工 10；"
+        .. "木底板不給（搬運作弊也一樣只給 fee）；不是本工具拆的（uniform false）")
+    check(x2.Woodwork == 10 and xw2.Woodwork == 20 and xb2.Woodwork == nil and xb2.Masonry == 40,
+        "倍率 2：木底板 2 件仍不給，只有 fee 加倍（地毯木工 10、木地磚 20、磁磚石工 40）")
+    check(next(x0) == nil and next(Cost.xp({ b0 }, player())) == nil, "倍率 0：只付木底板，沒有經驗")
+    check(show(cost("floor", { flags = { "solidfloor" } }).items) == "Base.Nails=1,Base.Plank=1"
+        and next(cost("floor", { flags = { "solidfloor" } }).fee) == nil
+        and next(cost("floor", { flags = { "solidfloor" }, keys = { MoveType = "FloorTile", Material = "Fabric" } }).fee) == nil
+        and next(cost("floor", { flags = { "solidfloor" }, keys = { MoveType = "FloorRug", IsMoveAble = "", Material = "Fabric" } }).fee) == nil
+        and next(cost("furniture", { keys = tileKeys("Fabric") }).fee) == nil
+        and cost("floor", { flags = { "solidfloor" }, keys = { Material = "Brick", CanScrap = "" } }).items["Base.ClayBrick"] == 1,
+        "反面：一般地板、不能搬的、MoveType 不是 FloorTile 的、不是地板種類的價錢照舊（沒有 fee）")
+    -- 二樓蓋地毯：buildMaterials 只寫木底板；建造作弊照舊不收、不寫
+    local carpetS = sprite("ftile_01_0", 4401, { flags = { "solidfloor" }, keys = tileKeys("Fabric") })
+    world({ carpetS })
+    square(400, 400, 0, { wallN = {} })
+    square(402, 400, 0, { wallN = {} })
+    local up, upC = square(400, 400, 1), square(402, 400, 1)
+    local P = player({ id = 4401, x = 400.5, y = 401.5 })
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    give(P, { ["Base.Plank"] = 1, ["Base.Nails"] = 1, ["Base.Sheet"] = 1 })
+    local ok = build(P, 1, "ftile_01_0", { 400, 400, 1 })
+    local o = up.objects[1]
+    check(ok and o and show(o.mats) == "Base.Nails=1,Base.Plank=1" and P.inv:count("Base.Sheet") == 0
+        and P.inv:count("Base.Plank") == 0,
+        "二樓的地毯：扣木底板＋床單，buildMaterials 只有木底板（床單不寫）")
+    local C = player({ id = 4402, x = 402.5, y = 401.5, cheat = true })
+    check(build(C, 1, "ftile_01_0", { 402, 400, 1 }) and upC.objects[1] and next(upC.objects[1].mats) == nil,
+        "建造作弊：背包空的也蓋，不寫退料表")
+    scrapDefs.Brick = keepBrick
 end)()
 
 print()

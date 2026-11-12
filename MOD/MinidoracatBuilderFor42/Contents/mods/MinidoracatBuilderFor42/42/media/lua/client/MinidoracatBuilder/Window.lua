@@ -6,7 +6,7 @@
 -- 配置只發生在「有事才做」的時候：停手 120 ms 後的搜尋、換頁籤／分類、整理進度每 0.5 秒、材料摘要每秒最多一次，
 -- 以及捲到新格子時補那幾格的字與貼圖（狀態列面板的 prerender，排在方格前面，同一幀方格就畫得到）。
 -- 入口（檔尾）：家族 Dock（id builder、order 80）、按鍵設定一個鍵（預設不綁）、ModOptions「顯示工具列按鈕」。
--- 建造配方項目（Recipes.lua，使用者 2026-11-09 選）和圖塊列在同一個頁籤、分類、整套裡，排在圖塊前面；選了開原版的游標。
+-- 建造配方項目（Recipes.lua，使用者 2026-11-09 選）和圖塊列在同一個頁籤、分類、整套裡，接在圖塊後面（使用者 2026-11-12 改）；選了開原版的游標。
 if isServer() then return end
 
 require "MinidoracatBuilder/Entry"
@@ -384,7 +384,7 @@ end
 --          改選同一件東西在目錄裡的那一項，listedAlt；是這位玩家看得到的配方的圖時選那個配方項目）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
 -- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出（bt-perf §5.4）。
--- 配方項目排在圖塊前面（設計稿 claim 4）；選原版分類（r:）時只列配方
+-- 圖塊排在前面、配方項目接在後面（使用者 2026-11-12 選：配方不能拖一排，排在前面時玩家先點到它）；選原版分類（r:）時只列配方
 local function listFor(st)
     local q = trim(st.query)
     local ql = string.lower(q)
@@ -417,8 +417,10 @@ local function listFor(st)
     local want = {}
     for _, k in ipairs(kinds) do want[k] = true end
     local out = { n = 0 }
-    appendRecipes(out, st, want, fam, rcat, ql)
-    if rcat then return out, nil end
+    if rcat then
+        appendRecipes(out, st, want, fam, rcat, ql)
+        return out, nil
+    end
     local setHit, nameHit
     if ql ~= "" then setHit, nameHit = queryHits(ql) end
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
@@ -439,6 +441,7 @@ local function listFor(st)
             end
         end
     end
+    appendRecipes(out, st, want, fam, nil, ql)
     return out, nil
 end
 
@@ -803,6 +806,9 @@ end
 function W.tipOf(v, name, short)
     if short == nil then short = v.dim[name] end
     local s = Names.of(name)
+    -- 牆、柵欄、柱子的配方項目先寫不能拖一排（圖塊的同種類能拖；Recipes.NO_DRAG）
+    local rc = Recipes.byId[name]
+    if rc and Recipes.NO_DRAG[rc.kind] then s = s .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Recipe_NoDrag") end
     if short == true then
         -- 沒學會的配方（檢視未知配方開著時照列）寫沒學會、太暗寫太暗，不寫缺材料（審查 1109 Grok、第 2 輪 Claude）
         local r, why = Recipes.byId[name], "IGUI_MBLD_Tip_Short"
@@ -1285,6 +1291,17 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             y = y + lh
         end
     end
+    -- 拆了不退的那幾件（Cost.of 的 fee：電器費、地磚的材質料），多格加總
+    local kept, anyKept = {}, false
+    for _, cc in ipairs(costs) do
+        for ft, n in pairs(cc.fee or {}) do
+            kept[ft] = (kept[ft] or 0) + n
+            anyKept = true
+        end
+    end
+    if refund ~= "none" and anyKept then
+        y = para(v, ops, getText("IGUI_MBLD_Refund_Kept", Messages.items(kept)), 0, y, dw, c.textMuted)
+    end
     y = y + 4
     text(ops, getText("IGUI_MBLD_Detail_Materials"), 0, y, c.textMuted, v.font)
     y = y + lh
@@ -1341,7 +1358,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     -- 本工具接發電機的補亮也照這條（Lights.lua），換一句。接水管的（sprite 帶 waterPiped：水槽、馬桶、浴缸、淋浴）
     -- 照原版搬家具沒有自來水（Place.lua 寫 canBeWaterPiped），原版「接水管」是從上一層 3×3 的裝水容器取水
     -- （IsoObject.java:2478-2529,2687-2726），停水前沒有水源也給這個選項，玩家按了以為壞掉，換一句說明。帶
-    -- makeWindowInvincible 的牆（商場鐵捲門）同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5234-5237），寫出來
+    -- makeWindowInvincible 的牆（商場鐵捲門）同一格的窗不能用互動鍵開關、爬過（IsoPlayer.java:5234-5237），寫出來。
+    -- 帶 WallOverlay 的掛牆物（Rules.onWall）有牆時貼在牆上、牆沒了跟著消失，寫出來
     local key = e.kind
     if key == "roof" then
         if not (p:has(IsoFlagType.BlockRain) or p:has(IsoFlagType.solidfloor)) then key = "roofOpen" end
@@ -1349,10 +1367,13 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         key = "lightStreet"
     elseif key == "wall" and p:has(IsoFlagType.makeWindowInvincible) then
         key = "shutter"
+    elseif MinidoracatBuilder.Rules.onWall(key, e.spr) then
+        key = "wallHang"
     elseif p:has(IsoFlagType.waterPiped) then
         key = "plumb"
     end
     local note = getTextOrNull("IGUI_MBLD_Note_" .. key)
+    if note and key:sub(1, 4) == "roof" then note = MinidoracatBuilder.Cursor.keyText(note) end
     if note then
         y = y + 4
         for _, line in ipairs(Text.wrap(note, dw, v.font)) do
@@ -1502,6 +1523,8 @@ local function recipeRow(v, ops, r, need, short)
     for _, k in ipairs(need.skills) do
         if not k.ok then parts[#parts + 1] = getText("IGUI_MBLD_Detail_SkillShort", k.name, tostring(k.level), tostring(k.have)) end
     end
+    -- 不能拖一排接在最後：整行會被截短，缺什麼要先看得到（審查 1112 Claude）
+    if Recipes.NO_DRAG[r.kind] then parts[#parts + 1] = getText("IGUI_MBLD_Recipe_NoDrag") end
     local line = getText("IGUI_MBLD_Recipe_Badge")
     if #parts > 0 then line = line .. getText("IGUI_MBLD_Sep") .. table.concat(parts, getText("IGUI_MBLD_ListSep")) end
     if short then add(ops, { t = "icon", key = "warning", x = x, y = y + fh + 4 + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
@@ -1905,7 +1928,7 @@ local function listedKind(name)
 end
 
 -- 同一個 tileset、牆類的配方項目（這位玩家看得到的，照顯示名）：設計稿 claim 4「整套照主圖的圖塊組，列同一組的配方和
--- 圖塊」，排在圖塊前面
+-- 圖塊」，接在圖塊後面（同 listFor）
 local function setRecipes(tileset)
     local out = { n = 0 }
     local list = Recipes.shown(W.playerNum).list
@@ -1921,18 +1944,19 @@ end
 
 -- 選著的這一項的整套：{ name, list = { n, 名稱… }, at（名稱 → 套裡的位置；同一組沒有）, button（按鈕的翻譯鍵）,
 -- chip（條件鈕標題） }；不是牆類、或湊不到兩項回 nil。表的排法不是原版牆的（Sets.of 回 nil）時改列同一個 tileset 的
--- 牆類，照編號排，按鈕寫「同一組」。配方項目照主圖的 tileset 排在前面；選著的是配方時一律「同一組」
+-- 牆類，照編號排，按鈕寫「同一組」。配方項目照主圖的 tileset 接在後面；選著的是配方時一律「同一組」
 function W.setOf(name)
     local r = Recipes.get(name)
     local e = not r and Entry.resolve(name) or nil
     local kind, ts
     if r then kind, ts = r.kind, r.tileset elseif e then kind, ts = e.kind, e.tileset end
     if not (ts and IS_SET_KIND[kind]) then return nil end
-    local list = setRecipes(ts)
+    local recipes, list = setRecipes(ts), { n = 0 }
     if e then
         local tiles, at = Sets.of(name, listedKind)
         if tiles then
             append(list, tiles)
+            append(list, recipes)
             local _, base = Sets.locate(name)
             return { name = name, list = list, at = at, button = "IGUI_MBLD_Set", chip = getText("IGUI_MBLD_Set_Chip",
                 Names.tileset(ts) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Name_Num", tostring(base))) }
@@ -1948,6 +1972,7 @@ function W.setOf(name)
         list.n = list.n + 1
         list[list.n] = x.name
     end
+    append(list, recipes)
     if list.n < 2 then return nil end
     return { name = name, list = list, button = "IGUI_MBLD_SetTileset",
         chip = getText("IGUI_MBLD_SetTileset_Chip", Names.tileset(ts)) }
@@ -2849,11 +2874,14 @@ function W.initBinds()
     if keyBinding == nil then return end
     table.insert(keyBinding, { value = "[MinidoracatBuilder]" })
     table.insert(keyBinding, { value = W.BIND, key = (Keyboard and Keyboard.KEY_NONE) or 0 })
+    -- 換層（屋頂、地板的游標；Cursor.rotateKey 讀）：筆電沒有 PgUp／PgDn 的玩家可以改
+    table.insert(keyBinding, { value = "MinidoracatBuilder_LayerUp", key = Keyboard and Keyboard.KEY_PRIOR or 0 })
+    table.insert(keyBinding, { value = "MinidoracatBuilder_LayerDown", key = Keyboard and Keyboard.KEY_NEXT or 0 })
 end
 
 function W.onKeyPressed(key)
     if key == nil or key == 0 then return end
-    if key == getCore():getKey(W.BIND) then W.toggle(0) end
+    if getCore():isKey(W.BIND, key) then W.toggle(0) end -- isKey 連修飾鍵、替代鍵一起比；沒綁時回 false（Core.java:2405-2408）
 end
 
 if first then

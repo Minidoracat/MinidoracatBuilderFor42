@@ -3,5 +3,7 @@
   "UI_MinidoracatBuilder_ShowDock": "ツールバーにボタンを表示",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "ファミリーツールバーの「自由建築」ボタンです。オフのときは、「キーバインド > Minidoracat 自由建築」で設定したキーでウィンドウを開いてください。",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat 自由建築",
-  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "自由建築ウィンドウを開く／閉じる"
+  "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "自由建築ウィンドウを開く／閉じる",
+  "UI_optionscreen_binding_MinidoracatBuilder_LayerUp": "建築カーソル：1 つ上の階",
+  "UI_optionscreen_binding_MinidoracatBuilder_LayerDown": "建築カーソル：この階"
 }

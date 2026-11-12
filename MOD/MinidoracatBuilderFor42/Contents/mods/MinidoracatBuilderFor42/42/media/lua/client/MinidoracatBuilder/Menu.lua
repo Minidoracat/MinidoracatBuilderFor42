@@ -20,7 +20,7 @@ local Menu = MinidoracatBuilder.Menu or {}
 MinidoracatBuilder.Menu = Menu
 
 -- 點到的格子上、以及正上方那格的屋頂（在上一層的屋頂從底下點不到：從屋裡點地板就拆得到頭上那片），本 MOD 蓋的東西，
--- 含點到的格子地板上本 MOD 掛的地面覆蓋（Dismantle.overlays）。同一件（多格、樓梯三片）只列一次（Area.scan）。
+-- 含點到的格子上本 MOD 掛的地面覆蓋與牆上疊圖（Dismantle.overlays）。同一件（多格、樓梯三片）只列一次（Area.scan）。
 -- 回 targets, others：targets＝本工具拆的 { obj 或 overlay, kind, plan, name＝sprite 名稱, route = "builder" }；
 -- others＝不歸本工具拆的（點到的格子上，route＝pickup／scrap／none／sheet，見 Area.route）
 function Menu.targets(worldobjects)
@@ -45,7 +45,7 @@ function Menu.onPick(player, t)
 end
 
 -- 停上去亮出那件的每一片、離開熄（原版 ISDisassembleMenu.createMenu 的 onHighlight 寫法；ISContextMenu.lua:236-240 呼叫）。
--- 地面覆蓋沒有自己的物件，亮它掛著的那塊地板
+-- 掛上去的圖沒有自己的物件，亮它掛著的那一件（地板或牆）
 local function onHighlight(_, menu, on, list, color)
     for _, o in ipairs(list) do
         if on then
@@ -58,7 +58,7 @@ local function onHighlight(_, menu, on, list, color)
 end
 
 local function highlight(opt, t, color)
-    local list = t.overlay and { t.overlay.floor } or (t.plan and t.plan.remove) or { t.obj }
+    local list = t.overlay and { t.overlay.host } or (t.plan and t.plan.remove) or { t.obj }
     opt.onHighlightParams = { list, color }
     opt.onHighlight = onHighlight
 end

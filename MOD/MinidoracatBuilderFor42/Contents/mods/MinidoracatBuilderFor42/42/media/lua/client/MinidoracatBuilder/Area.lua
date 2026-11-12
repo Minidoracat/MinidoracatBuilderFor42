@@ -72,7 +72,7 @@ function Area.scan(sq, seen, out, roof, memo)
     end
     if roof then return end
     for _, ov in ipairs(Dismantle.overlays(sq)) do
-        out[#out + 1] = { overlay = ov, kind = "floorOverlay", route = "builder", plan = Dismantle.overlayPlan(ov),
+        out[#out + 1] = { overlay = ov, kind = ov.kind, route = "builder", plan = Dismantle.overlayPlan(ov),
             name = ov.name }
     end
 end
@@ -209,7 +209,8 @@ end
 
 local cache = { key = nil, stamp = nil, out = nil }
 
--- 世界戳記：範圍（玩家那層與上一層）每格的物件數、每件容器裡的件數、地板掛的覆蓋張數，加上玩家背包件數與建造作弊。
+-- 世界戳記：範圍（玩家那層與上一層）每格的物件數、每件容器裡的件數、每件掛的附加圖張數（地板的地面覆蓋、牆上的疊圖），
+-- 加上玩家背包件數與建造作弊。
 -- 拆完、別人蓋了或拆了、容器放進拿出、工具進出背包都會變，預覽照它決定要不要重算。整區 3,200 格約幾毫秒，比重算便宜。
 -- ponytail：同一格的東西原地換成別款（件數不變）認不出來，要等範圍變了才重算；放開時一律重新 collect、伺服器也一件一件重查
 function Area.stamp(x1, y1, x2, y2, z, player)
@@ -223,12 +224,12 @@ function Area.stamp(x1, y1, x2, y2, z, player)
                     local objects = sq:getObjects()
                     n = objects:size()
                     for i = 0, n - 1 do
-                        local c = objects:get(i):getContainer()
+                        local o = objects:get(i)
+                        local c = o:getContainer()
                         if c then n = n + 64 * (c:getItems():size() + 1) end
+                        local list = o:getAttachedAnimSprite()
+                        if list then n = n + 4096 * list:size() end
                     end
-                    local floor = sq:getFloor()
-                    local list = floor and floor:getAttachedAnimSprite()
-                    if list then n = n + 4096 * list:size() end
                 end
                 s = (s * 31 + n) % 2147483629
             end

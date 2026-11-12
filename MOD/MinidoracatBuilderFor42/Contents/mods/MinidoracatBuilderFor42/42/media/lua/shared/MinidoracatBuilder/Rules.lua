@@ -200,6 +200,9 @@ function Rules.recordCorners()
     Rules.corners = n
 end
 
+-- 原版沒給任何種類屬性的柵欄立柱，照名稱列成柱子：帶刺高圍欄（fencing_01_48–52）那組的立柱（B 站 3t47k 2026-11-11：吸管認不出）
+local POST = { fencing_01_53 = true }
+
 -- 圖塊定義（重新）載入：屬性是新的、還沒被改過，照這份重記
 function Rules.onTileDefinitions(manager)
     WINDOW_STATE = {}
@@ -281,7 +284,7 @@ local function decor(name, p, mt)
     if p:has(collideN) or p:has(collideW) then return nil, "BLOCKS_EDGE" end
     -- 柵欄柱、收尾柱（沒有牆鍵，只有撞車）與牆配方指定的轉角柱（使用者 2026-10-31 選新增「柱子」）。
     -- 只動原本不列的圖：已經列出的項目不換種類。撞車是字串屬性（IsoPropertyType.java:212，原版 GameClient.java:1060 同查法）
-    if p:has("HitByCar") or CORNER[name] then return "post" end
+    if p:has("HitByCar") or CORNER[name] or POST[name] then return "post" end
     return nil, "NO_KIND"
 end
 
@@ -437,6 +440,20 @@ end
 -- 地圖也是獨立物件，照舊。ponytail：多格的地面覆蓋（正式服 14 個 tiledef MOD 都沒有）照舊建物件；有了再逐格掛。
 function Rules.onFloor(kind, spr)
     return kind == "floorOverlay" and spr:getSpriteGrid() == nil and spr:getProperties():has(FloorOverlay)
+end
+
+-- 牆面疊圖（地腳線、污垢、塗鴉這類，帶 WallOverlay 的掛牆物）：照地圖讀檔掛在那條邊的牆上（CellLoader.java:201-251，
+-- 旗標照它的順序看 attachedSE → attachedW → attachedN），獨立物件會和牆的深度打架、畫出斜條紋（2026-11-11 B 站回報）。
+-- 回那條邊（"SE"／"W"／"N"），不掛的回 nil。能搬的（IsMoveAble：招牌、掛畫）照舊建物件：原版搬動撿不起附加圖；
+-- 多格的照舊（同 Rules.onFloor）。那條邊沒有牆時照舊建物件（Place.wallAt，地圖同一條退路）
+function Rules.onWall(kind, spr)
+    if kind ~= "wallObject" or spr:getSpriteGrid() ~= nil then return nil end
+    local p = spr:getProperties()
+    if not p:has(WallOverlay) or p:has("IsMoveAble") then return nil end
+    if p:has(attachedSE) then return "SE" end
+    if p:has(attachedW) then return "W" end
+    if p:has(attachedN) then return "N" end
+    return nil
 end
 
 -- 牆型窗：窗和窗框畫在同一張（tiledef 寫 wall 型別、也自己寫 WindowN/W，例 walls_commercial_01_96）。地圖照 IsoWindow

@@ -1,6 +1,6 @@
 -- 拆除（第五階段，設計稿「拆」）：本 MOD 蓋的、Cost.refund 是 "builder" 的東西（不能搬、原版不照材質拆的 IsoThumpable、
--- 燈、家電、掛在地板上的地面覆蓋）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：照 Place.refundOf，燈與家電記在伺服器
--- 帳本 Ledger；地面覆蓋記在覆蓋帳本 Overlays）。
+-- 燈、家電、掛上去的地面覆蓋與牆面疊圖）用本工具拆，每項退 1..v（v＝伺服器寫的退料表：照 Place.refundOf，燈與家電記在
+-- 伺服器帳本 Ledger；掛上去的圖記在覆蓋帳本 Overlays）。
 -- 兩端共用、只讀世界：客戶端右鍵選單用 preview 判斷，伺服器 Server.dismantle 照同一份重查後才拆。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
@@ -77,44 +77,51 @@ function Dismantle.find(sq, name)
     return nil
 end
 
--- 掛在地板上的地面覆蓋（Rules.onFloor、Place.attach）：sq 的地板掛著 name、name 是會掛在地板上的圖，回
--- { sq, floor, name, spr }，否則 nil。不看記號：伺服器拆不拆、退多少只看覆蓋帳本（Server.dismantle），沒有那一筆回 NOT_OURS。
+-- 掛上去的地面覆蓋與牆面疊圖（Rules.onFloor、Rules.onWall、Place.attach）：name 是會掛上去的圖、sq 上它該掛的那一件
+-- （Place.host）掛著它，回 { sq, host, name, spr, kind, edge }，否則 nil。不看記號：伺服器拆不拆、退多少只看覆蓋帳本
+-- （Server.dismantle），沒有那一筆回 NOT_OURS。
 function Dismantle.hung(sq, name)
-    local floor = sq:getFloor()
-    if not (floor and Place.attachedAt(floor, name)) then return nil end
     local spr = Entry.sprite(name)
-    if not (spr and Rules.onFloor(Rules.classify(spr), spr)) then return nil end
-    return { sq = sq, floor = floor, name = name, spr = spr }
+    if not spr then return nil end
+    local kind = Rules.classify(spr)
+    local host, edge = Place.host(sq, spr, kind)
+    if not (host and Place.attachedAt(host, name)) then return nil end
+    return { sq = sq, host = host, name = name, spr = spr, kind = kind, edge = edge }
 end
 
--- 右鍵選單用：同上，而且地板記號（Place.attach 寫的 builderOverlays）寫著是本 MOD 掛的。記號只決定列不列
+-- 右鍵選單用：同上，而且那一件的記號（Place.attach 寫的 builderOverlays）寫著是本 MOD 掛的。記號只決定列不列
 function Dismantle.overlay(sq, name)
-    local floor = sq:getFloor()
-    local own = floor and floor:hasModData() and floor:getModData().builderOverlays
+    local t = Dismantle.hung(sq, name)
+    local own = t and t.host:hasModData() and t.host:getModData().builderOverlays
     if type(own) ~= "table" or not own[name] then return nil end
-    return Dismantle.hung(sq, name)
+    return t
 end
 
--- sq 上本 MOD 掛的每一張地面覆蓋（右鍵選單），照名稱排（一格只有幾張，逐張插入；不用 table.sort，家族規則）
+-- sq 上本 MOD 掛的每一張（右鍵選單、一區拆除），照名稱排（一格只有幾張，逐張插入；不用 table.sort，家族規則）。
+-- 記號在哪一件上都收（地板、各邊的牆：格上每一件都看），同名只列一次
 function Dismantle.overlays(sq)
-    local out, floor = {}, sq:getFloor()
-    local own = floor and floor:hasModData() and floor:getModData().builderOverlays
-    if type(own) ~= "table" then return out end
-    for name in pairs(own) do
-        local t = type(name) == "string" and Dismantle.overlay(sq, name)
-        if t then
-            local i = #out + 1
-            while i > 1 and out[i - 1].name > name do
-                out[i] = out[i - 1]
-                i = i - 1
+    local out, seen, objects = {}, {}, sq:getObjects()
+    local function collect(o)
+        local own = o and o:hasModData() and o:getModData().builderOverlays
+        for name in pairs(type(own) == "table" and own or {}) do
+            local t = type(name) == "string" and not seen[name] and Dismantle.overlay(sq, name)
+            if t then
+                seen[name] = true
+                local j = #out + 1
+                while j > 1 and out[j - 1].name > name do
+                    out[j] = out[j - 1]
+                    j = j - 1
+                end
+                out[j] = t
             end
-            out[i] = t
         end
     end
+    collect(sq:getFloor())
+    for i = 0, objects:size() - 1 do collect(objects:get(i)) end
     return out
 end
 
--- 拆一張掛在地板上的：沒有物件要移除，格子照那一格（Dismantle.check、Dismantle.tools）
+-- 拆一張掛上去的：沒有物件要移除，格子照那一格（Dismantle.check、Dismantle.tools）
 function Dismantle.overlayPlan(t)
     return { remove = {}, refund = {}, overlay = t, foreign = false }
 end
