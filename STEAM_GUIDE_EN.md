@@ -186,6 +186,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Limit[/b]: up to 3 blocking objects and containers per tile; admins can change it (see Sandbox options).
 [*] [b]Tiles you can't overlap on[/b]: no floor, stairs or a stair landing, water, someone standing there, or the same tile already there.
 [*] [b]Still vanilla rules[/b]: small things that sit on tables and crates vanilla lets you stack (see Stacking crates) don't need Overlap; two table-like pieces can't share a tile through Overlap.
+[*] [b]Removing the middle piece[/b]: each piece is drawn at its own height, so if you remove the one in the middle, the one above stays where it was.
 [*] [b]Other kinds[/b]: walls, floors, lights and the rest have their own rules for sharing a tile, so the Overlap button is greyed out.
 [/list]
 [h3]Distance and where you stand[/h3]
