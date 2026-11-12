@@ -6862,10 +6862,11 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local realCore2, realKeyName, realKb, realKid = getCore, getKeyName, Keyboard, KeybindId
     KeybindId = KeybindId or {}
     local binds = { MinidoracatBuilder_LayerUp = 201, MinidoracatBuilder_LayerDown = 209 }
+    local alts = {} -- 替代鍵：getKey 只回主鍵，isKey 兩個都認（Core.java:2405-2416）
     Keyboard = { KEY_PRIOR = 201, KEY_NEXT = 209 }
     getKeyName = function(k) return "K" .. k end
     getCore = function() return { getKey = function(_, name) return binds[name] or 0 end,
-        isKey = function(_, name, k) return type(name) == "string" and binds[name] == k end } end
+        isKey = function(_, name, k) return type(name) == "string" and (binds[name] == k or alts[name] == k) end } end
     check(Cursor.keyText("PgUp a PgDn") == "PgUp a PgDn", "換層鍵是預設：提示不動")
     binds.MinidoracatBuilder_LayerUp, binds.MinidoracatBuilder_LayerDown = 19, 0
     check(Cursor.keyText("PgUp a PgDn") == "K19 a -", "改了鍵：提示寫實際鍵名，沒綁寫「-」")
@@ -6874,6 +6875,9 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     local stay = lc.up
     lc:rotateKey(19)
     check(stay == false and lc.up == true, "游標照綁的鍵換層：舊的 PgUp 不再有用，新鍵換到上一層")
+    alts.MinidoracatBuilder_LayerDown = 33
+    lc:rotateKey(33)
+    check(lc.up == false, "替代鍵也換層（照 isKey 比，不是只比 getKey 的主鍵）")
     getCore, getKeyName, Keyboard, KeybindId = realCore2, realKeyName, realKb, realKid
     sb.MaxCellsPerDrag = realMax
 end)()

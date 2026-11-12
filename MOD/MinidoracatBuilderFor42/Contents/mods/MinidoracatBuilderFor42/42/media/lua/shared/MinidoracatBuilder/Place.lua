@@ -137,16 +137,12 @@ end
 -- 這條格邊已經有東西：牆、牆角、門框、窗框、柵欄、門、窗，以及其他擋這條邊的物件
 -- （原版 isObjectSpriteBlockingWallPlacement 看 collideN/W，ISBuildIsoEntity.lua:159-175）。skip、dirt 見 has
 local function edgeTaken(sq, north, skip, dirt)
-    if north then
-        return has(sq, F.WallN, skip, dirt) or has(sq, F.WallNTrans, skip, dirt) or has(sq, F.WallNW, skip, dirt)
-            or has(sq, F.collideN, skip, dirt) or has(sq, F.DoorWallN, skip, dirt) or has(sq, "DoorWallNTrans", skip, dirt)
-            or has(sq, F.WindowN, skip, dirt) or has(sq, F.HoppableN, skip, dirt) or has(sq, F.TallHoppableN, skip, dirt)
-            or sq:getDoor(NS) ~= nil or sq:getWindow(NS) ~= nil
+    -- 鍵只寫一份（EDGE_KEYS）：這裡和牆面疊圖的宿主判斷要一致
+    for _, k in ipairs(EDGE_KEYS[north and "N" or "W"]) do
+        if has(sq, k, skip, dirt) then return true end
     end
-    return has(sq, F.WallW, skip, dirt) or has(sq, F.WallWTrans, skip, dirt) or has(sq, F.WallNW, skip, dirt)
-        or has(sq, F.collideW, skip, dirt) or has(sq, F.DoorWallW, skip, dirt) or has(sq, "DoorWallWTrans", skip, dirt)
-        or has(sq, F.WindowW, skip, dirt) or has(sq, F.HoppableW, skip, dirt) or has(sq, F.TallHoppableW, skip, dirt)
-        or sq:getDoor(EW) ~= nil or sq:getWindow(EW) ~= nil
+    local side = north and NS or EW
+    return sq:getDoor(side) ~= nil or sq:getWindow(side) ~= nil
 end
 
 -- Basement Building（Workshop 3806513504，Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）
@@ -1067,6 +1063,8 @@ end
 --     原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
 --     物件不該再退料。
 function Place.onAboutToBeRemoved(obj)
+    -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
+    if instanceof(obj, "IsoWorldInventoryObject") then return end
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
     if not instanceof(obj, "IsoThumpable") then return end
