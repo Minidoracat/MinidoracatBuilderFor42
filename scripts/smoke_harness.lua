@@ -4914,6 +4914,31 @@ print("情境二十六之二：牆上疊圖照地圖掛在牆上（使用者 202
     check(okT4 and #H4.objects == 2 and H4.objects[1] ~= OW4 and okF4 and cmdF4 == "placed" and aF4.replaced == true and H4.objects[2]
         and H4.objects[2].name == "wo_fence_01_1" and Place.wallAt(H4, "N") == nil and Overlays.get(H4, TN, "N") == nil
         and whole4, "牆換成沒有 cutN 的柵欄：牆上的圖掛不回去，整份退（不擲 1..v）、那條邊的帳本清掉")
+    -- 牆換成帶牆邊的高柵欄（原版 fencing_01_8 這組：TallHoppableN＋WallN，引擎因此設 cutN；目錄歸柵欄、和牆同一組）：
+    -- 那條邊照樣有宿主，圖掛回新柵欄、帳本那一筆留著，地上只有換牆的差額，不退疊圖的料
+    nowMs = nowMs + 60000 -- 避開收請求的頻率限制
+    local tallS = sprite("wo_fence_01_8", 2727, { flags = { "TallHoppableN", "WallN", "cutN" },
+        keys = { TallHoppableN = "", WallN = "" } })
+    world({ wallS, wall2S, wallWS, trimN, trimW, trimSE, signS, gridT, fenceS, tallS })
+    local H5 = edgeSq(47, 51, { WallN = true })
+    wallOf(H5, sprite("wo_floor_01_4", 2728, { flags = { "solidfloor" } }))
+    local OW5 = wallOf(H5, wallS, true)
+    give(Pl, pay)
+    local okT5 = build(Pl, 2724, TN, { 47, 51, 0 })
+    local pay5, back5 = Check.net(Cost.sum(Cost.forCells("fence", { tallS }, 1)).items, OW5.mats)
+    give(Pl, pay5)
+    here.dropped = {}
+    IsoThumpable.new = attNew
+    local okF5, cmdF5, aF5 = build(Pl, 2725, "wo_fence_01_8", { 47, 51, 0 })
+    IsoThumpable.new = realNew
+    local NF5 = H5.objects[2]
+    local onlyBack = true
+    for ft, n in pairs(here.dropped) do if n ~= (back5[ft] or 0) then onlyBack = false end end
+    for ft, n in pairs(back5) do if here.dropped[ft] ~= n then onlyBack = false end end
+    check(Rules.classify(tallS) == "fence" and okT5 and okF5 and cmdF5 == "placed" and aF5.replaced == true and #H5.objects == 2
+        and NF5 and NF5.name == "wo_fence_01_8" and Place.wallAt(H5, "N") == NF5 and hung(NF5) == TN
+        and samePay(Overlays.get(H5, TN, "N")) and onlyBack,
+        "牆換成帶牆邊的高柵欄（WallN＋TallHoppableN）：圖掛回新柵欄、帳本那一筆留著，地上只有換牆的差額、不退疊圖的料")
 
     -- 讀檔改掛：42.22.2-0.8.0 以前蓋的獨立牆上疊圖，帳本建好後的下一個 tick 掛到那條邊的牆；沒有牆的照舊
     local function legacy(sq, spr)
