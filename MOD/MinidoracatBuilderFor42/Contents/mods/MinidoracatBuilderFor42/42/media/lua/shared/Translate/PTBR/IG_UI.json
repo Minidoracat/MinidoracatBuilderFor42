@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Escolher tile: clique em algo para selecionar o tile dele",
   "IGUI_MBLD_Pick_Many": "Se houver vários, aparece uma lista",
   "IGUI_MBLD_Pick_HintClick": "Botão esquerdo: escolher",
-  "IGUI_MBLD_Pick_None": "Não há tile para escolher neste quadrado."
+  "IGUI_MBLD_Pick_None": "Não há tile para escolher neste quadrado.",
+  "IGUI_MBLD_Overlap": "Sobrepor",
+  "IGUI_MBLD_Overlap_Tip": "Sobrepor: quando ativado, você pode construir em um quadrado que já tem algo, por exemplo um cooktop sobre um balcão, ou caixas desenhadas em alturas diferentes em uma só pilha. Limite por quadrado: %1. Desativado, valem as regras de sempre, e construir outro estilo sobre uma peça sua a substitui.",
+  "IGUI_MBLD_Overlap_TipOff": "Sobrepor está desativado neste servidor.",
+  "IGUI_MBLD_Overlap_TipKind": "Este item não pode ser sobreposto: só móveis, recipientes e objetos sólidos.",
+  "IGUI_MBLD_OverlapLevel": "Sobrepor: %1 / %2 neste quadrado",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "Este quadrado já está cheio (limite: %1). Escolha outro quadrado ou remova uma peça primeiro.",
+  "IGUI_MBLD_Material_all": "Material: todos",
+  "IGUI_MBLD_Material_wood": "Material: tábuas",
+  "IGUI_MBLD_Material_metal": "Material: metal",
+  "IGUI_MBLD_Material_masonry": "Material: tijolo, pedra",
+  "IGUI_MBLD_Material_glass": "Material: vidro",
+  "IGUI_MBLD_Material_log": "Material: troncos",
+  "IGUI_MBLD_Material_other": "Material: outros",
+  "IGUI_MBLD_Material_Tip": "Mostra só os itens cujo custo inclui este material, tendo você ou não. Ferragens como pregos e parafusos não contam.",
+  "IGUI_MBLD_Empty_Material": "Nada aqui usa este material. Mude o material para Material: todos para ver tudo."
 }

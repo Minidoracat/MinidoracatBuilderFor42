@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "プレイヤーから項目のいちばん近いタイルまで 2〜8 タイル。項目は上下 1 階まで離れていてもかまいません。",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "一度に扱える最大数",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1〜64。1 回の建築または取り壊しで扱える最大数です。例：床を一面ドラッグしたとき、範囲を取り壊すとき。",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare": "1 タイルに置ける最大数",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1〜5。「重ね置き」がオンのとき、1 タイルに置ける、通行をふさぐ物とコンテナの最大数です。バニラの木箱を 3 つ積んだ場合も 3 です。1 にすると重ね置きはできません。\nこれから建てるものだけに適用され、建築済みのものはそのままです。",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "材料コスト倍率",
     "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0〜10。すべての材料の数にこの倍率を掛け、端数は切り上げます。0 なら材料は不要ですが、道具は必要です。自身の素材の種類に応じて材料に解体されるオブジェクト（ほとんどの家具）、カーテン、電球は 1 を下回らないため、解体で支払った以上の材料が戻ることはありません。建築チートをオンにしている管理者は材料を支払いません。",
     "Sandbox_MinidoracatBuilder_RequireSkill": "バニラのスキルレベルが必要",

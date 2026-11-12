@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Choisir la tile : cliquez sur un élément pour sélectionner sa tile",
   "IGUI_MBLD_Pick_Many": "S'il y en a plusieurs, une liste s'affiche",
   "IGUI_MBLD_Pick_HintClick": "Clic gauche : choisir",
-  "IGUI_MBLD_Pick_None": "Aucune tile à choisir sur cette case."
+  "IGUI_MBLD_Pick_None": "Aucune tile à choisir sur cette case.",
+  "IGUI_MBLD_Overlap": "Superposer",
+  "IGUI_MBLD_Overlap_Tip": "Superposer : activé, vous pouvez construire sur une case qui contient déjà quelque chose, par exemple une plaque de cuisson sur un comptoir, ou des caisses dessinées à différentes hauteurs en une seule pile. Limite par case : %1. Désactivé, les règles habituelles s'appliquent, et construire un autre style sur votre propre pièce la remplace.",
+  "IGUI_MBLD_Overlap_TipOff": "Superposer est désactivé sur ce serveur.",
+  "IGUI_MBLD_Overlap_TipKind": "Cet objet ne peut pas être superposé : seuls les meubles, les conteneurs et les objets pleins le peuvent.",
+  "IGUI_MBLD_OverlapLevel": "Superposer : %1 / %2 sur cette case",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "Cette case est pleine (limite : %1). Choisissez une autre case ou retirez d'abord une pièce.",
+  "IGUI_MBLD_Material_all": "Matériau : tous",
+  "IGUI_MBLD_Material_wood": "Matériau : planches",
+  "IGUI_MBLD_Material_metal": "Matériau : métal",
+  "IGUI_MBLD_Material_masonry": "Matériau : brique, pierre",
+  "IGUI_MBLD_Material_glass": "Matériau : verre",
+  "IGUI_MBLD_Material_log": "Matériau : bûches",
+  "IGUI_MBLD_Material_other": "Matériau : autre",
+  "IGUI_MBLD_Material_Tip": "N'affiche que les objets dont le coût inclut ce matériau, que vous l'ayez ou non. La quincaillerie comme les clous et les vis ne compte pas.",
+  "IGUI_MBLD_Empty_Material": "Rien ici n'utilise ce matériau. Réglez le matériau sur Matériau : tous pour tout voir."
 }

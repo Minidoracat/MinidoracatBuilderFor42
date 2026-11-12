@@ -146,8 +146,8 @@ end
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
 --   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools
 --   ／SKILL 的 perk, level, have）。
---   info＝{ entry, spr, cells = { { x, y, z, spr, sq, yoff, cost }, ... }, sprites, costs, total, replace, pay, back }，
---   算到哪填到哪。
+--   info＝{ entry, spr, cells = { { x, y, z, spr, sq, yoff, cost, over }, ... }, sprites, costs, total, replace, pay, back }，
+--   算到哪填到哪（over＝這一格是照疊放放的，見 opts.overlap）。
 -- 原地替換（單格、不是樓梯）：格上有本工具蓋的同一組另一款（Dismantle.replaceable）時，它不算擋（Place.check 的
 -- replacing），info.replace＝{ obj, kind, plan, had, estimated }；舊的不能拆（裡面有東西、框上裝著門窗）回 NOT_EMPTY／ATTACHED。
 -- had＝舊的退料表：伺服器照 Place.refundOf（查不到是 nil，Server.complete 回 NOT_OURS，一樓地板照一般蓋）；預覽照
@@ -158,7 +158,9 @@ end
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
 -- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）。
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂或地板格（Place.roofAt、Place.floorAt），後面的格子可以靠它撐著。
--- 伺服器（opts 為 nil）不查材料：Server.complete 自己 plan。
+-- opts.overlap：疊放模式（Place.check 的 overlap；只對 Place.OVERLAP 的種類有用）。玩家在建造視窗打開，隨請求送到伺服器
+-- （Server.intent 的 o），伺服器只帶這一欄（沒有 preview，照樣補格子、不查摘要）。開著時不找原地替換：玩家要的是疊上去。
+-- 伺服器（opts 為 nil 或只有 overlap）不查材料：Server.complete 自己 plan。
 function Check.item(player, name, d, anchor, opts)
     local preview = opts ~= nil and opts.preview == true
     local walk = preview and opts.walk == true
@@ -166,6 +168,7 @@ function Check.item(player, name, d, anchor, opts)
     local info = {}
     local entry, code = Entry.resolve(name) -- 設定可能在施工途中被改
     if not entry then return code, nil, info end
+    local overlap = opts ~= nil and opts.overlap == true and Place.OVERLAP[entry.kind] == true
     info.entry = entry
     local spr = Entry.face(entry, d)
     if not spr then return "BAD_FACE", nil, info end
@@ -216,11 +219,12 @@ function Check.item(player, name, d, anchor, opts)
     -- （不帶 replacing 的 Place.check 放不下），放得下就照舊同格共存（不同朝向的掛件、同格的屋頂片、桌上的東西）
     local Dismantle = MinidoracatBuilder.Dismantle
     local old, oldKind
-    if #cells == 1 and entry.kind ~= "stairs" and cells[1].sq and Dismantle then
+    if not overlap and #cells == 1 and entry.kind ~= "stairs" and cells[1].sq and Dismantle then
         local c = cells[1]
         old, oldKind = Dismantle.replaceable(c.sq, entry.kind, c.spr)
         if old and entry.kind ~= "floor" then
-            local ok, fits = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned)
+            -- 後兩個參數明寫：Kahlua 少傳的參數不保證是 nil（家族 pitfalls「少傳的參數」）
+            local ok, fits = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned, nil, false)
             if ok and fits then old, oldKind = nil, nil end
         end
         if old then
@@ -234,13 +238,13 @@ function Check.item(player, name, d, anchor, opts)
     end
     for j, c in ipairs(cells) do
         if c.sq then
-            local ok, fine, yoff = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned, old)
+            local ok, fine, yoff, over = pcall(Place.check, entry.kind, c.spr, c.sq, player, c.role, planned, old, overlap)
             if not ok then
                 print(LOG .. "check failed e=" .. name .. ": " .. tostring(fine))
                 return "INTERNAL", nil, info
             end
             if not fine then return yoff or "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
-            c.yoff = yoff
+            c.yoff, c.over = yoff, over == true or nil
             for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
                 local o = cells[k2]
                 if o.sq and o.z == c.z and math.abs(o.x - c.x) + math.abs(o.y - c.y) == 1 and c.sq:isSomethingTo(o.sq) then

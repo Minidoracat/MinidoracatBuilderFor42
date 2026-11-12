@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "Oyuncudan öğenin en yakın karesine 2 ila 8 kare. Öğe en fazla bir kat yukarıda veya aşağıda olabilir.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Bir seferde en fazla öğe",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 ila 64. Tek bir inşa veya sökmenin kaç öğe kapsayabileceği; örneğin bir zemin alanı sürüklerken ya da bir alanı sökerken.",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare": "Kare başına en fazla parça",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1 ila 5. Üst üste açıkken bir karede en fazla kaç engelleyici nesne ve konteyner olabileceği; oyunun kendi kasalarından üst üste üç tane de 3 sayılır. Üst üste özelliğini kapatmak için 1 yap.\nYalnızca yeni yapılanları etkiler; önceden inşa edilenler yerinde kalır.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Malzeme maliyeti çarpanı",
     "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 ila 10. Her malzeme miktarını çarpar, yukarı yuvarlanır. 0, malzeme gerekmez demektir; aletler yine gerekir. Kendi malzeme türüne göre malzemeye sökülen nesneler (çoğu mobilya), perdeler ve ampuller hiçbir zaman 1'in altına inmez; böylece sökmek ödenenden fazlasını geri vermez. Hileli İnşa Modu açık olan yöneticiler hiç ödemez.",
     "Sandbox_MinidoracatBuilder_RequireSkill": "Beceri seviyesi gereksin",

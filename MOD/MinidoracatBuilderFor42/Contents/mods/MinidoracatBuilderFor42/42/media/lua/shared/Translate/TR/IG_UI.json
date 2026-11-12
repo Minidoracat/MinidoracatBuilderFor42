@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Tile seç: bir şeye tıkla, onun tile'ı seçilsin",
   "IGUI_MBLD_Pick_Many": "Birden fazlaysa bir liste açılır",
   "IGUI_MBLD_Pick_HintClick": "Sol tık: seç",
-  "IGUI_MBLD_Pick_None": "Bu karede seçilecek tile yok."
+  "IGUI_MBLD_Pick_None": "Bu karede seçilecek tile yok.",
+  "IGUI_MBLD_Overlap": "Üst üste",
+  "IGUI_MBLD_Overlap_Tip": "Üst üste: açıkken üstünde zaten bir şey olan bir kareye inşa edebilirsin; örneğin tezgâhın üstüne bir ocak ya da farklı yüksekliklerde çizilmiş kasaları tek bir yığına. Kare başına sınır: %1. Kapalıyken her zamanki kurallar geçerli; kendi parçanın üstüne başka bir stil inşa etmek onu değiştirir.",
+  "IGUI_MBLD_Overlap_TipOff": "Bu sunucuda Üst üste kapalı.",
+  "IGUI_MBLD_Overlap_TipKind": "Bu öğe üst üste konamaz: yalnızca mobilya, konteyner ve katı nesneler konabilir.",
+  "IGUI_MBLD_OverlapLevel": "Üst üste: bu karede %1 / %2",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "Bu kare dolu (sınır: %1). Başka bir kare seç ya da önce bir parçayı kaldır.",
+  "IGUI_MBLD_Material_all": "Malzeme: hepsi",
+  "IGUI_MBLD_Material_wood": "Malzeme: kalas",
+  "IGUI_MBLD_Material_metal": "Malzeme: metal",
+  "IGUI_MBLD_Material_masonry": "Malzeme: tuğla, taş",
+  "IGUI_MBLD_Material_glass": "Malzeme: cam",
+  "IGUI_MBLD_Material_log": "Malzeme: kütük",
+  "IGUI_MBLD_Material_other": "Malzeme: diğer",
+  "IGUI_MBLD_Material_Tip": "Yalnızca maliyetinde bu malzeme olan öğeleri gösterir, sende olsun olmasın. Çivi ve vida gibi hırdavat sayılmaz.",
+  "IGUI_MBLD_Empty_Material": "Burada bu malzemeyi kullanan bir şey yok. Hepsini görmek için malzemeyi Malzeme: hepsi yap."
 }

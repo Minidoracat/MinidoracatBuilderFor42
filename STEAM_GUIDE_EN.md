@@ -47,6 +47,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
 [*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
+[*] [b]Material[/b]: pick planks, metal, brick and stone, glass or logs to list only items whose cost includes that material; Other is everything that uses none of them, such as cloth or electronics. It doesn't look at what you carry, and it works together with Only what I can build. Hardware such as nails and screws doesn't count.
 [*] [b]One item per object[/b]: the facings of one object are one item.
 [*] [b]Different objects with the same name[/b]: each is listed separately.
 [*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
@@ -137,7 +138,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]After pressing Build[/b]: the window hides and a ghost appears on the ground.
 [*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
-[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; when your skill is too low, which skill and level you need.
+[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; with Overlap on over an occupied tile, which piece it is on that tile; when your skill is too low, which skill and level you need.
 [*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things).
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
@@ -175,6 +176,17 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Before replacing[/b]: empty containers, and take doors, windows or boards off frames.
 [*] [b]Not replaced[/b]: lights, stairs, doors, windows, curtains, floor overlays, multi-tile furniture and anything movable.
 [*] [b]Right-click Replace with... (Build Anything)[/b]: opens the build window showing only styles of the same kind that use the same materials and tools; click the filter above the search box to go back to the full catalog.
+[/list]
+[h3]Overlap[/h3]
+[list]
+[*] [b]What it's for[/b]: tile-pack pieces meant to share a tile with another piece, such as a cooktop on a counter, lockers drawn as bottom, middle and top, or a rack with clothes hanging on it.
+[*] [b]Turning it on[/b]: select furniture, a container or a solid object, press Overlap below the details so it lights up, then press Build. It stays on until you turn it off.
+[*] [b]When on[/b]: you can build on a tile that already holds something, and the box by the mouse shows "Overlap: 2 / 3 on this tile". Nothing is replaced in place.
+[*] [b]When off[/b]: the usual rules apply: an occupied tile blocks the build, and building over your own piece replaces it.
+[*] [b]Limit[/b]: up to 3 blocking objects and containers per tile; admins can change it (see Sandbox options).
+[*] [b]Tiles you can't overlap on[/b]: no floor, stairs or a stair landing, water, someone standing there, or the same tile already there.
+[*] [b]Still vanilla rules[/b]: small things that sit on tables and crates vanilla lets you stack (see Stacking crates) don't need Overlap; two table-like pieces can't share a tile through Overlap.
+[*] [b]Other kinds[/b]: walls, floors, lights and the rest have their own rules for sharing a tile, so the Overlap button is greyed out.
 [/list]
 [h3]Distance and where you stand[/h3]
 [list]
@@ -577,7 +589,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
-[*] [b]Rules[/b]: the eleven rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
+[*] [b]Rules[/b]: the twelve rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
 [/list]
 [h3]Applying[/h3]
 [list]
@@ -606,6 +618,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Where players can build[/td][td]Like vanilla[/td][td]Like vanilla / Own safehouses only[/td][td]Like vanilla: unclaimed land and safehouses where the player may build. Own safehouses only: only inside safehouses where the player may build[/td][/tr]
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
 [tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area[/td][/tr]
+[tr][td]Most pieces per tile[/td][td]3[/td][td]1–5[/td][td]With Overlap on, how many blocking objects and containers one tile can hold. 1 turns Overlap off. Only affects new builds; pieces already built stay[/td][/tr]
 [tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
 [tr][td]Require vanilla skill levels[/td][td]Off[/td][td]On/off[/td][td]Each item needs the skill level of the matching vanilla recipe, for example a wooden wall needs Carpentry 2, a wooden window Carpentry 5, wooden stairs Carpentry 6, a brick wall Masonry 2 and a metal wall Welding 3. Furniture and containers have no vanilla recipe, so they need Carpentry 1, 3 or 5 by carry weight, or Welding 3 if metal. Wall hangings, overlays, curtains and lights need no skill. The build cheat isn't affected, and dismantling still needs no skill. See Hardcore options[/td][/tr]
 [tr][td]Vanilla recipe materials[/td][td]Off[/td][td]On/off[/td][td]Items also use up the consumables of the matching vanilla recipe: masonry uses clay cement or concrete (4 uses per bucket), metal uses Welding Torch fuel (10 uses per torch) and Welding Rods (20 uses per pack). Stone walls take Stone Block instead of Brick. Consumables come from your inventory and the ground next to you, aren't refunded when dismantled and give no extra XP. The material cost multiplier applies to uses too. See Hardcore options[/td][/tr]

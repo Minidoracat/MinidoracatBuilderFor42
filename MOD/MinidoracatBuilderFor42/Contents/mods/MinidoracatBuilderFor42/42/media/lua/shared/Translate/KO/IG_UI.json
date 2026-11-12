@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "타일 고르기: 클릭한 것의 타일을 선택",
   "IGUI_MBLD_Pick_Many": "여러 개면 목록이 뜹니다",
   "IGUI_MBLD_Pick_HintClick": "좌클릭: 고르기",
-  "IGUI_MBLD_Pick_None": "이 칸에는 고를 수 있는 타일이 없습니다."
+  "IGUI_MBLD_Pick_None": "이 칸에는 고를 수 있는 타일이 없습니다.",
+  "IGUI_MBLD_Overlap": "겹쳐 놓기",
+  "IGUI_MBLD_Overlap_Tip": "겹쳐 놓기: 켜면 이미 무언가 있는 칸에도 지을 수 있습니다. 예: 카운터 위에 쿡탑, 서로 다른 높이로 그려진 상자를 한 더미로. 칸당 한도: %1. 끄면 원래 규칙대로, 내가 지은 것 위에 다른 스타일을 지으면 교체됩니다.",
+  "IGUI_MBLD_Overlap_TipOff": "이 서버에서는 겹쳐 놓기가 꺼져 있습니다.",
+  "IGUI_MBLD_Overlap_TipKind": "이 항목은 겹쳐 놓을 수 없습니다. 가구, 보관함, 통과 불가 물체만 가능합니다.",
+  "IGUI_MBLD_OverlapLevel": "겹쳐 놓기: 이 칸 %1 / %2",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "이 칸은 이미 가득 찼습니다 (한도: %1). 다른 칸을 고르거나 먼저 하나를 치우세요.",
+  "IGUI_MBLD_Material_all": "재료: 전체",
+  "IGUI_MBLD_Material_wood": "재료: 판자",
+  "IGUI_MBLD_Material_metal": "재료: 금속",
+  "IGUI_MBLD_Material_masonry": "재료: 벽돌·돌",
+  "IGUI_MBLD_Material_glass": "재료: 유리",
+  "IGUI_MBLD_Material_log": "재료: 통나무",
+  "IGUI_MBLD_Material_other": "재료: 기타",
+  "IGUI_MBLD_Material_Tip": "비용에 이 재료가 들어가는 항목만 표시합니다. 가지고 있는지는 상관없습니다. 못, 나사못 같은 철물은 세지 않습니다.",
+  "IGUI_MBLD_Empty_Material": "여기에는 이 재료를 쓰는 항목이 없습니다. 재료를 '재료: 전체'로 바꾸면 전부 보입니다."
 }

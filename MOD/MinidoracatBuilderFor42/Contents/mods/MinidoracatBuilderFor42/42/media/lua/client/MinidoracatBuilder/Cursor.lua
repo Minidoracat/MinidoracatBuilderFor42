@@ -45,7 +45,7 @@ local ICON, PAD = 16, 6
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true,
-    NOT_EMPTY = true, ATTACHED = true }
+    SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 
 -- 從按下那格 (ax, ay) 拉到 (ex, ey) 的一排：同一列或同一欄（取位移大的那一軸），最多 max 格。回 { { x, y, z }, ... }
@@ -154,8 +154,9 @@ end
 -- 照同一個順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
 -- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、OVER_MAX）的不跑 Check.item，照那個碼。
+-- overlap：疊放模式（Check.item 的 opts.overlap），放開時隨請求送給伺服器。
 -- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
-function Cursor.preview(player, name, d, anchors, S)
+function Cursor.preview(player, name, d, anchors, S, overlap)
     local work
     if S then
         work = {}
@@ -170,7 +171,7 @@ function Cursor.preview(player, name, d, anchors, S)
             fine, code, extra = true, a.code, a.extra
         else
             fine, code, extra, info = pcall(Check.item, player, name, a[4] or d, a,
-                { preview = true, walk = true, summary = work, planned = planned })
+                { preview = true, walk = true, summary = work, planned = planned, overlap = overlap })
         end
         if not fine then
             print(LOG .. "preview failed e=" .. tostring(name) .. ": " .. tostring(code))
@@ -239,9 +240,12 @@ local function base(player)
     return o
 end
 
-function Cursor.new(player, entry, d)
+-- overlap：建造視窗的「疊放」開著（Window.build）；只在這一種能疊、伺服器沒關掉時記下
+function Cursor.new(player, entry, d, overlap)
     local o = base(player)
     o.name, o.entry = entry.name, entry
+    local P = B.Place
+    o.overlap = overlap == true and P.OVERLAP[entry.kind] == true and P.maxPerSquare() > 1 or nil
     o.offsBy = {}
     o.faces = Cursor.faces(entry)
     o:setFace(Cursor.pickFace(entry, o.faces, d))
@@ -257,7 +261,7 @@ function Cursor.new(player, entry, d)
 end
 
 -- 開始放置：建游標交給引擎。項目已經不能蓋（目錄過期、管理員關了來源）就發通知、不開。
-function Cursor.start(playerNum, name, d)
+function Cursor.start(playerNum, name, d, overlap)
     local player = getSpecificPlayer(playerNum)
     if not player then return nil end
     local entry, code = Entry.resolve(name)
@@ -268,7 +272,7 @@ function Cursor.start(playerNum, name, d)
     -- 換項目：舊游標（本工具的，或建造配方開的原版游標，Recipes.cursor）的 deactivate 不通知視窗回來
     local old = Cursor.get(playerNum) or (B.Recipes and B.Recipes.cursor(playerNum))
     if old then old.replaced = true end
-    local o = Cursor.new(player, entry, d or 0)
+    local o = Cursor.new(player, entry, d or 0, overlap)
     getCell():setDrag(o, playerNum)
     return o
 end
@@ -501,7 +505,7 @@ end
 -- ponytail：拖曳時每換一格整片重算（最多 MaxCellsPerDrag 次 Check.item）；量到卡頓再改成只算新增的格子。
 function Cursor:refresh(ax, ay, az, ex, ey)
     local anchors = self:anchors(ax, ay, az, ex, ey)
-    self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S)
+    self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S, self.overlap)
     local g, scale, warn = newGhosts(), Core.getTileScale(), self.colors.warning
     local good, bad = coreColors()
     local swapN = 0
@@ -542,6 +546,14 @@ local function stackLevel(r)
             end
             return n
         end
+    end
+    return nil
+end
+
+-- 照疊放放的那一格（Check.item 的 cells[i].over）：放下後是這一格第幾件、最多幾件。不是照疊放放的回 nil
+local function overlapLevel(r)
+    for _, c in ipairs(r.cells or {}) do
+        if c.over and c.sq then return B.Place.occupants(c.sq) + 1, B.Place.maxPerSquare() end
     end
     return nil
 end
@@ -637,7 +649,10 @@ function Cursor:texts()
     end
     self.label2 = label2
     local level = n == 1 and ok == 1 and stackLevel(res[1])
-    self.stack = level and getText("IGUI_MBLD_StackLevel", tostring(level)) or nil
+    local over, max = nil, nil
+    if n == 1 and ok == 1 then over, max = overlapLevel(res[1]) end
+    self.stack = level and getText("IGUI_MBLD_StackLevel", tostring(level))
+        or over and getText("IGUI_MBLD_OverlapLevel", tostring(over), tostring(max)) or nil
     self.swap = self:swapText()
     -- 前一筆還有格子在排隊：再放一次，Client.build 會清掉角色的動作佇列（redrag＝replace，使用者 2026-10-29），放開前先說
     local left, q = 0, ok > 0 and Cursor.queued()
@@ -950,7 +965,7 @@ function Cursor:tryBuild(x, y, z)
     end
     self.lineX, self.lineY = nil, nil
     if #anchors > 0 then
-        Cursor.send(self.character, self.name, anchors, parts)
+        Cursor.send(self.character, self.name, anchors, parts, self.overlap)
         self.kgen = nil -- 下一幀重算：標籤馬上寫出「再放一次會取消剛送出的 N 格」
     end
 end
@@ -994,11 +1009,11 @@ local function tell(player, code, extra, title)
 end
 
 -- 送一次建造（游標放開時，契約 C4）。anchors＝{ { x, y, z, d }, ... }（每格自己的朝向 0..5）；parts[i]＝第 i 格各片的虛影
--- { x, y, z, sprite, yoff }，省略就不畫排隊虛影。回 nonce，或 nil, 原因碼。
-function Cursor.send(player, name, anchors, parts)
+-- { x, y, z, sprite, yoff }，省略就不畫排隊虛影。overlap＝疊放模式（Client.build）。回 nonce，或 nil, 原因碼。
+function Cursor.send(player, name, anchors, parts, overlap)
     local w = { player = player, count = #anchors, placed = 0, at = getTimestampMs(), parts = parts }
     watch = w
-    local n, code = Client.build(player, name, anchors)
+    local n, code = Client.build(player, name, anchors, overlap)
     if not n then
         if watch == w then watch = nil end
         if not w.told then tell(player, code) end -- 單機的 intent 當場被拒時 onResult 已經通知過

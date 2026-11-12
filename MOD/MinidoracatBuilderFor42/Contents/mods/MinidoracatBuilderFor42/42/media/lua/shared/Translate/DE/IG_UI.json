@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Kachel wählen: Klick auf etwas wählt seine Kachel",
   "IGUI_MBLD_Pick_Many": "Bei mehreren erscheint eine Liste",
   "IGUI_MBLD_Pick_HintClick": "Linksklick: wählen",
-  "IGUI_MBLD_Pick_None": "Auf diesem Feld gibt es keine Kachel zum Wählen."
+  "IGUI_MBLD_Pick_None": "Auf diesem Feld gibt es keine Kachel zum Wählen.",
+  "IGUI_MBLD_Overlap": "Stapeln",
+  "IGUI_MBLD_Overlap_Tip": "Stapeln: Wenn an, kannst du auf einer Kachel bauen, auf der schon etwas steht, z. B. ein Kochfeld auf eine Theke oder Kisten, die in verschiedenen Höhen gezeichnet sind, zu einem Stapel. Limit pro Kachel: %1. Wenn aus, gelten die üblichen Regeln, und ein anderer Stil auf deinem eigenen Teil ersetzt es.",
+  "IGUI_MBLD_Overlap_TipOff": "Stapeln ist auf diesem Server ausgeschaltet.",
+  "IGUI_MBLD_Overlap_TipKind": "Dieses Objekt kann nicht gestapelt werden: nur Möbel, Behälter und feste Objekte.",
+  "IGUI_MBLD_OverlapLevel": "Stapeln: %1 / %2 auf dieser Kachel",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "Diese Kachel ist voll (Limit: %1). Wähle eine andere Kachel oder entferne zuerst ein Teil.",
+  "IGUI_MBLD_Material_all": "Material: alle",
+  "IGUI_MBLD_Material_wood": "Material: Bretter",
+  "IGUI_MBLD_Material_metal": "Material: Metall",
+  "IGUI_MBLD_Material_masonry": "Material: Ziegel, Stein",
+  "IGUI_MBLD_Material_glass": "Material: Glas",
+  "IGUI_MBLD_Material_log": "Material: Baumstämme",
+  "IGUI_MBLD_Material_other": "Material: Sonstiges",
+  "IGUI_MBLD_Material_Tip": "Zeigt nur, was dieses Material in den Kosten hat, egal ob du es dabeihast. Kleinteile wie Nägel und Schrauben zählen nicht.",
+  "IGUI_MBLD_Empty_Material": "Hier verwendet nichts dieses Material. Stell das Material auf „Material: alle“, um alles zu sehen."
 }

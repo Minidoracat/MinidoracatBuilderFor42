@@ -43,6 +43,7 @@ Admin.RULES = {
     { key = "WhereCanBuild", kind = "enum", count = 2, default = 1 },
     { key = "MaxDistance", kind = "number", min = 2, max = 8, step = 1, default = 3 },
     { key = "MaxCellsPerDrag", kind = "number", min = 1, max = 64, step = 1, default = 32 },
+    { key = "MaxPerSquare", kind = "number", min = 1, max = 5, step = 1, default = 3 },
     { key = "CostMultiplier", kind = "number", min = 0, max = 10, step = 0.05, default = 1 },
     { key = "RequireSkill", kind = "bool", default = false },
     { key = "RecipeMaterials", kind = "bool", default = false },

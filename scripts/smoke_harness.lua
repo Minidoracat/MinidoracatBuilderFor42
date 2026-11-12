@@ -1873,6 +1873,83 @@ do
         local affKeep = v.aff and v.aff.keep
         W.st.only, v.S, v.aff = false, nil, nil
         check(affKeep == false, "只看能蓋的：挑圖塊那一批沒做完就被重算換掉，仍照換了條件套")
+        -- 材料篩選（使用者 2026-11-12 選 dropdown）：沒開「只看能蓋的」也分批；做完只留成本用到那種材料的。
+        -- 這個假世界的成本全是木板：把第一項的分類快取成金屬（分類本身在情境四十三驗）
+        W.st.query = ""
+        W.onTab(v, "all")
+        local totalN, seeded = grid.items.n, grid.items[1]
+        v.mat = { [seeded] = { metal = true } }
+        W.setMaterial("wood")
+        local job = v.aff
+        while v.aff do W.runAffordable(v) end
+        local woodN, allWood = grid.items.n, not has(grid.items, seeded)
+        for i = 1, woodN do allWood = allWood and W.materialsOf(grid.items[i]).wood == true end
+        W.setMaterial("metal")
+        while v.aff do W.runAffordable(v) end
+        local metalOk = grid.items.n == 1 and grid.items[1] == seeded
+        W.setMaterial("all")
+        check(job ~= nil and job.mat == "wood" and job.only == false and woodN == totalN - 1 and allWood
+            and metalOk and v.aff == nil and grid.items.n == totalN,
+            "材料篩選：選木板只列成本有木板的、選金屬只列那一項；改回全部不分批、整份列回來")
+        -- 空狀態照實際流程（審查 1112 Codex 兩輪）：材料那關一項都沒過說材料，兩個篩選都開也一樣；材料有過、
+        -- 被「只看能蓋的」濾掉的照舊說只看能蓋的。完整圖塊名的搜尋同一套。缺料用快取假裝每一項都缺
+        function grid:getX() return 0 end
+        function grid:getY() return 0 end
+        local function drain() while v.aff do W.runAffordable(v) end return v.emptyTitle and v.emptyTitle[1] end
+        local Cat = MinidoracatBuilder.Catalog
+        local cs0 = Cat.state
+        Cat.state = "ready" -- 前面的情境把目錄留在失敗狀態，空狀態會先寫那一句
+        v.mat = {}
+        W.setMaterial("glass")
+        local eMat, flagMat = drain(), v.matEmpty
+        W.setQuery("floors_interior_01_1")
+        local eqMat = drain()
+        W.st.only, v.S = true, {}
+        v.dim = setmetatable({}, { __index = function() return true end })
+        W.refilter(false)
+        local eqBoth = drain()
+        W.setMaterial("wood")
+        local eqOnly, flagOnly = drain(), v.matEmpty
+        W.st.query = ""
+        W.onTab(v, "all")
+        local eOnly = drain()
+        -- 同一桶材料混雜（審查 1112 Claude 第 2 輪）：要找的那張沒用到金屬、同桶另一張有（被缺料濾掉）→ 說材料；
+        -- 要找的那張自己有金屬 → 說只看能蓋的
+        v.mat = { floors_interior_01_0 = { metal = true }, floors_interior_01_1 = { wood = true } }
+        W.setMaterial("metal")
+        W.setQuery("floors_interior_01_1")
+        local mixMat, mixFlag = drain(), v.matEmpty
+        W.setQuery("floors_interior_01_0")
+        local mixOnly = drain()
+        W.st.only, v.S, v.dim = false, nil, {}
+        -- 一般搜尋字的結果全被材料濾掉：提示說材料；最愛被材料濾空說材料，最愛本來就空照舊
+        v.mat = {}
+        W.setMaterial("glass")
+        W.setQuery("red chair")
+        drain()
+        local hintMat = v.emptyHint and v.emptyHint[1]
+        W.st.query = ""
+        local Fav = MinidoracatBuilder.Favorites
+        local fav0 = Fav.list
+        Fav.list = { n = 1, seeded }
+        W.setCat("fav")
+        local favMat = drain()
+        Fav.list = { n = 0 }
+        W.refilter(false)
+        local favNone = drain()
+        Fav.list = fav0
+        W.setCat("all")
+        W.setMaterial("all")
+        Cat.state = cs0
+        check(mixMat == "IGUI_MBLD_Empty_Material" and mixFlag == false and mixOnly == "IGUI_MBLD_Empty_Only"
+            and hintMat == "IGUI_MBLD_Empty_Material" and favMat == "IGUI_MBLD_Empty_Material"
+            and favNone == "IGUI_MBLD_Empty_Fav",
+            "空狀態：同一桶材料混雜時照要找的那一項說；一般搜尋被材料濾空提示說材料；最愛被材料濾空說材料、本來就空照舊")
+        check(eMat == "IGUI_MBLD_Empty_Material" and flagMat == true and eqMat == "IGUI_MBLD_Empty_Material"
+            and eqBoth == "IGUI_MBLD_Empty_Material" and eqOnly == "IGUI_MBLD_Empty_Only" and flagOnly == false
+            and eOnly == "IGUI_MBLD_Empty_Only" and v.matEmpty == false and grid.items.n == totalN,
+            "空狀態：被材料濾空說材料（兩個篩選都開、搜完整圖塊名也一樣）；材料有過、缺料濾掉的說只看能蓋的")
+        W.setQuery("floors_interior_01_1")
         -- 雙擊：同一格 DOUBLE_MS（500 ms）內兩次＝按「建造」。pump 每幀把方格的選取同步到 selName（這裡手動同步）
         local builds, realBuild, keepStep = 0, W.build, clockStep
         W.build, clockStep = function() builds = builds + 1 end, 0
@@ -7142,6 +7219,299 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep = realDoing, realOnEnd, step0
     Recipes.list = nil
     Names.reset()
+end)()
+
+print("情境四十三：疊放模式（使用者 2026-11-12 選 overlap、每格 3 件）：開著才放寬、上限、桌面同格、不找替換、伺服器重算")
+;(function()
+    nowMs = nowMs + 180000
+    local B = MinidoracatBuilder
+    local Place, Messages = B.Place, B.Messages
+    local realInst, realProps, sb = instanceof, ISMoveableSpriteProps, SandboxVars.MinidoracatBuilder
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    -- 圖塊記下自己的旗標與字串鍵（spec）：obj() 放到格子上時併進格子屬性（引擎的格子屬性是各物件屬性的聯集）
+    local function sp(name, id, flags, keys)
+        local s = sprite(name, id, { flags = flags, keys = keys or {} })
+        s.spec = { flags = flags, keys = keys or {} }
+        return s
+    end
+    -- 照 2026-11-12 回報的三組圖的實際屬性（目錄傾印）：不能搬的爐面（畫在櫃台高度）、櫃台、畫好三種高度的可搬儲物櫃、
+    -- UMCTP 的半箱（_32 不是桌面，_33／_34 是）。實心的家具與容器幾乎都帶 BlocksPlacement：原版搬家具靠它擋
+    local BP = "BlocksPlacement"
+    local cooktop = sp("ov_stove_01_10", 4301, { "solidtrans" }, { container = "stove", IsSurfaceOffset = "", Surface = "34" })
+    local counter = sp("ov_counter_01_1", 4302, { "solidtrans" }, { container = "counter", [BP] = "", IsTable = "", Surface = "36" })
+    local lockA = sp("ov_locker_01_4", 4303, { "solidtrans" }, { IsMoveAble = "", [BP] = "", IsLow = "", container = "locker" })
+    local lockB = sp("ov_locker_01_5", 4304, { "solidtrans" }, { IsMoveAble = "", [BP] = "", IsLow = "", container = "locker" })
+    local lockC = sp("ov_locker_01_6", 4305, { "solidtrans" }, { IsMoveAble = "", [BP] = "", IsLow = "", container = "locker" })
+    local lockD = sp("ov_locker_01_7", 4306, { "solidtrans" }, { IsMoveAble = "", [BP] = "", IsLow = "", container = "locker" })
+    local half2 = sp("ov_half_01_33", 4307, { "solidtrans" },
+        { IsMoveAble = "", [BP] = "", IsStackable = "", IsTable = "", Surface = "45", container = "crate" })
+    local half3 = sp("ov_half_01_34", 4308, { "solidtrans" },
+        { IsMoveAble = "", [BP] = "", IsStackable = "", IsTable = "", Surface = "67", container = "crate" })
+    local onTop = sp("ov_top_01_0", 4309, { "solid" }, { container = "microwave", IsTableTop = "" })
+    local hung = sp("ov_hung_01_0", 4310, { "solid" }, { IsMoveAble = "", MoveType = "WallObject" })
+    local lampS = sp("ov_lamp_01_0", 4311, { "solid" }, {}) -- 種類不在 Place.OVERLAP（這裡直接帶 light 進 Place.check）
+    local boxA = sp("ov_box_01_0", 4312, { "solid" }, { container = "crate" })
+    local boxB = sp("ov_box_01_1", 4313, { "solid" }, { container = "crate" })
+    local shoe = sp("ov_shoe_01_19", 4319, {}, { container = "shelves", [BP] = "" }) -- 擋放置、不實心、不能搬（Perts 的鞋架）
+    local wallA = sp("ov_wall_01_1", 4314, { "WallN" }, { WallN = "" })
+    local wallB = sp("ov_wall_02_1", 4315, { "WallN" }, { WallN = "" })
+    local brick = sp("ov_brick_01_1", 4316, { "WallN" }, { WallN = "", MaterialType = "Brick" })
+    local lampE = sprite("ov_lamp_02_0", 4317, { type = T.lightswitch })
+    world({ cooktop, counter, lockA, lockB, lockC, lockD, half2, half3, onTop, hung, lampS, boxA, boxB, wallA, wallB, brick, lampE })
+    for x = 170, 177 do for y = 170, 177 do square(x, y, 0) end end
+    local P = player({ id = 4301, x = 173.5, y = 173.5, here = squares["173,173,0"], cheat = true })
+    -- 重建一格：flags＝額外的格子屬性（水這類）；物件的屬性由 obj() 併進來；有地板；實心照屬性
+    local function at(x, y, flags, o)
+        o = o or {}
+        squares[x .. "," .. y .. ",0"] = nil
+        o.flags = flags or {}
+        if o.floor == nil then o.floor = {} end
+        if o.floor == false then o.floor = nil end
+        local sq = square(x, y, 0, o)
+        sq.flagsRef = o.flags
+        function sq:isSolid() return o.flags.solid == true end
+        function sq:isSolidTrans() return o.flags.solidtrans == true end
+        return sq
+    end
+    local function obj(sq, spr, yoff)
+        local x = { class = "IsoThumpable", md = { builderEntry = spr:getName() }, mats = { ["Base.Plank"] = "4" } }
+        function x:getSprite() return spr end
+        function x:getProperties() return spr:getProperties() end
+        function x:getSquare() return sq end
+        function x:hasModData() return true end
+        function x:getModData() return self.md end
+        function x:isDismantable() return true end
+        function x:getBuildMaterials() return self.mats end
+        function x:hasBuildMaterials() return true end
+        function x:isFloor() return false end
+        function x:getRenderYOffset() return yoff or 0 end
+        function x:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function x:isConnectedSpriteGridObject(y) return y == self end
+        function x:isObjectNoContainerOrEmpty() return true end
+        function x:hasFluid() return false end
+        function x:isBarricaded() return false end
+        function x:isStairsObject() return false end
+        sq.objects[#sq.objects + 1] = x
+        for _, f in ipairs(spr.spec.flags or {}) do sq.flagsRef[f] = true end
+        for k in pairs(spr.spec.keys) do sq.flagsRef[k] = true end
+        return x
+    end
+    -- 原版搬家具放下的判斷（Object 那一支，ISMoveableSpriteProps.lua:1074-1082,1747-1779）：要有地板；格上沒有擋放置的
+    -- 東西就放（isFreeTile 不看實心旗標）；可疊的桌類放在桌面上照總高（最上面那張桌面的墊高＋Surface）
+    ISMoveableSpriteProps = { new = function(spr)
+        local p = spr:getProperties()
+        local s = { isStackable = p:has("IsStackable"), isTable = p:has("IsTable"), surface = tonumber(p:get("Surface")),
+            yOffsetCursor = 0 }
+        function s:getTotalTableHeight(sq)
+            for i = #sq.objects, 1, -1 do
+                local o = sq.objects[i]
+                local op = o:getSprite():getProperties()
+                if op:has("IsTable") and tonumber(op:get("Surface")) then return o:getRenderYOffset() + tonumber(op:get("Surface")) end
+            end
+            return 0
+        end
+        function s:canPlaceMoveableInternal(_, sq)
+            if not sq:getFloor() then return false end
+            if not (sq:has(BP) and not sq:has("canBeRemoved")) then return true end
+            if self.isStackable and self.isTable and self.surface and sq:has("IsTable") and not sq:has("IsTableTop")
+                and not sq:has("IsHigh") then
+                self.yOffsetCursor = self:getTotalTableHeight(sq)
+                return self.yOffsetCursor + self.surface <= 96
+            end
+            return false
+        end
+        function s:isSquareAtTopOfStairs(sq) return sq.topOfStairs == true end
+        return s
+    end }
+    local function try(kind, spr, sq, overlap) return Place.check(kind, spr, sq, P, nil, nil, nil, overlap) end
+
+    -- 櫃台上的爐面（不能搬）
+    local s1 = at(171, 171)
+    obj(s1, counter)
+    local off1, offC = try("container", cooktop, s1)
+    local on1, y1, over1 = try("container", cooktop, s1, true)
+    check(off1 == false and offC == nil and on1 == true and y1 == 0 and over1 == true and Place.occupants(s1) == 1,
+        "櫃台上的爐面：關著照舊放不下（沒有原因碼）；開著放得下、不墊高、標成疊放")
+    local e1, _, eo = try("container", cooktop, at(171, 170))
+    check(e1 == true and eo == nil and select(3, try("container", cooktop, at(171, 170), true)) == nil,
+        "空格：開不開疊放都照原本的規則放，不標成疊放")
+    -- 可搬的儲物櫃疊三件，第四件到上限
+    local s2 = at(171, 172)
+    obj(s2, lockA)
+    local offL = try("container", lockB, s2)
+    local on2, _, over2 = try("container", lockB, s2, true)
+    obj(s2, lockB)
+    local on3 = try("container", lockC, s2, true)
+    obj(s2, lockC)
+    local on4, c4 = try("container", lockD, s2, true)
+    check(offL == false and on2 == true and over2 == true and on3 == true and on4 == false and c4 == "SQUARE_FULL",
+        "可搬的儲物櫃：關著放不下；開著疊到第 3 件，第 4 件回 SQUARE_FULL（預設上限 3）")
+    sb.MaxPerSquare = 5
+    local five = try("container", lockD, s2, true)
+    sb.MaxPerSquare = 1
+    local s2b = at(172, 172)
+    obj(s2b, lockA)
+    local one, oneC = try("container", lockB, s2b, true)
+    sb.MaxPerSquare = nil
+    check(five == true and one == false and oneC == nil, "沙盒上限：5 時第 4 件放得下；1＝關閉，開著也照舊放不下")
+    -- 兩張桌面同格不走疊放（引擎讀檔會把後一張墊高）：照原版疊箱子的高度
+    local s3 = at(171, 173)
+    obj(s3, half2)
+    local t3, c3 = try("furniture", half3, s3, true)
+    local lowOk, lowY, lowOver = try("furniture", half2, at(170, 173), true) -- 空格：照原本的規則
+    local s3b = at(172, 173)
+    obj(s3b, counter)
+    local counter2 = sp("ov_counter_01_2", 4320, { "solidtrans" }, { container = "counter", [BP] = "", IsTable = "", Surface = "36" })
+    local t3b, c3b = try("container", counter2, s3b, true)
+    check(t3 == false and c3 == "STACK_FULL", "桌面疊桌面（UMCTP 的半箱 45＋67）：開著疊放也照原版高度上限，回 STACK_FULL")
+    check(t3b == false and c3b == nil and lowOk == true and lowY == 0 and lowOver == nil,
+        "不能搬的桌面放在已經有桌面的格子：開著也不放；空格照原本的規則、不標成疊放")
+    -- 原版疊箱子（軍用箱：可疊的桌面，Surface 32）在高度內：開著疊放也照原版墊高，不算疊放、不受每格件數管
+    local crate = sp("ov_crate_01_0", 4322, { "solid" }, { IsMoveAble = "", [BP] = "", IsStackable = "", IsTable = "", Surface = "32", container = "crate" })
+    local sCr = at(170, 174)
+    obj(sCr, crate)
+    local cr2, cr2y, cr2over = try("furniture", crate, sCr, true)
+    obj(sCr, crate, 32)
+    obj(sCr, lockA) -- 第三件（不是箱子）：件數到 3 了，箱子照原版規則還是疊得上第三層
+    local cr3, cr3y, cr3over = try("furniture", crate, sCr, true)
+    check(cr2 == true and cr2y == 32 and cr2over == nil and cr3 == true and cr3y == 64 and cr3over == nil,
+        "原版疊箱子：開著疊放時照舊墊高 32、64，不標成疊放（照原本的規則放得下就照原本的）")
+    -- 可疊卻不是桌面的半箱（UMCTP 的 _32）：桌面那張（_33）開著疊得上去（兩層）；同一張圖不疊（會畫在同一個位置）
+    local half1 = sp("ov_half_01_32", 4318, { "solidtrans" }, { IsMoveAble = "", [BP] = "", IsStackable = "", container = "crate" })
+    local s3c = at(173, 175)
+    obj(s3c, half1)
+    local h2, _, h2over = try("furniture", half2, s3c, true)
+    local h1, h1c = try("furniture", half1, s3c, true)
+    local h1off, h1offC = try("furniture", half1, s3c)
+    check(h2 == true and h2over == true and h1 == false and h1c == "SAME_TILE" and h1off == false and h1offC == nil,
+        "半箱：不是桌面的那張上面，開著疊得上桌面那張；同一張圖開著回 SAME_TILE，關著照舊沒有原因碼")
+    -- 不放寬的格子與項目
+    local sNo = at(171, 174, nil, { floor = false })
+    obj(sNo, boxA)
+    local sSt = at(171, 175, nil, { stairs = true })
+    obj(sSt, boxA)
+    local sWa = at(171, 176, { water = true })
+    obj(sWa, boxA)
+    local sTw = at(170, 177, { taintedWater = true }) -- 污水是另一個旗標（審查 1112 Grok）
+    obj(sTw, boxA)
+    local sTop = at(172, 174)
+    obj(sTop, lockA)
+    sTop.topOfStairs = true
+    check(try("container", cooktop, sNo, true) == false and try("container", cooktop, sSt, true) == false
+        and try("container", cooktop, sWa, true) == false and try("container", cooktop, sTw, true) == false
+        and try("container", lockB, sTop, true) == false,
+        "開著也不放：沒有地板、樓梯格、水與污水、樓梯頂（可搬的）")
+    local s4 = at(172, 175)
+    obj(s4, counter)
+    check(try("container", onTop, s4, true) == false and try("furniture", hung, s4, true) == false
+        and try("light", lampS, s4, true) == false,
+        "開著也不放：桌上物件（IsTableTop）、掛牆的（MoveType）、不在 Place.OVERLAP 的種類")
+    local _, same = try("container", counter, s4, true)
+    local s5 = at(172, 176)
+    obj(s5, boxA)
+    s5.moving = { {} }
+    local _, occ = try("container", cooktop, s5, true)
+    local s6 = at(172, 177)
+    obj(s6, boxA)
+    function s6:isVehicleIntersecting() return true end
+    local _, veh = try("container", cooktop, s6, true)
+    check(same == "SAME_TILE" and occ == "OCCUPIED" and veh == "VEHICLE", "開著照樣先擋：同一張圖、格上有人、車子壓著")
+    -- 擋放置、不實心、不能搬的容器（Perts 的鞋架）：Place.check 前面的「有人」「擋樓梯」只替實心的新物件查，
+    -- 疊放自己再查一次（審查 1112 Codex）
+    local shoe2 = sp("ov_shoe_01_20", 4321, {}, { container = "shelves", [BP] = "" })
+    local s6b = at(170, 176)
+    obj(s6b, shoe)
+    local shOff = try("container", shoe2, s6b)
+    local shOn = try("container", shoe2, s6b, true)
+    s6b.moving = { {} }
+    local shOcc, shOccC = try("container", shoe2, s6b, true)
+    s6b.moving = {}
+    local realStair = buildUtil.stairIsBlockingPlacement
+    buildUtil.stairIsBlockingPlacement = function(sq) return sq == s6b end
+    local shStair = try("container", shoe2, s6b, true)
+    buildUtil.stairIsBlockingPlacement = realStair
+    check(shOff == false and shOn == true and shOcc == false and shOccC == "OCCUPIED" and shStair == false,
+        "不實心的容器疊放：關著被擋、開著可以；格上有人回 OCCUPIED、會擋到樓梯不放")
+    local realOv = Place.OVERLAP.container
+    Place.OVERLAP.container = nil -- 植入違規：容器拿出名單，上面「櫃台上的爐面」要放不下
+    local planted = try("container", cooktop, s1, true)
+    Place.OVERLAP.container = realOv
+    check(planted == false, "植入違規：種類不在 Place.OVERLAP 時開著也放不下（放行靠這張名單）")
+
+    -- Check.item：開著不找原地替換；不能疊的種類照舊替換
+    local s7 = at(173, 171)
+    local oldBox = obj(s7, boxA)
+    local cR, _, iR = Check.item(P, "ov_box_01_1", 0, { 173, 171, 0 }, { preview = true })
+    local cO, _, iO = Check.item(P, "ov_box_01_1", 0, { 173, 171, 0 }, { preview = true, overlap = true })
+    check(cR == nil and iR.replace and iR.replace.obj == oldBox and iR.cells[1].over == nil
+        and cO == nil and iO.replace == nil and iO.cells[1].over == true,
+        "自己蓋的箱子上蓋另一款：關著是原地替換；開著是疊上去（不找替換、那一格標成疊放）")
+    local s8 = at(173, 172, { WallN = true })
+    local oldWall = obj(s8, wallA)
+    local cW, _, iW = Check.item(P, "ov_wall_02_1", 0, { 173, 172, 0 }, { preview = true, overlap = true })
+    check(cW == nil and iW.replace and iW.replace.obj == oldWall, "牆不在疊放的種類：開著照舊原地替換")
+
+    -- 伺服器：請求帶 o 才照疊放重算；上限照伺服器的沙盒
+    local function send(n, e, c, o)
+        sent = {}
+        Server.intent(P, { n = n, e = e, c = { c[1], c[2], 0, 0 }, v = Entry.digest(), o = o })
+        if sent[1] and sent[1].cmd == "refused" then return false, sent[1].args end
+        local it = nil
+        for _, v in pairs(Server.intents) do if v.n == n then it = v end end
+        sent = {}
+        local ok = Server.complete(P, n, 1)
+        return ok, sent[1] and sent[1].args or {}, it
+    end
+    local s9 = at(173, 173, { solidtrans = true })
+    obj(s9, lockA)
+    local okN, aN, itN = send(4301, "ov_locker_01_5", { 173, 173 })
+    local okJ, _, itJ = send(4302, "ov_locker_01_5", { 173, 173 }, 1) -- 不是 true 的值不算
+    check(not okN and aN.code == "BLOCKED" and itN.o == nil and not okJ and itJ.o == nil and #s9.objects == 1,
+        "伺服器：請求沒帶 o（或不是 true）照原本的規則拒絕，格子不動")
+    local okY, _, itY = send(4303, "ov_locker_01_5", { 173, 173 }, true)
+    check(okY and itY.o == true and #s9.objects == 2, "伺服器：請求帶 o＝true，疊上第 2 件")
+    local okY3 = send(4304, "ov_locker_01_6", { 173, 173 }, true)
+    local okY4, aY4 = send(4305, "ov_locker_01_7", { 173, 173 }, true)
+    check(okY3 and not okY4 and aY4.code == "SQUARE_FULL" and #s9.objects == 3,
+        "伺服器：第 3 件放得下，第 4 件回 SQUARE_FULL")
+    sb.MaxPerSquare = 1
+    local s10 = at(173, 174, { solidtrans = true })
+    obj(s10, lockA)
+    local okOff, aOff = send(4306, "ov_locker_01_5", { 173, 174 }, true)
+    sb.MaxPerSquare = nil
+    check(not okOff and aOff.code == "BLOCKED" and #s10.objects == 1, "伺服器：沙盒設成 1 時，客戶端硬帶 o 也照舊拒絕")
+
+    -- 客戶端：請求帶旗標、拒絕訊息帶上限
+    local realS, realC, realSend, realGetText = isServer, isClient, sendClientCommand, getText
+    local args
+    isServer, isClient = function() return false end, function() return true end
+    sendClientCommand = function(_, _, _, a) args = a end
+    B.Client.build(P, "ov_locker_01_5", { { 173, 174, 0, 0 } }, true)
+    local withO = args and args.o
+    B.Client.build(P, "ov_locker_01_5", { { 173, 174, 0, 0 } })
+    local withoutO = args and args.o
+    isServer, isClient, sendClientCommand = realS, realC, realSend
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local msg = Messages.refusal("SQUARE_FULL", { x = 1, y = 2, z = 0 })
+    getText = realGetText
+    check(withO == true and withoutO == nil and msg == "IGUI_MBLD_Refuse_SQUARE_FULL(3)",
+        "客戶端：Client.build 第四個參數才帶 o；SQUARE_FULL 的訊息寫沙盒上限")
+    local res, okCells = B.Cursor.preview(P, "ov_locker_01_5", 0, { { 173, 174, 0, 0 } }, nil, true)
+    local resOff = B.Cursor.preview(P, "ov_locker_01_5", 0, { { 173, 174, 0, 0 } }, nil)
+    check(okCells == 1 and res[1].code == nil and res[1].cells[1].over == true and resOff[1].code == "BLOCKED",
+        "游標預覽：帶疊放時那一格可蓋並標成疊放，不帶時照舊 BLOCKED")
+
+    -- 材料篩選的分類（建造視窗的下拉）
+    local W = B.Window
+    local mWall, mBrick, mLamp = W.materialsOf("ov_wall_01_1"), W.materialsOf("ov_brick_01_1"), W.materialsOf("ov_lamp_02_0")
+    check(mWall.wood == true and mWall.other == nil and mBrick.masonry == true and mBrick.wood == nil
+        and mLamp.other == true and mLamp.wood == nil and W.materialsOf("ov_lamp_02_0") == mLamp
+        and W.materialsOf("ov_none_01_0") == nil,
+        "材料分類：木牆歸木板、磚牆歸磚石、燈（電子零件）歸其他；同一種分類共用一張表；不存在的項目回 nil")
+    ISMoveableSpriteProps, instanceof = realProps, realInst
 end)()
 
 print()

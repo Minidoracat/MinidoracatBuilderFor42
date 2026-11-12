@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "タイルを選ぶ：クリックしたもののタイルを選択",
   "IGUI_MBLD_Pick_Many": "複数ある場合はリストが表示されます",
   "IGUI_MBLD_Pick_HintClick": "左クリック：選択",
-  "IGUI_MBLD_Pick_None": "この場所には選べるタイルがありません。"
+  "IGUI_MBLD_Pick_None": "この場所には選べるタイルがありません。",
+  "IGUI_MBLD_Overlap": "重ね置き",
+  "IGUI_MBLD_Overlap_Tip": "重ね置き：オンにすると、すでに何かがあるタイルにも建てられます。例：カウンターの上にコンロ、違う高さに描かれた箱を一つの山に。1 タイルの上限：%1。オフのときは通常のルールで、自分が建てたものの上に別の見た目のものを建てると置き換えになります。",
+  "IGUI_MBLD_Overlap_TipOff": "このサーバーでは重ね置きがオフです。",
+  "IGUI_MBLD_Overlap_TipKind": "これは重ね置きできません。できるのは家具、コンテナ、固体オブジェクトだけです。",
+  "IGUI_MBLD_OverlapLevel": "重ね置き：このタイル %1／%2",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "このタイルはもういっぱいです（上限：%1）。別のタイルを選ぶか、先に 1 つ撤去してください。",
+  "IGUI_MBLD_Material_all": "材料：すべて",
+  "IGUI_MBLD_Material_wood": "材料：木板",
+  "IGUI_MBLD_Material_metal": "材料：金属",
+  "IGUI_MBLD_Material_masonry": "材料：レンガ・石",
+  "IGUI_MBLD_Material_glass": "材料：ガラス",
+  "IGUI_MBLD_Material_log": "材料：丸太",
+  "IGUI_MBLD_Material_other": "材料：その他",
+  "IGUI_MBLD_Material_Tip": "コストにこの材料を使う項目だけを表示します。持っているかどうかは関係ありません。釘やネジなどの金具は数えません。",
+  "IGUI_MBLD_Empty_Material": "ここにはこの材料を使う項目がありません。材料を「材料：すべて」にするとすべて表示されます。"
 }

@@ -57,7 +57,8 @@ end
 -- 蓋 e（項目 ID），每格 cells[i] = { x, y, z, d } 一項：原點與朝向（0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面，
 -- Entry.face；牆拉長方形圍一圈時四邊的朝向不同）。回 nonce；不能送（項目或某格的朝向不存在、單機時請求當場被拒）回 nil
 -- 與原因碼。會清掉玩家目前排著的動作（每人只留一個請求，設計稿）。動作等伺服器回 accepted 才排（單機當場就回）。
-function Client.build(player, e, cells)
+-- overlap＝true：疊放模式（建造視窗的「疊放」鈕），隨請求送去，伺服器照沙盒重算
+function Client.build(player, e, cells, overlap)
     local entry, code = Entry.resolve(e)
     if not entry then return nil, code end
     local flat = {}
@@ -67,7 +68,7 @@ function Client.build(player, e, cells)
     end
     lastNonce = lastNonce % 2000000000 + 1
     local n = lastNonce
-    local args = { n = n, e = e, c = flat, v = Entry.digest() }
+    local args = { n = n, e = e, c = flat, v = Entry.digest(), o = overlap == true or nil }
     Client.pending = { n = n, e = e, entry = entry, kind = entry.kind, cells = cells, player = player }
     Client.pendingUnbuild = nil -- 每人只留一個請求：還沒輪完的拆除，收到回覆也不再排
     ISTimedActionQueue.clear(player)

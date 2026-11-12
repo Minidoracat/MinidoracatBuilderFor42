@@ -14,6 +14,8 @@
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "2 to 8 tiles from the player to the nearest square of the item. The item can be at most one floor above or below.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Most items at once",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 to 64. How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area.",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare": "Most pieces per tile",
+    "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1 to 5. With Overlap on, how many blocking objects and containers one tile can hold; three stacked vanilla crates are also 3. Set to 1 to turn Overlap off.\nOnly affects new builds; pieces already built stay.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Material cost multiplier",
     "Sandbox_MinidoracatBuilder_CostMultiplier_tooltip": "0 to 10. Multiplies every material amount, rounded up. 0 means no materials; tools are still needed. Objects that dismantle into materials by their own material type (most furniture), curtains and light bulbs never go below 1, so dismantling never gives back more than was paid. Admins with the build cheat on never pay.",
     "Sandbox_MinidoracatBuilder_RequireSkill": "Require vanilla skill levels",

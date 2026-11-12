@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Wybór kafelka: kliknij coś, by zaznaczyć jego kafelek",
   "IGUI_MBLD_Pick_Many": "Jeśli jest ich kilka, pojawi się lista",
   "IGUI_MBLD_Pick_HintClick": "LPM: wybierz",
-  "IGUI_MBLD_Pick_None": "Na tym polu nie ma kafelka do wybrania."
+  "IGUI_MBLD_Pick_None": "Na tym polu nie ma kafelka do wybrania.",
+  "IGUI_MBLD_Overlap": "Piętrowanie",
+  "IGUI_MBLD_Overlap_Tip": "Piętrowanie: gdy włączone, możesz budować na polu, na którym już coś stoi, np. płytę grzewczą na ladzie albo skrzynie narysowane na różnych wysokościach w jeden stos. Limit na pole: %1. Gdy wyłączone, obowiązują zwykłe zasady, a budowanie innego wariantu na własnym elemencie go zastępuje.",
+  "IGUI_MBLD_Overlap_TipOff": "Piętrowanie jest wyłączone na tym serwerze.",
+  "IGUI_MBLD_Overlap_TipKind": "Tego nie można piętrować: tylko meble, pojemniki i obiekty pełne.",
+  "IGUI_MBLD_OverlapLevel": "Piętrowanie: %1 / %2 na tym polu",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "To pole jest już pełne (limit: %1). Wybierz inne pole lub najpierw usuń jakiś element.",
+  "IGUI_MBLD_Material_all": "Materiał: wszystkie",
+  "IGUI_MBLD_Material_wood": "Materiał: deski",
+  "IGUI_MBLD_Material_metal": "Materiał: metal",
+  "IGUI_MBLD_Material_masonry": "Materiał: cegła, kamień",
+  "IGUI_MBLD_Material_glass": "Materiał: szkło",
+  "IGUI_MBLD_Material_log": "Materiał: bale drewna",
+  "IGUI_MBLD_Material_other": "Materiał: inne",
+  "IGUI_MBLD_Material_Tip": "Pokazuje tylko to, czego koszt obejmuje ten materiał, niezależnie od tego, czy go masz. Drobne elementy jak gwoździe i wkręty się nie liczą.",
+  "IGUI_MBLD_Empty_Material": "Nic tutaj nie używa tego materiału. Ustaw materiał na „Materiał: wszystkie”, by zobaczyć wszystko."
 }

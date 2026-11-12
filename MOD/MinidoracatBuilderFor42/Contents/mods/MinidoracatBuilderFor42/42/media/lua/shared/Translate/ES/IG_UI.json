@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Elegir tile: haz clic en algo para seleccionar su tile",
   "IGUI_MBLD_Pick_Many": "Si hay varios, aparece una lista",
   "IGUI_MBLD_Pick_HintClick": "Clic izquierdo: elegir",
-  "IGUI_MBLD_Pick_None": "No hay ningún tile que elegir en esta casilla."
+  "IGUI_MBLD_Pick_None": "No hay ningún tile que elegir en esta casilla.",
+  "IGUI_MBLD_Overlap": "Superponer",
+  "IGUI_MBLD_Overlap_Tip": "Superponer: si está activado, puedes construir en una casilla que ya tiene algo, por ejemplo una placa de cocina sobre una encimera, o cajas dibujadas a distintas alturas en una sola pila. Límite por casilla: %1. Si está desactivado, rigen las reglas de siempre, y construir otro estilo sobre una pieza tuya la reemplaza.",
+  "IGUI_MBLD_Overlap_TipOff": "Superponer está desactivado en este servidor.",
+  "IGUI_MBLD_Overlap_TipKind": "Este objeto no se puede superponer: solo muebles, contenedores y objetos sólidos.",
+  "IGUI_MBLD_OverlapLevel": "Superponer: %1 / %2 en esta casilla",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "Esta casilla ya está llena (límite: %1). Elige otra casilla o quita primero una pieza.",
+  "IGUI_MBLD_Material_all": "Material: todos",
+  "IGUI_MBLD_Material_wood": "Material: tablones",
+  "IGUI_MBLD_Material_metal": "Material: metal",
+  "IGUI_MBLD_Material_masonry": "Material: ladrillo, piedra",
+  "IGUI_MBLD_Material_glass": "Material: vidrio",
+  "IGUI_MBLD_Material_log": "Material: troncos",
+  "IGUI_MBLD_Material_other": "Material: otros",
+  "IGUI_MBLD_Material_Tip": "Muestra solo los objetos cuyo costo incluye este material, lo tengas o no. Los herrajes como clavos y tornillos no cuentan.",
+  "IGUI_MBLD_Empty_Material": "Nada aquí usa este material. Pon el material en Material: todos para verlo todo."
 }

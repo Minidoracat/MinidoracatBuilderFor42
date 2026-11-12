@@ -298,17 +298,68 @@ end
 Place.STACK_MAX = 96
 local STACK_MAX = Place.STACK_MAX
 
+-- 疊放模式（使用者 2026-11-12 選 overlap、每格 3 件）：玩家在建造視窗打開「疊放」時，格上已經有實心或擋放置的東西也放。
+-- 圖塊包有很多預先畫好高度、要和別張疊在同一格的圖（櫃台上的爐面、畫成三層的箱子、架子上的衣服），屬性分不出哪些
+-- 是一組，所以交給玩家決定；只給這三種（其他種類本來就各有同格規則）。兩端共用，伺服器照沙盒重算。
+Place.OVERLAP = { furniture = true, container = true, solid = true }
+
+-- 沙盒「同一格最多幾件」（MaxPerSquare）；1＝不能疊放
+function Place.maxPerSquare()
+    return math.max(1, math.floor(tonumber(Entry.settings().MaxPerSquare) or 3))
+end
+
+-- 這一格會擋路的東西與容器有幾件：實心、擋放置或有容器的物件（地板不算；牆、門窗、掛件沒有這些屬性）。
+-- 疊放的上限（沙盒 MaxPerSquare）照它數：同一格的容器數量與殭屍要打的件數跟著上限走，預設 3 和原版疊三個箱子一樣
+function Place.occupants(sq)
+    local n, objects = 0, sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local s = objects:get(i):getSprite()
+        local p = s and s:getProperties()
+        if p and not p:has(F.solidfloor) and (p:has(F.solid) or p:has(F.solidtrans) or p:has("BlocksPlacement")
+            or p:has(F.container)) then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- 疊放模式下，放不下的這一格能不能照疊放放：回 true，或 false 與原因碼（OCCUPIED、SAME_TILE、SQUARE_FULL；沒有碼＝
+-- 這一項或這一格不給疊）。不放寬的：格上有人、殭屍或動物，會擋到樓梯（Place.check 只替實心的新物件查這兩項，
+-- 這裡不管新物件實不實心都查）；沒有地板、高草與樹、樓梯、水；桌上物件（IsTableTop）與掛牆、掛窗的（MoveType）
+-- 照原版各自那一支；兩張桌面同格：引擎讀檔時把後一張墊到前一張上面（IsoGridSquare.FixStackableObjects），預先畫好
+-- 高度的圖會再高一截，所以照原版疊箱子的規則，不走疊放。同一張圖也不疊（可疊的箱子在 Place.check 開頭不擋同一張，
+-- 這裡補上：兩件畫在同一個位置，看起來只有一件）
+local function overlapOk(kind, spr, sq)
+    local max, p = Place.maxPerSquare(), spr:getProperties()
+    if not Place.OVERLAP[kind] or max <= 1 or p:has("IsTableTop") then return false end
+    local mt = p:get("MoveType")
+    if mt and mt ~= "Object" then return false end
+    if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
+    if sq:getFloor() == nil or vegetation(sq) or sq:HasStairs() or sq:has(F.water) or sq:has(F.taintedWater)
+        or buildUtil.stairIsBlockingPlacement(sq, true, nil) then -- 第三個參數明寫 nil＝兩個方向都查（Kahlua 少傳不保證 nil）
+        return false
+    end
+    if p:has("IsTable") and sq:has("IsTable") then return false end -- 落回原版疊箱子的原因碼（STACK_FULL、NOT_SURFACE）
+    if hasSprite(sq, spr:getName()) then return false, "SAME_TILE" end
+    if Place.occupants(sq) >= max then return false, "SQUARE_FULL" end
+    return true
+end
+
 -- 能不能在 sq 放 spr（種類 kind）。成功回 true 與桌面高度（放在桌上、疊上去的物件要墊高，原版搬家具算的）；
 -- 失敗回 false 與原因碼（游標分原因說；nil＝其他，Check.item 回 BLOCKED）：
 --   SAME_TILE：同一格已經有同一張圖（不是可疊的）。VEHICLE：車子壓著。OCCUPIED：會擋路的東西那格有人、殭屍或動物。
 --   STACK_FULL：可疊的箱子疊到原版的高度上限。NOT_SURFACE：可疊的箱子放在可疊、卻不是桌面的箱子上。
+--   SQUARE_FULL：疊放模式下這一格已經到沙盒的上限。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 -- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
 -- replacing：要被原地替換掉的那件（Check.item 的 info.replace.obj）：它佔的格邊、它的實心與擋放置都不算擋；
 -- 同一張圖照樣擋（同一張不算替換）。原版搬家具的判斷（IsMoveAble）不能叫它跳過，照舊看整格。
-function Place.check(kind, spr, sq, player, role, planned, replacing)
+-- overlap：疊放模式（見 overlapOk）。照原本的規則放得下就照原本的（桌上、疊箱子的高度照舊），放不下才照疊放，
+-- 這時第三個回傳值是 true（游標寫「疊放」、伺服器 log 記 over）；和 replacing 不會同時有（Check.item 疊放時不找替換）。
+function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
+    overlap = overlap == true -- Kahlua 少傳的參數不保證是 nil（家族 pitfalls）：只認明確的 true
     local p = spr:getProperties()
     -- 可疊的（IsStackable：軍用箱、紙箱這類）同一張也能疊，高度交給下面原版搬家具的判斷
     if not p:has("IsStackable") and hasSprite(sq, spr:getName()) then return false, "SAME_TILE" end
@@ -352,7 +403,7 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
     -- 會擋路的東西：格上有人、殭屍或動物，或會擋到樓梯時不放（原版 isFree(true)、stairIsBlockingPlacement）
     if p:has(F.solid) or p:has(F.solidtrans) then
         if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
-        if buildUtil.stairIsBlockingPlacement(sq, true) then return false end
+        if buildUtil.stairIsBlockingPlacement(sq, true, nil) then return false end
     end
     if p:has("IsMoveAble") then
         -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑（bt-authority §4.2）。
@@ -361,6 +412,12 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
         -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
         props.placeTool = nil
         if not props:canPlaceMoveableInternal(player, sq, nil) then
+            -- 疊放模式：格上有東西而放不下的，照疊放放（畫好高度的圖不墊高）。樓梯頂照原版不放（:1779）
+            if overlap and not props:isSquareAtTopOfStairs(sq) then
+                local fits, why = overlapOk(kind, spr, sq)
+                if fits then return true, 0, true end
+                if why then return false, why end
+            end
             -- 疊到頂：照原版疊箱子那一支的條件重算一次，只差高度
             if props.isStackable and props.isTable and props.surface and sq:has("IsTable") and not sq:has("IsTableTop")
                 and not sq:has("IsHigh") and props:getTotalTableHeight(sq) + props.surface > STACK_MAX then
@@ -383,7 +440,10 @@ function Place.check(kind, spr, sq, player, role, planned, replacing)
     if kind == "solid" or kind == "container" or p:has(F.solid) or p:has(F.solidtrans) then
         local solid = replacing and (has(sq, F.solid, replacing) or has(sq, F.solidtrans, replacing))
             or (not replacing and (sq:isSolid() or sq:isSolidTrans()))
-        return not solid and not (has(sq, "BlocksPlacement", replacing) and not sq:has(F.canBeRemoved))
+        if not solid and not (has(sq, "BlocksPlacement", replacing) and not sq:has(F.canBeRemoved)) then return true end
+        if not overlap then return false end
+        local fits, why = overlapOk(kind, spr, sq)
+        return fits, fits and 0 or why, fits
     end
     return true
 end

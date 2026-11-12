@@ -27,6 +27,7 @@ local INTENT_TTL_MS = 180000          -- 收下後要先走過去（INTENT_REACH
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
+local OVERLAP = { overlap = true }    -- 疊放的請求交給 Check.item 的 opts（只讀；沒有 preview，照伺服器的路走）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
 local rate, woken, quietUntil = {}, {}, {}
@@ -128,6 +129,7 @@ end
 
 -- 客戶端請求：{ n = nonce, e = 項目 ID, c = { x1, y1, z1, d1, x2, ... }（各項原點與朝向，攤平）, v = Entry.digest() }
 -- 朝向 d：0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面（Entry.face）；每格各帶一個（牆拉長方形圍一圈時四邊不同）。
+-- o = true（選填）：疊放模式（Check.item 的 opts.overlap）；能不能疊、每格幾件在 complete 時照沙盒重算，這裡只記下。
 -- 收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
 function Server.intent(player, args)
     if type(args) ~= "table" then return end
@@ -162,7 +164,7 @@ function Server.intent(player, args)
         if not Entry.face(entry, a[4]) then return Server.refuse(player, n, 0, "BAD_FACE", { x = a[1], y = a[2], z = a[3] }) end
     end
     Server.intents[k] = { player = player, n = n, e = entry.name, c = anchors, done = {}, left = #anchors,
-        exp = now() + INTENT_TTL_MS, wake = wake(anchors[1][1], anchors[1][2]) }
+        exp = now() + INTENT_TTL_MS, wake = wake(anchors[1][1], anchors[1][2]), o = args.o == true or nil }
     -- 收下才回 accepted，客戶端收到才排動作：請求與動作走不同通道，動作不能比請求先到
     Server.send(player, "accepted", { n = n })
     return true
@@ -360,7 +362,7 @@ function Server.complete(player, n, i)
     if why then return Server.refuse(player, n, i, why) end
     -- 目錄重算、距離、補格子、安全屋、可放置（和客戶端預覽同一份）
     local a = it.c[i]
-    local code, extra, info = Check.item(player, it.e, a[4], a)
+    local code, extra, info = Check.item(player, it.e, a[4], a, it.o and OVERLAP or nil)
     if code then return Server.refuse(player, n, i, code, extra) end
     local entry, spr, cells, costs, total = info.entry, info.spr, info.cells, info.costs, info.total
     local rep = info.replace
@@ -439,9 +441,11 @@ function Server.complete(player, n, i)
             MinidoracatBuilder.Circuits.send(player, { auto = "switch", code = "INTERNAL", who = player:getOnlineID() })
         end
     end
+    local over = false -- 照疊放放的（Place.check 的第三個回傳值）：log 記下來，事後查得到哪些是疊上去的
+    for _, c in ipairs(cells) do over = over or c.over == true end
     local head = LOG .. (rep and "REPLACE" or "BUILD") .. " user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. (rep and " old=" .. oldSpr:getName() or "") .. " kind=" .. entry.kind
-        .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3]
+        .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3] .. (over and " over=1" or "")
     local used = plan and costLine(total.uses) or ""
     used = used ~= "" and " uses=" .. used or ""
     if rep then

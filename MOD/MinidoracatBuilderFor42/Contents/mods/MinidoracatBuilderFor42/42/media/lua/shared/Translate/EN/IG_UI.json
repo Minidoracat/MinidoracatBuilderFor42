@@ -416,5 +416,20 @@
   "IGUI_MBLD_Pick_Label": "Pick tile: click something to select its tile",
   "IGUI_MBLD_Pick_Many": "If there are several, a list pops up",
   "IGUI_MBLD_Pick_HintClick": "Left click: pick",
-  "IGUI_MBLD_Pick_None": "There's no tile to pick on this square."
+  "IGUI_MBLD_Pick_None": "There's no tile to pick on this square.",
+  "IGUI_MBLD_Overlap": "Overlap",
+  "IGUI_MBLD_Overlap_Tip": "Overlap: when on, you can build on a tile that already holds something, for example a cooktop on a counter, or crates drawn at different heights into one stack. Limit per tile: %1. When off the usual rules apply, and building another style on your own piece replaces it.",
+  "IGUI_MBLD_Overlap_TipOff": "Overlap is turned off on this server.",
+  "IGUI_MBLD_Overlap_TipKind": "This item can't overlap: only furniture, containers and solid objects can.",
+  "IGUI_MBLD_OverlapLevel": "Overlap: %1 / %2 on this tile",
+  "IGUI_MBLD_Refuse_SQUARE_FULL": "This tile is full (limit: %1). Pick another tile or remove a piece first.",
+  "IGUI_MBLD_Material_all": "Material: all",
+  "IGUI_MBLD_Material_wood": "Material: planks",
+  "IGUI_MBLD_Material_metal": "Material: metal",
+  "IGUI_MBLD_Material_masonry": "Material: brick, stone",
+  "IGUI_MBLD_Material_glass": "Material: glass",
+  "IGUI_MBLD_Material_log": "Material: logs",
+  "IGUI_MBLD_Material_other": "Material: other",
+  "IGUI_MBLD_Material_Tip": "Show only items whose cost includes this material, whether or not you have it. Hardware such as nails and screws doesn't count.",
+  "IGUI_MBLD_Empty_Material": "Nothing here uses this material. Set the material to Material: all to see everything."
 }

@@ -65,8 +65,10 @@ do
     W.TAB_KINDS.all = all
 end
 
--- 視窗關掉再開仍保留的選擇；v（W.v）是畫面元件與快取
-W.st = W.st or { query = "", tab = "all", cat = "all", source = "all", only = false, recent = { n = 0 } }
+-- 視窗關掉再開仍保留的選擇；v（W.v）是畫面元件與快取。overlap＝「疊放」鈕開著（W.toggleOverlap）、
+-- material＝材料篩選（W.setMaterial；nil 當 "all"：換版重載時留著的舊表沒有這一欄）
+W.st = W.st or { query = "", tab = "all", cat = "all", source = "all", only = false, recent = { n = 0 },
+    overlap = false, material = "all" }
 W.playerNum = W.playerNum or 0
 
 local EMPTY = { n = 0 }
@@ -637,6 +639,79 @@ local function isShort(S, name)
 end
 W.isShort = isShort
 
+-- 材料篩選（使用者 2026-11-12 選 dropdown）：照成本裡用到的材料分，不看玩家身上有沒有（那是「只看能蓋的」）。
+-- 一項可以同時屬於好幾種（木板＋鐵皮的門兩種都列）；釘子、螺絲、螺栓、鐵絲、鉸鏈、電線、布料這類不歸類，都沒中的是 other。
+-- 成本照倍率 1 算：倍率 0（免材料）時也分得出來。配方項目看會用掉的輸入能用的每一種物品
+W.MATERIALS = { "all", "wood", "metal", "masonry", "glass", "log", "other" }
+local MATERIAL_OF = {
+    ["Base.Plank"] = "wood", ["Base.UnusableWood"] = "wood", ["Base.Twigs"] = "wood",
+    ["Base.Log"] = "log", ["Base.GlassPanel"] = "glass",
+    ["Base.SheetMetal"] = "metal", ["Base.SmallSheetMetal"] = "metal", ["Base.MetalBar"] = "metal",
+    ["Base.MetalPipe"] = "metal", ["Base.SteelBar"] = "metal", ["Base.SteelBarHalf"] = "metal",
+    ["Base.SteelBarQuarter"] = "metal", ["Base.SteelChunk"] = "metal", ["Base.SteelPiece"] = "metal",
+    ["Base.ScrapMetal"] = "metal", ["Base.UnusableMetal"] = "metal", ["Base.CopperScrap"] = "metal",
+    ["Base.ClayBrick"] = "masonry", ["Base.ClayTile"] = "masonry", ["Base.StoneBlock"] = "masonry",
+    ["Base.Stone2"] = "masonry", ["Base.Sandbag"] = "masonry", ["Base.Dirtbag"] = "masonry",
+    ["Base.Gravelbag"] = "masonry", ["tag:base:concrete"] = "masonry",
+}
+local MATERIAL_SETS = {} -- 「metal+wood」→ 共用的集合：三萬多項各存一張表太佔記憶體
+
+-- 這一項用到的材料：{ [W.MATERIALS 的 id] = true }；項目解析不了回 nil
+local function materialsOf(name)
+    local hit = {}
+    local r = Recipes.byId[name]
+    if r then
+        local inputs = r.recipe:getInputs()
+        for i = 0, inputs:size() - 1 do
+            local inp = inputs:get(i)
+            if inp:getResourceType() == ResourceType.Item and not inp:isKeep() then
+                local items = inp:getPossibleInputItems()
+                for j = 0, items:size() - 1 do
+                    local m = MATERIAL_OF[items:get(j):getFullName()]
+                    if m then hit[m] = true end
+                end
+            end
+        end
+    else
+        local entry = Entry.resolve(name)
+        if not entry then return nil end
+        local sprites = {}
+        for j, o in ipairs(Entry.cells(entry.spr)) do sprites[j] = o[4] end
+        local total = Cost.sum(Cost.forCells(entry.kind, sprites, 1))
+        for ft in pairs(total.items) do
+            if MATERIAL_OF[ft] then hit[MATERIAL_OF[ft]] = true end
+        end
+        for key in pairs(total.uses) do
+            if MATERIAL_OF[key] then hit[MATERIAL_OF[key]] = true end
+        end
+    end
+    local key = ""
+    for _, id in ipairs(W.MATERIALS) do
+        if hit[id] then key = key .. id .. "+" end
+    end
+    if key == "" then key, hit = "other", { other = true } end
+    MATERIAL_SETS[key] = MATERIAL_SETS[key] or hit
+    return MATERIAL_SETS[key]
+end
+W.materialsOf = materialsOf
+
+-- 分類只看項目與沙盒（成本怎麼收），整張快取到設定變了為止（W.syncSettings）；算不出來的不列（每一種材料都不列），
+-- 只記一次 log（自己的旗標：和缺料檢查共用的話，先記過缺料的錯就看不到這邊的）
+local matErrLogged = false
+local function hasMaterial(v, name, id)
+    local set = v.mat[name]
+    if set == nil then
+        local ok, res = pcall(materialsOf, name)
+        if not ok and not matErrLogged then
+            matErrLogged = true
+            print(LOG .. "material check failed for " .. tostring(name) .. ": " .. tostring(res))
+        end
+        set = ok and res or false
+        v.mat[name] = set
+    end
+    return set ~= false and set[id] == true
+end
+
 local function setDim(v, name, d)
     if v.dimN >= DIM_MAX then v.dim, v.dimN = {}, 0 end
     v.dim[name] = d
@@ -871,13 +946,27 @@ function W.whyText(code, arg, name)
 end
 
 -- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（審查 1031 HIGH：原本叫玩家試較短的字，照做也找不到）：
--- 在目錄裡（或是這位玩家看得到的配方的圖，審查 1109）卻沒出現的，是被「只看能蓋的」濾掉；能蓋卻不在目錄的，是這版
--- 遊戲沒有它的貼圖（目錄只收有貼圖的），或目錄還在整理
+-- 在目錄裡（或是這位玩家看得到的配方的圖，審查 1109）卻沒出現的，是被「只看能蓋的」或材料篩選濾掉；能蓋卻不在目錄的，
+-- 是這版遊戲沒有它的貼圖（目錄只收有貼圖的），或目錄還在整理
 function W.emptyQuery(q)
+    local matEmpty = W.v ~= nil and W.v.matEmpty == true
     if not (q:find("_%d+$") and Entry.sprite(q)) then
-        return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint")
+        -- 搜到的項目全被材料濾掉：提示改說材料（試較短的字也找不到）
+        return getText("IGUI_MBLD_Empty_Query", q), getText(matEmpty and "IGUI_MBLD_Empty_Material" or "IGUI_MBLD_Empty_QueryHint")
     end
-    if exactBucket(q) or listedAlt(q) or Recipes.forSprite(W.playerNum, q) then return getText("IGUI_MBLD_Empty_Only"), nil end
+    -- 實際列的是那張圖的整桶、替代項目或配方項目（listFor）：分類要照那個項目 ID 查，不能拿搜尋字查
+    -- （狀態圖解析不了、配方要 recipe: ID；審查 1112 Codex 第 2 輪）
+    local alt = listedAlt(q)
+    local r = Recipes.forSprite(W.playerNum, q)
+    local item = exactBucket(q) and q or alt or (r and r.id)
+    if item then
+        -- 說材料的兩種情形：材料那關一項都沒過（v.matEmpty，runAffordable 記的），或要找的這一項自己沒用到那種材料
+        -- （同一桶別項有過材料、卻被「只看能蓋的」濾掉時 matEmpty 是 false；審查 1112 Claude 第 2 輪）。
+        -- 其他才是「只看能蓋的」濾掉的
+        local mat = W.st.material or "all"
+        local byMat = matEmpty or (W.v ~= nil and mat ~= "all" and not hasMaterial(W.v, item, mat))
+        return getText(byMat and "IGUI_MBLD_Empty_Material" or "IGUI_MBLD_Empty_Only"), nil
+    end
     local code, arg = Entry.why(q)
     if code == "UNKNOWN" then return getText("IGUI_MBLD_Empty_Query", q), getText("IGUI_MBLD_Empty_QueryHint") end
     if not code then
@@ -909,6 +998,9 @@ local function prepareEmpty(v)
         title, hint = W.emptyQuery(q)
     elseif cs ~= "ready" then
         title = getText("IGUI_MBLD_Catalog_Wait")
+    elseif v.matEmpty then
+        -- 材料篩選下一項都沒有（runAffordable 記的；清單本來就空不算）：兩個篩選都開著、看最愛或最近使用時也說材料
+        title = getText("IGUI_MBLD_Empty_Material")
     elseif st.cat == "fav" then
         title = getText("IGUI_MBLD_Empty_Fav")
     elseif st.cat == "recent" then
@@ -984,14 +1076,15 @@ function W.refilter(keep)
     -- 「只看能蓋的」還沒做完的那一批是換了條件（keep＝false，例：挑圖塊要選到那張）時，這次也照換了條件套，不然
     -- applyItems 會留住舊的選取
     if v.aff and not v.aff.keep then keep = false end
-    if st.only and v.S then
-        -- 「只看能蓋的」：逐項查材料很貴（每項要解析與算成本），分批做，做完才換方格內容
-        v.aff = { list = out, i = 0, out = { n = 0 }, jump = jump, keep = keep }
+    local only, mat = st.only and v.S ~= nil, st.material or "all"
+    if only or mat ~= "all" then
+        -- 「只看能蓋的」與材料篩選：逐項查很貴（每項要解析與算成本），分批做，做完才換方格內容
+        v.aff = { list = out, i = 0, out = { n = 0 }, jump = jump, keep = keep, only = only, mat = mat ~= "all" and mat or nil }
         v.affPct = 0
         W.setStatus(v)
         return
     end
-    v.aff = nil
+    v.aff, v.matEmpty = nil, false
     applyItems(v, out, jump, keep)
 end
 
@@ -1002,9 +1095,14 @@ local function runAffordable(v)
     while i < list.n do
         i = i + 1
         local name = list[i]
-        local d = v.dim[name]
-        if d == nil then d = isShort(v.S, name) end
-        if not d then
+        local keep = not job.mat or hasMaterial(v, name, job.mat)
+        if keep and job.mat then job.hit = true end
+        if keep and job.only then
+            local d = v.dim[name]
+            if d == nil then d = isShort(v.S, name) end
+            keep = not d
+        end
+        if keep then
             out.n = out.n + 1
             out[out.n] = name
         end
@@ -1017,7 +1115,8 @@ local function runAffordable(v)
         W.setStatus(v)
     end
     if i >= list.n then
-        v.aff = nil
+        -- 本來就沒有項目（list 是空的）不算被材料濾掉
+        v.aff, v.matEmpty = nil, job.mat ~= nil and not job.hit and list.n > 0
         applyItems(v, out, job.jump, job.keep)
         -- ponytail：清單很長時玩家一直走動，摘要每秒變，會一輪接一輪重查；要省就改成只在背包變動時重查
         if v.affStale then
@@ -1026,6 +1125,7 @@ local function runAffordable(v)
         end
     end
 end
+W.runAffordable = runAffordable -- 離線測試用（同 W.isShort）
 
 -- ===== 詳情（選取改變、材料摘要改變、版面改變時才重組畫圖指令）=====
 
@@ -1466,6 +1566,19 @@ local function prepareDetail(v)
     v.setBtn:setTitle(v.mode == "narrow" and "" or getText(key))
     v.setBtn:setTooltip(getText(key .. "_Tip"))
     v.setBtn:setEnabled(set ~= nil)
+    -- 「疊放」（W.toggleOverlap）：選著的項目是能疊的種類、伺服器沒關掉（MaxPerSquare 大於 1）、不在「換成」條件下才能按；
+    -- 提示寫上限；伺服器關掉、這一項不能疊時寫原因（配方項目走原版游標，算不能疊；「換成」條件下照一般的提示）。
+    -- 窄版只有圖示
+    local P = B.Place
+    local max = P.maxPerSquare()
+    local kindOk = e ~= nil and P.OVERLAP[e.kind] == true
+    local can = kindOk and max > 1 and W.st.replace == nil
+    v.overBtn:setTitle(v.mode == "narrow" and "" or v.overTitle)
+    v.overBtn:setEnabled(can)
+    v.overBtn:setActive(can and W.st.overlap == true)
+    v.overBtn:setTooltip(max <= 1 and getText("IGUI_MBLD_Overlap_TipOff")
+        or (name ~= nil and not kindOk) and getText("IGUI_MBLD_Overlap_TipKind")
+        or getText("IGUI_MBLD_Overlap_Tip", tostring(max)))
     -- 管理員快捷鈕（W.layout 只在管理員的寬、中版排出來）：停用這一項的圖塊組；來源是 MOD 才能整個停用
     -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）
     local src = e and W.sourceOf(e.tileset)
@@ -1502,7 +1615,8 @@ function W.syncSettings(v)
     if v.digest == dg then return end
     if v.digest then
         -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
-        v.S, v.dim, v.dimN, v.sumAt = nil, {}, 0, 0
+        -- 材料分類照成本怎麼收（照配方收、硬核耗材），一起清
+        v.S, v.dim, v.dimN, v.sumAt, v.mat = nil, {}, 0, 0, {}
         W.restartReplace(v) -- 成本倍率、關掉的種類或來源變了：同材料的款式重算
         W.refreshTabs(v)
         W.refreshCatalog(v)
@@ -2006,6 +2120,19 @@ function W.setOnly(checked)
     W.refilter(true)
 end
 
+-- 材料篩選（下拉）：換了條件，回到頂端
+function W.setMaterial(id)
+    if id == nil or id == (W.st.material or "all") then return end
+    W.st.material = id
+    W.refilter(false)
+end
+
+-- 「疊放」鈕：開著時下一次按「建造」的游標帶疊放模式（W.build）；鈕的樣子在 prepareDetail 更新
+function W.toggleOverlap()
+    W.st.overlap = not W.st.overlap
+    if W.v then W.v.detailDirty = true end
+end
+
 function W.onQuery(text)
     W.st.query = text or ""
     if W.v then
@@ -2093,7 +2220,9 @@ function W.build()
         if not ok then print(LOG .. "Recipes.build failed: " .. tostring(res)) end
     else
         local rp = W.st.replace
-        ok, res = pcall(C.start, W.playerNum, name, rp and rp.match and rp.match[name] or 0)
+        -- 換成條件下不帶疊放：玩家要的是換掉那一件
+        ok, res = pcall(C.start, W.playerNum, name, rp and rp.match and rp.match[name] or 0,
+            not rp and W.st.overlap == true)
         if not ok then print(LOG .. "Cursor.start failed: " .. tostring(res)) end
     end
     if not (ok and res) then
@@ -2283,7 +2412,12 @@ function W.layout()
     ab:setVisible(admin)
     local abW = admin and (ab.width + GAP) or 0
     local cbRowS = not cbRow1 and inner - pr.width - GAP - abW >= cbW
+    -- 材料篩選（W.setMaterial）：這一列滑桿（與勾選）右邊放得下就放，放不下自己占下一列
+    local md = v.material
+    local mx = PAD + pr.width + GAP + (cbRowS and (cbW + GAP) or 0)
+    local mdRowS = PAD + inner - abW - mx >= md.width
     local hS = cbRowS and math.max(pr.height, v.only.height) or pr.height
+    if mdRowS then hS = math.max(hS, md.height) end
     if admin then hS = math.max(hS, ab.height) end
     pr:setX(PAD)
     pr:setY(y + math.floor((hS - pr.height) / 2))
@@ -2296,6 +2430,9 @@ function W.layout()
         ab:setY(y + math.floor((hS - ab.height) / 2))
     end
     y = y + hS + GAP
+    md:setX(mdRowS and mx or PAD)
+    md:setY(mdRowS and (y - GAP - hS + math.floor((hS - md.height) / 2)) or y)
+    if not mdRowS then y = y + md.height + GAP end
     local cbPlaced = cbRow1 or cbRowS
     -- 第三列：種類頁籤（＋中窄版的分類下拉）
     v.tabs:setX(PAD)
@@ -2357,11 +2494,16 @@ function W.layout()
         gw = gw - dw - GAP
         local dx = PAD + inner - dw
         local by = y + bodyH - btnH
-        -- 「整套」排在最愛、建造上面一列；管理員快捷鈕再上面：兩顆並排放得下（各自的標題寬）就一列，不然各占一列
+        -- 「整套」「疊放」排在最愛、建造上面一列（疊放照標題寬、最多一半，整套拿剩下的）；管理員快捷鈕再上面：
+        -- 兩顆並排放得下（各自的標題寬）就一列，不然各占一列
         local sy = by - btnH - GAP
+        local ow = math.min(v.overW, math.floor((dw - GAP) / 2))
         v.setBtn:setX(dx)
         v.setBtn:setY(sy)
-        v.setBtn:setWidth(dw)
+        v.setBtn:setWidth(dw - ow - GAP)
+        v.overBtn:setX(dx + dw - ow)
+        v.overBtn:setY(sy)
+        v.overBtn:setWidth(ow)
         local qh = 0
         if quick then
             local qT, qS, half = v.qTileset, v.qSource, math.floor((dw - GAP) / 2)
@@ -2400,14 +2542,18 @@ function W.layout()
         v.favBtn:setX(bx - GAP - v.favW)
         v.favBtn:setY(by)
         v.favBtn:setWidth(v.favW)
-        -- 「整套」在最愛左邊，只有圖示（標題在 prepareDetail 清掉）
+        -- 「整套」在最愛左邊、「疊放」再左邊，都只有圖示（標題在 prepareDetail 清掉）
         local sx = bx - GAP - v.favW - GAP - btnH
         v.setBtn:setX(sx)
         v.setBtn:setY(by)
         v.setBtn:setWidth(btnH)
+        local ox = sx - GAP - btnH
+        v.overBtn:setX(ox)
+        v.overBtn:setY(by)
+        v.overBtn:setWidth(btnH)
         v.detailBox:setX(PAD)
         v.detailBox:setY(ry)
-        v.detailBox:setWidth(math.max(40, sx - GAP - PAD))
+        v.detailBox:setWidth(math.max(40, ox - GAP - PAD))
         v.detailBox:setHeight(rowHt)
         v.detail:setWidth(v.detailBox:contentWidth())
     end
@@ -2452,7 +2598,7 @@ function W.create(UI)
     local w = math.max(math.floor(360 * s), math.min(sw - 40, want))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
-        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, ops = EMPTY, sumAt = 0 }
+        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, mat = {}, ops = EMPTY, sumAt = 0 }
     v.iconH = math.floor(56 * s)
     v.tileH = 4 + v.iconH + 4 + 2 * fh + 2 + 6 -- 縮圖＋兩行名稱（W.drawTile）
     st.perRow = st.perRow or W.loadPerRow() -- 第一次開窗才讀檔
@@ -2500,6 +2646,13 @@ function W.create(UI)
     v.only = UI.Checkbox.new({ x = 0, y = 0, label = getText("IGUI_MBLD_OnlyAffordable"), checked = st.only, theme = theme,
         tooltip = getText("IGUI_MBLD_OnlyAffordable_Tip"), onChange = function(_, c) MinidoracatBuilder.Window.setOnly(c) end })
     win:addChild(v.only)
+    -- 材料篩選：寬度照最長的選項（沒給寬度＝自動），W.layout 只排位置
+    local matOpts = {}
+    for i, id in ipairs(W.MATERIALS) do matOpts[i] = { id = id, label = getText("IGUI_MBLD_Material_" .. id) } end
+    v.material = UI.Dropdown.new({ x = 0, y = 0, options = matOpts, selected = st.material or "all", maxRows = 12,
+        theme = theme, target = v, tooltip = getText("IGUI_MBLD_Material_Tip"),
+        onChange = function(_, id) MinidoracatBuilder.Window.setMaterial(id) end })
+    win:addChild(v.material)
     -- 一排幾格：拖動時每換一格就重排（W.setPerRow）；整列是一個焦點目標，左右鍵與手把十字鍵調整（Controls.lua:1313-1316）
     v.rowSlider = UI.SliderRow.new({ x = PAD, y = 0, width = math.floor(200 * s), label = getText("IGUI_MBLD_PerRow"),
         min = W.PER_ROW_MIN, max = W.PER_ROW_MAX, step = 1, value = st.perRow, theme = theme,
@@ -2540,6 +2693,14 @@ function W.create(UI)
     v.setBtn = UI.Button.new({ x = 0, y = 0, width = 100, title = getText("IGUI_MBLD_Set"), icon = "layers", theme = theme,
         tooltip = getText("IGUI_MBLD_Set_Tip"), onClick = function() MinidoracatBuilder.Window.openSet() end })
     v.setBtn:setEnabled(false)
+    -- 「疊放」（W.toggleOverlap）：chip 樣式畫得出開著的狀態；先照標題量一次寬度（v.overW），之後寬度由 W.layout 給
+    v.overTitle = getText("IGUI_MBLD_Overlap")
+    v.overBtn = UI.Button.new({ x = 0, y = 0, width = 100, title = v.overTitle, icon = "copy", style = "chip", theme = theme,
+        onClick = function() MinidoracatBuilder.Window.toggleOverlap() end })
+    v.overBtn:fitWidth()
+    v.overW = v.overBtn.width
+    v.overBtn:setEnabled(false)
+    win:addChild(v.overBtn)
     win:addChild(v.setBtn)
     -- 最愛按鈕寬度照兩種標題較長的那個（窄版要固定寬）
     v.favBtn = button(v, getText("IGUI_MBLD_Fav_Remove"), nil, function() MinidoracatBuilder.Window.toggleFavorite() end)
