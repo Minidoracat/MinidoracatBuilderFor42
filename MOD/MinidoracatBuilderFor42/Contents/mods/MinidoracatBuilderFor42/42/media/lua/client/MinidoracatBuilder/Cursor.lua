@@ -24,7 +24,9 @@ local Class, Marks, Panel
 local LOG = "[MinidoracatBuilderFor42] "
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
+-- 配方項目照同一份（Recipes.dragMode）
 local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", wall = "ring", fence = "ring", post = "edge" }
+Cursor.DRAG = DRAG
 -- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
 -- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
 local LAYERED = { roof = true, floor = true }
@@ -1106,11 +1108,9 @@ Events.OnTick.Add(Cursor.tick)
 -- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:316 的 DoBuilding），所以一樣畫在世界最上層。
 -- 不能用 OnPostFloorLayerDraw：它只在舊渲染器（IsoCell.java:856-860）觸發，B42 預設的 FBO 渲染器沒有
 -- （builder-ui-1029a 截圖一格都沒畫出來）。
--- 各片的 sprite 是 tryBuild 照那一格自己的面記的（圍一圈時北、西兩種邊各畫各的）。
-function Cursor.drawQueued()
-    local w = watch
-    local parts = w and w.parts
-    if not parts then return end
+-- parts＝{ [i] = { { x, y, z, sprite, yoff }, ... } }（各片的 sprite 是 tryBuild 照那一格自己的面記的，圍一圈時北、西兩種邊
+-- 各畫各的）；配方項目拖的一排（Recipes.lua）也用這支
+function Cursor.drawParts(parts)
     local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:697-703）
     for _, ps in pairs(parts) do
         for _, g in ipairs(ps) do
@@ -1118,6 +1118,11 @@ function Cursor.drawQueued()
             floor:RenderGhostTileColor(g[1], g[2], g[3], QR, QG, QB, 0.8)
         end
     end
+end
+
+function Cursor.drawQueued()
+    local w = watch
+    if w and w.parts then Cursor.drawParts(w.parts) end
 end
 Events.OnPostRender.Add(Cursor.drawQueued)
 

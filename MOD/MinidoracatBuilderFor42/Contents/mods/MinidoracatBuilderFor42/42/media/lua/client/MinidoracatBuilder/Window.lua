@@ -806,9 +806,6 @@ end
 function W.tipOf(v, name, short)
     if short == nil then short = v.dim[name] end
     local s = Names.of(name)
-    -- 牆、柵欄、柱子的配方項目先寫不能拖一排（圖塊的同種類能拖；Recipes.NO_DRAG）
-    local rc = Recipes.byId[name]
-    if rc and Recipes.NO_DRAG[rc.kind] then s = s .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Recipe_NoDrag") end
     if short == true then
         -- 沒學會的配方（檢視未知配方開著時照列）寫沒學會、太暗寫太暗，不寫缺材料（審查 1109 Grok、第 2 輪 Claude）
         local r, why = Recipes.byId[name], "IGUI_MBLD_Tip_Short"
@@ -1523,8 +1520,6 @@ local function recipeRow(v, ops, r, need, short)
     for _, k in ipairs(need.skills) do
         if not k.ok then parts[#parts + 1] = getText("IGUI_MBLD_Detail_SkillShort", k.name, tostring(k.level), tostring(k.have)) end
     end
-    -- 不能拖一排接在最後：整行會被截短，缺什麼要先看得到（審查 1112 Claude）
-    if Recipes.NO_DRAG[r.kind] then parts[#parts + 1] = getText("IGUI_MBLD_Recipe_NoDrag") end
     local line = getText("IGUI_MBLD_Recipe_Badge")
     if #parts > 0 then line = line .. getText("IGUI_MBLD_Sep") .. table.concat(parts, getText("IGUI_MBLD_ListSep")) end
     if short then add(ops, { t = "icon", key = "warning", x = x, y = y + fh + 4 + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end

@@ -7238,6 +7238,15 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local B = MinidoracatBuilder
     local W, Recipes, Names = B.Window, B.Recipes, B.Names
     local realSpecific, realCell, realInfos, realGetText = getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText
+    local realJoy = JoypadState
+    JoypadState = { players = {} } -- 沒有手把玩家（Recipes.build 看它決定拖不拖）
+    -- 拖一排的假原版（下面 ISBuildIsoEntity 那段用）：虛影圖記每次畫的位置與顏色
+    local ghosts, badSq, vanillaRender, tried, walkFail = {}, {}, {}, {}, false
+    local function ghostSprite(name)
+        return { name = name, RenderGhostTileColor = function(_, x, y, z, a, b, c, d, e, f, g)
+            ghosts[#ghosts + 1] = { name = name, x = x, y = y, args = { a, b, c, d, e, f, g } }
+        end }
+    end
     local realDoing, realOnEnd = ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd
     getText = function(k, ...)
         local a = { ... }
@@ -7310,11 +7319,16 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local rPaint = recipe("Base.PaintWall", { label = "Paint Wall", cat = "Wall Coverings" })
     local rOdd = recipe("Base.Mystery", { label = "Mystery", cat = "Miscellaneous" })
     local rMod = recipe("Neat.Bench", { label = "Neat Bench", cat = "Furniture", mod = "Neat_Building" })
+    -- 面 0（北）、1（西）：左上那格的圖照 names 的順序（只有一張就同一張）
     local function info(cr, names, w, h)
-        local face = { getWidth = function() return w end, getHeight = function() return h end }
+        local function face(f)
+            local tile = { getSpriteName = function() return names[f + 1] or names[1] end }
+            return { getWidth = function() return w end, getHeight = function() return h end, getTileInfo = function() return tile end }
+        end
+        local faces = { [0] = face(0), [1] = face(1) }
         local script = { getAllTileNames = function() return javaList(names) end, getCornerSprite = function() return nil end }
         return { getScript = function() return script end, getRecipe = function() return { getCraftRecipe = function() return cr end } end,
-            getFace = function(_, f) return (f == 0 or f == 1) and face or nil end }
+            getFace = function(_, f) return faces[f] end }
     end
     local infos = { info(rWall, { "rcp_walls_01_0" }, 1, 1), info(rFrame, { "rcp_walls_01_8" }, 1, 1),
         info(rBarrel, { "rcp_barrel_01_0", "rcp_barrel_01_1" }, 2, 1), info(rFloor, { "rcp_floor_01_0" }, 1, 1),
@@ -7360,6 +7374,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
             for _, l in ipairs(self.listeners) do if l[1] == "onStopCraft" then l[2](l[3]) end end
         end
         function L:isCraftActionInProgress() return self.busy == true end
+        function L:getPossibleCraftCount() return self.poss or 100 end -- 材料夠做幾次（BaseCraftingLogic.java:1183-1196）
         function L:autoPopulateInputs() self.populated, self.filled = (self.populated or 0) + 1, invVer end
         function L:refresh() self.refreshed = (self.refreshed or 0) + 1 end
         function L:isInputSatisfied(inp) return inp.ok end
@@ -7411,7 +7426,24 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     ISBuildIsoEntity = { onJoypadPressButton = function(self, _, _, button) self.classPressed = button end }
     ISBuildIsoEntity.new = function(_, player, objectInfo, n, containers, logic)
         return setmetatable({ character = player, objectInfo = objectInfo, nSprite = n, containers = containers,
-            buildPanelLogic = logic, dragNilAfterPlace = true, blockAfterPlace = false }, { __index = ISBuildIsoEntity })
+            buildPanelLogic = logic, dragNilAfterPlace = true, blockAfterPlace = false, spriteCache = {},
+            tileSprite = ghostSprite("floor") }, { __index = ISBuildIsoEntity })
+    end
+    -- 拖一排用到的原版方法（ISBuildIsoEntity.lua、ISBuildingObject.lua 同名）：getSprite 設 north、getFace 照 nSprite 換面
+    -- 並補 spriteCache、isValid 看 blockBuild 與 badSq、render 與 tryBuild 只記下來
+    function ISBuildIsoEntity:getSprite() self.north = self.nSprite == 2 return nil end
+    function ISBuildIsoEntity:getFace()
+        local f = self.objectInfo:getFace(({ 1, 0, 3, 2 })[self.nSprite])
+        local name = f and f:getTileInfo(0, 0, 0):getSpriteName()
+        if name and not self.spriteCache[name] then self.spriteCache[name] = ghostSprite(name) end
+        return f
+    end
+    function ISBuildIsoEntity:ensureSquaresExist() end
+    function ISBuildIsoEntity:isValid(sq) return not self.blockBuild and not badSq[sq] end
+    function ISBuildIsoEntity:render(x, y) vanillaRender[#vanillaRender + 1] = x .. "," .. y end
+    function ISBuildIsoEntity:tryBuild(x, y, z)
+        tried[#tried + 1] = { x, y, z, self.nSprite, north = self.north }
+        if walkFail then self:onActionComplete() end -- 走不到：原版當場收尾（ISBuildingObject.lua:283-285）
     end
     ISPaintCursor = { new = function(_, player, action, args) return { character = player, action = action, args = args } end }
     ISTimedActionQueue.isPlayerDoingAction = function() return false end
@@ -7641,8 +7673,195 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         "牆面油漆開原版的油漆游標")
     getCell():setDrag(nil, 0)
 
+    -- 拖一排（使用者 2026-11-12：配方項目也能拖一排）：牆配方的游標掛上拖一排；按住拖畫整排（上限、擋住的格子、
+    -- 材料夠做幾次），放開後一格接一格送原版 tryBuild；那格蓋好、佇列空了才送下一格；沒蓋好、材料不夠就停下並說
+    local realBase, realCore, realQueue = ISBuildingObject, getCore, ISTimedActionQueue
+    ISBuildingObject = { onActionComplete = function(self) self.buildPanelLogic:stopCraftAction() end,
+        getFloorCursorSprite = function() return ghostSprite("queued") end }
+    local function color(r, g, b) return { getR = function() return r end, getG = function() return g end, getB = function() return b end } end
+    getCore = function()
+        local c = realCore()
+        c.getGoodHighlitedColor = function() return color(0, 1, 0) end
+        c.getBadHighlitedColor = function() return color(1, 0, 0) end
+        return c
+    end
+    local doing, cleared, current = false, 0, nil
+    ISTimedActionQueue = { isPlayerDoingAction = function() return doing end,
+        clear = function() -- 照原版：清佇列時正在跑的建造動作當場收尾（實測 builder-rdprobe-1112a 的 interrupt）
+            cleared = cleared + 1
+            local c = current
+            current = nil
+            if c then c:onActionComplete() end
+        end }
+    local Client = B.Client
+    local toasts2, realToast2 = {}, B.Messages.toast
+    B.Messages.toast = function(_, text, title) toasts2[#toasts2 + 1] = tostring(title) .. "|" .. text end
+    local function place(x, y, name) -- 那格出現蓋好的牆
+        local sq = getCell():getGridSquare(x, y, 0)
+        sq.objects[#sq.objects + 1] = { getSprite = function() return { getName = function() return name end } end }
+    end
+    local function finish(o, x, y) -- 那格動作結束；x 有給＝蓋好了
+        if x then place(x, y, "rcp_walls_01_0") end
+        doing = true
+        current = nil
+        o:onActionComplete()
+        fire("OnTick")
+    end
+    local function rowGhosts() -- 排隊虛影（OnPostRender）畫在哪幾格
+        ghosts = {}
+        fire("OnPostRender")
+        local at = {}
+        for _, g in ipairs(ghosts) do if g.name ~= "queued" then at[#at + 1] = g.x .. "," .. g.y end end
+        return table.concat(at, " ")
+    end
+    local wallR = byId["recipe:Base.WoodWall"]
+    check(Recipes.dragMode(wallR) == "ring" and Recipes.dragMode(barrel) == nil,
+        "能拖一排：圖塊同種類能拖、每面一格的配方（牆照 ring）；集雨桶（家具、兩格）不能")
+    local w = Recipes.build(0, wallR.id)
+    local bar = Recipes.build(0, barrel.id)
+    check(w.mbldRow == true and w.blockAfterPlace == false and rawget(w, "render") ~= nil and rawget(w, "tryBuild") ~= nil
+        and bar.mbldRow == nil and bar.blockAfterPlace == true and rawget(bar, "render") == nil and rawget(bar, "tryBuild") ~= nil,
+        "牆配方的游標掛上拖一排（只在實例上）、放下後不擋；集雨桶照原版一次一個、動作跑完才再放")
+    getCell():setDrag(w, 0)
+    BL = w.buildPanelLogic
+    BL.poss = 3
+    w.nSprite = 2
+    local s50 = getCell():getGridSquare(50, 50, 0)
+    badSq[getCell():getGridSquare(52, 50, 0)] = true
+    w.square, w.isLeftDown = s50, true
+    w:rotateMouse(54, 50)
+    ghosts = {}
+    w:render(50, 50, 0, s50)
+    local okN, badN = 0, 0
+    for _, g in ipairs(ghosts) do
+        if g.name == "rcp_walls_01_0" then
+            if g.args[5] == 1 then okN = okN + 1 else badN = badN + 1 end
+        end
+    end
+    check(#vanillaRender == 0 and okN == 3 and badN == 2 and w.canBeBuild == true,
+        "按住拖：整排 5 格，擋住的那格不扣一份，材料夠 3 次就 3 格白、其餘紅；至少一格可蓋就能放")
+    w.mbldMax = 2
+    w:rotateMouse(53, 50)
+    ghosts = {}
+    w:render(50, 50, 0, s50)
+    okN = 0
+    for _, g in ipairs(ghosts) do if g.name == "rcp_walls_01_0" and g.args[5] == 1 then okN = okN + 1 end end
+    check(okN == 2, "每排上限（MaxCellsPerDrag）之後的格子畫紅、不送")
+    w.mbldMax = 10
+    nowMs = nowMs + 600 -- 預覽半秒重算一次（上限只在開游標時定，這裡是假的才要等）
+    w.isLeftDown, w.build = false, true
+    w:rotateMouse(53, 50) -- 放開那一幀 DoTileBuilding 不呼叫 rotateMouse；這行只是讓預覽和放開前最後一幀相同
+    w:render(50, 50, 0, s50)
+    Client.pending, Client.pendingUnbuild = { n = 9 }, { n = 9 }
+    local c0 = cleared
+    w:tryBuild(50, 50, 0)
+    w.build = false
+    current = w
+    check(cleared == c0 + 1 and Client.pending == nil and Client.pendingUnbuild == nil and #tried == 1
+        and tried[1][1] == 50 and tried[1][4] == 2 and tried[1].north == true and w.nSprite == 2,
+        "放開：清佇列、圖塊的建造與拆除請求作廢（每人一個請求），送第一格（那格的面），送完換回游標的面")
+    check(rowGhosts() == "50,50 51,50 53,50", "還沒蓋好的格子畫排隊虛影（擋住的 52 不送、不畫）")
+    finish(w, 50, 50)
+    check(#tried == 1, "第一格蓋好，但佇列還沒空（原版動作還在佇列裡）：先不送")
+    doing = false
+    fire("OnTick")
+    current = w
+    check(#tried == 2 and tried[2][1] == 51 and rowGhosts() == "51,50 53,50", "佇列空了：送下一格，蓋好的那格不再畫")
+    -- 打斷：那格沒蓋好，等一下還是沒有就停下整排
+    finish(w)
+    doing = false
+    local t2 = #toasts2
+    fire("OnTick")
+    check(#toasts2 == t2, "動作剛結束、那格還沒出現：先等（MP 的物件可能晚到）")
+    nowMs = nowMs + 2000
+    fire("OnTick")
+    check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and rowGhosts() == "",
+        "被打斷：那格沒出現就停下整排、說蓋好幾格，不再送，排隊虛影收掉")
+    -- 材料不夠：兩格，第一格蓋好後做不了
+    getCell():getGridSquare(50, 51, 0).objects, getCell():getGridSquare(51, 51, 0).objects = {}, {}
+    w.isLeftDown, w.build = true, false
+    w.square = getCell():getGridSquare(50, 51, 0)
+    w:rotateMouse(51, 51)
+    w:render(50, 51, 0, w.square)
+    w.isLeftDown, w.build = false, true
+    w:render(50, 51, 0, w.square)
+    w:tryBuild(50, 51, 0)
+    w.build = false
+    finish(w, 50, 51)
+    rWall.o.can = false
+    doing = false
+    fire("OnTick")
+    rWall.o.can = nil
+    check(#tried == 3 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Recipe_Blocked",
+        "材料不夠做下一格：停下整排、說缺料（詳情寫缺什麼），不再送")
+    -- 排隊中再拖一排：取代前一排；被取代的那格收尾不算停下、不通知
+    w.square = getCell():getGridSquare(44, 44, 0)
+    w:tryBuild(44, 44, 0)
+    current = w
+    t2 = #toasts2
+    w.isLeftDown = true
+    w:rotateMouse(46, 44)
+    w:render(44, 44, 0, w.square)
+    w.isLeftDown, w.build = false, true
+    w:render(44, 44, 0, w.square)
+    w:tryBuild(44, 44, 0)
+    w.build = false
+    nowMs = nowMs + 2000
+    doing = false
+    fire("OnTick")
+    check(#toasts2 == t2 and #tried == 5 and tried[5][1] == 44 and tried[5][2] == 44 and rowGhosts() == "44,44 45,44 46,44",
+        "排隊中再拖：清掉舊的那格、送新的一排第一格；舊的那格不通知")
+    -- 圖塊項目送出建造（Client.build 設 pending、清佇列）：這一排安靜放掉
+    Client.pending = { n = 10 }
+    finish(w)
+    nowMs = nowMs + 2000
+    fire("OnTick")
+    check(#toasts2 == t2 and #tried == 5 and rowGhosts() == "", "圖塊項目的建造取代了這一排：不通知、不再送")
+    Client.pending = nil
+    -- 走不到：原版當場收尾，什麼都沒蓋就說走不到
+    walkFail = true
+    w:tryBuild(55, 55, 0)
+    walkFail = false
+    doing = false
+    nowMs = nowMs + 2000
+    fire("OnTick")
+    check(toasts2[#toasts2] == "nil|IGUI_MBLD_Refuse_WALK", "一格都沒蓋就停下：照圖塊項目說被打斷或走不過去")
+    -- 游標身上沒有指回自己的表：原版 tryBuild 用 copyTable 深拷游標（不防循環，ISBuildingObject.lua:200）
+    w:tryBuild(56, 56, 0)
+    local seen, cyc = {}, false
+    local JAVA = { buildPanelLogic = true, character = true, objectInfo = true, containers = true } -- 遊戲裡是 Java 物件，深拷不進去
+    local function walk(t, depth)
+        for k, v in pairs(t) do
+            if v == w then cyc = true end
+            if type(v) == "table" and not seen[v] and depth < 8 and not (depth == 0 and JAVA[k]) then
+                seen[v] = true
+                walk(v, depth + 1)
+            end
+        end
+    end
+    walk(w, 0)
+    check(not cyc, "拖一排的狀態不放在游標上：深拷游標不會繞回自己")
+    bar:tryBuild(57, 57, 0)
+    nowMs = nowMs + 2000
+    doing = false
+    t2 = #toasts2
+    w:onActionComplete()
+    fire("OnTick")
+    check(#toasts2 == t2 and rowGhosts() == "", "不能拖的配方游標放下：舊的一排剩下的不再送")
+    -- 游標關了、拖的一排還在蓋：那格做完照樣換容器、refresh（下一格照用掉以後的材料判斷）
+    getCell():setDrag(w, 0)
+    getCell():getGridSquare(44, 46, 0).objects = {}
+    w:tryBuild(44, 46, 0)
+    getCell():setDrag(nil, 0)
+    local ref0 = BL.refreshed or 0
+    finish(w, 44, 46)
+    check((BL.refreshed or 0) == ref0 + 1, "游標關了但一排還在蓋：那格做完照樣 refresh")
+    getCell():setDrag(nil, 0)
+    B.Messages.toast = realToast2
+    ISBuildingObject, getCore, ISTimedActionQueue = realBase, realCore, realQueue
+
     getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText = realSpecific, realCell, realInfos, realGetText
-    ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep = realDoing, realOnEnd, step0
+    ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep, JoypadState = realDoing, realOnEnd, step0, realJoy
     Recipes.list = nil
     Names.reset()
 end)()

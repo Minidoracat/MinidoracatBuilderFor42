@@ -120,7 +120,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]What's listed[/b]: every recipe you can see in the vanilla build menu, including ones other mods add, for example rain collectors, forges, wooden walls and stairs.
 [*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell, listed after the tiles on that tab. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
 [*] [b]Details[/b]: the source and the vanilla category, then materials, tools (kept) and skills, counted the same way as in the vanilla build menu.
-[*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla; you place one at a time and can't drag a row. To drag a row of walls or fences, pick a tile without the Recipe badge.
+[*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla.
+[*] [b]Dragging a row[/b]: wall, fence and post recipes drag like tiles: hold the left button to drag a row, or drag diagonally for a rectangle. After you release, the squares are built one after another, each one a normal vanilla build. When materials only cover some squares, only those are white. If you're interrupted, can't get there or run out of materials, the whole row stops and a notice says how many were built. The vanilla cursor has no info box, so dragging another row simply cancels the squares the last row hadn't built. With a controller you place one at a time.
 [*] [b]Wall paint, wallpaper and plaster[/b]: as in the vanilla build menu, the cursor doesn't open while materials, tools or skills are missing, and a notice says the details show what's missing.
 [*] [b]After placing[/b]: the cursor stays so you can place another, and it blocks when you run out of materials. Right-click (B on a gamepad) to go back to Build Anything.
 [*] [b]Recipes you haven't learned[/b]: they follow the vanilla sandbox option See Not Known Recipes. When it's on (the default) they're listed, and the cell and details say you haven't learned them yet; when it's off they appear once you learn them.
@@ -149,7 +150,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, floor overlays, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them.
+[*] [b]What you can drag[/b]: floors, floor overlays, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them. Recipe walls, fences and posts too.
 [*] [b]Drag straight[/b]: builds a row.
 [*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays and roofs fill it; walls and fences go around its edges, switching to the piece for the right direction on the north and south sides and on the west and east sides; posts go on every square of the edges.
 [*] [b]A ring missing two sides[/b]: when the tileset has no piece for the other direction, those two sides turn red and aren't built.
