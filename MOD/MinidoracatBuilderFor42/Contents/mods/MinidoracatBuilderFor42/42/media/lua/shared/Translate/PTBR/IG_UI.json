@@ -90,7 +90,7 @@
   "IGUI_MBLD_Note_roofOpen": "Esta peça não protege da chuva (beiral, decoração); o quadrado abaixo continua ao ar livre. PgUp/PgDn muda o andar; arraste uma linha a partir da ponta apoiada.",
   "IGUI_MBLD_Note_light": "Só acende com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
   "IGUI_MBLD_Note_lightStreet": "Só acende à noite e com energia: casas construídas por você não estão na rede elétrica, então use um gerador. Um interruptor que você coloca se conecta sozinho às luzes do mesmo cômodo fechado; clique nele com o botão direito e escolha Fiação... para adicionar ou remover luzes.",
-  "IGUI_MBLD_WhatsNew": "As receitas de construção do jogo agora aparecem (\"Receita\"). Lareiras acendem e A no controle constrói.",
+  "IGUI_MBLD_WhatsNew": "Botão \"Sobrepor\": construa onde já tem algo, como um cooktop sobre um balcão. Filtro por material.",
   "IGUI_MBLD_Note_curtain": "Fica no lado interno de um batente de janela. O quadrado precisa de telhado ou de piso acima.",
   "IGUI_MBLD_Note_plumb": "Não tem água encanada, como um equipamento que você mesmo move. Encane-o dentro de um cômodo fechado com uma chave de cano: ele passa a usar a água de um barril coletor de chuva ou outro recipiente com água no andar de cima, logo acima ou em um quadrado vizinho.",
   "IGUI_MBLD_Note_shutter": "Uma janela no mesmo quadrado não pode ser aberta nem atravessada com a tecla de interação (regra do vanilla).",
