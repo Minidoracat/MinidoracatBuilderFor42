@@ -7240,6 +7240,18 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local realSpecific, realCell, realInfos, realGetText = getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText
     local realJoy = JoypadState
     JoypadState = { players = {} } -- 沒有手把玩家（Recipes.build 看它決定拖不拖）
+    -- 取代前一排的提示框（Recipes.lua 的 hintPanel）：只記顯示與否
+    local realUIElement, realMUI, hintShown = ISUIElement, MinidoracatUI, {}
+    ISUIElement = { derive = function(_, name)
+        local cls = {}
+        function cls:new() return setmetatable({}, { __index = cls }) end
+        function cls:initialise() end
+        function cls:addToUIManager() end
+        function cls:setVisible(v) self.visible = v hintShown[self.pn] = v end
+        function cls:getIsVisible() return self.visible == true end
+        return cls
+    end }
+    MinidoracatUI = { v1 = { Theme = { create = function() return { colors = {} } end } } }
     -- 拖一排的假原版（下面 ISBuildIsoEntity 那段用）：虛影圖記每次畫的位置與顏色
     local ghosts, badSq, vanillaRender, tried, walkFail, rejectAdd = {}, {}, {}, {}, false, false
     local qs = {} -- 角色 → 那個角色的動作佇列（假的 ISTimedActionQueue 用）
@@ -7455,7 +7467,10 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     -- 照原版順序：先 startCraftAction(動作)，走不到當場收尾；走得到才排進那個角色的佇列（拒收時沒排、也不收尾）
     function ISBuildIsoEntity:tryBuild(x, y, z)
         tried[#tried + 1] = { x, y, z, self.nSprite, north = self.north, who = self.character }
-        local act = { Type = "ISBuildAction", character = self.character, cursor = self }
+        -- setOnComplete／setOnCancel 記下這一刻游標上的 onActionComplete（ISBuildingObject.lua:207-208）；action＝Java 動作：
+        -- 單機時間到 finished()、多人伺服器回報完成 isForceComplete()（BaseAction.java:59-68,174-176）
+        local act = { Type = "ISBuildAction", character = self.character, cursor = self, onDone = self.onActionComplete }
+        act.action = { isForceComplete = function() return act.forced == true end, finished = function() return act.fin == true end }
         self.buildPanelLogic:startCraftAction(act)
         if walkFail then return self:onActionComplete() end -- 走不到：原版當場收尾（ISBuildingObject.lua:283-285）
         if rejectAdd then return end -- 拖屍體、睡著：ISTimedActionQueue.add 直接回（ISTimedActionQueue.lua:157-169）
@@ -7715,7 +7730,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
             cleared = cleared + 1
             local q = qOf(p)
             qs[p] = {}
-            for _, a in ipairs(q) do if a.cursor then a.cursor:onActionComplete() end end
+            for _, a in ipairs(q) do if a.onDone then a.onDone(a.cursor) end end
         end }
     local Client = B.Client
     local toasts2, realToast2 = {}, B.Messages.toast
@@ -7725,19 +7740,26 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         sq.objects[#sq.objects + 1] = { getSprite = function() return { getName = function() return name end } end }
     end
     -- 那格動作結束；x 有給＝蓋好了。單機的 perform 先退出佇列再收尾；keep＝MP（收尾時動作還在佇列裡）
-    local function finish(o, x, y, keep)
-        if x then place(x, y, "rcp_walls_01_0") end
-        doing = true
+    -- 那格動作結束（這個游標在佇列最前面的那個）；x 有給＝單機蓋好了（時間到、物件當場出現）。mp＝多人伺服器回報完成：
+    -- forceComplete、收尾時動作還在佇列裡，物件封包還沒到（審查 1112 Claude 的高延遲）
+    local function finish(o, x, y, mp)
         local q = qOf(o.character)
         local act
         for i, a in ipairs(q) do
             if a.cursor == o then
                 act = a
-                if not keep then table.remove(q, i) end
+                if not mp then table.remove(q, i) end
                 break
             end
         end
-        o:onActionComplete()
+        if mp then
+            act.forced = true
+        elseif x then
+            place(x, y, "rcp_walls_01_0")
+            act.fin = true
+        end
+        doing = true
+        act.onDone(o)
         fire("OnTick")
         return act
     end
@@ -7772,7 +7794,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local w = Recipes.build(0, wallR.id)
     local bar = Recipes.build(0, barrel.id)
     check(w.mbldRow == true and w.blockAfterPlace == false and rawget(w, "render") ~= nil and rawget(w, "tryBuild") ~= nil
-        and bar.mbldRow == nil and bar.blockAfterPlace == true and rawget(bar, "render") == nil and rawget(bar, "tryBuild") ~= nil,
+        and bar.mbldRow == nil and bar.blockAfterPlace == true and rawget(bar, "rotateMouse") == nil and rawget(bar, "tryBuild") ~= nil,
         "牆配方的游標掛上拖一排（只在實例上）、放下後不擋；集雨桶照原版一次一個、動作跑完才再放")
     getCell():setDrag(w, 0)
     BL = w.buildPanelLogic
@@ -7812,7 +7834,8 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         and tried[1][1] == 50 and tried[1][4] == 2 and tried[1].north == true and w.nSprite == 2,
         "放開：清佇列、這個角色的圖塊建造與拆除請求作廢（每人一個請求），送第一格（那格的面），送完換回游標的面")
     check(rowGhosts() == "50,50 51,50 53,50", "還沒蓋好的格子畫排隊虛影（擋住的 52 不送、不畫）")
-    -- MP：收尾時動作還在佇列裡（builder-rdprobe-1112a-mp 的 queue1=ISBuildAction/true），退出前不送
+    -- MP：收尾時動作還在佇列裡（builder-rdprobe-1112a-mp 的 queue1=ISBuildAction/true），退出前不送；伺服器回報完成就算蓋好，
+    -- 不等物件封包（審查 1112 Claude：以前固定等 1.5 秒，高延遲時誤判被打斷）
     local a1 = finish(w, 50, 50, true)
     doing = false
     fire("OnTick")
@@ -7823,14 +7846,13 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     check(#tried == 1, "動作退出佇列、Java 那邊還在收：先不送")
     doing = false
     fire("OnTick")
-    check(#tried == 2 and tried[2][1] == 51 and rowGhosts() == "51,50 53,50", "佇列空了：送下一格，蓋好的那格不再畫")
-    -- 打斷：那格沒蓋好，等一下還是沒有就停下整排
+    check(#tried == 2 and tried[2][1] == 51 and rowGhosts() == "51,50 53,50",
+        "佇列空了：送下一格（那格的物件還沒到也算蓋好，照伺服器回報完成），蓋好的那格不再畫")
+    place(50, 50, "rcp_walls_01_0")
+    -- 打斷：那格的動作沒做完（不是時間到、也不是伺服器回報完成）、格上也沒有：下一個 tick 就停下整排，不再等
     finish(w)
     doing = false
     local t2 = #toasts2
-    fire("OnTick")
-    check(#toasts2 == t2, "動作剛結束、那格還沒出現：先等（MP 的物件可能晚到）")
-    nowMs = nowMs + 2000
     fire("OnTick")
     check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and rowGhosts() == "",
         "被打斷：那格沒出現就停下整排、說蓋好幾格，不再送，排隊虛影收掉")
@@ -7860,6 +7882,40 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     fire("OnTick")
     check(#tried == 4 and stoppedEat == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil,
         "第一格蓋好後佇列裡插了別的動作：照被打斷停下；那個動作被取消、佇列空了也不再接著蓋（審查 1112 Codex）")
+    -- 審查 1112 Claude：舊的那格的動作沒被清掉（目前動作是 ISQueueActionsAction 時 clear 只清它加的，ISTimedActionQueue.lua:46-55），
+    -- 新的一排開始後它才收尾：不能算到新的一排
+    clearSq(44, 46, 60)
+    clearSq(47, 49, 60)
+    dragRow(w, 44, 60, 46)
+    local old = qOf(P)[1]
+    local realClear = ISTimedActionQueue.clear
+    ISTimedActionQueue.clear = function() cleared = cleared + 1 end -- 沒清掉
+    dragRow(w, 47, 60, 49)
+    ISTimedActionQueue.clear = realClear
+    table.remove(qOf(P), 1) -- 舊的那格做完（單機：先退出佇列再收尾）
+    old.fin = true
+    place(44, 60, "rcp_walls_01_0")
+    old.onDone(w)
+    doing = false
+    fire("OnTick")
+    local row3 = Recipes.row(0)
+    check(row3 ~= nil and row3.cells[1][1] == 47 and row3.doneAt == nil and row3.i == 1 and tried[#tried][1] == 47,
+        "舊的那格晚到的收尾不算到新的一排（每格送出時記自己的收尾，審查 1112 Claude）")
+    -- 審查 1112 Claude：配方游標放下會取消前一排：放開前在游標旁寫會取消幾格（同圖塊游標的 IGUI_MBLD_Replace）
+    local cnt = B.Cursor.cancels(P)
+    w.canBeBuild, w.isLeftDown, w.build = true, false, false
+    w:render(50, 59, 0, getCell():getGridSquare(50, 59, 0))
+    local barHint
+    bar.canBeBuild = true
+    bar:render(50, 59, 0, getCell():getGridSquare(50, 59, 0))
+    barHint = bar.mbldHint
+    check(cnt == 3 and Recipes.left(0, true) == 3 and Recipes.left(0, false) == 2 and w.mbldHint == "IGUI_MBLD_Replace(3)"
+        and hintShown[0] == true and barHint == "IGUI_MBLD_Replace(2)",
+        "放開前寫會取消幾格：能拖的游標算整排還沒蓋的（含正在蓋的那格），不能拖的只算還沒送的；圖塊游標與拆除選單用 Cursor.cancels 同一份")
+    qs[P] = {}
+    fire("OnTick")
+    w:render(50, 59, 0, getCell():getGridSquare(50, 59, 0))
+    check(Recipes.row(0) == nil and w.mbldHint == nil and hintShown[0] == false, "那一排沒了：提示收起")
     -- 審查 1112 Codex：原版不收建造動作（拖屍體）也不回呼：下一個 tick 就停下、清掉進行中、說一格都沒蓋
     clearSq(50, 52, 54)
     rejectAdd = true
@@ -7867,7 +7923,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     rejectAdd = false
     local busyAfterSend = BL.busy
     fire("OnTick")
-    check(#tried == 5 and busyAfterSend == true and BL.busy == false and Recipes.row(0) == nil
+    check(#tried == 7 and busyAfterSend == true and BL.busy == false and Recipes.row(0) == nil
         and toasts2[#toasts2] == "nil|IGUI_MBLD_Refuse_WALK",
         "原版不收這格的動作（拖屍體）：整排停下、清掉進行中、說一格都沒蓋，不會一直等（審查 1112 Codex）")
     -- 動作排進去了，之後被重設佇列（原版 bugged action）拿掉、沒有收尾：同樣停下
@@ -7877,7 +7933,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local waiting = Recipes.row(0) ~= nil
     qs[P] = {}
     fire("OnTick")
-    check(waiting and Recipes.row(0) == nil and #tried == 6, "那格的動作離開佇列卻沒收尾：停下，不一直等")
+    check(waiting and Recipes.row(0) == nil and #tried == 8, "那格的動作離開佇列卻沒收尾：停下，不一直等")
     -- 排隊中再拖一排：取代前一排；被取代的那格收尾不算停下、不通知
     w.square = getCell():getGridSquare(44, 44, 0)
     w:tryBuild(44, 44, 0)
@@ -7886,14 +7942,14 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     nowMs = nowMs + 2000
     doing = false
     fire("OnTick")
-    check(#toasts2 == t2 and #tried == 8 and tried[8][1] == 44 and tried[8][2] == 44 and rowGhosts() == "44,44 45,44 46,44",
+    check(#toasts2 == t2 and #tried == 10 and tried[10][1] == 44 and tried[10][2] == 44 and rowGhosts() == "44,44 45,44 46,44",
         "排隊中再拖：清掉舊的那格、送新的一排第一格；舊的那格不通知")
     -- 這個角色的圖塊項目送出建造（Client.build 設 pending、清佇列）：這一排安靜放掉
     Client.pending = { n = 10, player = P }
     finish(w)
     nowMs = nowMs + 2000
     fire("OnTick")
-    check(#toasts2 == t2 and #tried == 8 and rowGhosts() == "", "圖塊項目的建造取代了這一排：不通知、不再送")
+    check(#toasts2 == t2 and #tried == 10 and rowGhosts() == "", "圖塊項目的建造取代了這一排：不通知、不再送")
     Client.pending = nil
     -- 走不到：原版當場收尾，什麼都沒蓋就說走不到
     walkFail = true
@@ -7999,6 +8055,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
 
     getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText = realSpecific, realCell, realInfos, realGetText
     ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep, JoypadState = realDoing, realOnEnd, step0, realJoy
+    ISUIElement, MinidoracatUI = realUIElement, realMUI
     Recipes.list = nil
     Names.reset()
 end)()

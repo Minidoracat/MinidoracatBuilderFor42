@@ -226,8 +226,13 @@ function Menu.fill(playerNum, context, worldobjects, test)
     local n = #targets + #others
     if n == 0 and #tiles == 0 then return end
     if test then return ISWorldObjectContextMenu.setTest() end -- 手把：有選項就回報（ISWorldObjectContextMenu.lua:122-125）
-    local left = unbuildLeft(player)
-    local cancel = left > 0 and getText("IGUI_MBLD_Menu_CancelsUnbuild", tostring(left)) or nil
+    local left, lines = unbuildLeft(player), {}
+    if left > 0 then lines[1] = getText("IGUI_MBLD_Menu_CancelsUnbuild", tostring(left)) end
+    -- 拆除也清佇列、作廢建造請求（Client.dismantleMany）：圖塊排隊中的與配方拖的一排還沒蓋的格子一起停，先說
+    local B = MinidoracatBuilder
+    local rows = B.Cursor and B.Cursor.cancels(player) or 0
+    if rows > 0 then lines[#lines + 1] = getText(rows == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(rows)) end
+    local cancel = #lines > 0 and table.concat(lines, " <LINE> ") or nil
     local cancels = cancel and (" <LINE> " .. cancel) or ""
     local label = getText("IGUI_MBLD_Menu_Dismantle")
     local into = context

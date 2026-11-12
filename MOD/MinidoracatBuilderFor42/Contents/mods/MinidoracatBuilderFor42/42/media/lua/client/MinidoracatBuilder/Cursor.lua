@@ -666,11 +666,9 @@ function Cursor:texts()
     self.stack = level and getText("IGUI_MBLD_StackLevel", tostring(level))
         or over and getText("IGUI_MBLD_OverlapLevel", tostring(over), tostring(max)) or nil
     self.swap = self:swapText()
-    -- 前一筆還有格子在排隊：再放一次，Client.build 會清掉角色的動作佇列（redrag＝replace，使用者 2026-10-29），放開前先說
-    local left, q = 0, ok > 0 and Cursor.queued()
-    if q then
-        for _ in pairs(q) do left = left + 1 end
-    end
+    -- 前一筆還有格子在排隊：再放一次，Client.build 會清掉角色的動作佇列（redrag＝replace，使用者 2026-10-29），放開前先說。
+    -- 配方項目拖的一排（Recipes.left）也會被清掉，一起算
+    local left = ok > 0 and Cursor.cancels(self.character) or 0
     self.label3 = left > 0 and getText(left == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(left)) or nil
     self.tip = self:reasons()
     local hint
@@ -1038,6 +1036,21 @@ end
 -- 還沒蓋好的格子：{ [i] = 各片 }，沒有在等的請求回 nil（E2E 讀）
 function Cursor.queued()
     return watch and watch.parts
+end
+
+-- 這個角色排隊中、還沒蓋好的格數（取代前一排的提示：圖塊游標、配方游標、拆除選單）
+function Cursor.left(player)
+    local w = watch
+    if not (w and w.parts and w.player == player) then return 0 end
+    local n = 0
+    for _ in pairs(w.parts) do n = n + 1 end
+    return n
+end
+
+-- 這個角色送出會清佇列的請求（圖塊建造、配方拖一排、拆除）時會取消幾格：圖塊排隊中的＋配方拖的一排還沒蓋的（Recipes.left）
+function Cursor.cancels(player)
+    local R = B.Recipes
+    return Cursor.left(player) + (R and R.left(player:getPlayerNum(), true) or 0)
 end
 
 -- Client.onServerCommand 收進 results 後呼叫。單機的 intent 在 Client.build 回傳前就答覆，那時 nonce 只在 Client.pending。

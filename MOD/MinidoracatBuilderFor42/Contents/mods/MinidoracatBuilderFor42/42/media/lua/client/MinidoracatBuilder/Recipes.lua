@@ -341,7 +341,7 @@ end
 -- 游標不在、動作也不在跑、也沒有拖的一排要接著蓋就不追（isPlayerDoingAction 是保險：走不到、佇列清掉時原版也會經
 -- onActionComplete 清掉進行中，ISBuildingObject.lua:285-290、ISBuildAction.lua:192-197）
 local advance -- 拖一排的下一格（下面「拖一排」那段）
-local rows = {} -- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, action, doneAt, checked }
+local rows = {} -- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, action, doneAt, ok, checked }
 local function follow()
     local keep, t = {}, getTimestampMs()
     for _, a in ipairs(live) do
@@ -393,6 +393,7 @@ end
 -- 引擎換掉或清掉游標時呼叫：IsoCell.setDrag 用 rawget 拿游標身上的 deactivate（IsoCell.java:2558-2567）。只放在本 MOD
 -- 開的這個游標上，不改原版類別
 local function deactivate(self)
+    Recipes.hideHint(self.player)
     if self.replaced or not Recipes.onEnd then return end
     local ok, err = pcall(Recipes.onEnd, self.player)
     if not ok then print(LOG .. "onEnd failed: " .. tostring(err)) end
@@ -420,14 +421,100 @@ local function joypadPress(self, joypadIndex, joypadData, button)
     return MinidoracatBuilder.Cursor.padBuild(self)
 end
 
+-- ===== 取代前一排的提示（使用者 2026-10-29：排隊中再拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格；ui.md 裁定）=====
+-- 原版游標沒有本工具的標籤框，配方游標另外在滑鼠右下（手把：游標那格）畫一行同一句（IGUI_MBLD_Replace）。框只顯示、
+-- 不收滑鼠（同 Cursor 的標籤框），放在滑鼠右下 (32, 10)，不會蓋在滑鼠底下（Cursor.mouseOverUI 才不會把它當成介面）
+local hints, HintPanel, hintColors = {}, nil, nil
+local function noClick() return false end
+
+local function hintRender(self)
+    local o = getCell():getDrag(self.pn)
+    local text = o and o.mbldRecipe and o.mbldHint
+    if not text then return self:setVisible(false) end
+    local mx, my
+    if JoypadState.players[self.pn + 1] then
+        if not (o.xJoypad and o.zJoypad) then return end
+        mx, my = isoToScreenX(self.pn, o.xJoypad, o.yJoypad, o.zJoypad), isoToScreenY(self.pn, o.xJoypad, o.yJoypad, o.zJoypad)
+    else
+        mx, my = getMouseX(), getMouseY()
+    end
+    local tm, font = getTextManager(), UIFont.Small
+    local w, h = tm:MeasureStringX(font, text) + 12, tm:getFontHeight(font) + 8
+    local x, y = mx + 32, my + 10
+    if x + w > getPlayerScreenLeft(self.pn) + getPlayerScreenWidth(self.pn) then x = mx - 16 - w end
+    if y + h > getPlayerScreenTop(self.pn) + getPlayerScreenHeight(self.pn) then y = my - 10 - h end
+    self:setX(x)
+    self:setY(y)
+    self:setWidth(w)
+    self:setHeight(h)
+    local UI, c = MinidoracatUI.v1, hintColors
+    UI.Skin.fill(self, 0, 0, w, h, c.surface, nil, 1)
+    UI.Skin.border(self, 0, 0, w, h, c.border, nil, 1)
+    self:drawText(text, 6, 4, c.warning.r, c.warning.g, c.warning.b, 1, font)
+end
+
+local function hintPanel(pn)
+    local h = hints[pn]
+    if h then return h end
+    if not HintPanel then
+        HintPanel = ISUIElement:derive("MinidoracatBuilderRecipeHint")
+        HintPanel.render, HintPanel.onRightMouseDown, HintPanel.onRightMouseUp = hintRender, noClick, noClick
+        hintColors = MinidoracatUI.v1.Theme.create({ variant = "dark" }).colors -- 同 Cursor 的標籤框（框架深色色票）
+    end
+    h = HintPanel:new(0, 0, 1, 1)
+    h.wantMouseEvents, h.pn = false, pn
+    h:initialise()
+    h:addToUIManager()
+    h:setVisible(false)
+    hints[pn] = h
+    return h
+end
+
+local function hideHint(pn)
+    local h = hints[pn]
+    if h and h:getIsVisible() then h:setVisible(false) end
+end
+Recipes.hideHint = hideHint -- 游標的 deactivate 用（它寫在這段前面）
+
+-- 每幀（游標的 render 之後）：放下去會取消幾格。能拖的游標放下會清佇列（startRow）：拖的一排還沒蓋的、圖塊項目排隊中的
+-- 都算；不能拖的照原版排在後面，只取消拖的一排還沒送的。字只在格數變了才換
+local function updateHint(o)
+    local pn = o.player
+    local n = 0
+    if o.canBeBuild and not o.blockBuild then
+        local C = MinidoracatBuilder.Cursor
+        n = o.mbldRow and C and C.cancels(o.character) or Recipes.left(pn, false)
+    end
+    if n ~= o.mbldHintN then
+        o.mbldHintN = n
+        o.mbldHint = n > 0 and getText(n == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(n)) or nil
+    end
+    if o.mbldHint then
+        local h = hintPanel(pn)
+        if not h:getIsVisible() then h:setVisible(true) end
+    else
+        hideHint(pn)
+    end
+end
+
+-- 不能拖的配方游標：原版的畫法，再更新提示
+local function singleRender(self, x, y, z, square)
+    ISBuildIsoEntity.render(self, x, y, z, square)
+    updateHint(self)
+end
+
 -- ===== 拖一排（使用者 2026-11-12：配方項目也能拖一排；先在 9950X3D 實測，單機與專用伺服器都可行）=====
 -- 圖塊同種類能拖的（Cursor.DRAG）而且每一面都只佔一格的配方，游標實例換上 rotateMouse、render、tryBuild 與
 -- onActionComplete（只掛在本 MOD 開的實例上，不改原版類別）：按住拖記下拉到哪裡，整排照 Cursor.anchors 排（一排、
 -- 長方形、每排上限、沒有那一面都同圖塊項目），每格照原版 isValid 與材料夠做幾次（getPossibleCraftCount）畫白或紅；
 -- 放開後一格接一格送原版 tryBuild，每一格都是完整的原版建造動作（材料、技能、工具與伺服器驗證照原版，本 MOD 不送指令）。
--- 原版每格動作結束（蓋好、打斷、走路途中取消、被伺服器拒絕）都呼叫游標的 onActionComplete（ISBuildingObject.lua:207-208、
--- ISBuildAction.lua:156-241）；那時蓋好的物件已經在格子上（單機與專用伺服器實測都是），所以照那格有沒有出現判斷，
--- 有就等那格的動作退出佇列（那一刻原版動作常還在佇列裡）、佇列空了、換容器重填材料、還做得了才送下一格，沒有就整排停下。
+-- 原版每格動作結束（蓋好、打斷、走路途中取消、被伺服器拒絕）都呼叫同一支收尾（setOnComplete／setOnCancel 那一刻游標上的
+-- onActionComplete，ISBuildingObject.lua:207-208、ISBuildAction.lua:156-241），收尾不帶參數；送每格前把游標的 onActionComplete
+-- 換成記著「哪一排第幾格」的那一支，別的動作晚到的收尾就對不上這一格。蓋好沒照動作本身的結果判斷：單機在 perform 裡收尾，
+-- 那時 Java 動作 finished() 為真（時間到了，BaseAction.java:174-176）；多人的客戶端只在伺服器回報完成時 forceComplete
+-- （ISBuildAction.lua:116-121,176-182；waitForFinished，不會自己 perform），isForceComplete() 為真；打斷、走不到、被拒兩者都是假。
+-- 那格出現那一面的圖只當輔助（物件封包晚到不影響判斷）。蓋好就等那格的動作退出佇列（多人那一刻它還在佇列裡）、
+-- 佇列空了、換容器重填材料、還做得了才送下一格，沒蓋好就整排停下。
 -- 每格的建造動作照 onStartCraft 記下（原版 tryBuild 先 startCraftAction(buildAction) 再排進佇列，ISBuildingObject.lua:205-209,266；
 -- 成功也不回傳值），用 ISTimedActionQueue.hasAction 追：原版拒收（拖屍體、睡著，ISTimedActionQueue.lua:157-169）不回呼、
 -- 佇列被重設也不回呼，看到它不在佇列又沒收尾就停下。那格做完後佇列裡有別的動作（玩家插了吃東西這類），照被打斷停下，
@@ -435,7 +522,6 @@ end
 -- 一排的狀態放在 rows／views，不放在游標上：原版 tryBuild 用 copyTable 深拷游標交給動作（ISBuildingObject.lua:200），
 -- 深拷不防循環，也會整份跟著送。手把不拖（同圖塊項目，使用者 10-29 裁定）。
 local views = {} -- playerNum → 拖曳中的預覽：{ cursor, ax, ay, az, ex, ey, d, at, list, ok }
-local STOP_MS = 1500 -- 那格動作結束後這麼久還沒出現（MP 物件封包比動作結束晚到時的餘裕）就算沒蓋好
 -- nSprite（1..4＝西、北、東、南，ISBuildingObject.lua:486-516）→ 圖塊設定的面（0..3＝北、西、南、東，ISBuildIsoEntity.lua:784-818）
 local FACE_OF = { 1, 0, 3, 2 }
 
@@ -507,7 +593,8 @@ local function rowRender(self, x, y, z, square)
     local held = self.isLeftDown or self.build
     if not held then self.lineX, self.lineY = nil, nil end
     if not (held and self.lineX and (self.lineX ~= x or self.lineY ~= y)) then
-        return ISBuildIsoEntity.render(self, x, y, z, square)
+        ISBuildIsoEntity.render(self, x, y, z, square)
+        return updateHint(self)
     end
     local v = preview(self, x, y, z, self.lineX, self.lineY)
     local good, bad, floor = getCore():getGoodHighlitedColor(), getCore():getBadHighlitedColor(), self.tileSprite
@@ -521,16 +608,34 @@ local function rowRender(self, x, y, z, square)
         floor:RenderGhostTileColor(a[1], a[2], a[3], c:getR(), c:getG(), c:getB(), 0.8)
     end
     self.canBeBuild = v.ok > 0
+    updateHint(self)
+end
+
+-- 那個 Java 動作是不是做完了（單機時間到 perform、多人伺服器回報完成）；還沒開始、拿不到都算沒有
+local function performed(a)
+    local j = a and a.action
+    if not j then return false end
+    local fine, done = pcall(function() return j:isForceComplete() or j:finished() end)
+    return fine and done == true
+end
+
+-- 一格動作的收尾（原版先收尾再通知，ISBuildingObject.lua:291-303）：還是這一排的這一格才記下結果
+local function cellDone(self, row, i)
+    ISBuildingObject.onActionComplete(self)
+    if rows[self.player] == row and row.i == i and not row.doneAt then
+        row.doneAt, row.ok = getTimestampMs(), performed(row.action)
+    end
 end
 
 -- 送第 i＋1 格：換到那格的面再交給原版 tryBuild（它深拷游標，那格的面跟著動作走），送完換回游標原本的面。
 -- 走不到時原版當場呼叫 onActionComplete（ISBuildingObject.lua:283-285）。sending＝正在送的那一排，onStartCraft 把動作記到它身上
 local sending
 local function send(row)
-    row.i, row.action, row.doneAt, row.checked = row.i + 1, nil, nil, nil
-    local o, c = row.cursor, row.cells[row.i]
+    row.i, row.action, row.doneAt, row.ok, row.checked = row.i + 1, nil, nil, nil, nil
+    local o, c, i = row.cursor, row.cells[row.i], row.i
     local d = o.nSprite
     face(o, c[4])
+    o.onActionComplete = function(self) return cellDone(self, row, i) end
     sending = row
     ISBuildIsoEntity.tryBuild(o, c[1], c[2], c[3])
     sending = nil
@@ -584,13 +689,6 @@ local function single(self, x, y, z)
     return ISBuildIsoEntity.tryBuild(self, x, y, z)
 end
 
--- 每格動作結束（原版 setOnComplete／setOnCancel 照實例上的這支，ISBuildingObject.lua:207-208）：照原版收尾，記下時間
-local function cellDone(self)
-    ISBuildingObject.onActionComplete(self)
-    local row = rows[self.player]
-    if row and row.cursor == self and not row.doneAt then row.doneAt = getTimestampMs() end
-end
-
 -- 那格有沒有這一面的圖（蓋好了）
 local function builtAt(c)
     local sq = getCell():getGridSquare(c[1], c[2], c[3])
@@ -636,11 +734,7 @@ advance = function(pn, row, t)
         return
     end
     if not row.checked then
-        if not builtAt(row.cells[row.i]) then
-            if t < row.doneAt then row.doneAt = t end -- 時鐘往回調（家族 pitfalls）
-            if t - row.doneAt < STOP_MS then return end
-            return stop(pn, row, false)
-        end
+        if not (row.ok or builtAt(row.cells[row.i])) then return stop(pn, row, false) end
         row.checked, row.placed, row.parts[row.i] = true, row.placed + 1, nil
     end
     if row.i >= #row.cells then
@@ -666,6 +760,15 @@ Events.OnPostRender.Add(drawRows)
 function Recipes.row(pn)
     return rows[pn]
 end
+
+-- 這位玩家拖的那一排會被取消幾格：all＝清佇列的請求（再拖一排、圖塊建造、拆除；正在蓋的那格也停），否則只算還沒送的
+-- （不能拖的配方游標放下時，正在蓋的那格照原版跑完）
+function Recipes.left(pn, all)
+    local row = rows[pn]
+    if not row then return 0 end
+    return #row.cells - (all and row.placed or row.i)
+end
+
 
 -- 開原版的游標，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，材料、工具、技能或學過不夠時游標擋住
 -- （客戶端的游標本身只擋地形；伺服器 create 再驗一次、不夠就不蓋，ISBuildIsoEntity.lua:543-563）；放完游標留著。
@@ -693,9 +796,9 @@ function Recipes.build(pn, id)
             o.mbldMax = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
             -- 圍一圈：北、南兩邊用北面（nSprite 2），西、東兩邊用西面（1）；沒有那一面的邊照圖塊項目標 NO_FACE
             o.mbldSides = { n = r.info:getFace(0) and 2 or nil, w = r.info:getFace(1) and 1 or nil }
-            o.rotateMouse, o.render, o.tryBuild, o.onActionComplete = rowMouse, rowRender, rowBuild, cellDone
+            o.rotateMouse, o.render, o.tryBuild = rowMouse, rowRender, rowBuild
         else
-            o.tryBuild = single
+            o.render, o.tryBuild = singleRender, single
         end
         o.blockBuild = blocked(L, player, o.mbldRow)
         L:addEventListener("onStopCraft", onStopCraft, o)
