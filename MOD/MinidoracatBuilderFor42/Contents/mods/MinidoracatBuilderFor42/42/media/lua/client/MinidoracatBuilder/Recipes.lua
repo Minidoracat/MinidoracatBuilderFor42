@@ -440,11 +440,15 @@ local function hintRender(self)
     end
     local tm, font = getTextManager(), UIFont.Small
     local w, h = tm:MeasureStringX(font, text) + 12, tm:getFontHeight(font) + 8
+    -- 同 Cursor 的標籤框：超出這位玩家的畫面（分割畫面時是自己那一塊；isoToScreenX 已加上那塊的左上角，
+    -- LuaManager.isoToScreenX）右、下緣就翻到滑鼠另一邊，再夾在左、上緣內。最長的譯文約 62 個字，
+    -- 小字型比四人分割的一塊（960 寬）窄，不換行
+    local left, top = getPlayerScreenLeft(self.pn), getPlayerScreenTop(self.pn)
     local x, y = mx + 32, my + 10
-    if x + w > getPlayerScreenLeft(self.pn) + getPlayerScreenWidth(self.pn) then x = mx - 16 - w end
-    if y + h > getPlayerScreenTop(self.pn) + getPlayerScreenHeight(self.pn) then y = my - 10 - h end
-    self:setX(x)
-    self:setY(y)
+    if x + w > left + getPlayerScreenWidth(self.pn) then x = mx - 16 - w end
+    if y + h > top + getPlayerScreenHeight(self.pn) then y = my - 10 - h end
+    self:setX(math.max(left, x))
+    self:setY(math.max(top, y))
     self:setWidth(w)
     self:setHeight(h)
     local UI, c = MinidoracatUI.v1, hintColors
@@ -510,11 +514,14 @@ end
 -- 放開後一格接一格送原版 tryBuild，每一格都是完整的原版建造動作（材料、技能、工具與伺服器驗證照原版，本 MOD 不送指令）。
 -- 原版每格動作結束（蓋好、打斷、走路途中取消、被伺服器拒絕）都呼叫同一支收尾（setOnComplete／setOnCancel 那一刻游標上的
 -- onActionComplete，ISBuildingObject.lua:207-208、ISBuildAction.lua:156-241），收尾不帶參數；送每格前把游標的 onActionComplete
--- 換成記著「哪一排第幾格」的那一支，別的動作晚到的收尾就對不上這一格。蓋好沒照動作本身的結果判斷：單機在 perform 裡收尾，
--- 那時 Java 動作 finished() 為真（時間到了，BaseAction.java:174-176）；多人的客戶端只在伺服器回報完成時 forceComplete
--- （ISBuildAction.lua:116-121,176-182；waitForFinished，不會自己 perform），isForceComplete() 為真；打斷、走不到、被拒兩者都是假。
--- 那格出現那一面的圖只當輔助（物件封包晚到不影響判斷）。蓋好就等那格的動作退出佇列（多人那一刻它還在佇列裡）、
--- 佇列空了、換容器重填材料、還做得了才送下一格，沒蓋好就整排停下。
+-- 換成記著「哪一排第幾格」的那一支，別的動作晚到的收尾就對不上這一格。蓋好要兩件事都成立：
+-- (1) 動作正常結束：單機在 perform 裡收尾，那時 Java 動作 finished() 為真（時間到了，BaseAction.java:174-176）；多人的客戶端
+--     只在伺服器回報完成時 forceComplete（ISBuildAction.lua:116-121,176-182；waitForFinished，不會自己 perform），
+--     isForceComplete() 為真；打斷、走不到、被拒兩者都是假，當場停。
+-- (2) 那格真的出現那一面的圖：動作正常結束不代表蓋出來了（單機 perform 不看 create 的回傳，ISBuildAction.lua:228-241；
+--     多人伺服器 BuildAction.perform 一律回 true，BuildAction.java:109-117），例如結束前有車開進那格、材料被別人拿走。
+--     單機 create 在收尾前就跑完，沒有就是沒蓋出來；多人見 CONFIRM_MS。
+-- 蓋好就等那格的動作退出佇列（多人那一刻它還在佇列裡）、佇列空了、換容器重填材料、還做得了才送下一格，沒蓋好就整排停下。
 -- 每格的建造動作照 onStartCraft 記下（原版 tryBuild 先 startCraftAction(buildAction) 再排進佇列，ISBuildingObject.lua:205-209,266；
 -- 成功也不回傳值），用 ISTimedActionQueue.hasAction 追：原版拒收（拖屍體、睡著，ISTimedActionQueue.lua:157-169）不回呼、
 -- 佇列被重設也不回呼，看到它不在佇列又沒收尾就停下。那格做完後佇列裡有別的動作（玩家插了吃東西這類），照被打斷停下，
@@ -522,6 +529,13 @@ end
 -- 一排的狀態放在 rows／views，不放在游標上：原版 tryBuild 用 copyTable 深拷游標交給動作（ISBuildingObject.lua:200），
 -- 深拷不防循環，也會整份跟著送。手把不拖（同圖塊項目，使用者 10-29 裁定）。
 local views = {} -- playerNum → 拖曳中的預覽：{ cursor, ax, ay, az, ex, ey, d, at, list, ok }
+-- 多人時動作正常結束、那格的物件還沒到最多等多久。照原始碼物件應該先到：伺服器在 BuildAction.perform 裡同步跑原版
+-- Actions.build（shared/ActionManager.lua 的 create）並當場送 AddItemToMap（IsoObject.transmitCompleteItemToClients），
+-- 之後才送 BuildAction 的完成（ActionManager.java:71-83）；兩種封包都是 RELIABLE_ORDERED、同一條 ordering 1（@PacketSetting），
+-- 客戶端在主迴圈照順序處理（GameClient.mainLoopDealWithNetData；AddItemToMap 不延後，AddItemToMapPacket.processClient）。
+-- 實測（builder-rdprobe-1112a-mp）收尾那一刻每格都已在格上。這裡的等待只防原始碼沒看到的延後路徑，取 5 秒：
+-- 比網路重送與一兩次卡頓都寬，等到還沒有就照沒蓋出來停下、通知
+local CONFIRM_MS = 5000
 -- nSprite（1..4＝西、北、東、南，ISBuildingObject.lua:486-516）→ 圖塊設定的面（0..3＝北、西、南、東，ISBuildIsoEntity.lua:784-818）
 local FACE_OF = { 1, 0, 3, 2 }
 
@@ -734,7 +748,12 @@ advance = function(pn, row, t)
         return
     end
     if not row.checked then
-        if not (row.ok or builtAt(row.cells[row.i])) then return stop(pn, row, false) end
+        if not row.ok then return stop(pn, row, false) end -- 被打斷、走不到、被拒
+        if not builtAt(row.cells[row.i]) then -- 動作做完卻沒蓋出來（create 失敗）；多人時物件可能還在路上
+            if t < row.doneAt then row.doneAt = t end -- 時鐘往回調（家族 pitfalls）
+            if isClient() and t - row.doneAt < CONFIRM_MS then return end
+            return stop(pn, row, false)
+        end
         row.checked, row.placed, row.parts[row.i] = true, row.placed + 1, nil
     end
     if row.i >= #row.cells then

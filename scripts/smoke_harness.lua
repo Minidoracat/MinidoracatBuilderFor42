@@ -7739,10 +7739,9 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         local sq = getCell():getGridSquare(x, y, 0)
         sq.objects[#sq.objects + 1] = { getSprite = function() return { getName = function() return name end } end }
     end
-    -- 那格動作結束；x 有給＝蓋好了。單機的 perform 先退出佇列再收尾；keep＝MP（收尾時動作還在佇列裡）
     -- 那格動作結束（這個游標在佇列最前面的那個）；x 有給＝單機蓋好了（時間到、物件當場出現）。mp＝多人伺服器回報完成：
-    -- forceComplete、收尾時動作還在佇列裡，物件封包還沒到（審查 1112 Claude 的高延遲）
-    local function finish(o, x, y, mp)
+    -- forceComplete、收尾時動作還在佇列裡，物件還沒到（要另外 place）。done＝單機時間到了卻沒蓋出來（create 失敗）
+    local function finish(o, x, y, mp, done)
         local q = qOf(o.character)
         local act
         for i, a in ipairs(q) do
@@ -7756,6 +7755,8 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
             act.forced = true
         elseif x then
             place(x, y, "rcp_walls_01_0")
+            act.fin = true
+        elseif done then
             act.fin = true
         end
         doing = true
@@ -7834,28 +7835,56 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         and tried[1][1] == 50 and tried[1][4] == 2 and tried[1].north == true and w.nSprite == 2,
         "放開：清佇列、這個角色的圖塊建造與拆除請求作廢（每人一個請求），送第一格（那格的面），送完換回游標的面")
     check(rowGhosts() == "50,50 51,50 53,50", "還沒蓋好的格子畫排隊虛影（擋住的 52 不送、不畫）")
-    -- MP：收尾時動作還在佇列裡（builder-rdprobe-1112a-mp 的 queue1=ISBuildAction/true），退出前不送；伺服器回報完成就算蓋好，
-    -- 不等物件封包（審查 1112 Claude：以前固定等 1.5 秒，高延遲時誤判被打斷）
+    -- MP：收尾時動作還在佇列裡（builder-rdprobe-1112a-mp 的 queue1=ISBuildAction/true），退出前不送；伺服器回報完成之外，
+    -- 那格還要真的出現（審查 1112 Codex R4：動作做完不代表 create 成功）
+    local realIC = isClient
+    isClient = function() return true end
     local a1 = finish(w, 50, 50, true)
     doing = false
     fire("OnTick")
-    check(#tried == 1, "第一格蓋好，但那格的動作還在佇列裡：先不送")
+    check(#tried == 1, "第一格伺服器回報完成、物件還沒到、動作還在佇列裡：先不送")
+    place(50, 50, "rcp_walls_01_0")
     unqueue(a1)
     doing = true
     fire("OnTick")
-    check(#tried == 1, "動作退出佇列、Java 那邊還在收：先不送")
+    check(#tried == 1, "物件到了、動作退出佇列、Java 那邊還在收：先不送")
     doing = false
     fire("OnTick")
-    check(#tried == 2 and tried[2][1] == 51 and rowGhosts() == "51,50 53,50",
-        "佇列空了：送下一格（那格的物件還沒到也算蓋好，照伺服器回報完成），蓋好的那格不再畫")
-    place(50, 50, "rcp_walls_01_0")
-    -- 打斷：那格的動作沒做完（不是時間到、也不是伺服器回報完成）、格上也沒有：下一個 tick 就停下整排，不再等
+    check(#tried == 2 and tried[2][1] == 51 and rowGhosts() == "51,50 53,50", "佇列空了：送下一格，蓋好的那格不再畫")
+    -- 伺服器回報完成，那格一直沒出現（create 失敗：車開進來、材料被拿走）：等 CONFIRM_MS，到了停下、說蓋好幾格，不再送
+    local t2 = #toasts2
+    local a2 = finish(w, nil, nil, true)
+    doing = false
+    nowMs = nowMs + 4000
+    fire("OnTick")
+    check(#tried == 2 and #toasts2 == t2 and Recipes.row(0) ~= nil, "伺服器回報完成、物件還沒到：先等（5 秒內）")
+    nowMs = nowMs + 1500
+    fire("OnTick")
+    check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil
+        and rowGhosts() == "", "等了 5 秒還沒出現：照沒蓋出來停下、說蓋好 1／3 格（不多算），不再送，排隊虛影收掉")
+    isClient = realIC
+    qs[P] = {}
+    -- 單機：時間到了卻沒蓋出來（create 失敗）：不等，當場停、說蓋好幾格
+    clearSq(44, 46, 55)
+    dragRow(w, 44, 55, 46)
+    finish(w, 44, 55)
+    doing = false
+    fire("OnTick")
+    finish(w, nil, nil, false, true)
+    fire("OnTick")
+    check(#tried == 4 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil,
+        "單機動作做完、那格沒出現：當場停下、只算蓋好的 1 格、不送第 3 格")
+    -- 打斷：動作沒做完（不是時間到、也不是伺服器回報完成）：下一個 tick 就停下整排，不再等
+    clearSq(44, 46, 56)
+    dragRow(w, 44, 56, 46)
+    finish(w, 44, 56)
+    doing = false
+    fire("OnTick")
     finish(w)
     doing = false
-    local t2 = #toasts2
     fire("OnTick")
-    check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and rowGhosts() == "",
-        "被打斷：那格沒出現就停下整排、說蓋好幾格，不再送，排隊虛影收掉")
+    check(#tried == 6 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and rowGhosts() == "",
+        "被打斷：那格沒蓋好就停下整排、說蓋好幾格，不再送，排隊虛影收掉")
     -- 材料不夠：兩格，第一格蓋好後做不了
     clearSq(50, 51, 51)
     dragRow(w, 50, 51, 51)
@@ -7864,7 +7893,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     doing = false
     fire("OnTick")
     rWall.o.can = nil
-    check(#tried == 3 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Recipe_Blocked",
+    check(#tried == 7 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Recipe_Blocked",
         "材料不夠做下一格：停下整排、說缺料（詳情寫缺什麼），不再送")
     -- 審查 1112 Codex：第一格蓋好後玩家插了別的動作（吃東西），之後取消它：照被打斷停下，不再送、不再扣
     clearSq(50, 52, 53)
@@ -7880,7 +7909,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     fire("OnTick")
     nowMs = nowMs + 2000
     fire("OnTick")
-    check(#tried == 4 and stoppedEat == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil,
+    check(#tried == 8 and stoppedEat == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil,
         "第一格蓋好後佇列裡插了別的動作：照被打斷停下；那個動作被取消、佇列空了也不再接著蓋（審查 1112 Codex）")
     -- 審查 1112 Claude：舊的那格的動作沒被清掉（目前動作是 ISQueueActionsAction 時 clear 只清它加的，ISTimedActionQueue.lua:46-55），
     -- 新的一排開始後它才收尾：不能算到新的一排
@@ -7899,8 +7928,9 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     doing = false
     fire("OnTick")
     local row3 = Recipes.row(0)
-    check(row3 ~= nil and row3.cells[1][1] == 47 and row3.doneAt == nil and row3.i == 1 and tried[#tried][1] == 47,
-        "舊的那格晚到的收尾不算到新的一排（每格送出時記自己的收尾，審查 1112 Claude）")
+    check(row3 ~= nil and row3.cells[1][1] == 47 and row3.doneAt == nil and row3.i == 1 and tried[#tried][1] == 47
+        and BL.busy == false,
+        "舊的那格晚到的收尾不算到新的一排（每格送出時記自己的收尾，審查 1112 Claude）；原版收尾照樣清掉 BuildLogic 進行中的配方")
     -- 審查 1112 Claude：配方游標放下會取消前一排：放開前在游標旁寫會取消幾格（同圖塊游標的 IGUI_MBLD_Replace）
     local cnt = B.Cursor.cancels(P)
     w.canBeBuild, w.isLeftDown, w.build = true, false, false
@@ -7912,8 +7942,14 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     check(cnt == 3 and Recipes.left(0, true) == 3 and Recipes.left(0, false) == 2 and w.mbldHint == "IGUI_MBLD_Replace(3)"
         and hintShown[0] == true and barHint == "IGUI_MBLD_Replace(2)",
         "放開前寫會取消幾格：能拖的游標算整排還沒蓋的（含正在蓋的那格），不能拖的只算還沒送的；圖塊游標與拆除選單用 Cursor.cancels 同一份")
-    qs[P] = {}
+    -- 新一排的第一格因此扣料失敗（BuildLogic.performCurrentRecipe 沒有進行中的配方，BuildLogic.java:237-250）：
+    -- 動作做完、那格沒出現 → 照沒蓋出來停下，不誤算（審查 1112 Claude R4）
+    finish(w, nil, nil, false, true)
+    doing = false
     fire("OnTick")
+    check(Recipes.row(0) == nil and toasts2[#toasts2] == "nil|IGUI_MBLD_Refuse_WALK" and #getCell():getGridSquare(47, 60, 0).objects == 0,
+        "舊收尾清掉進行中的配方、新的第一格沒蓋出來：停下、說一格都沒蓋")
+    qs[P] = {}
     w:render(50, 59, 0, getCell():getGridSquare(50, 59, 0))
     check(Recipes.row(0) == nil and w.mbldHint == nil and hintShown[0] == false, "那一排沒了：提示收起")
     -- 審查 1112 Codex：原版不收建造動作（拖屍體）也不回呼：下一個 tick 就停下、清掉進行中、說一格都沒蓋
@@ -7923,7 +7959,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     rejectAdd = false
     local busyAfterSend = BL.busy
     fire("OnTick")
-    check(#tried == 7 and busyAfterSend == true and BL.busy == false and Recipes.row(0) == nil
+    check(#tried == 11 and busyAfterSend == true and BL.busy == false and Recipes.row(0) == nil
         and toasts2[#toasts2] == "nil|IGUI_MBLD_Refuse_WALK",
         "原版不收這格的動作（拖屍體）：整排停下、清掉進行中、說一格都沒蓋，不會一直等（審查 1112 Codex）")
     -- 動作排進去了，之後被重設佇列（原版 bugged action）拿掉、沒有收尾：同樣停下
@@ -7933,7 +7969,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local waiting = Recipes.row(0) ~= nil
     qs[P] = {}
     fire("OnTick")
-    check(waiting and Recipes.row(0) == nil and #tried == 8, "那格的動作離開佇列卻沒收尾：停下，不一直等")
+    check(waiting and Recipes.row(0) == nil and #tried == 12, "那格的動作離開佇列卻沒收尾：停下，不一直等")
     -- 排隊中再拖一排：取代前一排；被取代的那格收尾不算停下、不通知
     w.square = getCell():getGridSquare(44, 44, 0)
     w:tryBuild(44, 44, 0)
@@ -7942,14 +7978,14 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     nowMs = nowMs + 2000
     doing = false
     fire("OnTick")
-    check(#toasts2 == t2 and #tried == 10 and tried[10][1] == 44 and tried[10][2] == 44 and rowGhosts() == "44,44 45,44 46,44",
+    check(#toasts2 == t2 and #tried == 14 and tried[14][1] == 44 and tried[14][2] == 44 and rowGhosts() == "44,44 45,44 46,44",
         "排隊中再拖：清掉舊的那格、送新的一排第一格；舊的那格不通知")
     -- 這個角色的圖塊項目送出建造（Client.build 設 pending、清佇列）：這一排安靜放掉
     Client.pending = { n = 10, player = P }
     finish(w)
     nowMs = nowMs + 2000
     fire("OnTick")
-    check(#toasts2 == t2 and #tried == 10 and rowGhosts() == "", "圖塊項目的建造取代了這一排：不通知、不再送")
+    check(#toasts2 == t2 and #tried == 14 and rowGhosts() == "", "圖塊項目的建造取代了這一排：不通知、不再送")
     Client.pending = nil
     -- 走不到：原版當場收尾，什麼都沒蓋就說走不到
     walkFail = true
