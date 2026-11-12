@@ -341,14 +341,18 @@ end
 -- 游標不在、動作也不在跑、也沒有拖的一排要接著蓋就不追（isPlayerDoingAction 是保險：走不到、佇列清掉時原版也會經
 -- onActionComplete 清掉進行中，ISBuildingObject.lua:285-290、ISBuildAction.lua:192-197）
 local advance -- 拖一排的下一格（下面「拖一排」那段）
-local rows = {} -- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, doneAt, checked }
+local rows = {} -- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, action, doneAt, checked }
 local function follow()
     local keep, t = {}, getTimestampMs()
     for _, a in ipairs(live) do
         local held = getCell():getDrag(a.pn) == a.cursor
         local row = rows[a.pn]
         local mine = row ~= nil and row.cursor == a.cursor
-        if held or mine or (a.L:isCraftActionInProgress() and ISTimedActionQueue.isPlayerDoingAction(a.player)) then
+        -- 那個座位換了角色（死了重生、分割畫面換人）或角色死了：不再追，它拖的一排放掉，不替舊角色再送動作
+        -- （死者 isPlayerDoingAction 回 false，ISTimedActionQueue.lua:269-275，不擋的話會被當成佇列空了）
+        if getSpecificPlayer(a.pn) ~= a.player or a.player:isDead() then
+            if mine then rows[a.pn] = nil end
+        elseif held or mine or (a.L:isCraftActionInProgress() and ISTimedActionQueue.isPlayerDoingAction(a.player)) then
             keep[#keep + 1] = a
             local sq = a.player:getCurrentSquare()
             if (sq and sq ~= a.sq) or t < a.at or t - a.at >= 1000 then
@@ -423,7 +427,11 @@ end
 -- 放開後一格接一格送原版 tryBuild，每一格都是完整的原版建造動作（材料、技能、工具與伺服器驗證照原版，本 MOD 不送指令）。
 -- 原版每格動作結束（蓋好、打斷、走路途中取消、被伺服器拒絕）都呼叫游標的 onActionComplete（ISBuildingObject.lua:207-208、
 -- ISBuildAction.lua:156-241）；那時蓋好的物件已經在格子上（單機與專用伺服器實測都是），所以照那格有沒有出現判斷，
--- 有就等佇列空了（那一刻原版動作還在佇列裡）、換容器重填材料、還做得了才送下一格，沒有就整排停下。
+-- 有就等那格的動作退出佇列（那一刻原版動作常還在佇列裡）、佇列空了、換容器重填材料、還做得了才送下一格，沒有就整排停下。
+-- 每格的建造動作照 onStartCraft 記下（原版 tryBuild 先 startCraftAction(buildAction) 再排進佇列，ISBuildingObject.lua:205-209,266；
+-- 成功也不回傳值），用 ISTimedActionQueue.hasAction 追：原版拒收（拖屍體、睡著，ISTimedActionQueue.lua:157-169）不回呼、
+-- 佇列被重設也不回呼，看到它不在佇列又沒收尾就停下。那格做完後佇列裡有別的動作（玩家插了吃東西這類），照被打斷停下，
+-- 不等它跑完或被取消再接著蓋。
 -- 一排的狀態放在 rows／views，不放在游標上：原版 tryBuild 用 copyTable 深拷游標交給動作（ISBuildingObject.lua:200），
 -- 深拷不防循環，也會整份跟著送。手把不拖（同圖塊項目，使用者 10-29 裁定）。
 local views = {} -- playerNum → 拖曳中的預覽：{ cursor, ax, ay, az, ex, ey, d, at, list, ok }
@@ -516,22 +524,36 @@ local function rowRender(self, x, y, z, square)
 end
 
 -- 送第 i＋1 格：換到那格的面再交給原版 tryBuild（它深拷游標，那格的面跟著動作走），送完換回游標原本的面。
--- 走不到時原版當場呼叫 onActionComplete（ISBuildingObject.lua:283-285）
+-- 走不到時原版當場呼叫 onActionComplete（ISBuildingObject.lua:283-285）。sending＝正在送的那一排，onStartCraft 把動作記到它身上
+local sending
 local function send(row)
-    row.i, row.doneAt, row.checked = row.i + 1, nil, nil
+    row.i, row.action, row.doneAt, row.checked = row.i + 1, nil, nil, nil
     local o, c = row.cursor, row.cells[row.i]
     local d = o.nSprite
     face(o, c[4])
+    sending = row
     ISBuildIsoEntity.tryBuild(o, c[1], c[2], c[3])
+    sending = nil
     face(o, d)
 end
 
--- 開始一排：每人只留一個請求（同 Client.build）：還沒輪完的圖塊建造、拆除請求作廢，清掉角色的動作佇列（正在蓋的那格
--- 當場收尾，實測），舊的一排換成這一排。cells＝{ { x, y, z, d, spr }, … }
+-- 原版 tryBuild 開始一格時 BuildLogic 發的 onStartCraft（BuildLogic.java:214-228）：記下這格的建造動作
+local function onStartCraft(o, action)
+    if sending and sending.cursor == o then sending.action = action end
+end
+
+-- 這個請求（Client.pending／pendingUnbuild）是不是這個角色的：分割畫面時別的玩家的請求不能動（審查 1112 Codex）
+local function ownedBy(req, player)
+    return req ~= nil and req.player == player
+end
+
+-- 開始一排：每人只留一個請求（同 Client.build）：這個角色還沒輪完的圖塊建造、拆除請求作廢，清掉角色的動作佇列（正在蓋的
+-- 那格當場收尾，實測），舊的一排換成這一排。cells＝{ { x, y, z, d, spr }, … }
 local function startRow(o, cells)
-    local pn, Client = o.player, MinidoracatBuilder.Client
-    Client.pending, Client.pendingUnbuild = nil, nil
-    ISTimedActionQueue.clear(o.character)
+    local pn, Client, player = o.player, MinidoracatBuilder.Client, o.character
+    if ownedBy(Client.pending, player) then Client.pending = nil end
+    if ownedBy(Client.pendingUnbuild, player) then Client.pendingUnbuild = nil end
+    ISTimedActionQueue.clear(player)
     local parts = {}
     for i, c in ipairs(cells) do
         local spr = c.spr and o.spriteCache[c.spr]
@@ -580,10 +602,13 @@ local function builtAt(c)
     return false
 end
 
--- 停下整排並說原因：沒料、沒工具、技能不夠或太暗（還沒送的格子）；被打斷、走不到、被拒（那一格沒蓋好）。
--- 原因客戶端分不出來，照圖塊項目的說法（Cursor.tick）
+-- 停下整排並說原因：沒料、沒工具、技能不夠或太暗（還沒送的格子）；被打斷、走不到、被拒、原版不收這個動作（那一格沒蓋好）。
+-- 原因客戶端分不出來，照圖塊項目的說法（Cursor.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，
+-- ISBuildingObject.lua:291-295）
 local function stop(pn, row, short)
     rows[pn] = nil
+    local L = row.cursor.buildPanelLogic
+    if not row.doneAt and L:isCraftActionInProgress() then L:stopCraftAction() end
     local player, n = row.cursor.character, #row.cells
     local title = row.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
     if short then
@@ -595,14 +620,21 @@ local function stop(pn, row, short)
     end
 end
 
--- 每 tick（follow）：那格動作結束後看蓋好沒，蓋好且還有下一格就等佇列空了、換容器重填材料，做得了才送
+-- 每 tick（follow）：那格動作結束後看蓋好沒，蓋好且還有下一格就等那格的動作退出佇列、佇列空了、換容器重填材料，
+-- 做得了才送
 advance = function(pn, row, t)
     local Client, o = MinidoracatBuilder.Client, row.cursor
-    if Client.pending or Client.pendingUnbuild then -- 圖塊項目的建造或拆除取代了這一排（它們清了佇列）
+    local player = o.character
+    -- 這個角色的圖塊建造或拆除取代了這一排（它們清了佇列）；別的玩家的不算
+    if ownedBy(Client.pending, player) or ownedBy(Client.pendingUnbuild, player) then
         rows[pn] = nil
         return
     end
-    if not row.doneAt then return end
+    if not row.doneAt then
+        -- 原版沒收這格的動作，或它離開佇列卻沒收尾：整排停下，不然一直等
+        if not (row.action and ISTimedActionQueue.hasAction(row.action)) then return stop(pn, row, false) end
+        return
+    end
     if not row.checked then
         if not builtAt(row.cells[row.i]) then
             if t < row.doneAt then row.doneAt = t end -- 時鐘往回調（家族 pitfalls）
@@ -615,7 +647,10 @@ advance = function(pn, row, t)
         rows[pn] = nil
         return
     end
-    local player, L = o.character, o.buildPanelLogic
+    if ISTimedActionQueue.hasAction(row.action) then return end -- 那格的動作還沒退出佇列（MP 常晚一點）
+    -- 那格做完後佇列裡有別的動作：玩家自己插了事情做，照被打斷停下（不等它跑完或被取消後再接著蓋）
+    if #ISTimedActionQueue.getTimedActionQueue(player).queue > 0 then return stop(pn, row, false) end
+    local L = o.buildPanelLogic
     if ISTimedActionQueue.isPlayerDoingAction(player) then return end
     sync(nil, L, player)
     if blocked(L, player, true) then return stop(pn, row, true) end
@@ -664,6 +699,7 @@ function Recipes.build(pn, id)
         end
         o.blockBuild = blocked(L, player, o.mbldRow)
         L:addEventListener("onStopCraft", onStopCraft, o)
+        if mode then L:addEventListener("onStartCraft", onStartCraft, o) end
         if #live == 0 then Events.OnTick.Add(follow) end
         live[#live + 1] = { pn = pn, cursor = o, L = L, player = player, sq = player:getCurrentSquare(), at = getTimestampMs() }
     else
