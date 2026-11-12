@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "无法建造",
   "IGUI_MBLD_Interrupted": "建造中断",
   "IGUI_MBLD_Stopped": "建好 %1／%2 格后停下（被打断，或走不过去）。没建的格子没有消耗材料，再拖一次即可接着建。",
+  "IGUI_MBLD_Recipe_NotBuilt": "建好 %1／%2 格后停下：那一格没建出来（被挡住，或材料不见了）。",
   "IGUI_MBLD_Refuse_OFF": "管理员已关闭建造功能。",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "本服务器只有管理员能使用建造工坊。",
   "IGUI_MBLD_Refuse_STATE": "现在无法建造（在车上或已死亡）。下车后再试一次。",

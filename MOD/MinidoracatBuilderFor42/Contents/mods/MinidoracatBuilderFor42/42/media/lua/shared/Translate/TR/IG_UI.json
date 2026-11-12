@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "İnşa edilemedi",
   "IGUI_MBLD_Interrupted": "İnşa kesildi",
   "IGUI_MBLD_Stopped": "Durdu, yapılan kare: %1 / %2 (kesintiye uğradı ya da yol kapandı). Yapılmayan kareler malzeme harcamadı; devam etmek için tekrar sürükle.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Durdu, yapılan kare: %1 / %2. O kare yapılamadı (bir şey engel oldu ya da malzemeler kayboldu).",
   "IGUI_MBLD_Refuse_OFF": "Yönetici inşa etmeyi kapattı.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Bu sunucuda Build Anything yalnızca yöneticilere açık.",
   "IGUI_MBLD_Refuse_STATE": "Şu an inşa edemezsin (araçtayken veya ölüyken). Araçtan in ve tekrar dene.",

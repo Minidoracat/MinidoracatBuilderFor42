@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "Couldn't build",
   "IGUI_MBLD_Interrupted": "Building interrupted",
   "IGUI_MBLD_Stopped": "Stopped after building %1 of %2 tiles (interrupted, or the way was blocked). Tiles not built used no materials; drag again to continue.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Stopped after building %1 of %2 tiles: that tile didn't get built (something was in the way, or materials went missing).",
   "IGUI_MBLD_Refuse_OFF": "The admin has turned off building.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Only admins can use Build Anything on this server.",
   "IGUI_MBLD_Refuse_STATE": "You can't build right now (in a vehicle or dead). Get out and try again.",

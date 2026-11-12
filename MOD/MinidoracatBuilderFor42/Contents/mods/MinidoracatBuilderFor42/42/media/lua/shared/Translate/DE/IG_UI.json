@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "Bau nicht möglich",
   "IGUI_MBLD_Interrupted": "Bau unterbrochen",
   "IGUI_MBLD_Stopped": "Nach %1 von %2 Kacheln gestoppt (unterbrochen oder Weg blockiert). Nicht gebaute Kacheln haben kein Material verbraucht; zieh erneut, um weiterzumachen.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Nach %1 von %2 Kacheln gestoppt: Diese Kachel wurde nicht gebaut (etwas war im Weg oder Material fehlte).",
   "IGUI_MBLD_Refuse_OFF": "Der Admin hat das Bauen deaktiviert.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Auf diesem Server können nur Admins Build Anything nutzen.",
   "IGUI_MBLD_Refuse_STATE": "Du kannst gerade nicht bauen (im Fahrzeug oder tot). Steig aus und versuch es erneut.",

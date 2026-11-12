@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "Não foi possível construir",
   "IGUI_MBLD_Interrupted": "Construção interrompida",
   "IGUI_MBLD_Stopped": "Parou após construir %1 de %2 quadrados (interrupção ou caminho bloqueado). Os quadrados não construídos não gastaram materiais; arraste de novo para continuar.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Parou após construir %1 de %2 quadrados: esse quadrado não foi construído (algo estava no caminho ou os materiais sumiram).",
   "IGUI_MBLD_Refuse_OFF": "A administração desativou a construção.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Neste servidor, só administradores podem usar o Build Anything.",
   "IGUI_MBLD_Refuse_STATE": "Você não pode construir agora (em um veículo ou sem vida). Saia e tente de novo.",

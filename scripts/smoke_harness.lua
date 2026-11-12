@@ -7860,8 +7860,8 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     check(#tried == 2 and #toasts2 == t2 and Recipes.row(0) ~= nil, "伺服器回報完成、物件還沒到：先等（5 秒內）")
     nowMs = nowMs + 1500
     fire("OnTick")
-    check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil
-        and rowGhosts() == "", "等了 5 秒還沒出現：照沒蓋出來停下、說蓋好 1／3 格（不多算），不再送，排隊虛影收掉")
+    check(#tried == 2 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Recipe_NotBuilt(1,3)" and Recipes.row(0) == nil
+        and rowGhosts() == "", "等了 5 秒還沒出現：照沒蓋出來停下、說那格沒蓋出來、蓋好 1／3 格（不多算，不說被打斷），不再送，排隊虛影收掉")
     isClient = realIC
     qs[P] = {}
     -- 單機：時間到了卻沒蓋出來（create 失敗）：不等，當場停、說蓋好幾格
@@ -7872,8 +7872,8 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     fire("OnTick")
     finish(w, nil, nil, false, true)
     fire("OnTick")
-    check(#tried == 4 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,3)" and Recipes.row(0) == nil,
-        "單機動作做完、那格沒出現：當場停下、只算蓋好的 1 格、不送第 3 格")
+    check(#tried == 4 and toasts2[#toasts2] == "IGUI_MBLD_Interrupted|IGUI_MBLD_Recipe_NotBuilt(1,3)" and Recipes.row(0) == nil,
+        "單機動作做完、那格沒出現：當場停下、說那格沒蓋出來、只算蓋好的 1 格、不送第 3 格")
     -- 打斷：動作沒做完（不是時間到、也不是伺服器回報完成）：下一個 tick 就停下整排，不再等
     clearSq(44, 46, 56)
     dragRow(w, 44, 56, 46)
@@ -7947,8 +7947,8 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     finish(w, nil, nil, false, true)
     doing = false
     fire("OnTick")
-    check(Recipes.row(0) == nil and toasts2[#toasts2] == "nil|IGUI_MBLD_Refuse_WALK" and #getCell():getGridSquare(47, 60, 0).objects == 0,
-        "舊收尾清掉進行中的配方、新的第一格沒蓋出來：停下、說一格都沒蓋")
+    check(Recipes.row(0) == nil and toasts2[#toasts2] == "nil|IGUI_MBLD_Recipe_NotBuilt(0,3)" and #getCell():getGridSquare(47, 60, 0).objects == 0,
+        "舊收尾清掉進行中的配方、新的第一格沒蓋出來：停下、說那格沒蓋出來（0／3）")
     qs[P] = {}
     w:render(50, 59, 0, getCell():getGridSquare(50, 59, 0))
     check(Recipes.row(0) == nil and w.mbldHint == nil and hintShown[0] == false, "那一排沒了：提示收起")

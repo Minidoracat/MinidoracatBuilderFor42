@@ -714,17 +714,19 @@ local function builtAt(c)
     return false
 end
 
--- 停下整排並說原因：沒料、沒工具、技能不夠或太暗（還沒送的格子）；被打斷、走不到、被拒、原版不收這個動作（那一格沒蓋好）。
--- 原因客戶端分不出來，照圖塊項目的說法（Cursor.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，
--- ISBuildingObject.lua:291-295）
-local function stop(pn, row, short)
+-- 停下整排並說原因（why）：short＝沒料、沒工具、技能不夠或太暗（還沒送的格子）；missing＝動作做完、那一格卻沒蓋出來
+-- （create 失敗：被車或別的東西擋住、材料被拿走）；nil＝被打斷、走不到、被拒、原版不收這個動作，客戶端分不出來，
+-- 照圖塊項目的說法（Cursor.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，ISBuildingObject.lua:291-295）
+local function stop(pn, row, why)
     rows[pn] = nil
     local L = row.cursor.buildPanelLogic
     if not row.doneAt and L:isCraftActionInProgress() then L:stopCraftAction() end
     local player, n = row.cursor.character, #row.cells
     local title = row.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
-    if short then
+    if why == "short" then
         Messages.toast(player, getText(Recipes.dark(pn, row.r) and "IGUI_MBLD_Recipe_TooDark" or "IGUI_MBLD_Recipe_Blocked"), title)
+    elseif why == "missing" then
+        Messages.toast(player, getText("IGUI_MBLD_Recipe_NotBuilt", tostring(row.placed), tostring(n)), title)
     elseif row.placed > 0 then
         Messages.toast(player, getText("IGUI_MBLD_Stopped", tostring(row.placed), tostring(n)), title)
     else
@@ -744,15 +746,15 @@ advance = function(pn, row, t)
     end
     if not row.doneAt then
         -- 原版沒收這格的動作，或它離開佇列卻沒收尾：整排停下，不然一直等
-        if not (row.action and ISTimedActionQueue.hasAction(row.action)) then return stop(pn, row, false) end
+        if not (row.action and ISTimedActionQueue.hasAction(row.action)) then return stop(pn, row) end
         return
     end
     if not row.checked then
-        if not row.ok then return stop(pn, row, false) end -- 被打斷、走不到、被拒
+        if not row.ok then return stop(pn, row) end -- 被打斷、走不到、被拒
         if not builtAt(row.cells[row.i]) then -- 動作做完卻沒蓋出來（create 失敗）；多人時物件可能還在路上
             if t < row.doneAt then row.doneAt = t end -- 時鐘往回調（家族 pitfalls）
             if isClient() and t - row.doneAt < CONFIRM_MS then return end
-            return stop(pn, row, false)
+            return stop(pn, row, "missing")
         end
         row.checked, row.placed, row.parts[row.i] = true, row.placed + 1, nil
     end
@@ -762,11 +764,11 @@ advance = function(pn, row, t)
     end
     if ISTimedActionQueue.hasAction(row.action) then return end -- 那格的動作還沒退出佇列（MP 常晚一點）
     -- 那格做完後佇列裡有別的動作：玩家自己插了事情做，照被打斷停下（不等它跑完或被取消後再接著蓋）
-    if #ISTimedActionQueue.getTimedActionQueue(player).queue > 0 then return stop(pn, row, false) end
+    if #ISTimedActionQueue.getTimedActionQueue(player).queue > 0 then return stop(pn, row) end
     local L = o.buildPanelLogic
     if ISTimedActionQueue.isPlayerDoingAction(player) then return end
     sync(nil, L, player)
-    if blocked(L, player, true) then return stop(pn, row, true) end
+    if blocked(L, player, true) then return stop(pn, row, "short") end
     send(row)
 end
 

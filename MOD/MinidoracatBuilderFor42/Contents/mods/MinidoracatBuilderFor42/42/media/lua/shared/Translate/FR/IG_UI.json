@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "Construction impossible",
   "IGUI_MBLD_Interrupted": "Construction interrompue",
   "IGUI_MBLD_Stopped": "Construction arrêtée (interruption ou chemin bloqué). Cases construites : %1 sur %2. Les cases restantes n'ont consommé aucun matériau ; glissez à nouveau pour continuer.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Construction arrêtée : cette case n'a pas été construite (quelque chose gênait ou des matériaux ont disparu). Cases construites : %1 sur %2.",
   "IGUI_MBLD_Refuse_OFF": "L'admin a désactivé la construction.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Sur ce serveur, seuls les admins peuvent utiliser Build Anything.",
   "IGUI_MBLD_Refuse_STATE": "Impossible de construire maintenant (en véhicule ou personnage mort). Sortez et réessayez.",

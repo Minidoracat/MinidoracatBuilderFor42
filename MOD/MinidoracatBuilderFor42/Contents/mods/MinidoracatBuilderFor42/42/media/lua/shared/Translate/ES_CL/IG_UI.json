@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "No se pudo construir",
   "IGUI_MBLD_Interrupted": "Construcción interrumpida",
   "IGUI_MBLD_Stopped": "Se detuvo tras construir %1 de %2 casillas (interrupción o camino bloqueado). Las casillas sin construir no gastaron materiales; arrastra de nuevo para seguir.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Se detuvo tras construir %1 de %2 casillas: esa casilla no se construyó (algo estorbaba o faltaron materiales).",
   "IGUI_MBLD_Refuse_OFF": "El admin desactivó la construcción.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "En este servidor solo los admins pueden usar Build Anything.",
   "IGUI_MBLD_Refuse_STATE": "No puedes construir ahora (en un vehículo o muerto). Sal e inténtalo de nuevo.",

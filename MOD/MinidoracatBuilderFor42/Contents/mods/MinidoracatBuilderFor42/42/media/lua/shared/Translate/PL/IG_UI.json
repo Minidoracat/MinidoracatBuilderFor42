@@ -162,6 +162,7 @@
   "IGUI_MBLD_NotBuilt": "Nie udało się zbudować",
   "IGUI_MBLD_Interrupted": "Budowanie przerwane",
   "IGUI_MBLD_Stopped": "Zatrzymano po zbudowaniu pól: %1/%2 (przerwano lub droga była zablokowana). Niezbudowane pola nie zużyły materiałów; przeciągnij ponownie, by kontynuować.",
+  "IGUI_MBLD_Recipe_NotBuilt": "Zatrzymano po zbudowaniu pól: %1/%2. To pole nie zostało zbudowane (coś przeszkadzało lub zniknęły materiały).",
   "IGUI_MBLD_Refuse_OFF": "Administrator wyłączył budowanie.",
   "IGUI_MBLD_Refuse_NOT_ALLOWED": "Na tym serwerze Build Anything mogą używać tylko administratorzy.",
   "IGUI_MBLD_Refuse_STATE": "Nie możesz teraz budować (jesteś w pojeździe lub nie żyjesz). Wysiądź i spróbuj ponownie.",
