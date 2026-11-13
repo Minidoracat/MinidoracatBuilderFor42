@@ -422,6 +422,10 @@ Events.OnTick.Add(Client.tickUnbuild)
 -- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
 function Client.onServerCommand(cmd, args)
     if UNBUILD[cmd] then return onUnbuild(cmd, args) end
+    if cmd == "ledgers" then -- 管理面板的伺服器紀錄（Server.ledgers）
+        if MinidoracatBuilder.Admin then MinidoracatBuilder.Admin.onLedgers(args) end
+        return
+    end
     if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
     local b = Client.pending
     if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end

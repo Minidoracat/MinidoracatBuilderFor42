@@ -56,7 +56,7 @@ function Overlays:initSystem()
     self.system:setModDataKeys({ "overlays" })
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
-    S = Store.open(NAME, { id = "overlays", label = "overlay", valid = valid, sig = sig })
+    S = Store.open(NAME, { id = "overlays", label = "overlay", valid = valid, sig = sig, mirror = true })
     if type(self.overlays) ~= "table" then self.overlays = {} end
     S:adopt(self.overlays, fromOld)
     S:summary()
@@ -91,7 +91,7 @@ end
 function Overlays.put(sq, name, items, edge)
     local k = pos(sq, edge)
     if not k then
-        print(LOG .. "overlay ledger not ready; not recorded: " .. at(sq, edge, name))
+        print(LOG .. "overlay ledger not ready or position out of range; not recorded: " .. at(sq, edge, name))
         return
     end
     local copy = {}

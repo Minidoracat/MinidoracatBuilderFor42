@@ -30,7 +30,7 @@ local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，�
 local OVERLAP = { overlap = true }    -- 疊放的請求交給 Check.item 的 opts（只讀；沒有 preview，照伺服器的路走）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
-local rate, woken, quietUntil = {}, {}, {}
+local rate, woken, quietUntil, ledgerUntil = {}, {}, {}, {}
 
 local function now() return getTimestampMs() end
 local function keyOf(player)
@@ -658,6 +658,25 @@ function Server.dismantle(player, n, i)
     return true
 end
 
+-- ---------------------------------------------------------------- 管理面板的「伺服器紀錄」
+-- 四本帳本各幾筆、幾片、多大（Store.report）。只回筆數與大小（沒有位置、玩家或內容）；合作模式的主機在伺服器端認不出來
+-- （原版靠連線的 isCoopHost 放行，PacketTypes.java:296，伺服器 Lua 讀不到；-coop 開服時主機帳號不是管理員，
+-- GameServer.java:563-564、ServerWorldDatabase.java:726），所以不查權限、只限速。面板本身只有 Admin.canManage 的人開得了。
+local LEDGERS_MS = 1000 -- 每人一秒最多回一次
+function Server.ledgers(player)
+    local k, t = keyOf(player), now()
+    local u = ledgerUntil[k]
+    if u and t < u and t >= u - LEDGERS_MS then return end -- 時鐘往回調不算在限速內
+    ledgerUntil[k] = t + LEDGERS_MS
+    local Store, ok, list = MinidoracatBuilder.Store, false, nil
+    if Store and Store.report then ok, list = pcall(Store.report) end
+    if not ok or type(list) ~= "table" then
+        if Store then print(LOG .. "ledger report failed: " .. tostring(list)) end
+        list = {}
+    end
+    Server.send(player, "ledgers", { list = list })
+end
+
 Events.OnClientCommand.Add(function(module, command, player, args)
     if module ~= MODULE or not player then return end
     if command == "intent" then
@@ -666,6 +685,8 @@ Events.OnClientCommand.Add(function(module, command, player, args)
         Server.dismantleIntent(player, args)
     elseif command == "circuit" or command == "wire" then
         MinidoracatBuilder.Circuits.command(player, command, args)
+    elseif command == "ledgers" then
+        Server.ledgers(player)
     end
 end)
 

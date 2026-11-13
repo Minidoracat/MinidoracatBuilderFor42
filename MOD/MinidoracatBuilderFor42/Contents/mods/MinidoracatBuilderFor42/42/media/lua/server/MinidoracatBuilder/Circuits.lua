@@ -46,7 +46,7 @@ local function cooling(last, t, interval)
 end
 
 -- 帳本（沒有 GOS 系統時 nil）：{ c = { [編號] = 線路 } }，開服後第一次用到時從存檔（Ledger.circuits）讀出來，同時重建
--- 反查表。c 裡的表就是存檔裡那幾張：要改一條線路先從存檔拿掉、改完再記回去（drop、put）
+-- 反查表。c 裡的表就是存檔裡那幾張，不能原地改：要改一條線路就換一張新的表（keep）
 local mem
 local function data()
     local C = Ledger.instance and Ledger.circuits
@@ -159,9 +159,18 @@ local function live(d, k)
     return nil
 end
 
--- 記回存檔。每一片都滿了（不該發生）只記 log：這條線路這一場照樣能用，重開服後不在
-local function keep(id, c)
+-- 線路換成 c 這張新的表（存檔裡的表不能原地改，大小是照記的時候算的）。記不進去（每一片都滿了，不該發生）只記 log：
+-- 這一場照新的用，存檔留著原本那一筆
+local function keep(d, id, c)
+    d.c[id] = c
     if not Ledger.circuits:put(id, c) then print(LOG .. "circuit ledger full; not recorded: circuit " .. id) end
+end
+
+local function copy(c)
+    local out = { s = {}, l = {} }
+    for k in pairs(c.s) do out.s[k] = true end
+    for k in pairs(c.l) do out.l[k] = true end
+    return out
 end
 
 -- 從線路拿掉一個鍵；線路沒有開關了就整條刪掉
@@ -169,24 +178,23 @@ local function drop(d, k)
     local id = byKey[k]
     if not id then return end
     byKey[k] = nil
-    local c = d.c[id]
-    if not c then return end
-    Ledger.circuits:del(id)
+    if not d.c[id] then return end
+    local c = copy(d.c[id])
     c.s[k], c.l[k] = nil, nil
     if count(c.s) == 0 then
         for lk in pairs(c.l) do byKey[lk] = nil end
         d.c[id] = nil
+        Ledger.circuits:del(id)
     else
-        keep(id, c)
+        keep(d, id, c)
     end
 end
 
 local function put(d, id, set, k)
     if byKey[k] and byKey[k] ~= id then drop(d, k) end
-    local c = d.c[id]
-    Ledger.circuits:del(id)
+    local c = copy(d.c[id])
     c[set][k] = true
-    keep(id, c)
+    keep(d, id, c)
     byKey[k] = id
 end
 
@@ -196,7 +204,6 @@ local function newCircuit(d, sKeys)
     local id = counter.next
     counter.next = id + 1
     d.c[id] = { s = {}, l = {} }
-    keep(id, d.c[id])
     for _, k in ipairs(sKeys) do put(d, id, "s", k) end
     return id
 end

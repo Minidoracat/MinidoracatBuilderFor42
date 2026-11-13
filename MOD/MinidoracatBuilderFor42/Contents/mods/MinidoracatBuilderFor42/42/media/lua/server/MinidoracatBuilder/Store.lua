@@ -8,7 +8,7 @@
 -- 值會重複的帳本（地板、掛上去的圖：幾萬筆只有幾百種「圖名＋退料」）開的時候給 sig：每一片各有一張對照表 dict
 --   （編號 → 值），data 只存編號，一筆是「數字鍵＋編號」18 bytes。對照表和用到它的紀錄在同一個檔裡，一個檔壞了不影響
 --   別片。get 拿到的是對照表裡那張表，很多筆共用：只能讀，不能改。
--- 沒給 sig 的帳本 data 直接存值。要改一筆的內容：先 del、改完再 put（大小是照 del 當時的內容算的）。
+-- 沒給 sig 的帳本 data 直接存值。兩種都一樣：記進去的表之後不能原地改，要改就換一張新的表再 put（大小是照記的時候算的）。
 -- 分片以前的存檔整本在各自主系統的一張表：adopt 每次開服把分片還沒有的複製進來，舊表留著；之後 put、del 的那一筆同時
 --   從舊表刪掉。哪一次開服舊表的每一筆分片都讀得到，才清掉舊表。
 -- 各個存檔不是同時寫的。舊表還在的期間：分片沒寫成，下一次開服照舊表補回還沒刪的；主系統沒寫成而分片寫成，
@@ -23,11 +23,15 @@ MinidoracatBuilder.Store = Store
 local LOG = "[MinidoracatBuilderFor42] "
 Store.VERSION = 1
 Store.SHARD_BYTES = 6 * 1024 * 1024 -- 一片估到這麼大就換下一片：估計值不含表頭，留四成給引擎的 10 MiB
-Store.SHARD_HARD = 9 * 1024 * 1024  -- 任何一片都不超過這裡；放不下就不記（寧可那一筆拆不了，不要整片帳本被截斷）
+Store.SHARD_HARD = 9 * 1024 * 1024  -- 新的一筆放進去不超過這裡；放不下就不記（寧可那一筆拆不了，不要整片帳本被截斷）
+-- 已經在這一片的那一筆換值（掛圖少一張、線路加一個成員）可以再多用這麼多：片剛好滿的時候，換值不會失敗
+Store.SHARD_SLACK = 256 * 1024
 Store.SHARD_MAX = 16
 -- 全伺服器的 GOS 系統數送給客戶端時只有 1 byte、客戶端當有號數讀（CGlobalObjects.java:105）：超過 127 所有 MOD 的
--- 客戶端 GOS 都會壞。到這個數就不再開新的一片，留空間給別的 MOD
+-- 客戶端 GOS 都會壞。到 SYSTEM_BUDGET 就不再替一本帳本開第二片以後的片，留空間給別的 MOD；
+-- 到 SYSTEM_MAX 連第一片都不開（那一本這一場不記新的，分片以前的存檔照樣讀得到）
 Store.SYSTEM_BUDGET = 100
+Store.SYSTEM_MAX = 120
 Store.ORDER = { "floors", "overlays", "ledger", "circuits" } -- report 的順序
 local byId = {}
 
@@ -127,7 +131,8 @@ local function before(S, k, i)
     return false
 end
 
--- 開第 i 片（存檔已經有的話在這裡讀進來）。不合格式的、和前面的片同一個鍵的（不該發生）不收
+-- 開第 i 片（存檔已經有的話在這裡讀進來）。不合格式的、和前面的片同一個鍵的（不該發生）不收，也從那一片的存檔表拿掉：
+-- 留著的話查得到、大小也算不準
 local function openShard(S, i)
     local system = SGlobalObjects.registerSystem(S.name .. "_" .. i)
     system:setModDataKeys({ "v", "data", "dict" })
@@ -189,7 +194,8 @@ local function openShard(S, i)
     for j = 1, nbad do sh.data[bad[j]] = nil end
     S.n = S.n + sh.n
     if nbad > 0 then
-        print(LOG .. S.label .. " ledger: shard " .. i .. " ignored " .. nbad .. " unreadable or duplicate entries")
+        print(LOG .. S.label .. " ledger: shard " .. i .. " dropped " .. nbad
+            .. " unreadable or duplicate entries (removed from the save file)")
     end
 end
 
@@ -232,30 +238,40 @@ local function drop(S, sh, k, cur)
     end
 end
 
--- 鍵 k 新的一筆（最多 sz bytes）放第幾片；都放不下回 nil。第二個回傳值 true＝這次開了新的一片
-local function pick(S, k, sz)
+-- 新的一筆放進這一片要多用幾 bytes：這一片的對照表已經有同一個值就只有紀錄本身
+local function need(sh, esz, sg, dsz)
+    if sg and sh.ids and sh.ids[sg] then return esz end
+    return esz + dsz
+end
+
+-- 鍵 k 新的一筆放第幾片（esz＝紀錄本身、sg＝值的簽名、dsz＝值放進對照表要的大小；沒有對照表的帳本 sg 是 nil、dsz 是 0）；
+-- 都放不下回 nil。第二個回傳值 true＝這次開了新的一片
+local function pick(S, k, esz, sg, dsz)
     -- 換掉一筆是先 del 再 put：原本那一片放得下，新的就回那一片（同一個鍵的紀錄盡量不換存檔）；放不下才照下面的選
-    if S.gone == k and S.shards[S.goneAt].bytes + sz <= Store.SHARD_HARD then return S.goneAt end
-    local goal, best = math.min(Store.SHARD_BYTES, Store.SHARD_HARD), 1
-    for i = 1, S.m do
-        local b = S.shards[i].bytes
-        if b + sz <= goal then return i end
-        if b < S.shards[best].bytes then best = i end
+    if S.gone == k then
+        local sh = S.shards[S.goneAt]
+        if sh.bytes + need(sh, esz, sg, dsz) <= Store.SHARD_HARD then return S.goneAt end
     end
-    if sz <= goal then
-        if S.m < Store.SHARD_MAX and SGlobalObjects.getSystemCount() < Store.SYSTEM_BUDGET then
+    local goal, best, bestAfter = math.min(Store.SHARD_BYTES, Store.SHARD_HARD), nil, nil
+    for i = 1, S.m do
+        local after = S.shards[i].bytes + need(S.shards[i], esz, sg, dsz)
+        if after <= goal then return i end
+        if not best or after < bestAfter then best, bestAfter = i, after end
+    end
+    if esz + dsz <= goal then
+        local systems = SGlobalObjects.getSystemCount()
+        if S.m < Store.SHARD_MAX and systems < (S.m == 0 and Store.SYSTEM_MAX or Store.SYSTEM_BUDGET) then
             openShard(S, S.m + 1)
             print(LOG .. S.label .. " ledger: opened shard " .. S.m)
             -- 新的一片通常是空的；存檔資料夾裡剛好有同名的檔時照它現在的大小重選
-            return pick(S, k, sz), true
+            return pick(S, k, esz, sg, dsz), true
         end
         if not S.full then -- 一場只記一次
             S.full = true
-            print(LOG .. S.label .. " ledger: cannot open another shard (" .. S.m .. " shards, "
-                .. SGlobalObjects.getSystemCount() .. " systems)")
+            print(LOG .. S.label .. " ledger: cannot open another shard (" .. S.m .. " shards, " .. systems .. " systems)")
         end
     end
-    if S.shards[best].bytes + sz <= Store.SHARD_HARD then return best end
+    if best and bestAfter <= Store.SHARD_HARD then return best end
     return nil
 end
 
@@ -270,7 +286,9 @@ local function place(S, k, v)
         local extra = sg and not sh.ids[sg] and dsz or 0
         -- 舊值只剩這一筆在用、新值是另一張：換完之後舊值會從對照表拿掉
         local freed = sg and sh.ids[sg] ~= cur and sh.refs[cur] == 1 and 9 + vsize(sh.dict[cur]) or 0
-        if sh.bytes - old + esz + extra - freed <= Store.SHARD_HARD then
+        local after = sh.bytes - old + esz + extra - freed
+        -- 換完沒有變大的一律可以（不管這一片現在多滿）；變大的不超過硬上限加換值的餘裕
+        if after <= sh.bytes or after <= Store.SHARD_HARD + Store.SHARD_SLACK then
             sh.bytes = sh.bytes - old + esz
             if sg then
                 sh.data[k] = ref(sh, v, sg, dsz) -- 先加新的再放掉舊的：同一個值不會先被拿掉
@@ -281,7 +299,7 @@ local function place(S, k, v)
             return true
         end
     end
-    local to, opened = pick(S, k, esz + dsz)
+    local to, opened = pick(S, k, esz, sg, dsz)
     -- 剛開的那一片的存檔裡剛好有這個鍵（開服之後才出現的檔）：照已經有的那一筆改
     if opened and not sh and locate(S, k) then return place(S, k, v) end
     if not to then return false end
@@ -292,23 +310,35 @@ local function place(S, k, v)
     return true
 end
 
--- 舊表還在的那一場：鍵 k 在舊表的那一筆不用留了
-local function settle(S, k)
+-- 舊表還在的那一場：鍵 k 在舊表的那一筆跟著處理。v＝剛記成的新值（del 時是 nil）。這本帳本新舊格式一樣（mirror）、而且新值
+-- 沒有比舊表那一筆大：舊表也換成新值，之後不管哪個檔沒寫成，另一個檔都還有新的那一筆。其他情形從舊表刪掉：舊表所在的
+-- 主系統存檔在搬完之前只能變小，不能被撐過引擎的上限
+local function settle(S, k, v)
     local t = S.oldT and S.oldT[k]
-    if t then t[S.oldK[k]] = nil end
+    if t then
+        local ok = S.oldK[k]
+        if v ~= nil and S.mirror and vsize(v) <= (vsize(t[ok]) or 0) then t[ok] = v else t[ok] = nil end
+    end
     if S.left then S.left[k] = nil end
 end
 
+-- 鍵 k 在舊表 old 還留著一份（鍵是 oldKey）：之後 put、del 這一筆時跟著處理（settle）
+function Store:track(k, old, oldKey)
+    self.oldT, self.oldK = self.oldT or {}, self.oldK or {}
+    self.oldT[k], self.oldK[k] = old, oldKey
+end
+
 -- 開一本帳本（存檔 gos_<name>_<n>.bin）。opts：id（report 用）、label（log 用）、valid(值, 鍵)＝這一筆收不收、
--- sig(值)＝值的簽名（給了就用對照表；這時 valid 只看值）
+-- sig(值)＝值的簽名（給了就用對照表；這時 valid 只看值）、mirror＝分片以前的存檔裡值的格式和現在一樣（settle）
 function Store.open(name, opts)
     local S = setmetatable({ name = name, id = opts.id, label = opts.label, valid = opts.valid, sig = opts.sig,
-        shards = {}, m = 0, n = 0 }, Store)
+        mirror = opts.mirror, shards = {}, m = 0, n = 0 }, Store)
     -- 有幾片看存檔資料夾：不靠另一個存檔記的數字，哪個檔壞了都不影響找到其他片
-    local last = 1
-    for i = 2, Store.SHARD_MAX do
+    local last = 0
+    for i = 1, Store.SHARD_MAX do
         if checkSaveFileExists("gos_" .. name .. "_" .. i .. ".bin") then last = i end
     end
+    -- 一片都還沒有（新世界，或第一次用分片的版本）：先不開，第一筆要記的時候才開（pick）。用不到的帳本不佔 GOS 系統
     for i = 1, last do openShard(S, i) end
     byId[opts.id] = S
     return S
@@ -325,7 +355,7 @@ end
 -- 記下（或換掉）鍵 k 的值（呼叫的人先確認 valid；v 之後不能再改）。每一片都滿了回 false，帳本不變
 function Store:put(k, v)
     if not place(self, k, v) then return false end
-    settle(self, k)
+    settle(self, k, v)
     return true
 end
 
@@ -374,8 +404,7 @@ function Store:adopt(old, conv)
     end
     local head = LOG .. self.label .. " ledger: "
     if copied > 0 or left > 0 then
-        self.oldT, self.oldK = self.oldT or {}, self.oldK or {}
-        for j = 1, n do self.oldT[k2s[j]], self.oldK[k2s[j]] = old, ks[j] end
+        for j = 1, n do self:track(k2s[j], old, ks[j]) end
         print(head .. "copied " .. copied .. " entries from the old single file into shards (" .. left .. " left, "
             .. nbad .. " bad)")
     else

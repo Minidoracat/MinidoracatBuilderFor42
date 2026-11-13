@@ -432,6 +432,40 @@ function HARNESS_REOPEN(cls)
     cls.instance = nil
     inst:initSystem()
 end
+-- 四本帳本記的筆數、大小，和存檔表裡實際的內容對不對得上（照存檔格式重算）；對照表和紀錄互相對得上。回不一致的那幾本
+function HARNESS_DRIFT()
+    local Store = MinidoracatBuilder.Store
+    local LEDGER_FILES = { floors = "MinidoracatBuilderFloors", overlays = "MinidoracatBuilderOverlays",
+        ledger = "MinidoracatBuilder", circuits = "MinidoracatBuilderCircuits" }
+    local bad = {}
+    for _, r in ipairs(Store.report()) do
+        local n, bytes, ok = 0, 0, true
+        for i = 1, 16 do
+            local md = HARNESS_GOS_SHARDS[LEDGER_FILES[r.id] .. "_" .. i]
+            if md and md.data then
+                local used = {}
+                for k, v in pairs(md.data) do
+                    n = n + 1
+                    if md.dict then
+                        bytes = bytes + Store.size(k) + 9
+                        used[v] = true
+                        ok = ok and md.dict[v] ~= nil
+                    else
+                        bytes = bytes + Store.size(k) + Store.size(v)
+                    end
+                end
+                for id, v in pairs(md.dict or {}) do
+                    bytes = bytes + 9 + Store.size(v)
+                    ok = ok and used[id] == true
+                end
+            end
+        end
+        if not (ok and n == r.n and bytes == r.bytes) then
+            bad[#bad + 1] = r.id .. " n=" .. n .. "/" .. r.n .. " bytes=" .. bytes .. "/" .. r.bytes
+        end
+    end
+    return table.concat(bad, "; ")
+end
 function sendRemoveItemFromContainer() end
 function sendAddItemsToContainer() end
 local function item(ft, tags)
@@ -4070,6 +4104,7 @@ local function circuitScenario()
     local left = Ledger.circuits:stats().n
     check(left == 3 and Ledger.get(O.SW1) == nil and ask(P3, O.SW3).id == nil,
         "兩個開關都拿走：整條線路刪掉（只剩大區域、房間 10、相鄰兩間那三條），帳本也清掉（" .. left .. "）")
+    check(HARNESS_DRIFT() == "", "接線、拆線、併線之後：帳本記的筆數與大小和存檔表的內容一致（" .. HARNESS_DRIFT() .. "）")
     instanceof, IsoRegions.getIsoWorldRegion = realInst, realRegions
 end
 circuitScenario()
@@ -6662,9 +6697,10 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("LoadChunk", sqA:getChunk())
     local a1, a2 = lampE(A1.keyId), lampE(A2.keyId)
     check(a1 ~= nil and a2 ~= nil and A1.keyId ~= A2.keyId and a1.s == "kl_01_0" and a1.p == posOf(144, 144, 0)
-        and a1.i["Base.ElectricWire"] == 1 and a2.i["Base.ElectricWire"] == 3 and inst.built["144,144,0,kl_01_0"] == nil
-        and inst.built["144,144,0,kl_01_1"] == nil and V.keyId == -1,
-        "讀到那一塊：舊紀錄照格上那盞本 MOD 的燈搬成編號，退料照舊、舊紀錄刪掉；原版燈不算")
+        and a1.i["Base.ElectricWire"] == 1 and a2.i["Base.ElectricWire"] == 3 and inst.built["144,144,0,kl_01_0"].id == A1.keyId
+        and inst.built["144,144,0,kl_01_0"].i["Base.ElectricWire"] == 1 and inst.built["144,144,0,kl_01_1"].id == A2.keyId
+        and V.keyId == -1,
+        "讀到那一塊：舊紀錄照格上那盞本 MOD 的燈發編號、記進燈的帳本，退料照舊；舊紀錄換成記著編號的一筆、留到下一次開服；原版燈不算")
     check(inst.built["145,145,0,kl_01_0"] == nil and Ledger.legacy == before - 3,
         "同一塊裡燈已不在的舊鍵一起刪掉")
     local forged = lamp(S(145, 145), lampA, "mark")
@@ -6684,8 +6720,9 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(lampE(A1.keyId) == a1 and Ledger.legacy == before - 4 and count("LoadChunk") == 1,
         "同一塊再讀一次（還有別塊沒讀到、事件還掛著）：已定案，不再動")
     c = unbuild(sqA, "kl_01_1")
-    check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and lampE(A2.keyId) == nil,
-        "搬過的燈：本工具照搬過去的那筆退料")
+    check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and lampE(A2.keyId) == nil
+        and inst.built["144,144,0,kl_01_1"] == nil and inst.built["144,144,0,kl_01_0"] ~= nil,
+        "搬過的燈：本工具照搬過去的那筆退料；留著的舊紀錄跟著刪掉（別盞的不動）")
     inst.built["200,200,0,kl_01_0"] = nil
 
     -- 當機回溯：搬過的燈帶著編號存進 chunk、帳本回到搬之前，重開後照樣搬給它；同一格另有一盞帳本認不得的同款燈時兩盞都不搬
@@ -6697,6 +6734,8 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     inst.built["152,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 6 }
     inst.built["153,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 8 }
     HARNESS_REOPEN(Ledger)
+    check(inst.built["144,144,0,kl_01_0"] == nil and lampE(A1.keyId) == a1,
+        "下一次開服：分片讀得到上一場發的編號，舊紀錄這時才刪")
     fire("LoadChunk", S(152, 152):getChunk())
     check(W.keyId > 0 and W.keyId ~= 999 and lampE(W.keyId).i["Base.ElectricWire"] == 6 and W2.keyId == 998
         and X3.keyId == -1 and inst.built["153,152,0,kl_01_0"] == nil,
@@ -6735,6 +6774,35 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("LoadChunk", S(180, 180):getChunk())
     check(kept and E.keyId > 0 and lampE(E.keyId).i["Base.ElectricWire"] == 4 and count("LoadChunk") == 0,
         "定案出錯：舊鍵留著、這一場摘掉事件，下次開服照樣搬")
+    -- 主系統的檔寫成了、分片沒寫成：發過編號的舊紀錄還原成退料表，讀到那一塊時重新發編號，退料照舊
+    local lostId = E.keyId
+    for n = 1, 16 do
+        local md = HARNESS_GOS_SHARDS["MinidoracatBuilder_" .. n]
+        if md and md.data then md.data[lostId] = nil end
+    end
+    HARNESS_REOPEN(Ledger)
+    local back = inst.built["180,180,0,kl_01_0"]
+    fire("LoadChunk", S(180, 180):getChunk())
+    check(back ~= nil and back["Base.ElectricWire"] == 4 and back.id == nil and E.keyId > lostId
+        and lampE(E.keyId).i["Base.ElectricWire"] == 4 and inst.built["180,180,0,kl_01_0"].id == E.keyId,
+        "發了編號之後只有主系統的檔寫成（分片沒寫成）：下一次開服舊紀錄還原、照樣搬給那盞燈，退料沒有少")
+    -- 帳本滿了記不進去：舊紀錄原樣留著，不當成已經搬過；之後放得下再搬
+    local G = lamp(at(190, 190), lampA, "mark")
+    inst.built["190,190,0,kl_01_0"] = { ["Base.ElectricWire"] = 5 }
+    HARNESS_REOPEN(Ledger)
+    local Store = MinidoracatBuilder.Store
+    local keepB, keepH, realPrint = Store.SHARD_BYTES, Store.SHARD_HARD, print
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 1, 1, 100
+    print = function() end
+    fire("LoadChunk", S(190, 190):getChunk())
+    print = realPrint
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
+    local full = inst.built["190,190,0,kl_01_0"]
+    local stuck = full ~= nil and full["Base.ElectricWire"] == 5 and full.id == nil and Ledger.get(G) == nil and Ledger.legacy == 1
+    HARNESS_REOPEN(Ledger)
+    fire("LoadChunk", S(190, 190):getChunk())
+    check(stuck and Ledger.get(G) ~= nil and Ledger.get(G)["Base.ElectricWire"] == 5,
+        "帳本滿了、發了編號卻記不進去：舊紀錄原樣留著（不算定案），下次開服放得下時照樣搬")
     instanceof = realInst
 end)()
 
@@ -9601,10 +9669,12 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
     local Floors, Store = MinidoracatBuilder.Floors, MinidoracatBuilder.Store
     local inst, NAME = Floors.instance, "MinidoracatBuilderFloors"
     local keepBytes, keepHard, keepMax, realPrint = Store.SHARD_BYTES, Store.SHARD_HARD, Store.SHARD_MAX, print
+    local keepSlack = Store.SHARD_SLACK
+    Store.SHARD_SLACK = 0 -- 這個情境的大小上限都照 SHARD_HARD 算；換值多出來的空間在 11f 另外驗
     local K = Store.pos
-    local function fo(x, y)
+    local function fo(x, y, z)
         return { getSquare = function() return { getX = function() return x end, getY = function() return y end,
-                getZ = function() return 0 end } end,
+                getZ = function() return z or 0 end } end,
             getSprite = function() return { getName = function() return "floors_a_01_0" end } end }
     end
     local function P(n) return { ["Base.Plank"] = n, ["Base.Nails"] = 1 } end
@@ -9726,11 +9796,14 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
     boot({ floors = { ["10,10,0"] = entry(1), ["11,10,0"] = entry(2) } }, newer)
     check(plank(A) == 7 and plank(B) == 2 and count(inst.floors) == 2, "分片已經有的那一格以分片為準，只補分片沒有的")
     Floors.put(B, { ["Base.Plank"] = 9 })
+    Floors.put(A, big4)
     local f1c = save()
-    check(f1c.main.floors["11,10,0"] == nil and f1c.main.floors["10,10,0"] ~= nil and plank(B) == 9,
-        "舊表還在時直接重記的那一格也從舊表刪掉")
+    check(f1c.main.floors["11,10,0"].i["Base.Plank"] == 9 and f1c.main.floors["11,10,0"].i["Base.Nails"] == nil
+        and f1c.main.floors["10,10,0"] == nil and plank(B) == 9 and Floors.get(A).i["Base.Screws"] == 1,
+        "舊表還在時直接重記：新的一筆沒有比較大，舊表那一格也換成新的；比較大的從舊表刪掉（主系統的存檔在搬完之前只能變小）")
     boot(f1c.main, {})
-    check(Floors.get(B) == nil and plank(A) == 1, "之後分片沒寫成：重記過的那一格不會被補回舊的值，沒動過的照舊表補回")
+    check(plank(B) == 9 and Floors.get(A) == nil,
+        "之後分片沒寫成：舊表換過的那一格照新的值補回；從舊表刪掉的那一格不會被補回舊的值")
     local nBefore = Floors.stats().n
     inst.floors = { ["30,10,0"] = entry(3) }
     inst:initSystem()
@@ -9758,7 +9831,8 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
         "下一次開服還是放不下（這次沒有複製任何一筆）：舊表照樣不清，那一筆照樣查得到")
     HARNESS_GOS_COUNT = nil
     Floors.put(leftObj, { ["Base.Plank"] = 8 })
-    check(plank(leftObj) == 8 and inst.floors[leftKey] == nil, "同一場之後開得了新的一片：那一筆重記成功，查到的是新的，舊表那一筆刪掉")
+    check(plank(leftObj) == 8 and inst.floors[leftKey].i["Base.Plank"] == 8,
+        "同一場之後開得了新的一片：那一筆重記成功，查到的是新的，舊表那一筆也換成新的")
     Floors.forget(leftObj)
     check(Floors.get(leftObj) == nil, "再拆掉：查不到，不會讀回放不進分片時留著的舊值")
     boot(f5c.main, f5c.shards)
@@ -9802,9 +9876,9 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
     Floors.put(fo(1, 1), P(1))
     Floors.put(fo(2, 1), P(2))
     HARNESS_GOS_SHARDS[NAME .. "_2"] = file({ [K(3, 1, 0)] = 1 }, { [1] = entry(9) }) -- 開服之後才出現的檔（例：備份被覆蓋上來）
-    Floors.put(fo(3, 1), P(1))
+    Floors.put(fo(3, 1), P(3))
     st = Floors.stats()
-    check(plank(fo(3, 1)) == 1 and st.n == 3 and st.shards[2].n == 1 and st.shards[2].bytes == 105,
+    check(plank(fo(3, 1)) == 3 and st.n == 3 and st.shards[2].n == 1 and st.shards[2].bytes == 105,
         "開新的一片時那個檔已經有同一格的紀錄：照那一筆改，筆數與大小不重複算")
     Store.SHARD_HARD, Store.SHARD_MAX = 250, 2
     boot(nil, {})
@@ -9918,6 +9992,103 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
     check(Floors.get(fo(4, 1)) == Floors.get(fo(3, 1)) and count(shard(1).dict) == 1 and Floors.stats().shards[1].bytes == 2 * 18 + 82,
         "重開後記一樣的值：用讀回來的那一項，不另外加")
 
+    -- 11b. 樓層算在鍵裡（舊存檔的鍵也一樣）；記下的是複本
+    boot({ floors = { ["10,10,0"] = entry(1), ["10,10,-1"] = entry(2) } })
+    Floors.put(fo(11, 10, -1), P(3))
+    local mineF = P(4)
+    Floors.put(fo(12, 10), mineF)
+    mineF["Base.Plank"] = 9
+    check(plank(fo(10, 10)) == 1 and plank(fo(10, 10, -1)) == 2 and plank(fo(11, 10, -1)) == 3 and Floors.get(fo(11, 10)) == nil
+        and plank(fo(12, 10)) == 4 and Floors.stats().n == 4,
+        "地下室和一樓同一個 x、y 是兩筆（舊存檔的鍵也一樣）；記下的是複本，呼叫的人之後改自己的表不影響帳本")
+    -- 11c. 片數到上限：不再開新的一片
+    Store.SHARD_BYTES, Store.SHARD_MAX = 250, 1
+    quiet(function()
+        boot(nil, {})
+        Floors.put(fo(1, 1), P(1))
+        Floors.put(fo(2, 1), P(2))
+        Floors.put(fo(3, 1), P(3))
+    end)
+    check(#Floors.stats().shards == 1 and Floors.stats().n == 3 and HARNESS_GOS_SHARDS[NAME .. "_2"] == nil,
+        "片數到上限：不開新的一片，放進最空的那一片（還在硬上限內）")
+    -- 11d. 同一格重記成比較大的值、原本那一片放不下：搬到別片，原本那一片不留
+    Store.SHARD_HARD, Store.SHARD_MAX = 250, keepMax
+    quiet(function()
+        boot(nil, {})
+        Floors.put(fo(1, 1), P(1))
+        Floors.put(fo(2, 1), P(2))
+        Floors.put(fo(1, 1), big4)
+    end)
+    st = Floors.stats()
+    check(not inShard(1, 1, 1) and inShard(2, 1, 1) and Floors.get(fo(1, 1)).i["Base.Screws"] == 1 and st.n == 2
+        and st.shards[1].bytes == 105 and st.shards[1].n == 1 and st.shards[2].bytes == 153 and st.shards[2].n == 1
+        and count(shard(1).dict) == 1,
+        "同一格直接重記成比較大的一筆、原本那一片會超過硬上限而別片放得下：搬過去，原本那一片的紀錄與對照表項目都拿掉")
+    Store.SHARD_BYTES, Store.SHARD_HARD = keepBytes, keepHard
+
+    -- 11e. 片快滿了、開不了新的一片：值和這一片已經有的一樣的那一筆只要 18 bytes，照樣記得進去
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 250, 250, 100
+    quiet(function()
+        boot(nil, {})
+        Floors.put(fo(1, 1), P(1))
+        Floors.put(fo(2, 1), P(2))
+        Floors.put(fo(3, 1), P(1))
+        Floors.put(fo(4, 1), P(2))
+        Floors.put(fo(5, 1), P(1))
+        Floors.put(fo(6, 1), P(6))
+    end)
+    st = Floors.stats()
+    check(plank(fo(3, 1)) == 1 and plank(fo(4, 1)) == 2 and Floors.get(fo(5, 1)) == nil and Floors.get(fo(6, 1)) == nil
+        and st.n == 4 and st.shards[1].bytes == 246 and #st.shards == 1,
+        "片快滿、開不了新的一片：值已經在這一片對照表裡的照樣記（只算紀錄本身 18 bytes），真的放不下的才不記")
+    Floors.forget(fo(1, 1))
+    Floors.put(fo(1, 1), P(2))
+    check(plank(fo(1, 1)) == 2 and Floors.stats().shards[1].bytes == 246, "換地板換成這一片已經有的值：放得回原本那一片")
+    -- 11f. 已經在這一片的那一筆換成比較大的值：可以多用 SHARD_SLACK，不必搬、也不會失敗
+    Store.SHARD_SLACK, HARNESS_GOS_COUNT = 100, nil
+    quiet(function()
+        boot(nil, {})
+        Floors.put(fo(1, 1), P(1))
+        Floors.put(fo(2, 1), P(2))
+        Floors.put(fo(1, 1), big4)
+        Floors.put(fo(3, 1), P(3))
+    end)
+    st = Floors.stats()
+    check(inShard(1, 1, 1) and Floors.get(fo(1, 1)).i["Base.Screws"] == 1 and st.shards[1].bytes == 258 and inShard(2, 3, 1),
+        "同一格換成比較大的值：留在原本那一片（可以超過新紀錄的上限一點）；新的一格照舊不能超過，開下一片")
+    Store.SHARD_SLACK = 0
+    -- 11g. 伺服器上的 GOS 系統數已經逼近引擎上限、這本帳本一片都還沒有：不開（不把系統數推過上限），舊存檔照樣讀得到
+    HARNESS_GOS_COUNT = 125
+    quiet(function()
+        boot({ floors = { ["10,10,0"] = entry(1) } })
+        Floors.put(fo(11, 10), P(2))
+    end)
+    st = Floors.stats()
+    check(#st.shards == 0 and HARNESS_GOS_SHARDS[NAME .. "_1"] == nil and plank(fo(10, 10)) == 1 and Floors.get(fo(11, 10)) == nil
+        and count(inst.floors) == 1 and st.n == 0,
+        "系統數逼近上限、還沒有任何一片：不開新系統；舊存檔那一筆照樣查得到、舊表不清，新蓋的不記")
+    Floors.forget(fo(10, 10))
+    check(Floors.get(fo(10, 10)) == nil and count(inst.floors) == 0, "這時拆掉舊存檔的那一筆：查不到了，舊表也刪掉")
+    HARNESS_GOS_COUNT = nil
+    Floors.put(fo(11, 10), P(2))
+    check(plank(fo(11, 10)) == 2 and #Floors.stats().shards == 1, "之後有空位：下一筆照常開第 1 片、記進去")
+    Store.SHARD_BYTES, Store.SHARD_HARD = keepBytes, keepHard
+
+    -- 11h. 舊值還有別格在用：換值騰不出對照表的空間，片滿時不能當成放得下
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 250, 250, 100
+    quiet(function()
+        boot(nil, {})
+        Floors.put(fo(1, 1), P(1))
+        Floors.put(fo(2, 1), P(1))
+        Floors.put(fo(3, 1), P(2))
+        Floors.put(fo(1, 1), P(7))
+    end)
+    st = Floors.stats()
+    check(plank(fo(1, 1)) == 1 and st.shards[1].bytes == 228 and st.n == 3 and count(shard(1).dict) == 2,
+        "兩格共用一個值、片快滿：把其中一格換成新的值放不下（舊值還有別格在用，騰不出空間），不換，大小不變")
+    HARNESS_GOS_COUNT = nil
+    Store.SHARD_BYTES, Store.SHARD_HARD = keepBytes, keepHard
+
     -- 12. 比較新的版本寫的檔（降版）：不讀、不改，新的紀錄記在別片
     local future = {}
     future[NAME .. "_1"] = { v = 2, data = { [K(1, 1, 0)] = 1 }, dict = { [1] = entry(1) } }
@@ -9939,6 +10110,7 @@ print("情境四十八：帳本存檔（使用者 2026-11-14）：數字鍵＋�
     end)
     check(okPut and Floors.get(fo(40, 1)) == nil and Floors.get(fo(41, 1)) == nil and Floors.stats().n == 0,
         "退料表不是「物品型別 → 數量」的不記、不丟錯（存進去的大小才算得準）")
+    Store.SHARD_SLACK = keepSlack
 end)()
 
 print("情境四十九：掛上去的圖、燈與平台、線路三本帳本也存進分片（使用者 2026-11-14）：舊存檔搬進來、搬完才清舊表、編號不重發")
@@ -9961,32 +10133,51 @@ print("情境四十九：掛上去的圖、燈與平台、線路三本帳本也�
         HARNESS_REOPEN(cls)
         print = realPrint
     end
+    local drift = HARNESS_DRIFT
+    check(drift() == "", "前面所有情境蓋、拆、接線之後：四本帳本記的筆數與大小和存檔表的內容一致，對照表沒有多的或缺的（" .. drift() .. "）")
 
     -- 掛上去的圖：地板那一件掛兩張、北邊那面牆掛一張；邊認不得的、退料不是表的讀不懂
     local oi, ON = Overlays.instance, "MinidoracatBuilderOverlays"
     local sq = sqAt(300, 300)
     oi.overlays = { ["300,300,0"] = { ov_a = { ["Base.Paint"] = 1 }, ov_b = {} },
         ["300,300,0,N"] = { ov_c = { ["Base.Plank"] = "2" } },
-        ["300,300,0,X"] = { ov_d = {} }, ["301,300,0"] = { ov_e = 5 } }
+        ["300,300,0,X"] = { ov_d = {} }, ["301,300,0"] = { ov_e = 5 },
+        ["370,300,0"] = { ov_a = { ["Base.Paint"] = 1 }, ov_b = {} }, ["371,300,0"] = { ov_c = {} } }
     reopen(Overlays)
     check(Overlays.get(sq, "ov_a")["Base.Paint"] == 1 and Overlays.get(sq, "ov_b") ~= nil
         and Overlays.get(sq, "ov_c", "N")["Base.Plank"] == "2" and Overlays.get(sq, "ov_c") == nil
         and Overlays.get(sq, "ov_a", "W") == nil and HARNESS_LEDGER(ON, K(300, 300, 0)) ~= nil
-        and HARNESS_LEDGER(ON, K(300, 300, 0, 1)) ~= nil and count(oi.overlays) == 4
+        and HARNESS_LEDGER(ON, K(300, 300, 0, 1)) ~= nil and count(oi.overlays) == 6
         and table.concat(HARNESS_GOS_KEYS[ON], ",") == "overlays",
         "掛上去的圖：舊存檔的地板那一件與牆那一件各搬成一筆數字鍵，照樣查得到；舊表留著，主系統白名單不變")
+    -- 舊表還在的這一場改了兩件，存檔只寫成主系統、分片沒寫成：拿掉一張的那一件（沒有變大，舊表跟著換）照新的補回；
+    -- 加了一張的那一件（變大，舊表那一筆刪掉）兩邊都沒有
+    local p1, p2 = sqAt(370, 300), sqAt(371, 300)
+    Overlays.forget(p1, "ov_a")
+    Overlays.put(p2, "ov_d", { ["Base.Plank"] = 1 })
+    HARNESS_GOS_SHARDS[ON .. "_1"] = nil
+    reopen(Overlays)
+    check(Overlays.get(p1, "ov_b") ~= nil and Overlays.get(p1, "ov_a") == nil and Overlays.get(sq, "ov_a") ~= nil
+        and Overlays.get(sq, "ov_c", "N") ~= nil and Overlays.get(p2, "ov_c") == nil and Overlays.get(p2, "ov_d") == nil
+        and count(oi.overlays) == 5,
+        "掛圖的存檔只寫成主系統：沒動過的與拿掉一張的那一件照舊表補回（拿掉的那張沒有回來）；加過一張的那一件不在（已知限制）")
     Overlays.forget(sq, "ov_a")
     Overlays.put(sq, "ov_f", { ["Base.Plank"] = 1 }, "N")
     local atN = Overlays.at(sq, "N")
     atN.ov_c = nil
-    check(Overlays.get(sq, "ov_a") == nil and Overlays.get(sq, "ov_b") ~= nil and oi.overlays["300,300,0"] == nil
-        and Overlays.get(sq, "ov_f", "N")["Base.Plank"] == 1 and Overlays.get(sq, "ov_c", "N") ~= nil
-        and oi.overlays["300,300,0,N"] == nil and count(oi.overlays) == 2,
-        "同一件拿掉一張、再掛一張：其他張照樣在（換成一張新的表，不改共用的那張），舊表那兩件跟著刪掉；at 回的是複本")
+    check(Overlays.get(sq, "ov_a") == nil and Overlays.get(sq, "ov_b") ~= nil and oi.overlays["300,300,0"].ov_a == nil
+        and oi.overlays["300,300,0"].ov_b ~= nil and Overlays.get(sq, "ov_f", "N")["Base.Plank"] == 1
+        and Overlays.get(sq, "ov_c", "N") ~= nil and oi.overlays["300,300,0,N"] == nil and count(oi.overlays) == 4,
+        "同一件拿掉一張、再掛一張：其他張照樣在（換成一張新的表，不改共用的那張）；舊表那兩件一件跟著換、一件刪掉；at 回的是複本")
     local s1, s2 = sqAt(310, 300), sqAt(311, 300)
     Overlays.put(s1, "ov_a", { ["Base.Paint"] = 1 })
     Overlays.put(s2, "ov_a", { ["Base.Paint"] = 1 })
     check(Overlays.get(s1, "ov_a") == Overlays.get(s2, "ov_a"), "兩件掛一樣的圖、退一樣的料：對照表共用一項")
+    local mineO = { ["Base.Paint"] = 1 }
+    Overlays.put(s1, "ov_g", mineO)
+    mineO["Base.Paint"] = 9
+    check(Overlays.get(s1, "ov_g")["Base.Paint"] == 1, "記下的是複本：呼叫的人之後改自己的表不影響帳本")
+    Overlays.forget(s1, "ov_g")
     Overlays.forget(s1, "ov_a")
     check(Overlays.get(s1, "ov_a") == nil and HARNESS_LEDGER(ON, K(310, 300, 0)) == nil and Overlays.get(s2, "ov_a") ~= nil,
         "一件上最後一張拿掉：那一件整筆清掉，別件不受影響")
@@ -10028,6 +10219,11 @@ print("情境四十九：掛上去的圖、燈與平台、線路三本帳本也�
     Ledger.put(fresh, { ["Base.ElectricWire"] = 1 })
     check(fresh.keyId == top + 6 and Ledger.get(fresh)["Base.ElectricWire"] == 1 and li.lamps.e[fresh.keyId].p == "nowhere",
         "新蓋的燈：編號接在分片裡最大的後面，記在分片，不動舊表裡讀不懂的那一筆")
+    local landObj = { class = "IsoObject", getSquare = function() return sqAt(321, 300) end,
+        getSprite = function() return { getName = function() return STAIR end } end }
+    Ledger.put(landObj, {})
+    check(Ledger.get(landObj) ~= nil and li.built[landKey] == nil,
+        "舊表還在的這一場重記平台：燈與平台這本的舊格式和現在不同，舊表那一筆直接刪掉、不跟著換")
     Ledger.forget(oldLamp)
     check(Ledger.get(oldLamp) == nil and li.lamps.e[top + 5] == nil, "舊表還在的這一場拆掉搬過來的燈：舊表那一筆也刪掉")
     reopen(Ledger)
@@ -10039,8 +10235,177 @@ print("情境四十九：掛上去的圖、燈與平台、線路三本帳本也�
     check(#rep == 4 and rep[1].id == "floors" and rep[2].id == "overlays" and rep[3].id == "ledger" and rep[4].id == "circuits"
         and rep[4].n == Ledger.circuits:stats().n and rep[3].shards == 1 and rep[3].bytes > 0,
         "四本帳本的筆數、片數、大小照固定順序回報（管理面板）")
+    -- 沒有對照表的帳本讀檔：和前面的片同一個鍵的、不是帳本格式的不收
+    HARNESS_GOS_SHARDS[LN .. "_2"] = { v = 1, data = { [fresh.keyId] = { p = K(1, 1, 0), s = "kl_dup", i = {} },
+        [top + 39] = { p = K(331, 300, 0), s = "kl_z", i = {}, extra = 1 },
+        [top + 40] = { p = "text", s = "kl_x", i = {} }, [top + 41] = { p = K(330, 300, 0), s = "kl_y", i = {} } } }
+    reopen(Ledger)
+    check(HARNESS_LEDGER(LN, fresh.keyId).s == "kl_x" and count(HARNESS_GOS_SHARDS[LN .. "_2"].data) == 1
+        and Ledger.get(lampAt(330, 300, "kl_y", top + 41)) ~= nil and li.lamps.next == top + 42 and drift() == "",
+        "燈的分片檔裡和前面的片同一個編號的、位置不是數字的：不收；其他筆照讀，下一個編號跳過它")
+    -- 同一個鍵改成比較大的值（原位改）、再清掉：大小跟著變
+    local land = { class = "IsoObject", getSquare = function() return sqAt(350, 300) end,
+        getSprite = function() return { getName = function() return STAIR end } end }
+    Ledger.put(land, {})
+    Ledger.put(land, { ["Base.Plank"] = 1 })
+    local grown = Ledger.get(land) ~= nil and Ledger.get(land)["Base.Plank"] == 1 and drift() == ""
+    Ledger.forget(land)
+    check(grown and Ledger.get(land) == nil and drift() == "", "平台那一筆原位改大、再清掉：帳本記的大小都跟著變")
+    -- 每一片都滿、開不了新的一片時換值：沒有變大的照樣換；變大的不換、原本那一筆不動
+    local keepB0, keepH0, keepS0 = Store.SHARD_BYTES, Store.SHARD_HARD, Store.SHARD_SLACK
+    local function full(on)
+        if on then
+            Store.SHARD_BYTES, Store.SHARD_HARD, Store.SHARD_SLACK, HARNESS_GOS_COUNT = 1, 1, 0, 100
+            print = function() end
+        else
+            Store.SHARD_BYTES, Store.SHARD_HARD, Store.SHARD_SLACK, HARNESS_GOS_COUNT = keepB0, keepH0, keepS0, nil
+            print = realPrint
+        end
+    end
+    local s3, s4 = sqAt(360, 300), sqAt(361, 300)
+    for _, host in ipairs({ s3, s4 }) do
+        Overlays.put(host, "ov_h", {})
+        Overlays.put(host, "ov_i", { ["Base.Paint"] = 2 })
+    end
+    Overlays.put(s1, "ov_h", {})
+    Overlays.put(s1, "ov_i", { ["Base.Paint"] = 3 })
+    local C = Ledger.circuits
+    C:put(950, { s = { a = true }, l = {} })
+    full(true)
+    Overlays.forget(s1, "ov_h") -- 只有這一件用那個組合：拿掉一張之後整體變小
+    Overlays.forget(s3, "ov_h") -- 另一件還在用同一個組合：剩下的要多一項對照表，放不下
+    local grew = C:put(950, { s = { a = true, b = true }, l = {} })
+    local kept = C:get(950).s.b == nil
+    local shrunk = C:put(950, { s = {}, l = {} })
+    full(false)
+    check(Overlays.get(s1, "ov_h") == nil and Overlays.get(s1, "ov_i")["Base.Paint"] == 3
+        and Overlays.get(s4, "ov_h") ~= nil and Overlays.get(s4, "ov_i")["Base.Paint"] == 2 and drift() == "",
+        "片滿時從一件上拿掉一張、整體沒有變大：照樣記得回去，剩下那一張的退料還在；別件不受影響")
+    check(Overlays.get(s3, "ov_h") == nil and Overlays.get(s3, "ov_i") == nil,
+        "片滿到剩下的那幾張記不回去：那一件整筆清掉（寧可剩下的本工具拆不了，不留一筆已經拆掉的退料）")
+    check(grew == false and kept and shrunk == true and C:get(950).s.a == nil and drift() == "",
+        "線路片滿時換成比較大的值：回 false、存檔裡原本那一條不動；換成比較小的照樣換")
+    C:del(950)
+    Overlays.forget(s1, "ov_i")
+    Overlays.forget(s4, "ov_h")
+    Overlays.forget(s4, "ov_i")
+    -- 放不進分片的舊燈：照樣認得，下一個編號也跳過它
+    local keepB, keepH = Store.SHARD_BYTES, Store.SHARD_HARD
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 1, 1, 100
+    li.lamps.e[top + 60] = { p = "340,300,0", s = "kl_x", i = {} }
+    li.lamps.next = 1
+    reopen(Ledger)
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
+    check(Ledger.get(lampAt(340, 300, "kl_x", top + 60)) ~= nil and HARNESS_LEDGER(LN, top + 60) == nil
+        and li.lamps.e[top + 60] ~= nil and li.lamps.next == top + 61,
+        "放不進分片的舊燈（每一片都滿、開不了新的一片）：照樣認得、舊表留著，下一個編號照樣跳過它")
+    reopen(Ledger)
+    reopen(Ledger)
+    check(HARNESS_LEDGER(LN, top + 60) ~= nil and li.lamps.e[top + 60] == nil and drift() == "",
+        "之後放得下：補進分片，再下一次開服才清舊表；四本帳本的筆數與大小仍然一致")
     li.built["322,300,0,kl_old"] = nil
     instanceof = realInst
+end)()
+
+print("情境五十：管理面板的伺服器紀錄（2026-11-14）：伺服器指令 ledgers 只限速不查權限、Store.report 出錯不丟錯；面板組字與不可信的形狀")
+;(function()
+    local B = MinidoracatBuilder
+    local Store, Admin = B.Store, B.Admin
+    local keepStep, realGetText, realSpecific, realIsServer, realIsClient, realSend, realPrint =
+        clockStep, getText, getSpecificPlayer, isServer, isClient, sendClientCommand, print
+    clockStep = 0
+    nowMs = nowMs + 60000
+    -- 經 OnClientCommand 送一次：回這次送給 p 的 ledgers 參數與這次總共送出幾則
+    local function asked(p)
+        local n0, got = #sent, nil
+        fire("OnClientCommand", "MinidoracatBuilder", "ledgers", p, {})
+        for i = n0 + 1, #sent do
+            if sent[i].player == p and sent[i].cmd == "ledgers" then got = sent[i].args end
+        end
+        return got, #sent - n0
+    end
+    local admin, plain = player({ id = 5001, admin = true }), player({ id = 5002, name = "plain" })
+    local want, a1 = Store.report(), asked(admin)
+    local same = a1 ~= nil and type(a1.list) == "table" and #a1.list == #want
+    for i = 1, #want do
+        local x, y = want[i], same and a1.list[i] or {}
+        same = same and x.id == y.id and x.n == y.n and x.shards == y.shards and x.bytes == y.bytes
+    end
+    check(#want == 4 and same, "管理員：拿到四本帳本，id、筆數、檔數、大小和 Store.report() 一樣")
+    local p1 = asked(plain)
+    check(p1 ~= nil and #p1.list == 4,
+        "沒有沙盒權限的玩家也拿得到（只有筆數與大小；合作模式主機伺服器端認不出來，所以不查權限）")
+    local a2, n2 = asked(admin)
+    nowMs = nowMs + 1001
+    local a3 = asked(admin)
+    check(a2 == nil and n2 == 0 and a3 ~= nil, "每人一秒一次：限速內第二次不回，過了一秒照回")
+    nowMs = nowMs - 3600000
+    local a4 = asked(admin)
+    nowMs = nowMs + 3600000 + 1001
+    check(a4 ~= nil, "時鐘往回調一小時：不會被限速卡住")
+    -- Store.report 丟錯、不是表、沒有這個函式、整個 Store 不在：回空陣列，不往上丟
+    local logs, realReport, results = {}, Store.report, {}
+    print = function(s) logs[#logs + 1] = tostring(s) end
+    for _, case in ipairs({ function() Store.report = function() error("boom") end end,
+        function() Store.report = function() return "x" end end,
+        function() Store.report = nil end,
+        function() Store.report = realReport; B.Store = nil end }) do
+        case()
+        nowMs = nowMs + 1001
+        local ok, r = pcall(asked, admin)
+        results[#results + 1] = ok and r ~= nil and type(r.list) == "table" and #r.list == 0
+    end
+    B.Store, Store.report, print = Store, realReport, realPrint
+    local failedLog = 0
+    for _, s in ipairs(logs) do if s:find("ledger report failed", 1, true) then failedLog = failedLog + 1 end end
+    check(results[1] and results[2] and results[3] and results[4] and failedLog == 3,
+        "Store.report 丟錯、回的不是表、函式不在、Store 不在：都回空陣列不丟錯；Store 在時記一行 log")
+
+    -- 面板組字：大小 KB／MB、跳過形狀不對的項目（getText 換成看得出鍵與參數的版本）
+    getText = function(k, ...)
+        local a = { ... }
+        if #a == 0 then return k end
+        return k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local function row(id, n, f, size) return "IGUI_MBLD_Admin_LedgerRow(IGUI_MBLD_Admin_Ledger_" .. id .. "," .. n .. "," .. f .. "," .. size .. ")" end
+    local lines = Admin.ledgerLines({
+        { id = "floors", n = 29568, shards = 1, bytes = 524288 },
+        "junk", 7, { id = "nope", n = 1, shards = 1, bytes = 1 }, { id = "floors" }, { id = {}, n = 1, shards = 1, bytes = 1 },
+        { id = "ledger", n = "x", shards = 1, bytes = 1 }, { id = "ledger", n = -1, shards = 1, bytes = 1 },
+        { id = "ledger", n = 0 / 0, shards = 1, bytes = 1 }, { id = "circuits", n = 1, shards = 1, bytes = 1e15 },
+        { id = "overlays", n = 3.0, shards = 2, bytes = 1048576 },
+        { id = "ledger", n = 0, shards = 1, bytes = 1023 },
+        { id = "circuits", n = 7, shards = 3, bytes = 5 * 1048576 + 104857 } })
+    check(#lines == 4 and lines[1] == row("floors", 29568, 1, "512 KB") and lines[2] == row("overlays", 3, 2, "1.0 MB")
+        and lines[3] == row("ledger", 0, 1, "0 KB") and lines[4] == row("circuits", 7, 3, "5.1 MB"),
+        "每本一行：不到 1 MB 用整數 KB、以上一位小數 MB；缺欄位、不是數字、負數、NaN、太大、id 不認得或不是字串的都跳過")
+    check(#Admin.ledgerLines(nil) == 0 and #Admin.ledgerLines("x") == 0 and #Admin.ledgerLines({ "a", 5 }) == 0,
+        "list 不是表或項目不是表：空的，不丟錯")
+    -- 狀態：單機當場回、兩次至少隔 3 秒；多人送指令、5 秒沒回改說沒有回報、回了空的也說沒有回報
+    local cmds = {}
+    getSpecificPlayer = function() return admin end
+    isServer = function() return false end
+    Admin.ledger.asked, Admin.ledger.rows = nil, nil
+    local s0 = Admin.ledgerState(nowMs)
+    local okAsk = Admin.askLedgers(0)
+    local again = Admin.askLedgers(0)
+    check(s0 == "none" and okAsk == true and again == false and Admin.ledgerState(nowMs) == "rows" and #Admin.ledger.rows == 4,
+        "單機：面板一要就經 Client 交給 Admin、四行；3 秒內再要不送")
+    isServer, isClient = realIsServer, function() return true end
+    sendClientCommand = function(p, module, cmd, args) cmds[#cmds + 1] = { p = p, module = module, cmd = cmd } end
+    Admin.ledger.asked, Admin.ledger.rows = nil, nil
+    Admin.askLedgers(0)
+    local sWait = Admin.ledgerState(nowMs)
+    nowMs = nowMs + Admin.LEDGER_WAIT_MS
+    local sLate = Admin.ledgerState(nowMs)
+    Admin.onLedgers({ list = { { id = "nope" } } })
+    local sEmpty = Admin.ledgerState(nowMs)
+    Admin.onLedgers("garbage")
+    check(#cmds == 1 and cmds[1].p == admin and cmds[1].module == "MinidoracatBuilder" and cmds[1].cmd == "ledgers"
+        and sWait == "wait" and sLate == "none" and sEmpty == "none" and Admin.ledgerState(nowMs) == "none",
+        "多人：送 ledgers 指令、等的時候讀取中、5 秒沒回改說沒有回報；回的內容認不得或不是表也說沒有回報、不丟錯")
+    Admin.ledger.asked, Admin.ledger.rows = nil, nil
+    getText, getSpecificPlayer, isClient, sendClientCommand, clockStep = realGetText, realSpecific, realIsClient, realSend, keepStep
 end)()
 
 print()

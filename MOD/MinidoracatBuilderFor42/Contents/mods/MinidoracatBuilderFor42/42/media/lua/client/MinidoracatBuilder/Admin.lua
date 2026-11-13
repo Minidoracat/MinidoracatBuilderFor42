@@ -266,6 +266,76 @@ function Admin.quick(playerNum, field, id)
     return true
 end
 
+-- ===== 伺服器紀錄：四本帳本的筆數、檔數、大小（伺服器指令 ledgers，Server.ledgers；伺服器只限速、不查權限） =====
+
+Admin.LEDGERS = { "floors", "overlays", "ledger", "circuits" } -- 認得的 id；名稱 IGUI_MBLD_Admin_Ledger_<id>
+Admin.LEDGER_GAP_MS, Admin.LEDGER_WAIT_MS = 3000, 5000
+-- asked＝上次向伺服器要的時間；rows＝收到的那份組好的行（nil＝這次還沒收到）
+Admin.ledger = Admin.ledger or { asked = nil, rows = nil }
+local KNOWN_LEDGER = {}
+for _, id in ipairs(Admin.LEDGERS) do KNOWN_LEDGER[id] = true end
+
+-- 不到 1 MB 用整數 KB，以上用一位小數 MB；單位不翻譯
+function Admin.sizeText(bytes)
+    if bytes < 1048576 then return math.floor(bytes / 1024) .. " KB" end
+    local t = math.floor(bytes * 10 / 1048576 + 0.5)
+    return math.floor(t / 10) .. "." .. t % 10 .. " MB"
+end
+
+-- 非負、印得成整數的數字（Kahlua 的數字 ≥1e14 印成科學記號，家族 conventions「玩家身分」第 4 點）；NaN 比較都是 false
+local function ledgerNum(v)
+    v = tonumber(v)
+    if v and v >= 0 and v < 1e14 then return math.floor(v) end
+    return nil
+end
+
+-- list＝伺服器送來的陣列，形狀不可信：不是表、項目缺欄位或不是數字、id 不認得的都跳過
+function Admin.ledgerLines(list)
+    local out = {}
+    if type(list) ~= "table" then return out end
+    for _, r in ipairs(list) do
+        if type(r) == "table" and type(r.id) == "string" and KNOWN_LEDGER[r.id] then
+            local n, files, bytes = ledgerNum(r.n), ledgerNum(r.shards), ledgerNum(r.bytes)
+            if n and files and bytes then
+                out[#out + 1] = getText("IGUI_MBLD_Admin_LedgerRow", getText("IGUI_MBLD_Admin_Ledger_" .. r.id), tostring(n),
+                    tostring(files), Admin.sizeText(bytes))
+            end
+        end
+    end
+    return out
+end
+
+-- 面板畫哪一種：rows（收到了）、wait（要了還不到 LEDGER_WAIT_MS）、none（沒有回報：伺服器是舊版或沒有帳本）
+function Admin.ledgerState(now)
+    local L = Admin.ledger
+    if L.rows and #L.rows > 0 then return "rows" end
+    if L.rows == nil and L.asked and now >= L.asked and now - L.asked < Admin.LEDGER_WAIT_MS then return "wait" end
+    return "none"
+end
+
+function Admin.onLedgers(args)
+    Admin.ledger.rows = Admin.ledgerLines(type(args) == "table" and args.list or nil)
+    if Admin.win then Admin.win:layoutLedgers() end
+end
+
+-- 面板打開、切到規則頁時要一次，兩次至少隔 LEDGER_GAP_MS（時鐘往回調不算）。單機同一個 Lua 環境，當場回覆
+function Admin.askLedgers(playerNum)
+    local L, now = Admin.ledger, getTimestampMs()
+    if L.asked and now >= L.asked and now - L.asked < Admin.LEDGER_GAP_MS then return false end
+    L.asked = now
+    if L.rows and #L.rows == 0 then L.rows = nil end -- 上次沒有內容：這次照「讀取中」等；有內容的留著到新的來
+    local player = getSpecificPlayer(playerNum or 0)
+    if player then
+        if isClient() then
+            sendClientCommand(player, "MinidoracatBuilder", "ledgers", {})
+        elseif B.Server and B.Server.ledgers then
+            B.Server.ledgers(player)
+        end
+    end
+    if Admin.win then Admin.win:layoutLedgers() end
+    return true
+end
+
 -- ===== 面板 =====
 
 local Panel = {}
@@ -542,13 +612,43 @@ function Panel:buildRules(pane)
         end
         y = y + GAP * 2
     end
-    body:setHeight(y)
+    -- 最下面的伺服器紀錄接在這後面；字串與 body 高度由 layoutLedgers 照狀態重組
+    self.ruleTexts, self.ruleN, self.ruleBody, self.ruleW, self.ledgerTop = texts, #texts, body, cw, y
+    self:layoutLedgers()
     body.render = function(el)
         for i = 1, #texts do
             local t = texts[i]
             el:drawText(t.s, 0, t.y, t.c.r, t.c.g, t.c.b, t.c.a or 1, font)
         end
     end
+end
+
+-- 規則頁最下面的「伺服器紀錄」：標題（一般文字色）、每本帳本一行或讀取中／沒有回報、一段說明（textMuted）。
+-- 狀態變了才重組（onLedgers、askLedgers、pump），render 只畫 texts；長行照內容寬換行
+function Panel:layoutLedgers()
+    local texts = self.ruleTexts
+    if not texts then return end -- 規則頁還沒建好
+    for i = #texts, self.ruleN + 1, -1 do texts[i] = nil end
+    local UI, font, fh, cw, c = self.UI, self.font, self.fh, self.ruleW, self.colors
+    local state = Admin.ledgerState(getTimestampMs())
+    self.ledgerShown = state
+    local y = self.ledgerTop
+    texts[#texts + 1] = { s = UI.Text.fit(getText("IGUI_MBLD_Admin_Ledgers"), cw, font), y = y, c = c.text }
+    y = y + fh + 2
+    local function add(s)
+        for _, line in ipairs(paragraphs(UI, s, cw, font)) do
+            texts[#texts + 1] = { s = line, y = y, c = c.textMuted }
+            y = y + fh
+        end
+    end
+    if state == "rows" then
+        for _, s in ipairs(Admin.ledger.rows) do add(s) end
+    else
+        add(getText(state == "wait" and "IGUI_MBLD_Admin_LedgersLoading" or "IGUI_MBLD_Admin_LedgersNoReply"))
+    end
+    y = y + GAP
+    add(getText("IGUI_MBLD_Admin_LedgersNote"))
+    self.ruleBody:setHeight(y + GAP)
 end
 
 -- 控制項照草稿顯示（不回呼）；送出中整面鎖住
@@ -719,12 +819,14 @@ function Panel:pump()
     elseif Admin.canManage() ~= self.allowed then
         self:setStatus()
     end
+    if self.ruleTexts and Admin.ledgerState(now) ~= self.ledgerShown then self:layoutLedgers() end -- 等滿 5 秒沒回
 end
 
 function Panel:show(id)
     self.tab = id
     for _, t in ipairs(TABS) do self.panes[t]:setVisible(t == id) end
     self.UI.Dropdown.close(self.win)
+    if id == "rules" then Admin.askLedgers(self.playerNum) end
 end
 
 -- ----- 建面板 -----
@@ -886,6 +988,7 @@ function Admin.open(playerNum)
     else
         p:reload()
     end
+    Admin.askLedgers(playerNum)
     p.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）
     p.win:bringToTop()
     return true

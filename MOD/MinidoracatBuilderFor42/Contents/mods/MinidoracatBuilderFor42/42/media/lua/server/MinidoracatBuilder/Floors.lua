@@ -48,7 +48,7 @@ function Floors:initSystem()
     self.system:setModDataKeys({ "floors" })
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
-    S = Store.open(NAME, { id = "floors", label = "floor", valid = valid, sig = sig })
+    S = Store.open(NAME, { id = "floors", label = "floor", valid = valid, sig = sig, mirror = true })
     if type(self.floors) ~= "table" then self.floors = {} end
     S:adopt(self.floors, fromOld)
     S:summary()
@@ -80,7 +80,7 @@ function Floors.put(obj, items)
     local k, spr = Floors.instance and key(obj), obj:getSprite()
     local name = spr and spr:getName()
     if not (k and name) then
-        print(LOG .. "floor ledger not ready; not recorded: " .. at(obj))
+        print(LOG .. "floor ledger not ready or position out of range; not recorded: " .. at(obj))
         return
     end
     local e = { s = name, i = {} }

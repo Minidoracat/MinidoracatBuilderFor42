@@ -8,7 +8,8 @@
 -- 線路：gos_MinidoracatBuilderCircuits_<n>.bin（Ledger.circuits；格式與讀寫在 Circuits.lua，成員的鍵照 Ledger.key）。
 -- 主系統 MinidoracatBuilder（gos_MinidoracatBuilder.bin）只留：下一個編號（lamps.next、circuits.next）、分片以前的存檔
 --   （lamps.e、built 的平台、circuits.c，Store.adopt 搬完就清），以及 0.3.0 以前的燈（built["x,y,z,sprite"] = 退料表；
---   0.4.0 起發編號），升版後讀到那一塊時發編號或刪掉（檔尾）。
+--   0.4.0 起發編號），升版後讀到那一塊時發編號或刪掉（檔尾）。發了編號的那一筆先換成 { id = 編號, i = 退料表 } 留著：
+--   主系統和分片不是同一個檔，下一次開服分片讀得到那個編號才刪。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "MinidoracatBuilder/Entry"
@@ -109,24 +110,32 @@ function Ledger:initSystem()
     L:adopt(self.built, fromOldBuilt)
     after(L, self.lamps)
     L:summary()
-    local C = Store.open(NAME .. "Circuits", { id = "circuits", label = "circuit", valid = validCircuit })
+    local C = Store.open(NAME .. "Circuits", { id = "circuits", label = "circuit", valid = validCircuit, mirror = true })
     C:adopt(self.circuits.c, same)
     after(C, self.circuits)
     C:summary()
     Ledger.circuits = C
-    -- 存檔已在 new 時讀回（原版 SGlobalObjectSystem.lua:13-16）：0.3.0 以前的燈照所在的 chunk 分好，讀到那一塊時定案（檔尾）
+    -- 存檔已在 new 時讀回（原版 SGlobalObjectSystem.lua:13-16）：0.3.0 以前的燈照所在的 chunk 分好，讀到那一塊時定案（檔尾）。
+    -- 上一場已經發了編號的（{ id, i }）：分片讀得到那個編號就刪掉；讀不到（分片那次沒寫成）還原成退料表，重新等
     byChunk = {}
-    local n = 0
-    for k in pairs(self.built) do
+    local n, done = 0, {}
+    for k, v in pairs(self.built) do
         local x, y = parseKey(k)
         if x and not isLanding(k) then
-            local ck = chunkOf(x, y)
-            local t = byChunk[ck] or {}
-            t[#t + 1] = k
-            byChunk[ck] = t
-            n = n + 1
+            local issued = type(v) == "table" and type(v.id) == "number" and type(v.i) == "table"
+            if issued and L:get(v.id) then
+                done[#done + 1] = k
+            else
+                if issued then self.built[k] = v.i end
+                local ck = chunkOf(x, y)
+                local t = byChunk[ck] or {}
+                t[#t + 1] = k
+                byChunk[ck] = t
+                n = n + 1
+            end
         end
     end
+    for _, k in ipairs(done) do self.built[k] = nil end
     Ledger.legacy = n
     Ledger.instance = self
     if n > 0 then print(LOG .. "LEDGER legacy lights waiting: " .. n) end
@@ -161,17 +170,16 @@ local function lampOf(obj)
     return nil
 end
 
--- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄）。記不進帳本（退料表不對、位置超出範圍、每一片都滿了）只記 log：
--- 之後這件本工具拆不了
+-- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄），回編號。記不進帳本（退料表不對、位置超出範圍、每一片都滿了）
+-- 記 log、回 nil：之後這件本工具拆不了
 local function issue(inst, obj, sq, items)
     local id = inst.lamps.next
     inst.lamps.next = id + 1
     obj:setKeyId(id)
     local e = { p = pos(sq), s = obj:getSprite():getName(), i = items }
-    if not (valid(e, id) and L:put(id, e)) then
-        print(LOG .. "light ledger full or unreadable refund; not recorded: " .. tostring(Ledger.key(obj)))
-    end
-    return id
+    if valid(e, id) and L:put(id, e) then return id end
+    print(LOG .. "light ledger full or unreadable refund; not recorded: " .. tostring(Ledger.key(obj)))
+    return nil
 end
 
 -- 記下本 MOD 蓋好的燈、家電或補的平台（items＝拆了退什麼）。帳本還沒建（不該發生）時只記 log：之後這件拆不了（大錘照樣能砸），
@@ -224,8 +232,10 @@ end)
 
 -- ---------------------------------------------------------------- 0.3.0 以前的燈（0.4.0 起發編號）
 -- built 照「位置＋圖名」記。升版後每個 chunk 第一次讀進來時，那一塊的舊鍵全部定案：那一格帳本還認不得（keyId -1，或當機回溯後
--- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、把那一筆搬進 lamps；沒有或有兩盞以上（分不出是哪一盞）就刪掉
+-- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、記進燈的帳本；沒有或有兩盞以上（分不出是哪一盞）就刪掉
 -- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。
+-- 發了編號的那一筆不當場刪（主系統和分片不是同一個檔）：換成 { id, i } 留到下一次開服（initSystem）；這一場拆掉那盞時
+-- 跟著刪（Store.track）。帳本滿了記不進去的那一筆原樣留著，下次開服再試。
 -- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3968），物件在那之前就從存檔讀進來（IsoChunk.java:2324,3799-3837），所以用
 -- getObjects 找整塊的燈。只在還有舊鍵時掛 LoadChunk：舊鍵所在的塊沒人去就一直掛著，但每塊只取一格、查一次表；
 -- 全部定案（或出錯、留到下次開服）就摘掉。不掛逐格的 LoadGridsquare：那是每讀一格都跑一次。
@@ -248,14 +258,20 @@ local function settle(inst, chunk, keys)
                 if candidate(inst, o, name) then found, n = o, n + 1 end
             end
             local id = n == 1 and issue(inst, found, sq, items)
-            inst.built[k] = nil
             if id then
+                inst.built[k] = { id = id, i = items }
+                L:track(id, inst.built, k)
                 print(LOG .. "LEDGER adopt light id=" .. id .. " key=" .. k)
+            elseif n == 1 then
+                print(LOG .. "LEDGER legacy light kept for the next start: " .. k)
             else
+                inst.built[k] = nil
                 print(LOG .. "LEDGER legacy light dropped (" .. n .. " lights): " .. k)
             end
+            if id or n ~= 1 then Ledger.legacy = Ledger.legacy - 1 end
+        else
+            Ledger.legacy = Ledger.legacy - 1
         end
-        Ledger.legacy = Ledger.legacy - 1
     end
 end
 

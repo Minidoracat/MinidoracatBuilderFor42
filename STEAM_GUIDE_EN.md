@@ -633,6 +633,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
 [*] [b]Rules[/b]: the twelve rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
+[*] [b]Server records[/b]: at the bottom of the Rules page, how many entries, files and how much space each of the server's four records uses (floors and water, overlays, lights and appliances, circuits). When a file gets too big, the server moves on to the next one by itself.
 [/list]
 [h3]Applying[/h3]
 [list]
