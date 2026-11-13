@@ -396,6 +396,24 @@ function SGlobalObjectSystem:initSystem() end
 -- 照引擎：系統等檔案載入完才建（原版 RegisterSystemClass 掛 OnSGlobalObjectSystemInit），不在登記當下；require 跑完檔案後建
 HARNESS_PENDING_SYSTEMS = {} -- 全域：主程式區塊的 local 已到 200 個上限
 function SGlobalObjectSystem.RegisterSystemClass(cls) table.insert(HARNESS_PENDING_SYSTEMS, cls) end
+-- 動態開的系統（SGlobalObjects.registerSystem；地板帳本的分片）：HARNESS_GOS_SHARDS[名稱] 是它的 modData，留著＝存檔還在。
+-- HARNESS_GOS_COUNT 有值時當成全伺服器的系統數
+HARNESS_GOS_SHARDS = {}
+SGlobalObjects = {}
+function SGlobalObjects.registerSystem(name)
+    local md = HARNESS_GOS_SHARDS[name] or {}
+    HARNESS_GOS_SHARDS[name] = md
+    return { getModData = function() return md end, setModDataKeys = function(_, keys) HARNESS_GOS_KEYS[name] = keys end,
+        setObjectModDataKeys = function() end, setObjectSyncKeys = function() end }
+end
+function SGlobalObjects.getSystemCount()
+    if HARNESS_GOS_COUNT then return HARNESS_GOS_COUNT end
+    local n = 8
+    for _ in pairs(HARNESS_GOS_SHARDS) do n = n + 1 end
+    return n
+end
+-- 存檔資料夾裡有沒有那個檔（引擎的全域函式）：地板帳本用它找有幾片
+function checkSaveFileExists(f) return HARNESS_GOS_SHARDS[f:match("^gos_(.+)%.bin$")] ~= nil end
 function sendRemoveItemFromContainer() end
 function sendAddItemsToContainer() end
 local function item(ft, tags)
@@ -2819,7 +2837,9 @@ local function dismantleScenario()
     check(type(HARNESS_GOS_KEYS.MinidoracatBuilder) == "table" and HARNESS_GOS_KEYS.MinidoracatBuilder[1] == "built",
         "帳本存檔白名單有 built（漏了重開後帳本消失）")
     check(type(HARNESS_GOS_KEYS.MinidoracatBuilderFloors) == "table"
-        and HARNESS_GOS_KEYS.MinidoracatBuilderFloors[1] == "floors", "地板帳本存檔白名單有 floors（漏了重開後地板帳本消失）")
+        and table.concat(HARNESS_GOS_KEYS.MinidoracatBuilderFloors, ",") == "floors"
+        and type(HARNESS_GOS_KEYS.MinidoracatBuilderFloors_1) == "table" and HARNESS_GOS_KEYS.MinidoracatBuilderFloors_1[1] == "data",
+        "地板帳本存檔白名單：主系統只有 floors（和分片以前一樣），分片 data（漏了重開後地板帳本消失）")
     local fake = ours(at(74, 71, 0), switchS, nil, "IsoLightSwitch")
     local LP = hammerer(2209, 73.5, 71.5, at(73, 71, 0))
     LP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
@@ -9560,6 +9580,284 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     instanceof = realInst
     sb.RecipeMaterials, sb.CostMultiplier, sb.KindWater, sb.RequireSkill = keepRM, keepMult, keepKW, keepSkill
     spriteMap, spriteOrder = keepMap, keepOrder
+end)()
+
+print("情境四十八：地板帳本分片（使用者 2026-11-14）：舊存檔複製進分片、每一筆都讀得回來才清舊表、存檔只寫了一部分、開新的一片、放不下時不記")
+;(function()
+    local Floors = MinidoracatBuilder.Floors
+    local inst, NAME = Floors.instance, "MinidoracatBuilderFloors"
+    local keepBytes, keepHard, realPrint = Floors.SHARD_BYTES, Floors.SHARD_HARD, print
+    local function fo(x, y)
+        return { getSquare = function() return { getX = function() return x end, getY = function() return y end,
+                getZ = function() return 0 end } end,
+            getSprite = function() return { getName = function() return "floors_a_01_0" end } end }
+    end
+    local function entry(n) return { s = "floors_a_01_0", i = { ["Base.Plank"] = n, ["Base.Nails"] = 1 } } end
+    local function count(t)
+        local n = 0
+        for _ in pairs(t or {}) do n = n + 1 end
+        return n
+    end
+    local function deep(t)
+        if type(t) ~= "table" then return t end
+        local c = {}
+        for k, v in pairs(t) do c[k] = deep(v) end
+        return c
+    end
+    -- 存檔：主系統與每一片各一個檔，只存白名單的鍵。回傳的是另一份，和記憶體裡的表無關
+    local function save()
+        local files = { main = { floors = deep(inst.floors) }, shards = {} }
+        for name, md in pairs(HARNESS_GOS_SHARDS) do files.shards[name] = { data = deep(md.data) } end
+        return files
+    end
+    -- 照一組檔重開：main 是 nil＝主系統的檔是空的；shards 裡沒有的＝那個檔不在
+    local function boot(main, shards)
+        HARNESS_GOS_SHARDS = {}
+        Floors.instance = nil -- 新的一場（新的 Lua 環境）
+        for name, md in pairs(shards or {}) do HARNESS_GOS_SHARDS[name] = deep(md) end
+        inst.floors = main and deep(main.floors) or nil
+        inst:initSystem()
+    end
+    local function only(files, ...) -- 只留指定的那幾片的檔
+        local keep = {}
+        for _, n in ipairs({ ... }) do keep[NAME .. "_" .. n] = files.shards[NAME .. "_" .. n] end
+        return keep
+    end
+    local function shard(n) return (HARNESS_GOS_SHARDS[NAME .. "_" .. n] or {}).data end
+    local function plank(o) return Floors.get(o) and Floors.get(o).i["Base.Plank"] end
+    local function old() -- 四筆正常的（一筆的數量是字串：舊存檔的 buildMaterials 搬來的），五筆不是帳本格式的
+        return { ["10,10,0"] = entry(1), ["11,10,0"] = entry(2), ["16,10,0"] = entry(6),
+            ["15,10,0"] = { s = "floors_a_01_0", i = { ["Base.Plank"] = "2" } },
+            ["12,10,0"] = 5, [7] = entry(9),
+            ["13,10,0"] = { s = "floors_a_01_0", i = { [1] = 1 } },
+            ["14,10,0"] = { s = "floors_a_01_0", i = {}, extra = 1 },
+            ["17,10,0"] = { s = "floors_a_01_0", i = { ["Base.Plank"] = true } } }
+    end
+    local A, B, D, N = fo(10, 10), fo(11, 10), fo(16, 10), fo(20, 10)
+
+    -- 1. 舊存檔第一次開服：正常的四筆複製進第 1 片，舊表留著；不是帳本格式的五筆跳過、不丟錯
+    boot({ floors = old() })
+    local st = Floors.stats()
+    check(plank(A) == 1 and plank(B) == 2 and plank(D) == 6 and plank(fo(15, 10)) == "2" and count(shard(1)) == 4
+        and count(inst.floors) == 9,
+        "舊存檔第一次開服：四筆複製進第 1 片、查得到（數量是字串的照原樣），舊表還留著；不是帳本格式的五筆（材料鍵是數字、多一個欄位、數量是布林…）跳過")
+    check(st.n == 4 and st.shards[1].n == 4 and st.shards[1].bytes == 325,
+        "一筆的估計大小照存檔格式算：鍵 7＋圖名 13＋24＋兩種材料各（10＋12）＝88 bytes；數量是字串 \"2\" 的那一筆 7＋13＋24＋（10＋6＋1）＝61")
+    local mt = getmetatable(HARNESS_GOS_SHARDS[NAME .. "_1"])
+    check(mt and rawget(mt, "getInitialStateForClient") and rawget(mt, "OnClientCommand") and rawget(mt, "OnChunkLoaded")
+        and rawget(Floors, "getInitialStateForClient") and rawget(Floors, "OnClientCommand") and rawget(Floors, "OnChunkLoaded"),
+        "引擎對系統表取方法只看 metatable 那張表本身：分片與主系統的三個方法都直接定義在上面（少了客戶端連線時伺服器丟錯）")
+    -- 2. 舊表還在的這一場：拆掉的那一筆同時從舊表刪掉；新蓋的不進舊表
+    Floors.forget(A)
+    Floors.put(N, { ["Base.Plank"] = 4, ["Base.Nails"] = 1 })
+    check(inst.floors["10,10,0"] == nil and inst.floors["20,10,0"] == nil and count(inst.floors) == 8 and plank(N) == 4,
+        "舊表還在的這一場：拆掉的那一筆也從舊表刪掉（之後不會被補回來），新蓋的只進分片")
+    local f1 = save()
+    -- 3. 正常重開：舊表剩下的每一筆分片都讀得到，舊表清掉；拆掉的沒有回來
+    boot(f1.main, f1.shards)
+    check(count(inst.floors) == 5 and inst.floors["12,10,0"] == 5 and inst.floors["11,10,0"] == nil and Floors.get(A) == nil
+        and plank(B) == 2 and plank(D) == 6 and plank(N) == 4 and Floors.stats().n == 4,
+        "正常重開：舊表讀得懂的每一筆分片都讀得到才清；讀不懂的五筆留在主系統不丟；拆掉的那一筆沒有回來")
+    local f1b = save()
+    boot(f1b.main, f1b.shards)
+    check(count(inst.floors) == 5 and Floors.stats().n == 4, "之後每次重開：讀不懂的五筆照樣留著，帳本不變")
+    -- 4. 存檔只寫了主系統、分片沒寫成：照舊表補回還沒拆的；拆掉的不回來；舊表留到下一次
+    boot(f1.main, {})
+    check(plank(B) == 2 and plank(D) == 6 and Floors.get(A) == nil and Floors.get(N) == nil and count(inst.floors) == 8
+        and count(shard(1)) == 3, "存檔只寫了主系統、分片沒寫成：照舊表補回還沒拆的三筆，拆掉的不回來，舊表不清")
+    local f2 = save()
+    boot(f2.main, f2.shards)
+    check(count(inst.floors) == 5 and plank(B) == 2 and plank(D) == 6, "補回來之後再正常重開一次：這時才清舊表")
+    -- 5. 主系統的檔是空的、分片在：照分片
+    boot(nil, f1.shards)
+    check(plank(B) == 2 and plank(D) == 6 and plank(N) == 4 and Floors.get(A) == nil and count(inst.floors) == 0,
+        "主系統的檔是空的、分片在：帳本照分片，一筆不少")
+    local newer = {}
+    newer[NAME .. "_1"] = { data = { ["10,10,0"] = entry(7) } }
+    boot({ floors = { ["10,10,0"] = entry(1), ["11,10,0"] = entry(2) } }, newer)
+    check(plank(A) == 7 and plank(B) == 2 and count(inst.floors) == 2, "分片已經有的那一格以分片為準，只補分片沒有的")
+    Floors.put(B, { ["Base.Plank"] = 9 })
+    local f1c = save()
+    check(f1c.main.floors["11,10,0"] == nil and f1c.main.floors["10,10,0"] ~= nil and plank(B) == 9,
+        "舊表還在時直接重記的那一格也從舊表刪掉")
+    boot(f1c.main, {})
+    check(Floors.get(B) == nil and plank(A) == 1, "之後分片沒寫成：重記過的那一格不會被補回舊的值，沒動過的照舊表補回")
+    local nBefore = Floors.stats().n
+    inst.floors = { ["30,10,0"] = entry(3) }
+    inst:initSystem()
+    check(Floors.stats().n == nBefore and Floors.get(fo(30, 10)) == nil and Floors.instance == inst,
+        "帳本建好之後同一場再呼叫 initSystem：不重讀、不動帳本")
+    boot({ floors = { ["10,10,0"] = { s = "\229\156\176\230\157\191_01_0", i = {} } } })
+    check(Floors.stats().shards[1].bytes == 54,
+        "圖名有不是 ASCII 的字：估計大小往大的算（這裡的 Lua 一個字 3 bytes：7＋（11＋2×6）＋24＝54，實際 42），不會低估")
+    -- 5c. 舊表裡這次放不進分片的（開不了新的一片、每一片都到硬上限）：照樣查得到、不被清掉；放得下之後再補進去
+    Floors.SHARD_BYTES, Floors.SHARD_HARD, HARNESS_GOS_COUNT = 200, 200, 100
+    boot({ floors = { ["10,10,0"] = entry(1), ["11,10,0"] = entry(2), ["12,10,0"] = entry(3) } })
+    local leftObj, leftKey, leftN
+    for x = 10, 12 do
+        if shard(1)[x .. ",10,0"] == nil then leftObj, leftKey, leftN = fo(x, 10), x .. ",10,0", x - 9 end
+    end
+    check(Floors.stats().n == 2 and leftObj ~= nil and plank(leftObj) == leftN and count(inst.floors) == 3,
+        "舊表有一筆放不進分片：那一筆照樣查得到（讀檔時不會被當成沒紀錄而重記成空的），舊表不清")
+    print = function() end
+    Floors.put(leftObj, { ["Base.Plank"] = 9, ["Base.Nails"] = 1, ["Base.Screws"] = 1 })
+    print = realPrint
+    check(plank(leftObj) == leftN and inst.floors[leftKey] ~= nil, "對那一筆重記但放不下：舊表裡原本那一筆不刪")
+    local f5c = save()
+    Floors.forget(leftObj)
+    check(Floors.get(leftObj) == nil and inst.floors[leftKey] == nil, "拆掉放不進分片的那一筆：查不到了，舊表也刪掉")
+    boot(f5c.main, f5c.shards)
+    check(Floors.stats().n == 2 and plank(leftObj) == leftN and count(inst.floors) == 3,
+        "下一次開服還是放不下（這次沒有複製任何一筆）：舊表照樣不清，那一筆照樣查得到")
+    HARNESS_GOS_COUNT = nil
+    Floors.put(leftObj, { ["Base.Plank"] = 8 })
+    check(plank(leftObj) == 8 and inst.floors[leftKey] == nil, "同一場之後開得了新的一片：那一筆重記成功，查到的是新的，舊表那一筆刪掉")
+    Floors.forget(leftObj)
+    check(Floors.get(leftObj) == nil, "再拆掉：查不到，不會讀回放不進分片時留著的舊值")
+    boot(f5c.main, f5c.shards)
+    check(Floors.stats().n == 3 and plank(leftObj) == leftN and count(inst.floors) == 3 and #Floors.stats().shards == 2,
+        "之後開得了新的一片：放不進去的那一筆補進分片，舊表留到下一次確認")
+    local f5d = save()
+    boot(f5d.main, f5d.shards)
+    check(count(inst.floors) == 0 and Floors.stats().n == 3, "再重開：三筆分片都讀得到，舊表清掉")
+    Floors.SHARD_BYTES, Floors.SHARD_HARD = keepBytes, keepHard
+
+    -- 6. 舊帳本要分成三片，存檔時後面兩片沒寫成：照舊表補回那幾筆，舊表不清；都寫成之後才清
+    Floors.SHARD_BYTES = 200 -- 一片放兩筆
+    local five = {}
+    for x = 10, 14 do five[x .. ",10,0"] = entry(x) end
+    boot({ floors = five })
+    local f3 = save()
+    check(#Floors.stats().shards == 3 and Floors.stats().n == 5 and count(f3.shards) == 3, "舊帳本一片放不下：第一次開服就分成三片")
+    boot(f3.main, only(f3, 1))
+    local all5 = true
+    for x = 10, 14 do all5 = all5 and plank(fo(x, 10)) == x end
+    check(all5 and Floors.stats().n == 5 and count(inst.floors) == 5,
+        "只有第 1 片寫成（分片讀得到東西，但不是全部）：後面兩片的三筆照舊表補回，舊表不清")
+    local f4 = save()
+    boot(f4.main, f4.shards)
+    check(count(inst.floors) == 0 and Floors.stats().n == 5, "三片都寫成之後重開：舊表清掉，五筆都在")
+    -- 7. 有幾片看存檔資料夾，不靠主系統：主系統的檔是空的照樣找到三片；中間那一片的檔不在，後面那一片照樣讀
+    boot(nil, f3.shards)
+    check(#Floors.stats().shards == 3 and Floors.stats().n == 5, "主系統的檔是空的：三片照樣都找到")
+    boot(nil, only(f3, 1, 3))
+    check(#Floors.stats().shards == 3 and Floors.stats().n == 3 and Floors.stats().shards[2].n == 0,
+        "第 2 片的檔不在：第 1、3 片照樣讀回來")
+    local dup = {}
+    dup[NAME .. "_1"] = { data = { ["1,1,0"] = entry(1), ["2,1,0"] = 5 } }
+    dup[NAME .. "_2"] = { data = { ["1,1,0"] = entry(9), ["3,1,0"] = entry(3) } }
+    boot(nil, dup)
+    st = Floors.stats()
+    check(plank(fo(1, 1)) == 1 and plank(fo(3, 1)) == 3 and st.n == 2 and st.shards[1].bytes == 86 and st.shards[2].bytes == 86
+        and shard(1)["2,1,0"] == nil and shard(2)["1,1,0"] == nil,
+        "分片的檔裡有不是帳本格式的、或和前面的片同一個鍵的：不收也不算大小，其他筆照讀")
+    boot(nil, {})
+    Floors.put(fo(1, 1), entry(1).i)
+    Floors.put(fo(2, 1), entry(1).i)
+    HARNESS_GOS_SHARDS[NAME .. "_2"] = { data = { ["3,1,0"] = entry(9) } } -- 開服之後才出現的檔（例：備份被覆蓋上來）
+    Floors.put(fo(3, 1), entry(1).i)
+    st = Floors.stats()
+    check(plank(fo(3, 1)) == 1 and st.n == 3 and st.shards[2].n == 1 and st.shards[2].bytes == 86,
+        "開新的一片時那個檔已經有同一格的紀錄：照那一筆改，筆數與大小不重複算")
+    local keepMax = Floors.SHARD_MAX
+    Floors.SHARD_HARD, Floors.SHARD_MAX = 200, 2
+    boot(nil, {})
+    Floors.put(fo(1, 1), entry(1).i)
+    Floors.put(fo(2, 1), entry(1).i)
+    HARNESS_GOS_SHARDS[NAME .. "_2"] = { data = { ["3,1,0"] = entry(9), ["4,1,0"] = entry(1) } }
+    Floors.put(fo(3, 1), entry(5).i)
+    st = Floors.stats()
+    check(plank(fo(3, 1)) == 5 and st.n == 4 and st.shards[2].n == 2 and st.shards[2].bytes == 172,
+        "開新的一片時讀進同一格的紀錄、而且每一片都放不下新的一筆：照已經有的那一筆原位改，不當成放不下")
+    Floors.SHARD_HARD, Floors.SHARD_MAX = keepHard, keepMax
+
+    -- 8. 一片放不下就開新的一片；前面的片騰出空間後新的一筆放回前面；換地板（先清再記）留在原本那一片
+    boot(nil, {})
+    local two = { ["Base.Plank"] = 1, ["Base.Nails"] = 1 } -- 鍵 5 bytes：一筆 86 bytes
+    Floors.put(fo(1, 1), two)
+    Floors.put(fo(2, 1), two)
+    Floors.put(fo(3, 1), two)
+    check(#Floors.stats().shards == 2 and count(shard(1)) == 2 and count(shard(2)) == 1 and shard(2)["3,1,0"] ~= nil
+        and HARNESS_GOS_KEYS[NAME .. "_2"][1] == "data", "第 1 片放不下第三筆：開第 2 片（存檔白名單 data）")
+    Floors.forget(fo(1, 1))
+    Floors.forget(fo(3, 1))
+    Floors.put(fo(3, 1), { ["Base.Plank"] = 3 })
+    st = Floors.stats()
+    check(shard(1)["3,1,0"] == nil and shard(2)["3,1,0"].i["Base.Plank"] == 3 and st.shards[1].bytes == 86
+        and st.shards[2].bytes == 64 and st.shards[2].n == 1,
+        "換地板（先清掉舊的那一筆再記新的）：第 1 片有空位，新的那一筆還是回原本的第 2 片")
+    Floors.put(fo(4, 1), two)
+    Floors.put(fo(3, 1), two)
+    st = Floors.stats()
+    check(shard(1)["1,1,0"] == nil and shard(1)["4,1,0"] ~= nil and st.shards[1].bytes == 172
+        and shard(2)["3,1,0"].i["Base.Nails"] == 1 and st.shards[2].bytes == 86 and st.shards[2].n == 1 and st.n == 3,
+        "拆掉第 1 片的一筆：空間回收，別格新的一筆放回第 1 片；同一格直接重記留在第 2 片、大小跟著改")
+    -- 9. 重開：兩片都讀回來
+    local f5 = save()
+    boot(f5.main, f5.shards)
+    check(Floors.stats().n == 3 and plank(fo(4, 1)) == 1 and plank(fo(2, 1)) == 1 and plank(fo(3, 1)) == 1
+        and #Floors.stats().shards == 2, "重開：兩片都讀回來，三筆都查得到")
+    Floors.forget(fo(3, 1))
+    check(count(shard(2)) == 0 and Floors.get(fo(3, 1)) == nil and Floors.stats().shards[2].bytes == 0,
+        "重開後拆第 2 片的那一筆：那一片的存檔表也清掉")
+
+    -- 10. 全伺服器的 GOS 系統數到上限：不開新的一片，放進最空的那一片；任何一片都不超過硬上限
+    HARNESS_GOS_COUNT = 100
+    Floors.put(fo(5, 1), two)
+    Floors.put(fo(6, 1), two)
+    Floors.put(fo(7, 1), two)
+    st = Floors.stats()
+    check(#st.shards == 2 and st.n == 5 and st.shards[1].bytes == 258 and st.shards[2].bytes == 172
+        and HARNESS_GOS_SHARDS[NAME .. "_3"] == nil and plank(fo(7, 1)) == 1,
+        "系統數到上限：不開第 3 片，放進最空的一片（超過一片的目標大小、還在硬上限內）")
+    Floors.SHARD_HARD = 300
+    Floors.put(fo(8, 1), two)
+    local said = ""
+    print = function(s) said = said .. tostring(s) .. "\n" end
+    Floors.put(fo(9, 1), two)
+    print = realPrint
+    st = Floors.stats()
+    check(plank(fo(8, 1)) == 1 and Floors.get(fo(9, 1)) == nil and st.n == 6 and st.shards[1].bytes == 258
+        and st.shards[2].bytes == 258 and said:find("not recorded: 9,1,0", 1, true) ~= nil,
+        "每一片都到硬上限：這一筆不記（之後本工具拆不了）、log 留一行，其他筆不受影響")
+    Floors.put(fo(8, 1), { ["Base.Plank"] = 1, ["Base.Nails"] = 1, ["Base.Screws"] = 1, ["Base.Woodglue"] = 1 })
+    st = Floors.stats()
+    check(Floors.get(fo(8, 1)).i["Base.Screws"] == nil and plank(fo(8, 1)) == 1 and st.shards[2].bytes == 258 and st.n == 6,
+        "同一格直接重記成比較大的一筆、會超過硬上限：不改，原本那一筆與大小都不變")
+    Floors.forget(fo(8, 1))
+    print = function() end
+    Floors.put(fo(8, 1), { ["Base.Plank"] = 1, ["Base.Nails"] = 1, ["Base.Screws"] = 1, ["Base.Woodglue"] = 1 })
+    print = realPrint
+    st = Floors.stats()
+    check(Floors.get(fo(8, 1)) == nil and st.shards[2].bytes == 172 and st.shards[1].bytes == 258 and st.n == 5,
+        "換地板的新一筆比較大、放回原本那一片會超過硬上限：不硬塞回去（別的片也放不下，所以不記）")
+    HARNESS_GOS_COUNT = nil
+    local huge = {}
+    for n = 10, 23 do huge["Base.Item" .. n] = 1 end
+    Floors.put(fo(30, 1), huge)
+    check(Floors.get(fo(30, 1)) == nil and HARNESS_GOS_SHARDS[NAME .. "_3"] == nil and Floors.stats().n == 5,
+        "單一筆就超過硬上限：不記，也不為它開新的一片")
+    local two4 = {}
+    two4[NAME .. "_1"] = { data = { ["1,1,0"] = entry(1) } }
+    two4[NAME .. "_2"] = { data = { ["2,1,0"] = entry(1), ["3,1,0"] = entry(1), ["4,1,0"] = entry(1) } }
+    HARNESS_GOS_COUNT = 100
+    boot(nil, two4)
+    Floors.forget(fo(4, 1))
+    Floors.put(fo(4, 1), { ["Base.Plank"] = 1, ["Base.Nails"] = 1, ["Base.Screws"] = 1, ["Base.Woodglue"] = 1 })
+    HARNESS_GOS_COUNT = nil
+    st = Floors.stats()
+    check(shard(1)["4,1,0"] ~= nil and shard(2)["4,1,0"] == nil and st.shards[1].bytes == 220 and st.shards[1].n == 2
+        and st.shards[2].bytes == 172 and st.shards[2].n == 2 and st.n == 4,
+        "換地板的新一筆原本那一片放不下、別的片放得下：記在別的片，兩片的筆數與大小都對")
+
+    Floors.SHARD_BYTES, Floors.SHARD_HARD = keepBytes, keepHard
+    boot(nil, {})
+    print = function() end
+    local okPut = pcall(Floors.put, fo(40, 1), { [1] = 1 })
+    Floors.put(fo(41, 1), { ["Base.Plank"] = true })
+    print = realPrint
+    check(okPut and Floors.get(fo(40, 1)) == nil and Floors.get(fo(41, 1)) == nil and Floors.stats().n == 0,
+        "退料表不是「物品型別 → 數量」的不記、不丟錯（存進去的大小才算得準）")
 end)()
 
 print()
