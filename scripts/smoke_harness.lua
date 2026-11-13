@@ -6886,6 +6886,31 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     S(197, 197):transmitRemoveItemFromSquare(H)
     check(waiting and inst.built["197,197,0,kl_01_0"] == nil,
         "還沒搬成的舊燈（帳本滿了記不進去）：同一格別盞認不得的燈被移除不動舊紀錄；它自己被移除才跟著清，不留給之後同一格同一張圖的燈")
+    -- 還在等的舊燈所在的那一塊卸載再讀進來（物件是新的一份）：重新認是哪一盞。之後它被移除照樣清舊紀錄；
+    -- 放得下了就搬，不必等到下次開服
+    local sqJ, sqN = at(205, 205), at(206, 206)
+    lamp(sqJ, lampA, "mark")
+    lamp(sqN, lampA, "mark")
+    inst.built["205,205,0,kl_01_0"] = { ["Base.ElectricWire"] = 6 }
+    inst.built["206,206,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
+    HARNESS_REOPEN(Ledger)
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 1, 1, 100
+    print = function() end
+    fire("LoadChunk", sqJ:getChunk())
+    table.remove(sqJ.objects) -- 卸載：舊的那一份不見了，沒有移除事件
+    table.remove(sqN.objects)
+    local J2, N2 = lamp(sqJ, lampA, "mark"), lamp(sqN, lampA, "mark")
+    fire("LoadChunk", sqJ:getChunk())
+    local hooked = count("LoadChunk") == 1 and Ledger.legacy == 2
+    sqN:transmitRemoveItemFromSquare(N2)
+    print = realPrint
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
+    fire("LoadChunk", sqJ:getChunk())
+    check(hooked and inst.built["206,206,0,kl_01_0"] == nil and J2.keyId > 0 and lampE(J2.keyId).i["Base.ElectricWire"] == 6
+        and lampE(J2.keyId).o == true and inst.built["205,205,0,kl_01_0"] ~= nil and Ledger.legacy == 0
+        and count("LoadChunk") == 0,
+        "還在等的舊燈那一塊卸載再讀進來：重新認新的那一份（讀塊事件留著）；它被移除就清舊紀錄；放得下了、那一塊再讀進來就搬")
+    sqJ:transmitRemoveItemFromSquare(J2)
     -- 退料表讀不懂的舊紀錄：重試也一樣，刪掉（那盞本工具拆不了），不留著每次開服重來
     local U = lamp(at(195, 195), lampA, "mark")
     inst.built["195,195,0,kl_01_0"] = { ["Base.ElectricWire"] = {} }

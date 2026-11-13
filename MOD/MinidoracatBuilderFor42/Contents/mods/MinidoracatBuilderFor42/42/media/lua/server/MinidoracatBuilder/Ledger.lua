@@ -282,9 +282,13 @@ local function settle(inst, chunk, keys)
             if id then
                 L:track(id, inst.built, k)
                 print(LOG .. "LEDGER adopt light id=" .. id .. " key=" .. k)
-            elseif id == nil then -- 帳本滿了：留著，下次開服再試
+            elseif id == nil then -- 帳本滿了：留著，那一塊下次讀進來（或下次開服）再試；那時物件是新的，重新記是哪一盞
                 waiting[k] = found
-                print(LOG .. "LEDGER legacy light kept for the next start: " .. k)
+                local ck = chunkOf(x, y)
+                local again = byChunk[ck] or {}
+                again[#again + 1] = k
+                byChunk[ck] = again
+                print(LOG .. "LEDGER legacy light kept (ledger full), will retry: " .. k)
             else -- 沒有或有兩盞以上，或那一筆讀不懂（重試也一樣）
                 inst.built[k] = nil
                 print(LOG .. "LEDGER legacy light dropped (" .. (id == false and n == 1 and "unreadable refund" or n .. " lights")
