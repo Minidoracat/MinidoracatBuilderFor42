@@ -1,22 +1,27 @@
 -- 伺服器帳本（設計稿「伺服器帳本」）：本 MOD 蓋的燈、開關與家電，以及樓梯頂端補的平台地板。燈與家電沒有 buildMaterials，
--- 平台是一般 IsoObject（和原版樓梯補的長得一樣），所以「是不是本 MOD 蓋的、拆了退什麼」只認這裡（只在伺服器）。存在 GOS 系統
--- 自己的 modData（gos_MinidoracatBuilder.bin，跟世界一起存檔、一起回溯）；不建全域物件、不送客戶端。
--- 寫法照家族 VehicleManager 的帳本分片（MinidoracatVehicleManager_OwnershipSystem.lua:231-253）。
--- lamps＝燈、開關（IsoLightSwitch）與家電（壁爐這類，Place.keyed）：{ next = 下一個編號, e = { [編號] = { p = "x,y,z",
---   s = 蓋的圖名, i = { [fullType] = 退料數 } } } }。蓋的時候把編號寫進物件的 keyId（IsoObject 的欄位，任何類別都跟著存檔），
---   認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
--- built＝樓梯平台：built["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。0.3.0 以前的燈也記在這裡（鍵同上、值是退料表；
---   0.4.0 起發編號），升版後讀到那一塊時搬進 lamps 或刪掉（檔尾）。
--- circuits＝第六階段的線路（格式與讀寫在 Circuits.lua；成員的鍵照 Ledger.key）。
--- ponytail：一筆約 100 bytes，單一 GOS 系統存檔上限 10 MiB（pz-family-docs pitfalls）約十萬盞；真的逼近時改分片。
+-- 平台是一般 IsoObject（和原版樓梯補的長得一樣），所以「是不是本 MOD 蓋的、拆了退什麼」只認這裡（只在伺服器）。不建全域
+-- 物件、不送客戶端。存檔在 Store（跟世界一起存檔、一起回溯）：
+-- 燈、開關（IsoLightSwitch）與家電（壁爐這類，Place.keyed）：gos_MinidoracatBuilder_<n>.bin，[編號] = { p = 位置
+--   （Store.pos）, s = 蓋的圖名, i = { [fullType] = 退料數 } }。蓋的時候把編號寫進物件的 keyId（IsoObject 的欄位，任何類別
+--   都跟著存檔），認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
+-- 樓梯平台：同一本，["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。
+-- 線路：gos_MinidoracatBuilderCircuits_<n>.bin（Ledger.circuits；格式與讀寫在 Circuits.lua，成員的鍵照 Ledger.key）。
+-- 主系統 MinidoracatBuilder（gos_MinidoracatBuilder.bin）只留：下一個編號（lamps.next、circuits.next）、分片以前的存檔
+--   （lamps.e、built 的平台、circuits.c，Store.adopt 搬完就清），以及 0.3.0 以前的燈（built["x,y,z,sprite"] = 退料表；
+--   0.4.0 起發編號），升版後讀到那一塊時發編號或刪掉（檔尾）。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Place"
+require "MinidoracatBuilder/Store"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
+local NAME = "MinidoracatBuilder"
+local Store = MinidoracatBuilder.Store
 local Ledger = SGlobalObjectSystem:derive("MinidoracatBuilderLedger")
 MinidoracatBuilder.Ledger = Ledger
+
+local L -- 這一場的燈、家電與平台（initSystem 開）
 
 local LOG = "[MinidoracatBuilderFor42] "
 local LANDING = "," .. MinidoracatBuilder.Entry.STAIR_FLOOR
@@ -35,17 +40,80 @@ local function parseKey(k)
 end
 
 function Ledger:new()
-    return SGlobalObjectSystem.new(self, "MinidoracatBuilder")
+    return SGlobalObjectSystem.new(self, NAME)
+end
+
+-- 數字鍵是燈與家電的編號，字串鍵是平台
+local function valid(v, k)
+    if type(k) ~= "number" then return Store.isRefund(v) end
+    if type(v) ~= "table" or type(v.p) ~= "number" or type(v.s) ~= "string" or not Store.isRefund(v.i) then return false end
+    for f in pairs(v) do
+        if f ~= "p" and f ~= "s" and f ~= "i" then return false end
+    end
+    return true
+end
+
+local function isSet(t)
+    if type(t) ~= "table" then return false end
+    for k, v in pairs(t) do
+        if type(k) ~= "string" or v ~= true then return false end
+    end
+    return true
+end
+
+-- 一條線路：{ s = { [開關的鍵] = true }, l = { [燈的鍵] = true } }
+local function validCircuit(c, id)
+    return type(id) == "number" and type(c) == "table" and isSet(c.s) and isSet(c.l)
+end
+
+-- 分片以前的燈：位置是 "x,y,z"
+local function fromOldLamp(id, e)
+    if type(id) ~= "number" or type(e) ~= "table" or type(e.p) ~= "string" then return nil end
+    local x, y, z = e.p:match("^(%-?%d+),(%-?%d+),(%-?%d+)$")
+    if not x then return nil end
+    return id, { p = Store.pos(tonumber(x), tonumber(y), tonumber(z)), s = e.s, i = e.i }
+end
+
+-- built 裡的平台搬進分片；其他的（0.3.0 以前的燈）留在 built，照檔尾定案
+local function fromOldBuilt(k, items)
+    if type(k) == "string" and isLanding(k) then return k, items end
+    return false
+end
+
+local function same(id, c) return id, c end
+
+-- 編號不重發：主系統的存檔沒寫成（回到上一次存的）而分片寫成時，記著的下一個編號比分片裡已經有的小
+local function after(S, counter)
+    S:each(function(k)
+        if type(k) == "number" and k >= counter.next then counter.next = k + 1 end
+    end)
 end
 
 function Ledger:initSystem()
+    -- 同一個系統表只建一次；再呼叫不重讀（還沒存檔的片不在存檔資料夾裡）
+    if Ledger.instance == self then return end
     SGlobalObjectSystem.initSystem(self)
     -- 存檔只存白名單裡的鍵：漏設＝這一場正常、重開後帳本消失
     self.system:setModDataKeys({ "built", "circuits", "lamps" })
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
     if type(self.built) ~= "table" then self.built = {} end
-    if type(self.lamps) ~= "table" then self.lamps = { next = 1, e = {} } end
+    if type(self.lamps) ~= "table" then self.lamps = {} end
+    if type(self.lamps.e) ~= "table" then self.lamps.e = {} end
+    if type(self.lamps.next) ~= "number" then self.lamps.next = 1 end
+    if type(self.circuits) ~= "table" then self.circuits = {} end
+    if type(self.circuits.c) ~= "table" then self.circuits.c = {} end
+    if type(self.circuits.next) ~= "number" then self.circuits.next = 1 end
+    L = Store.open(NAME, { id = "ledger", label = "light", valid = valid })
+    L:adopt(self.lamps.e, fromOldLamp)
+    L:adopt(self.built, fromOldBuilt)
+    after(L, self.lamps)
+    L:summary()
+    local C = Store.open(NAME .. "Circuits", { id = "circuits", label = "circuit", valid = validCircuit })
+    C:adopt(self.circuits.c, same)
+    after(C, self.circuits)
+    C:summary()
+    Ledger.circuits = C
     -- 存檔已在 new 時讀回（原版 SGlobalObjectSystem.lua:13-16）：0.3.0 以前的燈照所在的 chunk 分好，讀到那一塊時定案（檔尾）
     byChunk = {}
     local n = 0
@@ -81,24 +149,28 @@ function Ledger.key(obj)
     return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. "," .. spr:getName()
 end
 
-local function pos(sq) return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() end
+local function pos(sq) return Store.pos(sq:getX(), sq:getY(), sq:getZ()) end
 
--- 這盞燈在 lamps 的那一筆與編號：物件的 keyId 有那一筆，而且位置、現在的圖都和那一筆記的一樣；否則 nil。
+-- 這盞燈的那一筆與編號：物件的 keyId 有那一筆，而且位置、現在的圖都和那一筆記的一樣；否則 nil。
 -- 圖和蓋的時候不同就不認：拆除照現在的圖分種類（同一樓地板的帳本）。比位置與圖也分得開重發的編號：當機回溯時帳本回到
 -- 上次存檔、物件的 keyId 跟著 chunk 存檔，之後發的編號可能和留在世界裡的燈相同。
-local function lampOf(inst, obj)
+local function lampOf(obj)
     local id, sq, spr = obj:getKeyId(), obj:getSquare(), obj:getSprite()
-    local e = id > 0 and sq and spr and inst.lamps.e[id]
+    local e = id > 0 and sq and spr and L:get(id)
     if e and e.p == pos(sq) and e.s == spr:getName() then return e, id end
     return nil
 end
 
--- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄）
+-- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄）。記不進帳本（退料表不對、位置超出範圍、每一片都滿了）只記 log：
+-- 之後這件本工具拆不了
 local function issue(inst, obj, sq, items)
     local id = inst.lamps.next
     inst.lamps.next = id + 1
     obj:setKeyId(id)
-    inst.lamps.e[id] = { p = pos(sq), s = obj:getSprite():getName(), i = items }
+    local e = { p = pos(sq), s = obj:getSprite():getName(), i = items }
+    if not (valid(e, id) and L:put(id, e)) then
+        print(LOG .. "light ledger full or unreadable refund; not recorded: " .. tostring(Ledger.key(obj)))
+    end
     return id
 end
 
@@ -114,35 +186,33 @@ function Ledger.put(obj, items)
     for ft, n in pairs(items) do copy[ft] = n end
     if MinidoracatBuilder.Place.keyed(obj) then
         issue(inst, obj, obj:getSquare(), copy)
-    else
-        inst.built[k] = copy
+    elseif not (valid(copy, k) and L:put(k, copy)) then
+        print(LOG .. "light ledger full or unreadable refund; not recorded: " .. k)
     end
 end
 
 -- 拆了退什麼；不是本 MOD 蓋的回 nil
 function Ledger.get(obj)
-    local inst = Ledger.instance
-    if not inst then return nil end
+    if not Ledger.instance then return nil end
     if MinidoracatBuilder.Place.keyed(obj) then
-        local e = lampOf(inst, obj)
+        local e = lampOf(obj)
         return e and e.i or nil
     end
     local k = Ledger.key(obj)
-    return k and inst.built[k] or nil
+    return k and L:get(k) or nil
 end
 
 -- 移出世界前清掉（拿起、砸、拆、多格整組拆都會觸發，RemoveItemFromSquarePacket.java:151、IsoGridSquare.java:5732）。
 -- 燈與家電只清自己那一筆（認法同 Ledger.get）
 function Ledger.forget(obj)
-    local inst = Ledger.instance
-    if not inst then return end
+    if not Ledger.instance then return end
     if MinidoracatBuilder.Place.keyed(obj) then
-        local e, id = lampOf(inst, obj)
-        if e then inst.lamps.e[id] = nil end
+        local e, id = lampOf(obj)
+        if e then L:del(id) end
         return
     end
     local k = Ledger.key(obj)
-    if k then inst.built[k] = nil end
+    if k then L:del(k) end
 end
 
 local STAIR_FLOOR = MinidoracatBuilder.Entry.STAIR_FLOOR
@@ -162,7 +232,7 @@ end)
 local function candidate(inst, o, name)
     if not (instanceof(o, "IsoLightSwitch") and o:hasModData() and o:getModData().builderEntry) then return false end
     local spr = o:getSprite()
-    return spr ~= nil and spr:getName() == name and lampOf(inst, o) == nil
+    return spr ~= nil and spr:getName() == name and lampOf(o) == nil
 end
 
 local function settle(inst, chunk, keys)

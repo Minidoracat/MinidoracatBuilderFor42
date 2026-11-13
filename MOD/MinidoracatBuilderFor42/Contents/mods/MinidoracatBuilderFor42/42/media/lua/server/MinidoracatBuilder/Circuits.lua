@@ -1,6 +1,6 @@
 -- 線路（第六階段，設計稿「燈與開關」、研究 bt-switch）：本工具蓋的開關控制同一條線路上的燈。只在伺服器（單機在本機跑同一套）。
--- 帳本放在 Ledger 的 GOS 系統（circuits 鍵，跟世界一起存檔、一起回溯；客戶端只拿得到自己查的那一條）：
---   circuits = { next = 下一個編號, c = { [編號] = { s = { [鍵] = true }, l = { [鍵] = true } } } }，鍵＝Ledger.key。
+-- 帳本是 Ledger.circuits（Store，跟世界一起存檔、一起回溯；客戶端只拿得到自己查的那一條）：
+--   [編號] = { s = { [鍵] = true }, l = { [鍵] = true } }，鍵＝Ledger.key；下一個編號記在 Ledger 主系統的 circuits.next。
 --   一條線路最多 MAX_S 個開關、MAX_L 片燈（多格燈每片各算一片、整組一起進出）；一個開關、一片燈只屬於一條線路。
 --   沒有開關的線路刪掉（燈停在當時的狀態）；沒有燈的線路（兩個開關先接成雙切、燈之後才放）按開關時照原版。
 --   反查表 byKey 不存，第一次用到時從 c 重建（只有一份真相）。
@@ -45,23 +45,22 @@ local function cooling(last, t, interval)
     return last ~= nil and t >= last and t - last < interval
 end
 
--- 帳本（沒有 GOS 系統時 nil）。換了表（開服、熱重載）就重建反查表
+-- 帳本（沒有 GOS 系統時 nil）：{ c = { [編號] = 線路 } }，開服後第一次用到時從存檔（Ledger.circuits）讀出來，同時重建
+-- 反查表。c 裡的表就是存檔裡那幾張：要改一條線路先從存檔拿掉、改完再記回去（drop、put）
+local mem
 local function data()
-    local inst = Ledger.instance
-    if not inst then return nil end
-    if type(inst.circuits) ~= "table" then inst.circuits = { next = 1, c = {} } end
-    local d = inst.circuits
-    if type(d.c) ~= "table" then d.c = {} end
-    if type(d.next) ~= "number" then d.next = 1 end
-    if idxOf ~= d then
-        byKey = {}
-        for id, c in pairs(d.c) do
+    local C = Ledger.instance and Ledger.circuits
+    if not C then return nil end
+    if idxOf ~= C then
+        mem, byKey = { c = {} }, {}
+        C:each(function(id, c)
+            mem.c[id] = c
             for k in pairs(c.s) do byKey[k] = id end
             for k in pairs(c.l) do byKey[k] = id end
-        end
-        idxOf = d
+        end)
+        idxOf = C
     end
-    return d
+    return mem
 end
 Circuits.data = data
 
@@ -160,6 +159,11 @@ local function live(d, k)
     return nil
 end
 
+-- 記回存檔。每一片都滿了（不該發生）只記 log：這條線路這一場照樣能用，重開服後不在
+local function keep(id, c)
+    if not Ledger.circuits:put(id, c) then print(LOG .. "circuit ledger full; not recorded: circuit " .. id) end
+end
+
 -- 從線路拿掉一個鍵；線路沒有開關了就整條刪掉
 local function drop(d, k)
     local id = byKey[k]
@@ -167,24 +171,32 @@ local function drop(d, k)
     byKey[k] = nil
     local c = d.c[id]
     if not c then return end
+    Ledger.circuits:del(id)
     c.s[k], c.l[k] = nil, nil
     if count(c.s) == 0 then
         for lk in pairs(c.l) do byKey[lk] = nil end
         d.c[id] = nil
+    else
+        keep(id, c)
     end
 end
 
 local function put(d, id, set, k)
     if byKey[k] and byKey[k] ~= id then drop(d, k) end
-    d.c[id][set][k] = true
+    local c = d.c[id]
+    Ledger.circuits:del(id)
+    c[set][k] = true
+    keep(id, c)
     byKey[k] = id
 end
 
 -- 新線路，開關是 sKeys（每個先從舊線路拿掉）。只在整筆操作都查過、要寫入時呼叫
 local function newCircuit(d, sKeys)
-    local id = d.next
-    d.next = id + 1
+    local counter = Ledger.instance.circuits
+    local id = counter.next
+    counter.next = id + 1
     d.c[id] = { s = {}, l = {} }
+    keep(id, d.c[id])
     for _, k in ipairs(sKeys) do put(d, id, "s", k) end
     return id
 end

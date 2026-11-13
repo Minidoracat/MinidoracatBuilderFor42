@@ -1,28 +1,65 @@
 -- 掛上去的地面覆蓋與牆面疊圖的帳本（只在伺服器）：本 MOD 掛上去的圖（Place.attach）不是物件，沒有 buildMaterials，
--- 「是不是本 MOD 掛的、拆了退什麼」只認這裡。照掛在哪一件分：地板 overlays["x,y,z"]、牆 overlays["x,y,z,邊"]（邊＝N／W／SE，
--- Rules.onWall），值是 { [圖名] = 退料表 }（同一件上不掛兩張同名的，Place.check）。那一件移出世界時清掉（drop）。
--- 和燈、平台的帳本（Ledger）、一樓地板的帳本（Floors）分開，各自一個存檔（gos_MinidoracatBuilderOverlays.bin，跟世界一起
--- 存檔、一起回溯）；不建全域物件、不送客戶端。
--- ponytail：一筆約 90 bytes，單一 GOS 系統存檔上限 10 MiB（pz-family-docs pitfalls）約十萬張；真的逼近時照
--- VehicleManager 改分片。
+-- 「是不是本 MOD 掛的、拆了退什麼」只認這裡。照掛在哪一件分：那一格的地板，或那一格某條邊的牆（邊＝N／W／SE，
+-- Rules.onWall）；值是 { [圖名] = 退料表 }（同一件上不掛兩張同名的，Place.check）。那一件移出世界時清掉（drop）。
+-- 和燈、平台的帳本（Ledger）、一樓地板的帳本（Floors）分開。存檔在 Store（gos_MinidoracatBuilderOverlays_<n>.bin，
+-- 跟世界一起存檔、一起回溯）：鍵是位置與邊算成的數字（Store.pos），值存對照表的編號，所以改一件掛的圖是換一張新的表，
+-- 不改原本那張。主系統 MinidoracatBuilderOverlays 只留分片以前的存檔（overlays["x,y,z"]、["x,y,z,邊"]，Store.adopt
+-- 搬完就清）。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
+require "MinidoracatBuilder/Store"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
-local Overlays = SGlobalObjectSystem:derive("MinidoracatBuilderOverlays")
+local NAME = "MinidoracatBuilderOverlays"
+local LOG = "[MinidoracatBuilderFor42] "
+local Store = MinidoracatBuilder.Store
+local Overlays = SGlobalObjectSystem:derive(NAME)
 MinidoracatBuilder.Overlays = Overlays
 
+local S -- 這一場的帳本（initSystem 開）
+local EDGE = { N = 1, W = 2, SE = 3 } -- Store.pos 的 edge；0＝地板
+local EDGES = { "N", "W", "SE" }
+
 function Overlays:new()
-    return SGlobalObjectSystem.new(self, "MinidoracatBuilderOverlays")
+    return SGlobalObjectSystem.new(self, NAME)
+end
+
+local function valid(here)
+    if type(here) ~= "table" then return false end
+    for name, items in pairs(here) do
+        if type(name) ~= "string" or not Store.isRefund(items) then return false end
+    end
+    return true
+end
+
+local function sig(here)
+    local names, n = Store.sorted(here)
+    local s = ""
+    for j = 1, n do s = s .. names[j] .. "\4" .. Store.itemsSig(here[names[j]]) .. "\5" end
+    return s
+end
+
+-- 分片以前的鍵 "x,y,z"（地板，0.2.1 起）與 "x,y,z,邊"（牆）
+local function fromOld(k, here)
+    if type(k) ~= "string" then return nil end
+    local x, y, z, edge = k:match("^(%-?%d+),(%-?%d+),(%-?%d+),?(%a*)$")
+    local e = x and (edge == "" and 0 or EDGE[edge])
+    if not e then return nil end
+    return Store.pos(tonumber(x), tonumber(y), tonumber(z), e), here
 end
 
 function Overlays:initSystem()
+    -- 同一個系統表只建一次；再呼叫不重讀（還沒存檔的片不在存檔資料夾裡）
+    if Overlays.instance == self then return end
     SGlobalObjectSystem.initSystem(self)
     -- 存檔只存白名單裡的鍵：漏設＝這一場正常、重開後帳本消失
     self.system:setModDataKeys({ "overlays" })
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
+    S = Store.open(NAME, { id = "overlays", label = "overlay", valid = valid, sig = sig })
     if type(self.overlays) ~= "table" then self.overlays = {} end
+    S:adopt(self.overlays, fromOld)
+    S:summary()
     Overlays.instance = self
 end
 
@@ -35,39 +72,53 @@ function Overlays:OnClientCommand() end
 
 SGlobalObjectSystem.RegisterSystemClass(Overlays)
 
--- edge＝nil 是地板（0.2.1 起的鍵，不改），其他是那條邊的牆
+-- edge＝nil 是地板，其他是那條邊的牆。帳本還沒建、邊認不得或位置超出範圍回 nil
 local function pos(sq, edge)
-    local k = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ()
-    return edge and k .. "," .. edge or k
+    local e = 0
+    if edge then
+        e = EDGE[edge]
+        if not e then return nil end
+    end
+    return Overlays.instance and Store.pos(sq:getX(), sq:getY(), sq:getZ(), e) or nil
 end
 
--- 記下 sq 掛上的 name 拆了退什麼（items；沒付料的是空表）。帳本還沒建（不該發生）時只記 log：之後這張本工具拆不了。
+local function at(sq, edge, name)
+    return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. (edge and "," .. edge or "") .. "," .. name
+end
+
+-- 記下 sq 掛上的 name 拆了退什麼（items；沒付料的是空表）。帳本還沒建（不該發生）、退料表不是「物品型別 → 數量」或
+-- 每一片都滿了時只記 log：之後這張本工具拆不了。
 function Overlays.put(sq, name, items, edge)
-    local inst = Overlays.instance
-    if not inst then
-        print("[MinidoracatBuilderFor42] overlay ledger not ready; not recorded: " .. pos(sq, edge) .. "," .. name)
+    local k = pos(sq, edge)
+    if not k then
+        print(LOG .. "overlay ledger not ready; not recorded: " .. at(sq, edge, name))
         return
     end
     local copy = {}
     for ft, n in pairs(items) do copy[ft] = n end
-    local k = pos(sq, edge)
-    local here = inst.overlays[k] or {}
-    here[name] = copy
-    inst.overlays[k] = here
+    local here = { [name] = copy }
+    for other, mats in pairs(S:get(k) or {}) do
+        if other ~= name then here[other] = mats end
+    end
+    if not valid(here) then
+        print(LOG .. "overlay ledger: unreadable refund; not recorded: " .. at(sq, edge, name))
+    elseif not S:put(k, here) then
+        print(LOG .. "overlay ledger full; not recorded: " .. at(sq, edge, name))
+    end
 end
 
--- sq 上本 MOD 掛的 name 拆了退什麼；沒有那一筆回 nil
+-- sq 上本 MOD 掛的 name 拆了退什麼；沒有那一筆回 nil。回的表很多筆共用，不能改
 function Overlays.get(sq, name, edge)
-    local inst = Overlays.instance
-    local here = inst and inst.overlays[pos(sq, edge)]
+    local k = pos(sq, edge)
+    local here = k and S:get(k)
     return here and here[name] or nil
 end
 
 -- sq 那一件（地板或那條邊的牆）帳本的複本（{ [圖名] = 退料表 }）；沒有回 nil。原地換一樓地板、換牆前先記下來，
 -- 換好再照它掛回去（Server.complete）
 function Overlays.at(sq, edge)
-    local inst = Overlays.instance
-    local here = inst and inst.overlays[pos(sq, edge)]
+    local k = pos(sq, edge)
+    local here = k and S:get(k)
     if not here then return nil end
     local copy = {}
     for name, items in pairs(here) do copy[name] = items end
@@ -75,13 +126,17 @@ function Overlays.at(sq, edge)
 end
 
 function Overlays.forget(sq, name, edge)
-    local inst = Overlays.instance
-    local k = inst and pos(sq, edge)
-    local here = k and inst.overlays[k]
-    if not here then return end
-    here[name] = nil
-    for _ in pairs(here) do return end
-    inst.overlays[k] = nil
+    local k = pos(sq, edge)
+    local here = k and S:get(k)
+    if not (here and here[name]) then return end
+    local rest, any = {}, false
+    for other, mats in pairs(here) do
+        if other ~= name then rest[other], any = mats, true end
+    end
+    -- 剩下的記不回去（那一片滿到連一張新的對照表都放不下）就整件清掉：寧可剩下的拆不了，不留一筆已經拆掉的退料
+    if any and S:put(k, rest) then return end
+    if any then print(LOG .. "overlay ledger full; dropped: " .. at(sq, edge, name)) end
+    S:del(k)
 end
 
 -- 物件移出世界前（Place.onAboutToBeRemoved，任何物件都會來）：它是那格的地板或那條邊的牆（Place.wallAt，伺服器自己找的
@@ -89,14 +144,13 @@ end
 -- 物件身上就算掛著同名的圖也不清：附加圖不能當帳本依據（審查 1112）。
 -- 原地換牆時新牆插在舊牆前面，移除舊牆不清，Server.complete 照換之前記下的掛回新牆、覆寫那幾筆。
 function Overlays.drop(obj)
-    local inst, sq = Overlays.instance, obj:getSquare()
-    if not (inst and sq) then return end
-    local k = pos(sq, nil)
-    if inst.overlays[k] and sq:getFloor() == obj then inst.overlays[k] = nil end
+    local sq = obj:getSquare()
+    local k = sq and pos(sq, nil)
+    if not k then return end
+    if S:get(k) and sq:getFloor() == obj then S:del(k) end
     local Place = MinidoracatBuilder.Place
-    for _, edge in ipairs(Place.EDGES) do
-        local ke = k .. "," .. edge
-        if inst.overlays[ke] and Place.wallAt(sq, edge) == obj then inst.overlays[ke] = nil end
+    for e = 1, 3 do
+        if S:get(k + e) and Place.wallAt(sq, EDGES[e]) == obj then S:del(k + e) end
     end
 end
 
