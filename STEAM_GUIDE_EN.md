@@ -152,9 +152,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, floor overlays, water, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them. Recipe walls, fences and posts too.
+[*] [b]What you can drag[/b]: floors, floor overlays, water, walls, posts, fences and roofs: hold the left button, drag, and release to queue them. Recipe walls, fences and posts too.
 [*] [b]Drag straight[/b]: builds a row.
-[*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays, water and roofs fill it; walls and fences go around its edges, switching to the piece for the right direction on the north and south sides and on the west and east sides; posts go on every square of the edges.
+[*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays, water and roofs fill it; walls and fences go around its edges, using the piece for the right direction on each side; posts go on every square of the edges.
 [*] [b]A ring missing two sides[/b]: when the tileset has no piece for the other direction, those two sides turn red and aren't built.
 [*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped, with one line per reason for the skipped ones.
 [*] [b]When short[/b]: the box says what those tiles still need together.
