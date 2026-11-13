@@ -33,6 +33,7 @@ local CHUNK = 8 -- IsoChunk 一邊幾格（IsoChunk.java:3762,3800）
 local function chunkOf(x, y) return math.floor(x / CHUNK) * 100000 + math.floor(y / CHUNK) end
 local byChunk = {} -- 還沒定案的 0.3.0 舊燈鍵，照所在的 chunk 分（檔尾）
 local waiting = {} -- 這一場帳本滿了、記不進去的舊燈：[舊鍵] = 那盞燈（物件）。它被移除時舊紀錄跟著清
+local anyWaiting = false -- 這一場有沒有過 waiting
 local watchLegacy -- 檔尾：還有舊鍵時才掛讀 chunk 的事件
 
 local function parseKey(k)
@@ -120,7 +121,7 @@ function Ledger:initSystem()
     -- 上一場已經發了編號的那幾筆在 built 裡原樣留著（不加東西：主系統的存檔在搬完之前只能變小）：分片裡有從同一個位置、
     -- 同一張圖的舊紀錄搬過去的燈（o）就是它，這時才刪；沒有（分片那次沒寫成）就重新等。同一格同一張圖另外蓋的燈沒有 o，
     -- 不會被當成它。有舊鍵才掃一次分片
-    byChunk, waiting = {}, {}
+    byChunk, waiting, anyWaiting = {}, {}, false
     local n, done, seen = 0, {}, nil
     for k in pairs(self.built) do
         local x, y, z, name = parseKey(k)
@@ -231,7 +232,7 @@ function Ledger.forget(obj)
         local e, id = lampOf(obj)
         if e then
             L:del(id)
-        else
+        elseif anyWaiting then -- 絕大多數的移除（原版的開關、家電）到這裡就結束
             -- 帳本滿了、還沒搬成的 0.3.0 舊燈被移除：舊紀錄跟著清，不留給之後同一格同一張圖的燈。只認定案時挑中的
             -- 那一盞（同一格別盞認不得的燈被移除不算；已經搬成的由上面那一條清）
             local k = Ledger.key(obj)
@@ -280,15 +281,16 @@ local function settle(inst, chunk, keys)
             end
             local id = n == 1 and issue(inst, found, sq, items, true)
             if id then
+                waiting[k] = nil
                 L:track(id, inst.built, k)
                 print(LOG .. "LEDGER adopt light id=" .. id .. " key=" .. k)
             elseif id == nil then -- 帳本滿了：留著，那一塊下次讀進來（或下次開服）再試；那時物件是新的，重新記是哪一盞
-                waiting[k] = found
+                if waiting[k] == nil then print(LOG .. "LEDGER legacy light kept (ledger full), will retry: " .. k) end
+                waiting[k], anyWaiting = found, true
                 local ck = chunkOf(x, y)
                 local again = byChunk[ck] or {}
                 again[#again + 1] = k
                 byChunk[ck] = again
-                print(LOG .. "LEDGER legacy light kept (ledger full), will retry: " .. k)
             else -- 沒有或有兩盞以上，或那一筆讀不懂（重試也一樣）
                 inst.built[k] = nil
                 print(LOG .. "LEDGER legacy light dropped (" .. (id == false and n == 1 and "unreadable refund" or n .. " lights")

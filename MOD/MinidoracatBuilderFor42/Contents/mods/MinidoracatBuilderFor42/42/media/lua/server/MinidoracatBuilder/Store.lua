@@ -23,8 +23,9 @@ MinidoracatBuilder.Store = Store
 local LOG = "[MinidoracatBuilderFor42] "
 Store.VERSION = 1
 Store.SHARD_BYTES = 6 * 1024 * 1024 -- 一片估到這麼大就換下一片：估計值不含表頭，留四成給引擎的 10 MiB
-Store.SHARD_HARD = 9 * 1024 * 1024  -- 新的一筆放進去不超過這裡；放不下就不記（寧可那一筆拆不了，不要整片帳本被截斷）
--- 已經在這一片的那一筆換值（掛圖少一張、線路加一個成員）可以再多用這麼多：片剛好滿的時候，換值不會失敗
+Store.SHARD_HARD = 9 * 1024 * 1024  -- 新的鍵放進去不超過這裡；放不下就不記（寧可那一筆拆不了，不要整片帳本被截斷）
+-- 已經在這一片的那一筆換值（掛圖少一張、線路加一個成員），或剛從這一片拿掉的那個鍵放回來，可以再多用這麼多：
+-- 片剛好滿的時候，換值與記回原樣不會失敗
 Store.SHARD_SLACK = 256 * 1024
 Store.SHARD_MAX = 16
 -- 全伺服器的 GOS 系統數送給客戶端時只有 1 byte、客戶端當有號數讀（CGlobalObjects.java:105）：超過 127 所有 MOD 的
