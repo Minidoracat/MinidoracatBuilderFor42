@@ -116,17 +116,23 @@ function Ledger:initSystem()
     C:summary()
     Ledger.circuits = C
     -- 存檔已在 new 時讀回（原版 SGlobalObjectSystem.lua:13-16）：0.3.0 以前的燈照所在的 chunk 分好，讀到那一塊時定案（檔尾）。
-    -- 上一場已經發了編號的（{ id, i }）：分片讀得到那個編號就刪掉；讀不到（分片那次沒寫成）還原成退料表，重新等
+    -- 上一場已經發了編號的那幾筆在 built 裡原樣留著（不加東西：主系統的存檔在搬完之前只能變小）：分片裡有同一個位置、
+    -- 同一張圖的燈就是它，這時才刪；沒有（分片那次沒寫成）就重新等。有舊鍵才掃一次分片
     byChunk = {}
-    local n, done = 0, {}
-    for k, v in pairs(self.built) do
-        local x, y = parseKey(k)
+    local n, done, seen = 0, {}, nil
+    for k in pairs(self.built) do
+        local x, y, z, name = parseKey(k)
         if x and not isLanding(k) then
-            local issued = type(v) == "table" and type(v.id) == "number" and type(v.i) == "table"
-            if issued and L:get(v.id) then
+            if not seen then
+                seen = {}
+                L:each(function(id, e)
+                    if type(id) == "number" then seen[e.p .. "," .. e.s] = true end
+                end)
+            end
+            local p = Store.pos(x, y, z)
+            if p and seen[p .. "," .. name] then
                 done[#done + 1] = k
             else
-                if issued then self.built[k] = v.i end
                 local ck = chunkOf(x, y)
                 local t = byChunk[ck] or {}
                 t[#t + 1] = k
@@ -170,16 +176,19 @@ local function lampOf(obj)
     return nil
 end
 
--- 發一個新編號給燈或家電，寫進物件與帳本（items 照抄），回編號。記不進帳本（退料表不對、位置超出範圍、每一片都滿了）
--- 記 log、回 nil：之後這件本工具拆不了
+-- 發一個新編號給燈或家電，寫進帳本與物件（items 照抄），回編號。記不進去時編號不用掉、物件不動、記 log，之後這件本工具
+-- 拆不了：回 nil＝每一片都滿了（之後放得下還能記），回 false＝這一筆讀不懂（退料表不對、位置超出範圍）
 local function issue(inst, obj, sq, items)
     local id = inst.lamps.next
-    inst.lamps.next = id + 1
-    obj:setKeyId(id)
     local e = { p = pos(sq), s = obj:getSprite():getName(), i = items }
-    if valid(e, id) and L:put(id, e) then return id end
-    print(LOG .. "light ledger full or unreadable refund; not recorded: " .. tostring(Ledger.key(obj)))
-    return nil
+    local ok = valid(e, id)
+    if ok and L:put(id, e) then
+        inst.lamps.next = id + 1
+        obj:setKeyId(id)
+        return id
+    end
+    print(LOG .. "light ledger " .. (ok and "full" or "unreadable refund") .. "; not recorded: " .. tostring(Ledger.key(obj)))
+    return ok and nil
 end
 
 -- 記下本 MOD 蓋好的燈、家電或補的平台（items＝拆了退什麼）。帳本還沒建（不該發生）時只記 log：之後這件拆不了（大錘照樣能砸），
@@ -234,8 +243,8 @@ end)
 -- built 照「位置＋圖名」記。升版後每個 chunk 第一次讀進來時，那一塊的舊鍵全部定案：那一格帳本還認不得（keyId -1，或當機回溯後
 -- 帳本沒有那一筆）、圖名相同的本 MOD 燈剛好一盞，就發編號、記進燈的帳本；沒有或有兩盞以上（分不出是哪一盞）就刪掉
 -- 那一筆，那盞本工具拆不了（大錘照樣能砸）。記號只用來挑要搬哪一盞，退料照 built。
--- 發了編號的那一筆不當場刪（主系統和分片不是同一個檔）：換成 { id, i } 留到下一次開服（initSystem）；這一場拆掉那盞時
--- 跟著刪（Store.track）。帳本滿了記不進去的那一筆原樣留著，下次開服再試。
+-- 發了編號的那一筆不當場刪（主系統和分片不是同一個檔）、也不改：原樣留到下一次開服，分片讀得到那盞才刪（initSystem）；
+-- 這一場拆掉那盞時跟著刪（Store.track）。帳本滿了記不進去的那一筆一樣留著，下次開服再試。
 -- 一塊讀完觸發一次 LoadChunk（IsoChunk.java:3968），物件在那之前就從存檔讀進來（IsoChunk.java:2324,3799-3837），所以用
 -- getObjects 找整塊的燈。只在還有舊鍵時掛 LoadChunk：舊鍵所在的塊沒人去就一直掛著，但每塊只取一格、查一次表；
 -- 全部定案（或出錯、留到下次開服）就摘掉。不掛逐格的 LoadGridsquare：那是每讀一格都跑一次。
@@ -259,16 +268,15 @@ local function settle(inst, chunk, keys)
             end
             local id = n == 1 and issue(inst, found, sq, items)
             if id then
-                inst.built[k] = { id = id, i = items }
                 L:track(id, inst.built, k)
                 print(LOG .. "LEDGER adopt light id=" .. id .. " key=" .. k)
-            elseif n == 1 then
+            elseif id == nil then -- 帳本滿了：留著，下次開服再試
                 print(LOG .. "LEDGER legacy light kept for the next start: " .. k)
-            else
+            else -- 沒有或有兩盞以上，或那一筆讀不懂（重試也一樣）
                 inst.built[k] = nil
                 print(LOG .. "LEDGER legacy light dropped (" .. n .. " lights): " .. k)
             end
-            if id or n ~= 1 then Ledger.legacy = Ledger.legacy - 1 end
+            if id ~= nil then Ledger.legacy = Ledger.legacy - 1 end
         else
             Ledger.legacy = Ledger.legacy - 1
         end

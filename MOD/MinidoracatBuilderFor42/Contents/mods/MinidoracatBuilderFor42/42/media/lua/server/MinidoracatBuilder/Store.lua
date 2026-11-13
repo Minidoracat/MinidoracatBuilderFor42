@@ -9,8 +9,8 @@
 --   （編號 → 值），data 只存編號，一筆是「數字鍵＋編號」18 bytes。對照表和用到它的紀錄在同一個檔裡，一個檔壞了不影響
 --   別片。get 拿到的是對照表裡那張表，很多筆共用：只能讀，不能改。
 -- 沒給 sig 的帳本 data 直接存值。兩種都一樣：記進去的表之後不能原地改，要改就換一張新的表再 put（大小是照記的時候算的）。
--- 分片以前的存檔整本在各自主系統的一張表：adopt 每次開服把分片還沒有的複製進來，舊表留著；之後 put、del 的那一筆同時
---   從舊表刪掉。哪一次開服舊表的每一筆分片都讀得到，才清掉舊表。
+-- 分片以前的存檔整本在各自主系統的一張表：adopt 每次開服把分片還沒有的複製進來，舊表留著；之後 put、del 的那一筆在舊表
+--   跟著換或刪（settle）。哪一次開服舊表的每一筆分片都讀得到，才清掉舊表。
 -- 各個存檔不是同時寫的。舊表還在的期間：分片沒寫成，下一次開服照舊表補回還沒刪的；主系統沒寫成而分片寫成，
 --   那之後才刪掉的會回來（留成沒人用的紀錄）。舊表清掉之後和分片以前一樣：哪個檔沒寫成，就回到它上一次存的樣子。
 if isClient() then return end
@@ -310,21 +310,31 @@ local function place(S, k, v)
     return true
 end
 
--- 舊表還在的那一場：鍵 k 在舊表的那一筆跟著處理。v＝剛記成的新值（del 時是 nil）。這本帳本新舊格式一樣（mirror）、而且新值
--- 沒有比舊表那一筆大：舊表也換成新值，之後不管哪個檔沒寫成，另一個檔都還有新的那一筆。其他情形從舊表刪掉：舊表所在的
--- 主系統存檔在搬完之前只能變小，不能被撐過引擎的上限
-local function settle(S, k, v)
+-- 鍵 k 在舊表的那一格：回 舊表, 舊鍵, 那一格在舊檔原本佔多大（第一次問的時候量，之後照這個數）。沒有回 nil
+local function slot(S, k)
     local t = S.oldT and S.oldT[k]
+    if not t then return nil end
+    local ok = S.oldK[k]
+    local cap = S.oldSz[k] or vsize(t[ok]) or 0
+    S.oldSz[k] = cap
+    return t, ok, cap
+end
+
+-- 舊表還在的那一場：鍵 k 在舊表的那一格跟著處理。v＝剛記成的新值（del 時是 nil）。這本帳本新舊格式一樣（mirror）、而且新值
+-- 沒有比那一格在舊檔原本的大：舊表也記新值（先 del 再 put 的換地板也算），分片的檔整個沒寫成（不在）時下一次開服照舊表
+-- 補回的是新的那一筆。分片的檔留著上一次存的內容時照分片（adopt 不比內容：哪一邊比較新分不出來），那一筆回到上一次存的
+-- 樣子。其他情形從舊表刪掉：舊表所在的主系統存檔在搬完之前只能變小，不能被撐過引擎的上限
+local function settle(S, k, v)
+    local t, ok, cap = slot(S, k)
     if t then
-        local ok = S.oldK[k]
-        if v ~= nil and S.mirror and vsize(v) <= (vsize(t[ok]) or 0) then t[ok] = v else t[ok] = nil end
+        if v ~= nil and S.mirror and vsize(v) <= cap then t[ok] = v else t[ok] = nil end
     end
-    if S.left then S.left[k] = nil end
+    if S.left and S.left[k] ~= nil then S.left[k], S.nleft = nil, S.nleft - 1 end
 end
 
 -- 鍵 k 在舊表 old 還留著一份（鍵是 oldKey）：之後 put、del 這一筆時跟著處理（settle）
 function Store:track(k, old, oldKey)
-    self.oldT, self.oldK = self.oldT or {}, self.oldK or {}
+    self.oldT, self.oldK, self.oldSz = self.oldT or {}, self.oldK or {}, self.oldSz or {}
     self.oldT[k], self.oldK[k] = old, oldKey
 end
 
@@ -332,7 +342,7 @@ end
 -- sig(值)＝值的簽名（給了就用對照表；這時 valid 只看值）、mirror＝分片以前的存檔裡值的格式和現在一樣（settle）
 function Store.open(name, opts)
     local S = setmetatable({ name = name, id = opts.id, label = opts.label, valid = opts.valid, sig = opts.sig,
-        mirror = opts.mirror, shards = {}, m = 0, n = 0 }, Store)
+        mirror = opts.mirror, shards = {}, m = 0, n = 0, left = {}, nleft = 0 }, Store) -- left＝放不進分片、還在舊表的
     -- 有幾片看存檔資料夾：不靠另一個存檔記的數字，哪個檔壞了都不影響找到其他片
     local last = 0
     for i = 1, Store.SHARD_MAX do
@@ -347,15 +357,24 @@ end
 -- 鍵 k 的值；沒有回 nil。有 sig 的帳本回的是共用的表，不能改
 function Store:get(k)
     local sh, v = locate(self, k)
-    if not sh then return self.left and self.left[k] or nil end
+    if not sh then return self.left[k] end
     if self.sig then return sh.dict[v] end
     return v
 end
 
--- 記下（或換掉）鍵 k 的值（呼叫的人先確認 valid；v 之後不能再改）。每一片都滿了回 false，帳本不變
+-- 記下（或換掉）鍵 k 的值（呼叫的人先確認 valid；v 之後不能再改）。記不進去回 false，帳本不變。
+-- 分片放不下、而這個鍵這一場在舊表有一格（開不了片的伺服器：系統數到上限）：新值沒有比那一格原本的大就記在舊表，
+-- 照樣查得到（left），下一次開服再搬
 function Store:put(k, v)
-    if not place(self, k, v) then return false end
-    settle(self, k, v)
+    if place(self, k, v) then
+        settle(self, k, v)
+        return true
+    end
+    local t, ok, cap = slot(self, k)
+    if not (t and self.mirror) or vsize(v) > cap or locate(self, k) then return false end
+    t[ok] = v
+    if self.left[k] == nil then self.nleft = self.nleft + 1 end
+    self.left[k] = v
     return true
 end
 
@@ -396,8 +415,7 @@ function Store:adopt(old, conv)
                     copied = copied + 1
                 else
                     left = left + 1
-                    self.left = self.left or {}
-                    self.left[k2] = v
+                    self.left[k2], self.nleft = v, self.nleft + 1
                 end
             end
         end
@@ -438,7 +456,8 @@ function Store.report()
         local S = byId[id]
         if S then
             local st = S:stats()
-            out[#out + 1] = { id = id, n = st.n, shards = S.m, bytes = st.bytes }
+            -- 筆數含還在舊表、放不進分片的（照樣查得到）；檔數與大小只算分片
+            out[#out + 1] = { id = id, n = st.n + S.nleft, shards = S.m, bytes = st.bytes }
         end
     end
     return out

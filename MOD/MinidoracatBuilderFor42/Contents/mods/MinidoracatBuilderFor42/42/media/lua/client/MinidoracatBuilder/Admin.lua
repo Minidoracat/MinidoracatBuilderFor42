@@ -305,16 +305,19 @@ function Admin.ledgerLines(list)
     return out
 end
 
--- 面板畫哪一種：rows（收到了）、wait（要了還不到 LEDGER_WAIT_MS）、none（沒有回報：伺服器是舊版或沒有帳本）
+-- 面板畫哪一種：rows（有數字：這次要的已經回了，或還在等、先畫上一次的）、wait（要了還不到 LEDGER_WAIT_MS、沒有上一次的）、
+-- none（沒有回報：伺服器是舊版、沒有帳本，或這次要的等過頭了；上一次的數字不再畫，免得被當成現在的）
 function Admin.ledgerState(now)
     local L = Admin.ledger
-    if L.rows and #L.rows > 0 then return "rows" end
-    if L.rows == nil and L.asked and now >= L.asked and now - L.asked < Admin.LEDGER_WAIT_MS then return "wait" end
+    local within = L.asked and now >= L.asked and now - L.asked < Admin.LEDGER_WAIT_MS
+    if L.rows and #L.rows > 0 and (within or not L.waiting) then return "rows" end
+    if L.waiting and within then return "wait" end
     return "none"
 end
 
 function Admin.onLedgers(args)
     Admin.ledger.rows = Admin.ledgerLines(type(args) == "table" and args.list or nil)
+    Admin.ledger.waiting = false
     if Admin.win then Admin.win:layoutLedgers() end
 end
 
@@ -322,7 +325,7 @@ end
 function Admin.askLedgers(playerNum)
     local L, now = Admin.ledger, getTimestampMs()
     if L.asked and now >= L.asked and now - L.asked < Admin.LEDGER_GAP_MS then return false end
-    L.asked = now
+    L.asked, L.waiting = now, true
     if L.rows and #L.rows == 0 then L.rows = nil end -- 上次沒有內容：這次照「讀取中」等；有內容的留著到新的來
     local player = getSpecificPlayer(playerNum or 0)
     if player then

@@ -125,18 +125,22 @@ function Overlays.at(sq, edge)
     return copy
 end
 
-function Overlays.forget(sq, name, edge)
+-- 回 true＝帳本已經沒有那一張。strict（拆除用，還沒動那張圖）：剩下的記不回去時什麼都不動、回 false，呼叫端不拆。
+-- 不是 strict（那張圖已經不在了：回滾、換牆掛不回去）：剩下的記不回去就整件清掉，寧可剩下的本工具拆不了，不留一筆
+-- 已經拆掉的退料
+function Overlays.forget(sq, name, edge, strict)
     local k = pos(sq, edge)
     local here = k and S:get(k)
-    if not (here and here[name]) then return end
-    local rest, any = {}, false
+    if not (here and here[name]) then return true end
+    local rest, others = {}, nil
     for other, mats in pairs(here) do
-        if other ~= name then rest[other], any = mats, true end
+        if other ~= name then rest[other], others = mats, (others and others .. "," or "") .. other end
     end
-    -- 剩下的記不回去（那一片滿到連一張新的對照表都放不下）就整件清掉：寧可剩下的拆不了，不留一筆已經拆掉的退料
-    if any and S:put(k, rest) then return end
-    if any then print(LOG .. "overlay ledger full; dropped: " .. at(sq, edge, name)) end
+    if others and S:put(k, rest) then return true end
+    if others and strict then return false end
+    if others then print(LOG .. "overlay ledger full; dropped: " .. at(sq, edge, name) .. " with " .. others) end
     S:del(k)
+    return true
 end
 
 -- 物件移出世界前（Place.onAboutToBeRemoved，任何物件都會來）：它是那格的地板或那條邊的牆（Place.wallAt，伺服器自己找的

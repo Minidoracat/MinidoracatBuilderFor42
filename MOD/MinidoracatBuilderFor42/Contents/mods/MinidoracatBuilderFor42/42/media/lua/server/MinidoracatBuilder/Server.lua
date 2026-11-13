@@ -246,10 +246,14 @@ local function removeAll(kind, plan)
     end
     local t = plan.overlay
     if t then
+        -- 先改帳本再拿圖：帳本記不回剩下的那幾張（滿了）就不拆；圖拿不掉就把那一張記回去
+        local at = t.sq:getX() .. "," .. t.sq:getY() .. "," .. t.sq:getZ()
+        local items = Overlays.get(t.sq, t.name, t.edge)
+        if not Overlays.forget(t.sq, t.name, t.edge, true) then error("overlay ledger full at " .. at) end
         if not Place.detach(t.host, t.name) then
-            error("overlay not removed at " .. t.sq:getX() .. "," .. t.sq:getY() .. "," .. t.sq:getZ())
+            if items then Overlays.put(t.sq, t.name, items, t.edge) end
+            error("overlay not removed at " .. at)
         end
-        Overlays.forget(t.sq, t.name, t.edge)
     end
     local top, west, squares = nil, false, {}
     for i, o in ipairs(plan.remove) do
