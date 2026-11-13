@@ -8827,6 +8827,14 @@ print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）
         and W.subOf("container", P({ keys = { container = "woodcrate" } })) == "n:Crate"
         and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("wall", P({})) == nil,
         "子種類（容器）：照原版顯示名（同名的型別同一組），沒有 IGUI_ContainerTitle_ 翻譯的歸其他；別的種類沒有子種類")
+    check(W.subOf("floorOverlay", nil, "street_trafficlines_curb_white_full_3") == "marking"
+        and W.subOf("floorOverlay", nil, "street_curbs_01_blend_dirt_12") == "curb"
+        and W.subOf("floorOverlay", nil, "blends_natural_01_8") == "curb" and W.subOf("floorOverlay", nil, "pert_edges_01_0") == "curb"
+        and W.subOf("floorOverlay", nil, "blends_streetoverlays_01_4") == "crack"
+        and W.subOf("floorOverlay", nil, "d_streetcracks_1_7") == "crack" and W.subOf("floorOverlay", nil, "Fears_Tire_Marks_2") == "crack"
+        and W.subOf("floorOverlay", nil, "fencing_damaged_01_9") == "other" and W.subOf("floorOverlay", nil, nil) == "other"
+        and W.subOf("floorOverlay", nil, "recipe:Base.Thing") == "other",
+        "子種類（地面覆蓋）：照圖塊組名分；路邊漆線算標線不算路緣、路面破損貼片算裂痕不算邊條、不分大小寫、沒有名稱歸其他")
 
     -- 2. W.runSubs：容器 11 個型別、10 個顯示名（Crate 兩個型別）＋沒翻譯的 mystery
     local spec = { { "crate", 3 }, { "woodcrate", 3 }, { "fridge", 5 }, { "counter", 4 }, { "shelves", 4 }, { "bin", 3 },
@@ -8874,6 +8882,13 @@ print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）
     W.runSubs(v)
     local li = v.subs.light and v.subs.light.items or {}
     check(#li == 2 and li[1].id == "switch" and li[2].id == "lamp", "非容器：照 W.SUB_KINDS 的順序列（開關在燈具前），不照數量")
+    v.subJob = { kind = "floorOverlay", src = "all", i = 0, of = {},
+        list = { n = 5, "subo_misc_01_0", "d_streetcracks_1_0", "street_trafficlines_01_0", "street_curbs_01_0", "street_curbs_01_1" } }
+    W.runSubs(v)
+    local oi, oids = v.subs.floorOverlay and v.subs.floorOverlay.items or {}, {}
+    for i, it in ipairs(oi) do oids[i] = it.id .. "=" .. it.n end
+    check(table.concat(oids, ",") == "curb=2,marking=1,crack=1,other=1",
+        "地面覆蓋：圖塊名傳進 W.subOf（不在世界裡的圖也分得出來），照 W.SUB_KINDS 的順序列")
 
     -- 3. W.refreshCats：選著的子種類不在了回種類，種類也不在回「全部」
     W.st.cat = "s:container:n:Crate"

@@ -494,10 +494,18 @@ W.SUB_KINDS = {
     light = { "switch", "lamp", "sign" },
     furniture = { "wallArt", "rug", "table", "rest", "tabletop", "other" },
     plant = { "ornamental", "grass" },
+    floorOverlay = { "curb", "marking", "crack", "other" },
     container = true, -- 照原版容器顯示名分組，項目最多的 W.SUB_TOP 組＋other
 }
 W.SUB_TOP = 8
 local SUB_INDENT = "    " -- NavList 沒有縮排欄位：子種類的名稱前面補空白
+-- 地面覆蓋照圖塊組名分（這類圖沒有分得出來的屬性）：{ 子種類, 組名裡的字… }，照順序比，都沒中是 other。
+-- 路邊的漆線（street_trafficlines_curb_*）是標線，所以 trafficline 排在 curb 前面；地面交界的邊條（blends_*）歸路緣
+local OVERLAY_SUBS = {
+    { "marking", "trafficline" },
+    { "crack", "overlay", "crack", "grime", "blood", "burnt", "footprint", "tire_mark" },
+    { "curb", "curb", "blend", "edge" },
+}
 
 -- 分類 ID 對到的種類與子種類："k:light" → "light", nil；"s:light:switch" → "light", "switch"；其他 nil
 function W.catKind(cat)
@@ -505,9 +513,9 @@ function W.catKind(cat)
     return cat:match("^s:([^:]+):(.+)$")
 end
 
--- 一項的子種類（p＝圖塊屬性，可能是 nil）。旗標要 IsoFlagType（bed），其他是字串鍵。容器回 "n:<原版顯示名>"：
--- 顯示名相同的型別併成一組，原版沒有翻譯的歸 other
-function W.subOf(kind, p)
+-- 一項的子種類（p＝圖塊屬性，可能是 nil；name＝圖塊名，只有地面覆蓋用）。旗標要 IsoFlagType（bed），其他是字串鍵。
+-- 容器回 "n:<原版顯示名>"：顯示名相同的型別併成一組，原版沒有翻譯的歸 other
+function W.subOf(kind, p, name)
     if kind == "light" then
         if not p then return "lamp" end
         if B.Rules.switchProps(p) then return "switch" end
@@ -527,6 +535,15 @@ function W.subOf(kind, p)
         local t = p and p:get("container")
         local label = t and getTextOrNull("IGUI_ContainerTitle_" .. t)
         return label and ("n:" .. label) or "other"
+    elseif kind == "floorOverlay" then
+        local ts = name and name:match("^(.*)_%d+$")
+        ts = ts and ts:lower() or ""
+        for _, g in ipairs(OVERLAY_SUBS) do
+            for i = 2, #g do
+                if ts:find(g[i], 1, true) then return g[1] end
+            end
+        end
+        return "other"
     end
     return nil
 end
@@ -564,8 +581,8 @@ local function waitSubs(v, k)
 end
 
 -- 一張圖的子種類（給 runSubs 的 pcall 用：取屬性也包在裡面）
-local function subOfSprite(k, spr)
-    return W.subOf(k, spr and spr:getProperties())
+local function subOfSprite(k, spr, name)
+    return W.subOf(k, spr and spr:getProperties(), name)
 end
 
 -- 每幀做一段（每項 4–9 次 Java 呼叫）；做完排好子種類、重排左欄，等著的清單照它重列
@@ -581,9 +598,10 @@ local function runSubs(v)
         i = i + 1
         local name = list[i]
         local r = Recipes.byId[name]
-        local spr = Entry.sprite(r and r.sprite or name)
+        local sn = r and r.sprite or name
+        local spr = Entry.sprite(sn)
         -- 哪個圖塊的屬性丟錯：歸到沒有屬性時的那一組（每個種類都列得到）、整輪只記一次 log，不要整個分類停住
-        local ok, sub = pcall(subOfSprite, k, spr)
+        local ok, sub = pcall(subOfSprite, k, spr, sn)
         if not ok then
             if not job.err then print(LOG .. "sub-kind failed for " .. tostring(name) .. ": " .. tostring(sub)) end
             job.err, sub = true, W.subOf(k, nil)
