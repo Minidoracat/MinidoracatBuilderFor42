@@ -32,6 +32,7 @@ local function isLanding(k) return k:sub(-#LANDING) == LANDING end
 local CHUNK = 8 -- IsoChunk 一邊幾格（IsoChunk.java:3762,3800）
 local function chunkOf(x, y) return math.floor(x / CHUNK) * 100000 + math.floor(y / CHUNK) end
 local byChunk = {} -- 還沒定案的 0.3.0 舊燈鍵，照所在的 chunk 分（檔尾）
+local waiting = {} -- 這一場帳本滿了、記不進去的舊燈：[舊鍵] = 那盞燈（物件）。它被移除時舊紀錄跟著清
 local watchLegacy -- 檔尾：還有舊鍵時才掛讀 chunk 的事件
 
 local function parseKey(k)
@@ -119,7 +120,7 @@ function Ledger:initSystem()
     -- 上一場已經發了編號的那幾筆在 built 裡原樣留著（不加東西：主系統的存檔在搬完之前只能變小）：分片裡有從同一個位置、
     -- 同一張圖的舊紀錄搬過去的燈（o）就是它，這時才刪；沒有（分片那次沒寫成）就重新等。同一格同一張圖另外蓋的燈沒有 o，
     -- 不會被當成它。有舊鍵才掃一次分片
-    byChunk = {}
+    byChunk, waiting = {}, {}
     local n, done, seen = 0, {}, nil
     for k in pairs(self.built) do
         local x, y, z, name = parseKey(k)
@@ -230,10 +231,11 @@ function Ledger.forget(obj)
         local e, id = lampOf(obj)
         if e then
             L:del(id)
-        elseif Ledger.legacy > 0 and obj:hasModData() and obj:getModData().builderEntry then
-            -- 還沒定案的 0.3.0 舊燈（帳本滿了記不進去）被移除：舊紀錄跟著清，不留給之後同一格同一張圖的燈
+        else
+            -- 帳本滿了、還沒搬成的 0.3.0 舊燈被移除：舊紀錄跟著清，不留給之後同一格同一張圖的燈。只認定案時挑中的
+            -- 那一盞（同一格別盞認不得的燈被移除不算；已經搬成的由上面那一條清）
             local k = Ledger.key(obj)
-            if k then inst.built[k] = nil end
+            if k and waiting[k] == obj then inst.built[k], waiting[k] = nil, nil end
         end
         return
     end
@@ -281,6 +283,7 @@ local function settle(inst, chunk, keys)
                 L:track(id, inst.built, k)
                 print(LOG .. "LEDGER adopt light id=" .. id .. " key=" .. k)
             elseif id == nil then -- 帳本滿了：留著，下次開服再試
+                waiting[k] = found
                 print(LOG .. "LEDGER legacy light kept for the next start: " .. k)
             else -- 沒有或有兩盞以上，或那一筆讀不懂（重試也一樣）
                 inst.built[k] = nil

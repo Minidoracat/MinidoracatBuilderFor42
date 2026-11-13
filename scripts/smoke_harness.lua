@@ -6791,6 +6791,11 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(shadow and T2.keyId > 0 and T2.keyId ~= T1.keyId and lampE(T2.keyId).i["Base.ElectricWire"] == 11
         and lampE(T1.keyId).i["Base.ElectricWire"] == 2 and lampE(T1.keyId).o == nil,
         "同一格同一張圖另有一盞後來蓋的燈：舊紀錄不被它擋掉，讀到那一塊時照樣搬給還沒認得的那盞，退料各是各的")
+    local T3 = lamp(S(156, 152), lampA, "mark")
+    S(156, 152):transmitRemoveItemFromSquare(T3)
+    check(inst.built["156,152,0,kl_01_0"] ~= nil and inst.built["156,152,0,kl_01_0"]["Base.ElectricWire"] == 11
+        and lampE(T2.keyId) ~= nil,
+        "這一場剛搬成、舊紀錄還留著（等下一次開服確認）：同一格另一盞帳本認不得的同款燈被移除，不動那一筆")
     -- 搬過的那盞旁邊之後多一盞帳本認不得的同款燈：舊紀錄已經刪了，不會再發給它（不多退）
     local A3 = lamp(S(144, 144), lampA, "mark")
     HARNESS_REOPEN(Ledger)
@@ -6875,10 +6880,12 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("LoadChunk", S(197, 197):getChunk())
     print = realPrint
     Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
+    local H2 = lamp(S(197, 197), lampA, "mark")
+    S(197, 197):transmitRemoveItemFromSquare(H2)
     local waiting = inst.built["197,197,0,kl_01_0"] ~= nil and H.keyId == -1
     S(197, 197):transmitRemoveItemFromSquare(H)
     check(waiting and inst.built["197,197,0,kl_01_0"] == nil,
-        "還沒定案的舊燈（帳本滿了記不進去）被移除：舊紀錄跟著清，不留給之後同一格同一張圖的燈")
+        "還沒搬成的舊燈（帳本滿了記不進去）：同一格別盞認不得的燈被移除不動舊紀錄；它自己被移除才跟著清，不留給之後同一格同一張圖的燈")
     -- 退料表讀不懂的舊紀錄：重試也一樣，刪掉（那盞本工具拆不了），不留著每次開服重來
     local U = lamp(at(195, 195), lampA, "mark")
     inst.built["195,195,0,kl_01_0"] = { ["Base.ElectricWire"] = {} }
