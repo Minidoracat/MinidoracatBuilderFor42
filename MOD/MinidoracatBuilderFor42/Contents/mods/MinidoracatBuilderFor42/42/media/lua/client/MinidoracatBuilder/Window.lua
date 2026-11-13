@@ -506,6 +506,16 @@ local OVERLAY_SUBS = {
     { "crack", "overlay", "crack", "grime", "blood", "burnt", "footprint", "tire_mark" },
     { "curb", "curb", "blend", "edge" },
 }
+local OVERLAY_OF = {} -- 圖塊組名 → 子種類：一組只比一次（地面覆蓋幾千項、圖塊組約一百個）
+local function overlaySub(ts)
+    local low = ts:lower()
+    for _, g in ipairs(OVERLAY_SUBS) do
+        for i = 2, #g do
+            if low:find(g[i], 1, true) then return g[1] end
+        end
+    end
+    return "other"
+end
 
 -- 分類 ID 對到的種類與子種類："k:light" → "light", nil；"s:light:switch" → "light", "switch"；其他 nil
 function W.catKind(cat)
@@ -536,14 +546,13 @@ function W.subOf(kind, p, name)
         local label = t and getTextOrNull("IGUI_ContainerTitle_" .. t)
         return label and ("n:" .. label) or "other"
     elseif kind == "floorOverlay" then
-        local ts = name and name:match("^(.*)_%d+$")
-        ts = ts and ts:lower() or ""
-        for _, g in ipairs(OVERLAY_SUBS) do
-            for i = 2, #g do
-                if ts:find(g[i], 1, true) then return g[1] end
-            end
+        local ts = name and name:match("^(.*)_%d+$") or ""
+        local sub = OVERLAY_OF[ts]
+        if not sub then
+            sub = overlaySub(ts)
+            OVERLAY_OF[ts] = sub
         end
-        return "other"
+        return sub
     end
     return nil
 end
@@ -599,7 +608,7 @@ local function runSubs(v)
         local name = list[i]
         local r = Recipes.byId[name]
         local sn = r and r.sprite or name
-        local spr = Entry.sprite(sn)
+        local spr = k ~= "floorOverlay" and Entry.sprite(sn) or nil -- 地面覆蓋只看名稱，不查圖
         -- 哪個圖塊的屬性丟錯：歸到沒有屬性時的那一組（每個種類都列得到）、整輪只記一次 log，不要整個分類停住
         local ok, sub = pcall(subOfSprite, k, spr, sn)
         if not ok then
