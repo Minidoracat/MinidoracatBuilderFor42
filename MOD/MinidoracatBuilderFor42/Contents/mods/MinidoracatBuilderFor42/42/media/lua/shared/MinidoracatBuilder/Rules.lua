@@ -9,7 +9,7 @@ local Rules = MinidoracatBuilder.Rules or {}
 MinidoracatBuilder.Rules = Rules
 
 local T, F = IsoObjectType, IsoFlagType
-local EntityScript, vegitation, canBeCut = F.EntityScript, F.vegitation, F.canBeCut
+local EntityScript, vegitation, canBeCut, canBeRemoved = F.EntityScript, F.vegitation, F.canBeCut, F.canBeRemoved
 local doorN, doorW, windowN, windowW = F.doorN, F.doorW, F.windowN, F.windowW
 local HoppableN, HoppableW, TallHoppableN, TallHoppableW = F.HoppableN, F.HoppableW, F.TallHoppableN, F.TallHoppableW
 local WallSE, solidfloor, WallOverlay, FloorOverlay = F.WallSE, F.solidfloor, F.WallOverlay, F.FloorOverlay
@@ -236,25 +236,31 @@ function Rules.typeCode(t)
     return TYPE[t]
 end
 
--- 名稱前綴排除：侵蝕疊圖 e_（積雪屋頂）、植物 vegetation_、樹叢 f_bushes、巨樹 jumbo_（bt-catalog §6.3）。
--- 先看第一個字元再比字串：避免多數名稱建子字串。
-local function excludedName(name)
+-- 名稱前綴（bt-catalog §6.3）：侵蝕疊圖 e_（積雪屋頂、草）、植物 vegetation_、樹叢 f_bushes、巨樹 jumbo_。回 true＝不列（PREFIX）；
+-- 只收植物的前綴（使用者 2026-11-13 選新種類「植物」，見 Rules.kindOf）回 "e"（只收草）、"bush"（只收能搬的觀賞植物）、
+-- PLANT_SET 的值（vegetation_ 的觀賞植物組：植物照收，能搬卻不是植物的往下照一般屬性分）；其他回 nil。
+-- 農作物（vegetation_farming／gardening／farm）、晾架、樹、積雪圖照舊不列。先看第一個字元再比字串：避免多數名稱建子字串。
+-- vegetation_groundcover_ 不收：這組帶植物鍵又能搬的只有 _18..23，引擎說有貼圖（hasNoTextures 是 false）、實際拿不到
+-- （getTexture 是 nil），列出來是空白的格子（E2E builder-wg-catalog-1113b）
+local PLANT_SET = { vegetation_indoor_ = "indoor", vegetation_ornamental_ = "set", vegetation_foliage_ = "set" }
+local function namePrefix(name)
     local c = name:byte(1)
     if c == 101 then -- e
-        if name:byte(2) == 95 then return true end
+        if name:byte(2) == 95 then return "e" end
     elseif c == 118 then -- v
-        if name:sub(1, 11) == "vegetation_" then return true end
+        if name:sub(1, 11) == "vegetation_" then return PLANT_SET[name:match("^vegetation_%a+_") or ""] or true end
     elseif c == 102 then -- f
-        if name:sub(1, 8) == "f_bushes" then return true end
+        if name:sub(1, 8) == "f_bushes" then return "bush" end
     elseif c == 106 then -- j
         if name:sub(1, 6) == "jumbo_" then return true end
     end
-    return name:find("_on_", 1, true) ~= nil and name:find("_on_%d+$") ~= nil -- 開燈時疊上去的圖
+    return name:find("_on_", 1, true) ~= nil and name:find("_on_%d+$") ~= nil or nil -- 開燈時疊上去的圖
 end
 
 -- 疊放圖不列（使用者 2026-10-30 選）：讀格子時引擎把 StackReplaceTileOffset 不是 0 的物件換成「編號＋偏移」那張
 -- （IsoGridSquare.java:9712-9720，不看有沒有疊著），放下去讀檔就變成另一張圖。離線讀本機 313 個 tiledef 檔（186 萬格）
--- 有 172 個名稱：160 個容器、8 個實心物件（CustomMapBridge）、4 個 vegetation_（名稱已排除），所以只在這兩處查。
+-- 有 172 個名稱：160 個容器、8 個實心物件（CustomMapBridge）、4 個 vegetation_，所以只在容器、實心物件與植物候選
+-- （plantKind：vegetation_ 的觀賞植物組現在照列）查。
 local function stackReplaced(p)
     local s = p:get("StackReplaceTileOffset")
     return s ~= nil and (tonumber(s) or 0) ~= 0
@@ -288,25 +294,68 @@ local function decor(name, p, mt)
     return nil, "NO_KIND"
 end
 
--- 植物，以及加油機、專用類別、發電機、物品 entity、家電。結構類種類（樓梯到地板）不帶這些鍵，所以只在結構類之後才查，
--- 每個牆、窗框、地板省 12 次 Java 呼叫。正式服 147 個 MOD（離線讀 tiledef）與 E2E 載的 18 個 tiledef 組合
--- （遊戲內和逐一照設計稿順序判斷的版本逐格比對）都沒有同時帶結構鍵與這些鍵的圖塊，結果不變。
+-- 加油機、專用類別、發電機、物品 entity、家電，以及不收的植物（樹、canBeCut、不是草的不能搬植物）。結構類種類（樓梯到地板）
+-- 不帶這些鍵，所以只在結構類之後才查，每個牆、窗框、地板省 12 次 Java 呼叫。正式服 147 個 MOD（離線讀 tiledef）與 E2E 載的
+-- 18 個 tiledef 組合（遊戲內和逐一照設計稿順序判斷的版本逐格比對）都沒有同時帶結構鍵與這些鍵的圖塊，結果不變。
 -- CustomItem（撿起來變成專用物品）只放過床：行軍床、擔架床撿起來是 Mov_Cot／Mov_Gurney，放下就是一般的床
--- （使用者 2026-11-07 選列出，Workshop ThatFatCat）。原版帶 CustomItem 的還有帳篷、睡袋、收音機、丙烷罐等 80 多種物品
+-- （使用者 2026-11-07 選列出，Workshop ThatFatCat）。原版帶 CustomItem 的還有帳篷、睡袋、收音機、丙烷罐等 80 多種物品。
+-- MoveType=Vegitation 不算植物（使用者 2026-11-13）：原版墓碑、停車標誌、停車收費表、郵筒都帶它。mov＝能搬：能搬的
+-- vegitation／Bush 已經在 ornamental 判斷過，不再查
 local BED_ITEM = { ["Base.Mov_Cot"] = true, ["Base.Mov_Gurney"] = true, Mov_Gurney = true }
-local function plantOrObject(p, mt)
-    return mt == "Vegitation" or p:has("tree") or p:has(vegitation) or p:has(canBeCut) or p:has("Bush")
-        or p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound")
+local function objectKeys(p)
+    return p:has("fuelAmount") or p:has("IsoType") or p:has("GeneratorSound")
         or (p:has("CustomItem") and not BED_ITEM[p:get("CustomItem")])
         or p:has("TV") or p:has("Microwave") or p:has("signal")
 end
+local function plantOrObject(p, mov)
+    return p:has("tree") or p:has(canBeCut) or (not mov and (p:has(vegitation) or p:has("Bush"))) or objectKeys(p)
+end
 
--- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定）：引擎只看這個值，不看停水與房間
+-- 植物（使用者 2026-11-13 選新種類 plant，沙盒 KindPlant 預設開）：
+--   能搬的觀賞植物（ornamental，呼叫端已確定 IsMoveAble）：帶 vegitation 或 Bush；vegetation_ 的觀賞植物組（set）另收
+--     MoveType=Vegitation 的（花圃）與 vegetation_indoor_ 整組（盆栽沒有植物鍵）。回 true＝植物、false＝有植物鍵卻不收
+--     （有容器、樹、canBeCut：PLANT）、nil＝沒有植物鍵。照原版撿起（Cost.refund 的 pickup）。
+--   草與野花（grass，呼叫端已確定不能搬）：canBeRemoved（旗標）＋MoveWithWind（字串鍵）。不帶 WallOverlay（牆上的藤蔓
+--     f_wallvines 照舊是掛牆物）；帶 attachedFloor 的要帶 vegitation（地面裂縫 d_streetcracks 照舊是地面覆蓋）。原版
+--     「移除草」拿得掉（ISRemoveGrass.lua:45-50 拿掉整格帶 canBeRemoved 的物件）。canBeRemoved 放第一個：多數圖第一次就不符
+local function ornamental(p, set)
+    if not (p:has(vegitation) or p:has("Bush") or (set and (set == "indoor" or p:get("MoveType") == "Vegitation"))) then
+        return nil
+    end
+    return not (p:has("container") or p:has("tree") or p:has(canBeCut))
+end
+local function grass(p)
+    return p:has(canBeRemoved) and p:has("MoveWithWind") and not p:has(WallOverlay)
+        and (not p:has(attachedFloor) or p:has(vegitation)) and not (p:has(canBeCut) or p:has("tree"))
+end
+
+-- 植物裡的草與野花（不能搬的植物）：Cost 收草屑、Place 不擋整格、建造視窗詳情換說明 plantGrass。p＝getProperties()
+function Rules.isGrass(kind, p)
+    return kind == "plant" and not p:has("IsMoveAble")
+end
+
+-- 水井與手壓水泵（使用者 2026-11-13 選新種類 well，沙盒 KindWell 預設關）：引擎照圖名寫死給乾淨的無限水
+-- （IsoObject.java:2664-2676 getInfiniteWaterType），其他無限水的圖給髒水、照舊不列（WATER）。camping_01_16 帶 EntityScript
+-- （原版 entity_well.txt，沒有建造配方）也照列：本工具蓋成 IsoThumpable，水是引擎照圖名給的（isWaterInfinite 看 waterAmount）
+local WELL = { camping_01_16 = true, camping_01_64 = true, camping_01_65 = true, camping_01_66 = true, camping_01_67 = true }
+
+-- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定；水井與手壓水泵另列，見 WELL）：引擎只看這個值，不看停水與房間
 -- （IsoObject.java:2639-2644），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
--- 只出現在樓梯、地板與非結構類，沒有門窗、門框、窗框、柵欄、牆，所以只在這三處查，每個牆、窗框省一次 Java 呼叫。
+-- 只出現在樓梯、地板與非結構類，沒有門窗、門框、窗框、柵欄、牆，所以只在這三處與植物候選（plantKind）查，每個牆、窗框省一次
+-- Java 呼叫。
 local function infiniteWater(p)
     local w = p:get("waterAmount")
     return w ~= nil and (tonumber(w) or 0) >= 9999
+end
+
+-- 判斷成植物的圖照樣過後面那幾關（審查 1113）：專用物件、集水、無限水、疊放圖不因為帶植物鍵就列成植物。
+-- 只有植物候選才多這幾次 Java 呼叫
+local function plantKind(p)
+    if objectKeys(p) then return nil, "PLANT" end
+    if p:has("IsWaterCollector") then return nil, "COLLECTOR" end
+    if infiniteWater(p) then return nil, "WATER" end
+    if stackReplaced(p) then return nil, "STACK" end
+    return "plant"
 end
 
 -- 種類判斷本體（不看 entity），回種類，或 nil 與原因碼
@@ -366,7 +415,16 @@ local function kindOfProps(name, p, t)
         if infiniteWater(p) then return nil, "WATER" end
         return "floor"
     end
-    if plantOrObject(p, mt) then return nil, "PLANT" end
+    -- 植物（ornamental、grass）。IsMoveAble 在這裡查一次，後面家具那行沿用
+    local mov = p:has("IsMoveAble")
+    if mov then
+        local o = ornamental(p, nil) -- 明傳 nil：Kahlua 少傳的參數不保證是 nil（殘值為真時墓碑會又被當成植物）
+        if o then return plantKind(p) end
+        if o == false then return nil, "PLANT" end
+    elseif grass(p) then
+        return plantKind(p)
+    end
+    if plantOrObject(p, mov) then return nil, "PLANT" end
     -- 集水的（IsWaterCollector：集雨桶、金屬桶）：B42 只有 entity 的液體容器會接雨水、裝水（FluidContainer 的 RainFactor），
     -- 蓋成 IsoThumpable 是空殼（E2E builder-bili-1109a）；地圖上的集雨桶是生成地圖時才換成 entity
     -- （MORainCollectorBarrel.lua:100-103）。不列，說明寫用原版選單蓋（使用者 2026-11-09 選）
@@ -388,20 +446,21 @@ local function kindOfProps(name, p, t)
         if p:has("IsClosedState") then return nil, "CURTAIN_CLOSED" end
         return "curtain"
     end
-    if p:has("IsMoveAble") then return "furniture" end -- 可搬的遮雨棚也在這
+    if mov then return "furniture" end -- 可搬的遮雨棚也在這
     if tc == "roof" or p:has("RoofGroup") then return "roof" end -- 屋簷也算
     return decor(name, p, mt)
 end
 
 -- 回種類字串；不列時回 nil 與原因碼（建造視窗說明為什麼搜不到，Entry.why；翻譯 IGUI_MBLD_Why_<碼>）：
---   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴、ENTITY 建造配方的圖、TREE 樹、PLANT 植物與有功能的
---   物件、COLLECTOR 蓋了裝不了水的集水桶、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水、
---   STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED 拉上的窗簾、
---   BLOCKS_EDGE 擋一條格邊卻不是牆、NO_KIND 沒有能判斷種類的屬性。
+--   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴（農作物、樹、積雪圖這類；前綴裡的觀賞植物與草照收）、
+--   ENTITY 建造配方的圖、TREE 樹、PLANT 不收的植物（樹、canBeCut、農作物這類不能搬又不是草的、有容器的樹叢）與有功能的
+--   物件、COLLECTOR 蓋了裝不了水的集水桶、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水
+--   （水井與手壓水泵以外）、STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED
+--   拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、NO_KIND 沒有能判斷種類的屬性。
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。spr 是 sprite 本身（看多格）。
 -- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
 -- 只收地板與地面覆蓋（使用者 2026-10-31 選）：放下的是本工具的物件，不是配方的 entity——地圖物件只有讀地圖時才建
--- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。
+-- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。水井（WELL）例外，在前面就回。
 -- 實心地毯（帶 solidfloor 的 FloorRug）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當地面覆蓋；多格或沒有
 -- FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：照 0.5.0 當地板
 -- （審查 1107 Claude；正式服組合 0 張）
@@ -411,9 +470,32 @@ end
 function Rules.kindOf(name, p, t, spr)
     if not name then return nil, "NO_KIND" end
     if UNLISTED[name] then return nil, "LUA" end
+    if WELL[name] then return "well" end
     if WINDOW_STATE[name] then return nil, "WINDOW_STATE" end
-    if excludedName(name) then return nil, "PREFIX" end
-    local kind, why = kindOfProps(name, p, t)
+    local kind, why
+    local pre = namePrefix(name)
+    if pre then
+        -- 只收植物的前綴（namePrefix）：e_ 只收草；f_bushes 只收能搬的觀賞植物；vegetation_ 的觀賞植物組照兩種植物收，
+        -- 能搬卻不是植物的（火鶴、地精、鳥浴盆）往下照一般屬性分。其他一律 PREFIX
+        if pre == true then return nil, "PREFIX" end
+        local set = pre ~= "e" and pre ~= "bush" and pre
+        if p:has("IsMoveAble") then
+            if pre ~= "e" and ornamental(p, set) then
+                kind = "plant"
+            elseif not set then
+                return nil, "PREFIX"
+            end
+        elseif pre ~= "bush" and TYPE[t] ~= "tree" and grass(p) then
+            kind = "plant"
+        else
+            return nil, "PREFIX"
+        end
+        if kind then
+            kind, why = plantKind(p)
+            if not kind then return nil, why end
+        end
+    end
+    if not kind then kind, why = kindOfProps(name, p, t) end
     if solidRug(kind, p, spr) then kind = "floor" end
     if not p:has(EntityScript) then return kind, why end
     if kind == "floor" or kind == "floorOverlay" then return kind end

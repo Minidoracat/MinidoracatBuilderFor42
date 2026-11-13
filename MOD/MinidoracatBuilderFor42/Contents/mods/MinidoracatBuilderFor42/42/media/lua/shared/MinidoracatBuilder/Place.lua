@@ -399,6 +399,7 @@ end
 -- 失敗回 false 與原因碼（游標分原因說；nil＝其他，Check.item 回 BLOCKED）：
 --   SAME_TILE：同一格已經有同一張圖（不是可疊的）。VEHICLE：車子壓著。OCCUPIED：會擋路的東西那格有人、殭屍或動物。
 --   STACK_FULL：可疊的箱子疊到原版的高度上限。NOT_SURFACE：可疊的箱子放在可疊、卻不是桌面的箱子上。
+--   NOT_NATURAL：樹叢、樹籬、墓碑這類（MoveType 是 Vegitation）放在不是天然地面的地板上。
 --   SQUARE_FULL：疊放模式下這一格已經到沙盒的上限。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 -- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
@@ -463,6 +464,13 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
         -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
         props.placeTool = nil
         if not props:canPlaceMoveableInternal(player, sq, nil) then
+            -- 原版只讓這類放在圖名以 blends_natural 開頭的地面（ISMoveableSpriteProps.lua:1892-1896）：說地面不對，不叫玩家清空
+            if props.type == "Vegitation" then
+                local floor = sq:getFloor()
+                local fs = floor and floor:getSprite()
+                local fname = fs and fs:getName()
+                if fname and string.sub(fname, 1, 14) ~= "blends_natural" then return false, "NOT_NATURAL" end
+            end
             -- 疊放模式：格上有東西而放不下的，照疊放放（畫好高度的圖不墊高）。樓梯頂照原版不放（:1779）
             if overlap and not props:isSquareAtTopOfStairs(sq) then
                 local fits, why = overlapOk(kind, spr, sq)
@@ -571,7 +579,9 @@ end
 -- 門開著也走不過去（IsoGridSquare.java:3789-3803）
 -- 樓梯照 Wood_Stairs 剛好 6 級、沒有建造加成時的血量：health 150＋最高相關技能等級 6 × skillBaseHealth 50
 -- （stairs/entity_carpentry_stairs.txt；ISBuildIsoEntity.lua:666-677，等級越高原版越耐打）
-local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450, post = 450 }
+-- 水井與手壓水泵照牆：圖沒有搬運重量與材質，走下面實心物件的通則會是 50 血、每下扣 1
+-- （原版地圖的井不是 IsoThumpable）
+local HEALTH = { wall = 450, windowFrame = 450, fence = 300, stairs = 450, post = 450, well = 450 }
 -- 會擋路（solid／solidtrans）的非格邊物件照原版搬家具放下，都打得壞，而且整格擋住（不然會被 getSpecialWall 當成格邊的牆）：
 --   一般的：原版做成 IsoThumpable，一隻殭屍就能打（thumpDmg 1，IsoThumpable.java:1044-1056），血量＝搬運重量（沒寫當 50）
 --   × 材質倍率（ISMoveableSpriteProps.lua:148,322-325,2379-2388；ISMoveableDefinitions.lua:688-690）。
@@ -590,7 +600,7 @@ end
 -- 照種類與圖塊算耐久與 thumpDmg（hp 是 nil＝照原版不打：門框、地板、不擋路的東西；dmg 是 nil＝不改預設）
 local function isSolid(kind, p) return not Entry.EDGE[kind] and (p:has(F.solid) or p:has(F.solidtrans)) end
 local function durability(kind, p)
-    if isSolid(kind, p) then return solidHealth(p) end
+    if kind ~= "well" and isSolid(kind, p) then return solidHealth(p) end
     return HEALTH[kind], nil
 end
 -- 沙盒「殭屍打不壞」（ZombieProof，使用者 2026-11-01 選「不打，也不找路穿過」）：IsoThumpable 不給打，原生尋路把它當一般的牆
@@ -619,7 +629,9 @@ local function thumpable(c, kind, north)
     -- 其餘屬性照原版 entity 建造推（ISBuildIsoEntity:setInfo，ISBuildIsoEntity.lua:620-637）
     obj:setCanPassThrough(not corner and not (p:has(F.solid) or p:has(F.solidtrans) or p:has(F.WallN)
         or p:has(F.WallNTrans) or p:has(F.WallW) or p:has(F.WallWTrans) or p:has(F.WallNW)))
-    obj:setBlockAllTheSquare(solid or p:has("BlocksPlacement"))
+    -- 草與野花（Rules.isGrass）帶 BlocksPlacement 的也不擋整格：擋整格的 IsoThumpable 會建實心碰撞（IsoChunk.java:2025-2057、
+    -- IsoThumpable.java:858-866），原版地圖的草是一般物件、走得過去
+    obj:setBlockAllTheSquare(solid or (p:has("BlocksPlacement") and not Rules.isGrass(kind, p)))
     obj:setIsHoppable(kind == "fence")
     obj:setIsDoorFrame(kind == "doorFrame")
     obj:setCorner(corner)

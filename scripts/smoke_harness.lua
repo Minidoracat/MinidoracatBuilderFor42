@@ -567,7 +567,23 @@ check(kind({ keys = { IsMoveAble = "" } }, "crafted_04_120") == nil, "有載入 
 check(kind({ keys = { IsMoveAble = "" } }, "constructedobjects_01_8") == nil, "陷阱圖塊不列")
 check(kind({ keys = { IsMoveAble = "", fuelAmount = "100" } }) == nil, "加油機不列")
 check(kind({ keys = { IsMoveAble = "", IsoType = "IsoRadio" } }) == nil, "專用類別不列")
-check(kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }) == nil, "植物不列")
+check(kind({ flags = { "vegitation" } }) == nil and kind({ keys = { tree = "1", IsMoveAble = "" } }) == nil,
+    "不能搬、不是草的植物與帶 tree 的不列（能搬的觀賞植物、草見情境四十五）")
+check(kind({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "" } }) == "plant"
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }) == "plant"
+    and kind({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", waterAmount = "9999" } }) == nil
+    and kind({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", IsWaterCollector = "" } }) == nil
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", CustomItem = "Base.Tent" } }) == nil
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", fuelAmount = "100" } }) == nil
+    and kind({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "" } }, "e_newgrass_1_8") == "plant"
+    and kind({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", waterAmount = "9999" } }, "e_newgrass_1_8") == nil
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", IsoType = "IsoRadio" } }, "vegetation_ornamental_01_0") == nil,
+    "植物候選照樣過無限水、集水、專用物件那幾關：帶植物鍵也不列；名稱前綴那條路也一樣（對照：沒有這些鍵的照列植物）")
+check(kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }, "vegetation_ornamental_01_16") == "plant"
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }, "vegetation_groundcover_01_18") == nil
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", StackReplaceTileOffset = "-1" } }) == nil
+    and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", StackReplaceTileOffset = "0" } }) == "plant",
+    "vegetation_groundcover_ 不收（那組能搬的植物實際沒有貼圖）；疊放圖（StackReplaceTileOffset 不是 0）帶植物鍵也不列")
 check(kind({ keys = { IsMoveAble = "" } }, "eaves_01_0") == "furniture", "e 開頭但不是 e_：照常分類")
 check(kind({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }) == nil, "無限水的地板（天然水面 9999）不列")
 check(kind({ keys = { IsMoveAble = "", BlocksPlacement = "", waterAmount = "999999" } }) == nil, "無限水的井（能搬）不列")
@@ -2138,10 +2154,18 @@ do
         end
         want["IGUI_MBLD_Menu_Dismantle"], want["IGUI_MBLD_NotRemoved"] = true, true
         for d = 0, 4 do want["IGUI_MBLD_Face_" .. d] = true end
-        for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER" }) do
+        for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER", "DIG_GRAVE" }) do
             want["IGUI_MBLD_Tool_" .. t] = true
         end
-        for _, k in ipairs({ "stairs", "roof", "light", "curtain" }) do want["IGUI_MBLD_Note_" .. k] = true end
+        for _, k in ipairs({ "stairs", "roof", "light", "curtain", "well", "plant", "plantGrass" }) do
+            want["IGUI_MBLD_Note_" .. k] = true
+        end
+        want["IGUI_MBLD_Why_OFF_DEFAULT"] = true -- 預設關的種類（水井）的說明
+        for _, list in pairs(W.SUB_KINDS) do -- 左欄子種類（容器的是原版顯示名，不另翻）
+            if type(list) == "table" then
+                for _, s in ipairs(list) do want["IGUI_MBLD_Sub_" .. s] = true end
+            end
+        end
         local missing = {}
         for _, lang in ipairs({ "EN", "CH" }) do
             local f = assert(io.open(MEDIA .. "/shared/Translate/" .. lang .. "/IG_UI.json", "rb"))
@@ -5393,7 +5417,7 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     ISMoveableSpriteProps = { new = function(spr)
         local p = spr:getProperties()
         local s = { isStackable = p:has("IsStackable"), isTable = p:has("IsTable"), surface = tonumber(p:get("Surface")) or 0,
-            yOffsetCursor = 0 }
+            yOffsetCursor = 0, type = p:has("MoveType") and p:get("MoveType") or "Object" } -- 原版 :143
         function s:getTotalTableHeight(sq)
             for i = #sq.objects, 1, -1 do
                 local o = sq.objects[i]
@@ -5403,6 +5427,10 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
             return 0
         end
         function s:canPlaceMoveableInternal(_, sq)
+            if self.type == "Vegitation" then -- 原版 :1892-1896：只放在圖名以 blends_natural 開頭的地面
+                local f = sq:getFloor()
+                return f ~= nil and f:getSprite():getName():sub(1, 14) == "blends_natural" and not sq:has("solid")
+            end
             if not sq:has("IsTable") then return not sq:has("solid") end -- 原版 isFreeTile：格上有實心的東西就放不下
             if self.isStackable and self.isTable and self.surface and not sq:has("IsTableTop") and not sq:has("IsHigh") then
                 local h = self:getTotalTableHeight(sq)
@@ -5458,6 +5486,21 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     check(ok8 == false and c8 == "NOT_SURFACE" and ok9 == false and c9 == nil,
         "疊放：下面那件可疊卻不是桌面（UMCTP 的半箱）回 NOT_SURFACE；下面不是可疊的箱子照舊沒有原因碼（BLOCKED）")
     check(c8b == nil and c8c == nil, "疊放：半箱自己（不是桌類）疊上去、或那格沒有地板，不說 NOT_SURFACE")
+    -- 樹籬、墓碑這類只放在天然地面：地面不對說 NOT_NATURAL；地面對但有東西擋、或沒有地板，照舊沒有原因碼
+    local hedge = sp("rp_hedge_01_0", 2825, {}, { IsMoveAble = "", MoveType = "Vegitation" })
+    local function ground(name) return { getSprite = function() return { getName = function() return name end } end } end
+    local wood, soil = "floors_interior_tilesandwood_01_40", "blends_natural_01_22"
+    local okH1 = Place.check("plant", hedge, at(101, 110, { floor = ground(soil) }), P)
+    local okH2, cH2 = Place.check("plant", hedge, at(101, 111, { floor = ground(wood) }), P)
+    local okH3, cH3 = Place.check("plant", hedge, at(101, 112, { flags = { solid = true }, floor = ground(soil) }), P)
+    local okH4, cH4 = Place.check("plant", hedge, at(101, 113), P)
+    local okH5 = Place.check("furniture", crate, at(101, 114, { floor = ground(wood) }), P)
+    check(okH1 == true and okH2 == false and cH2 == "NOT_NATURAL",
+        "樹籬這類（MoveType 是 Vegitation）：泥土草地放得下，鋪好的地板回 NOT_NATURAL")
+    check(okH3 == false and cH3 == nil and okH4 == false and cH4 == nil and okH5 == true,
+        "NOT_NATURAL 只在地面不對時說：天然地面上有東西擋、或沒有地板照舊沒有原因碼；一般家具放在地板上不受影響")
+    local okH6, cH6 = Place.check("furniture", chair, at(101, 115, { flags = { solid = true }, floor = ground(wood) }), P)
+    check(okH6 == false and cH6 == nil, "一般家具在鋪好的地板上被擋：照舊沒有原因碼，不說 NOT_NATURAL")
     ISMoveableSpriteProps = realProps
 
     -- 原地替換
@@ -8461,6 +8504,419 @@ print("情境四十四：能撿起的地磚、地毯照材質另外收料（使�
     check(build(C, 1, "ftile_01_0", { 402, 400, 1 }) and upC.objects[1] and next(upC.objects[1].mats) == nil,
         "建造作弊：背包空的也蓋，不寫退料表")
     scrapDefs.Brick = keepBrick
+end)()
+
+print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 設計稿 BZkbfGWbZppo 選 well=off、plant=all）：分類、開關、價錢、放置、拆除")
+;(function()
+    nowMs = nowMs + 180000
+    local Place, Dismantle = MinidoracatBuilder.Place, MinidoracatBuilder.Dismantle
+    local keepMap, keepOrder, realInst = spriteMap, spriteOrder, instanceof
+    local keepRM, keepMult = sb.RecipeMaterials, sb.CostMultiplier
+    sb.RecipeMaterials, sb.CostMultiplier = nil, nil
+    local function code(o, name) return select(2, Rules.classify(sprite(name or "test_01_0", 5, o))) end
+    local function show(t)
+        local list = {}
+        for k, v in pairs(t) do list[#list + 1] = k .. "=" .. v end
+        table.sort(list)
+        return table.concat(list, ",")
+    end
+    -- 原版屬性（temp/water-grass-1113/props.py 離線讀的 tiledef）。flags＝旗標，keys＝字串鍵
+    local WELL = { flags = { "solidtrans", "EntityScript" }, keys = { BlocksPlacement = "", waterAmount = "999999", waterMaxAmount = "" } }
+    local PUMP = { flags = { "solidtrans" }, keys = { BlocksPlacement = "", HitByCar = "", IsLow = "", waterAmount = "999999" } }
+    local GRASS = { flags = { "canBeRemoved" }, keys = { MoveWithWind = "", WindType = "1" } }               -- e_newgrass_1_8
+    local WEED = { flags = { "canBeRemoved", "vegitation" }, keys = { BlocksPlacement = "", MoveWithWind = "" } } -- d_plants_1_16
+    local OVERLAY = { flags = { "attachedFloor", "canBeRemoved", "vegitation" }, keys = { MoveWithWind = "" } } -- blends_grassoverlays_01
+    local INDOOR = { keys = { IsMoveAble = "", BlocksPlacement = "", CustomName = "Chinese Evergreen", PickUpWeight = "150" } }
+    local BED = { flags = { "attachedFloor" }, keys = { IsMoveAble = "", MoveType = "Vegitation", BlocksPlacement = "", PickUpWeight = "20" } }
+    local HEDGE = { flags = { "vegitation" }, keys = { IsMoveAble = "", Bush = "", PickUpWeight = "150" } }
+    local GRAVE = { keys = { IsMoveAble = "", MoveType = "Vegitation", BlocksPlacement = "", StopCar = "" } }
+    local MAIL = { keys = { IsMoveAble = "", MoveType = "Vegitation", container = "postbox", BlocksPlacement = "" } }
+
+    -- 分類
+    local wells = true
+    for _, n in ipairs({ "camping_01_16", "camping_01_64", "camping_01_65", "camping_01_66", "camping_01_67" }) do
+        wells = wells and kind(WELL, n) == "well" and kind(PUMP, n) == "well"
+    end
+    check(wells, "水井與手壓水泵：原版 5 張都歸 well（井帶 EntityScript、無限水也收）")
+    check(kind(PUMP, "camping_01_17") == nil and code(PUMP, "camping_01_17") == "WATER"
+        and code({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }, "blends_natural_02_6") == "WATER"
+        and kind(WELL, "camping_01_17") == nil,
+        "其他無限水照舊不列（WATER；帶 EntityScript 的另回 ENTITY），水面 blends_natural_02 也是")
+    check(kind(GRASS, "e_newgrass_1_8") == "plant" and kind(WEED, "d_plants_1_16") == "plant"
+        and kind({ flags = { "canBeRemoved" }, keys = { BlocksPlacement = "", MoveWithWind = "" } }, "d_plants_1_0") == "plant"
+        and kind(OVERLAY, "blends_grassoverlays_01_0") == "plant",
+        "草與野花（不能搬、canBeRemoved＋MoveWithWind）：e_ 草、d_plants、草地疊圖都歸植物")
+    check(kind(INDOOR, "vegetation_indoor_01_7") == "plant" and kind(BED, "vegetation_ornamental_01_16") == "plant"
+        and kind(HEDGE) == "plant"
+        and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", Bush = "", MoveType = "Vegitation" } }, "f_bushes_1_96") == "plant",
+        "能搬的觀賞植物：盆栽（vegetation_indoor_ 整組）、花圃（觀賞植物組的 MoveType=Vegitation）、帶 vegitation／Bush 的樹叢")
+    check(kind({ flags = { "attachedFloor" }, keys = { IsMoveAble = "", BlocksPlacement = "" } }, "vegetation_ornamental_01_24") == "furniture"
+        and kind({ flags = { "solidtrans" }, keys = { IsMoveAble = "" } }, "vegetation_ornamental_01_50") == "furniture"
+        and kind(GRAVE, "location_community_cemetary_01_0") == "furniture" and kind(MAIL, "street_decoration_01_18") == "container",
+        "觀賞植物組裡能搬卻不是植物的（火鶴、鳥浴盆）與 MoveType=Vegitation 的墓碑、郵筒：照一般屬性分")
+    check(code(GRASS, "vegetation_farming_01_0") == "PREFIX" and code(WEED, "vegetation_farm_01_0") == "PREFIX"
+        and code({ flags = { "vegitation" } }, "vegetation_trees_01_8") == "PREFIX"
+        and code({ flags = { "vegitation", "canBeRemoved" }, keys = { IsMoveAble = "", MoveType = "Vegitation", MoveWithWind = "" } },
+            "e_newgrass_1_0") == "PREFIX"
+        and code({ flags = { "vegitation", "canBeCut" }, keys = { MoveWithWind = "" } }, "f_bushes_1_0") == "PREFIX"
+        and code({ flags = { "vegitation", "canBeCut" }, keys = { IsMoveAble = "", Bush = "" } }, "f_bushes_1_8") == "PREFIX"
+        and code({ flags = { "vegitation", "attachedFloor" } }, "vegetation_groundcover_01_0") == "PREFIX"
+        and code({ keys = { RoofGroup = "1" } }, "e_roof_snow_01_3") == "PREFIX",
+        "反面：農作物、晾架、樹、e_ 的能搬樹籬、會被砍的樹叢、地被、積雪圖照舊 PREFIX")
+    check(code({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", IsWaterCollector = "" } }) == "COLLECTOR"
+        and code({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", waterAmount = "9999" } }) == "WATER"
+        and code({ flags = { "vegitation" }, keys = { IsMoveAble = "", StackReplaceTileOffset = "-1" } }) == "STACK"
+        and code({ flags = { "vegitation" }, keys = { IsMoveAble = "", CustomItem = "Base.Tent" } }) == "PLANT"
+        and code({ flags = { "canBeRemoved" }, keys = { MoveWithWind = "", IsWaterCollector = "" } }, "e_newgrass_1_8") == "COLLECTOR"
+        and code({ flags = { "vegitation" }, keys = { IsMoveAble = "", StackReplaceTileOffset = "-1" } },
+            "vegetation_ornamental_01_16") == "STACK",
+        "植物候選被擋時的原因碼：集水 COLLECTOR、無限水 WATER、疊放圖 STACK、專用物件 PLANT（玩家看到的說明照它）；名稱前綴那條路相同")
+    check(code({ type = T.tree }) == "TREE" and code({ flags = { "vegitation" }, keys = { tree = "1", IsMoveAble = "" } }) == "PLANT"
+        and code({ flags = { "vegitation" }, keys = { IsMoveAble = "", container = "bush" } }, "vegetation_foliage_01_8") == "PLANT"
+        and code({ flags = { "vegitation" }, keys = { BlocksPlacement = "" } }) == "PLANT"
+        and code({ flags = { "canBeRemoved", "canBeCut" }, keys = { MoveWithWind = "" } }) == "PLANT",
+        "反面：樹、帶 tree 的、有容器的樹叢、不能搬又不是草的植物、會被砍的草叢：PLANT")
+    check(kind({ flags = { "attachedFloor", "canBeRemoved" }, keys = { MoveWithWind = "", WindType = "1" } }, "d_streetcracks_1_0") == "floorOverlay"
+        and kind({ flags = { "WallOverlay", "canBeRemoved" }, keys = { MoveWithWind = "" } }, "f_wallvines_1_0") == "wallObject"
+        and kind({ flags = { "canBeRemoved" } }, "d_generic_1_99") == nil,
+        "反面：地面裂縫（attachedFloor 沒有 vegitation）照舊地面覆蓋、牆上藤蔓（WallOverlay）照舊掛牆物、沒有 MoveWithWind 的不算草")
+    check(code({ flags = { "canBeRemoved", "EntityScript" }, keys = { MoveWithWind = "" } }, "e_newgrass_1_9") == "ENTITY",
+        "建造配方的圖照舊只收地板與地面覆蓋：帶 EntityScript 的草回 ENTITY")
+    check(Rules.isGrass("plant", sprite("g_01_0", 5, GRASS):getProperties())
+        and not Rules.isGrass("plant", sprite("g_01_0", 5, INDOOR):getProperties())
+        and not Rules.isGrass("furniture", sprite("g_01_0", 5, GRASS):getProperties()), "Rules.isGrass：只認不能搬的植物")
+
+    -- 種類開關：well 預設關（缺鍵、非 true 都當關），plant 預設開
+    local ki = {}
+    for i, k in ipairs(Entry.KINDS) do ki[k] = i end
+    check(ki.well == ki.solid + 1 and ki.plant == ki.overlay + 1 and Entry.KIND_KEY.well == "KindWell"
+        and Entry.KIND_KEY.plant == "KindPlant" and Entry.BUILDABLE.well and Entry.BUILDABLE.plant and Entry.VERSION == 13,
+        "種類表：well 接在 solid 後、plant 接在 overlay 後，沙盒鍵 KindWell／KindPlant，規則版本 13")
+    check(Entry.kindOn("well", {}) == false and Entry.kindOn("well", { KindWell = false }) == false
+        and Entry.kindOn("well", { KindWell = "true" }) == false and Entry.kindOn("well", { KindWell = true }) == true
+        and Entry.kindOn("plant", {}) == true and Entry.kindOn("plant", { KindPlant = false }) == false
+        and Entry.kindOn("floor", {}) == true,
+        "Entry.kindOn：水井缺鍵或不是 true 都當關；植物與其他種類缺鍵當開")
+    local wellS, pumpS = sprite("camping_01_16", 4501, WELL), sprite("camping_01_64", 4502, PUMP)
+    local grassS, weedS = sprite("e_newgrass_1_8", 4503, GRASS), sprite("d_plants_1_16", 4504, WEED)
+    local indoorS, hedgeS = sprite("vegetation_indoor_01_7", 4505, INDOOR), sprite("hedge_t_01_0", 4506, HEDGE)
+    world({ wellS, pumpS, grassS, weedS, indoorS, hedgeS })
+    sb.KindWell = nil
+    local d0 = Entry.digest()
+    local e0, c0 = Entry.resolve("camping_01_16")
+    local w0, a0 = Entry.why("camping_01_16")
+    sb.KindWell = false
+    local e1, c1 = Entry.resolve("camping_01_64")
+    sb.KindWell = true
+    local e2 = Entry.resolve("camping_01_16")
+    check(e0 == nil and c0 == "DISABLED" and w0 == "DISABLED_KIND" and a0 == "well" and e1 == nil and c1 == "DISABLED"
+        and e2 and e2.kind == "well" and Entry.digest() ~= d0,
+        "伺服器：KindWell 缺鍵或 false 回 DISABLED（說明是水井）；true 才收，設定摘要跟著變")
+    local WW, keepText = MinidoracatBuilder.Window, getTextOrNull
+    getTextOrNull = function(k) return k end -- 這一段的替身對沒登記的鍵回 nil：改成回鍵名，才看得出用了哪一句
+    local whyWell, whyPost = WW.whyText("DISABLED_KIND", "well"), WW.whyText("DISABLED_KIND", "post")
+    getTextOrNull = keepText
+    check(whyWell == "IGUI_MBLD_Why_OFF_DEFAULT" and whyPost == "IGUI_MBLD_Why_DISABLED_KIND",
+        "預設關的種類（水井）的說明是「預設關閉、管理員可以打開」，不寫管理員關掉了；其他種類照舊")
+    local ep = Entry.resolve("e_newgrass_1_8")
+    sb.KindPlant = false
+    local _, cp = Entry.resolve("vegetation_indoor_01_7")
+    sb.KindPlant = nil
+    check(ep and ep.kind == "plant" and cp == "DISABLED", "植物缺鍵當開；KindPlant=false 回 DISABLED")
+
+    -- 價錢
+    local gc = Cost.of("plant", grassS)
+    check(show(gc.items) == "Base.GrassTuft=3" and #gc.tools == 0 and gc.uniform == true and next(Cost.xp({ gc }, player())) == nil
+        and Cost.skillOf("plant", grassS) == nil,
+        "草：草屑 3、不要工具、不給經驗、不要技能、本工具拆（每項退 1..3，原版移除草給 2–3）")
+    check(Cost.of("plant", grassS, 0).items["Base.GrassTuft"] == 3 and Cost.of("plant", grassS, 0.5).items["Base.GrassTuft"] == 3
+        and Cost.of("plant", grassS, 2).items["Base.GrassTuft"] == 6,
+        "草：倍率低於 1 也照 3 收（不然蓋了用原版移除就多拿），倍率 2 照乘")
+    check(show(Cost.of("plant", hedgeS).items) == show(Cost.of("furniture", hedgeS).items)
+        and show(Cost.of("plant", hedgeS).items) == "Base.Nails=4,Base.Plank=4"
+        and select(2, Cost.skillOf("plant", hedgeS)) == select(2, Cost.skillOf("furniture", hedgeS))
+        and Cost.refund("plant", indoorS) == "pickup" and Cost.refund("plant", grassS) == "builder"
+        and Cost.refund("well", wellS) == "builder" and Cost.refund("well", pumpS) == "builder",
+        "能搬的植物照家具的價（搬運重量 15 公斤：木板 4 釘子 4）、照原版撿起；草、水井、手壓水泵本工具拆")
+    local wc, pc = Cost.of("well", wellS), Cost.of("well", pumpS)
+    local wp, wl = Cost.skillOf("well", wellS)
+    local pp, pl = Cost.skillOf("well", pumpS)
+    check(show(wc.items) == "Base.Nails=4,Base.Plank=4,Base.Stone2=100" and table.concat(wc.tools, ",") == "DIG_GRAVE"
+        and show(pc.items) == "Base.MetalPipe=8,Base.Screws=8,Base.SheetMetal=10"
+        and table.concat(pc.tools, ",") == "BLOW_TORCH,WELDING_MASK" and next(pc.uses) == nil
+        and wp == "Woodwork" and wl == 8 and pp == "MetalWelding" and pl == 6,
+        "水井：石頭 100＋木板 4＋釘子 4、鏟子（DIG_GRAVE）、硬核木工 8；手壓水泵：鐵皮 10＋鐵管 8＋螺絲 8、噴槍＋面罩、硬核焊接 6")
+    sb.RecipeMaterials = true
+    local pu, wu = Cost.of("well", pumpS).uses, Cost.of("well", wellS).uses
+    sb.RecipeMaterials = nil
+    check(pu[Cost.TORCH] == 10 and pu[Cost.RODS] == 10 and next(wu) == nil and Cost.of("well", wellS, 0.5).items["Base.Stone2"] == 50,
+        "硬核「原版材料」：手壓水泵另扣噴槍 10 次、焊條 10 次（不寫進退料）；水井沒有耗材；倍率照乘")
+    local wx, px = Cost.xp({ wc }, player()), Cost.xp({ pc }, player())
+    check(wx.Woodwork == 15 and px.MetalWelding == 57.5,
+        "經驗照本工具拆除的平均拿不回件數：水井木工只算木板、釘子 (3+3)/2×5（石頭 100 顆不給）、手壓水泵焊接 (9+7+7)/2×5")
+
+    -- 放置、退料表、拆除
+    ItemTag.DIG_GRAVE, ItemTag.DIG_PLOW = "DIG_GRAVE", "DIG_PLOW"
+    local function at(x, id)
+        local P = player({ id = id, x = x + 0.5, y = 481.5, here = square(x, 481, 0) })
+        return P, square(x, 480, 0)
+    end
+    local G, gSq = at(480, 4511)
+    give(G, { ["Base.GrassTuft"] = 3 })
+    local okG = build(G, 1, "d_plants_1_16", { 480, 480, 0 })
+    local go = gSq.objects[1]
+    check(okG and go and go.mats["Base.GrassTuft"] == "3" and G.inv:count("Base.GrassTuft") == 0
+        and go.set.setBlockAllTheSquare == false and go.set.setIsThumpable == false and go.set.setCanPassThrough == true,
+        "蓋草（帶 BlocksPlacement 的野草）：扣草屑 3、退料表 3；不擋整格、殭屍不打、走得過去")
+    sb.CostMultiplier = 0.5
+    local G2, g2Sq = at(482, 4512)
+    give(G2, { ["Base.GrassTuft"] = 3 })
+    local okG2 = build(G2, 1, "e_newgrass_1_8", { 482, 480, 0 })
+    sb.CostMultiplier = nil
+    check(okG2 and g2Sq.objects[1] and G2.inv:count("Base.GrassTuft") == 0, "倍率 0.5 照樣扣 3 個草屑")
+    local H, hSq = at(484, 4513)
+    give(H, { ["Base.Stone2"] = 100, ["Base.Plank"] = 4, ["Base.Nails"] = 4 })
+    H.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true, DIG_PLOW = true }))
+    sb.KindWell = nil
+    local okOff, _, aOff = build(H, 1, "camping_01_16", { 484, 480, 0 })
+    sb.KindWell = true
+    local okT, _, aT = build(H, 2, "camping_01_16", { 484, 480, 0 })
+    H.inv:add(item("Base.Shovel", { DIG_GRAVE = true, DIG_PLOW = true }))
+    local okW = build(H, 3, "camping_01_16", { 484, 480, 0 })
+    local wo = hSq.objects[1]
+    check(not okOff and aOff.code == "DISABLED" and not okT and aT.code == "NO_TOOL" and aT.tools[1] == "DIG_GRAVE",
+        "反面：KindWell 沒開回 DISABLED；只帶抹刀（原版 base:digplow 也有它）回 NO_TOOL、缺鏟子")
+    check(okW and wo and wo.mats["Base.Stone2"] == "100" and H.inv:count("Base.Stone2") == 0
+        and wo.set.setBlockAllTheSquare == true and wo.set.setCanPassThrough == false
+        and wo.set.setIsThumpable == true and wo.set.setMaxHealth == 450 and wo.set.setThumpDmg == nil,
+        "帶鏟子蓋水井：扣料、退料表照付的寫；實心、整格擋住；耐久照牆（450、每下最多扣 1/8），不是實心物件通則的 50")
+    instanceof = function(o, cls) return cls == "IsoThumpable" and type(o) == "table" and o.set ~= nil end
+    for _, o in ipairs({ go, wo }) do
+        if o then o.isDismantable = function(self) return self.set.setIsDismantable ~= false end end
+    end
+    check(go and Dismantle.kindOf(go) == "plant" and wo and Dismantle.kindOf(wo) == "well"
+        and table.concat(Dismantle.tools("well", { remove = { wo } }), ",") == "DIG_GRAVE"
+        and #Dismantle.tools("plant", { remove = { go } }) == 0,
+        "拆除：本工具認得蓋好的草與水井（右鍵、一區拆除同一條），拆水井要鏟子、拆草不用工具")
+    check(not Dismantle.swappable("plant", grassS, "plant", weedS) and not Dismantle.swappable("well", wellS, "well", pumpS),
+        "原地替換不換植物、水井（要先拆再蓋）")
+    if go then Place.onAboutToBeRemoved(go) end
+    check(go and next(go.mats) == nil, "草被原版「移除草」、換地板或樓梯拆掉前：移除事件清掉退料表，之後拆不到料")
+    instanceof = realInst
+    sb.KindWell = nil
+    sb.RecipeMaterials, sb.CostMultiplier = keepRM, keepMult
+    spriteMap, spriteOrder = keepMap, keepOrder
+end)()
+
+print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）：W.subOf、W.runSubs、W.refreshCats、W.filter")
+;(function()
+    local W = MinidoracatBuilder.Window
+    local keepMap, keepOrder = spriteMap, spriteOrder
+    local realText, realRefilter, realV, realSt = getTextOrNull, W.refilter, W.v, W.st
+    local keepSrc, keepTs = sb.DisabledSources, sb.DisabledTilesets
+    sb.DisabledSources, sb.DisabledTilesets = "", ""
+    local LABEL = { crate = "Crate", woodcrate = "Crate", fridge = "Fridge", counter = "Counter", shelves = "Shelves",
+        bin = "Bin", oven = "Oven", desk = "Desk", wardrobe = "Wardrobe", locker = "Locker" }
+    getTextOrNull = function(k)
+        local t = k:match("^IGUI_ContainerTitle_(.+)$")
+        return t and LABEL[t] or nil
+    end
+    local function P(o) return sprite("sub_x_01_0", 4600, o):getProperties() end
+    -- 1. W.subOf 每條分支
+    check(W.subOf("light", nil) == "lamp" and W.subOf("light", P({})) == "switch"
+        and W.subOf("light", P({ keys = { streetlight = "" } })) == "sign"
+        and W.subOf("light", P({ keys = { lightR = "1", lightG = "1", lightB = "1" } })) == "lamp"
+        and W.subOf("light", P({ keys = { IsMoveAble = "" } })) == "lamp",
+        "子種類（燈）：開關（沒有 lightR、streetlight、IsMoveAble）、招牌與路燈（streetlight）、其他是燈具；沒屬性當燈具")
+    check(W.subOf("furniture", nil) == "other" and W.subOf("furniture", P({ keys = { SeatMaterial = "Wood" } })) == "rest"
+        and W.subOf("furniture", P({ flags = { "bed" } })) == "rest"
+        and W.subOf("furniture", P({ keys = { IsTable = "", SeatMaterial = "Wood" } })) == "rest"
+        and W.subOf("furniture", P({ keys = { IsTable = "" } })) == "table"
+        and W.subOf("furniture", P({ keys = { IsTableTop = "" } })) == "tabletop"
+        and W.subOf("furniture", P({ keys = { MoveType = "WallObject" } })) == "wallArt"
+        and W.subOf("furniture", P({ keys = { MoveType = "FloorRug" } })) == "rug"
+        and W.subOf("furniture", P({ keys = { IsMoveAble = "" } })) == "other",
+        "子種類（家具）：床與座椅（SeatMaterial 或 bed 旗標，優先）、桌子、桌上擺設、掛畫、地毯、其他；沒屬性當其他")
+    check(W.subOf("plant", nil) == "grass" and W.subOf("plant", P({ keys = { IsMoveAble = "" } })) == "ornamental"
+        and W.subOf("plant", P({ flags = { "canBeRemoved" } })) == "grass",
+        "子種類（植物）：能搬的是觀賞植物，其他是草與野花")
+    check(W.subOf("container", nil) == "other" and W.subOf("container", P({ keys = { container = "crate" } })) == "n:Crate"
+        and W.subOf("container", P({ keys = { container = "woodcrate" } })) == "n:Crate"
+        and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("wall", P({})) == nil,
+        "子種類（容器）：照原版顯示名（同名的型別同一組），沒有 IGUI_ContainerTitle_ 翻譯的歸其他；別的種類沒有子種類")
+
+    -- 2. W.runSubs：容器 11 個型別、10 個顯示名（Crate 兩個型別）＋沒翻譯的 mystery
+    local spec = { { "crate", 3 }, { "woodcrate", 3 }, { "fridge", 5 }, { "counter", 4 }, { "shelves", 4 }, { "bin", 3 },
+        { "oven", 3 }, { "desk", 2 }, { "wardrobe", 2 }, { "locker", 1 }, { "mystery", 2 } }
+    local sprs, list, id = {}, { n = 0 }, 4600
+    Index.reset()
+    for _, t in ipairs(spec) do
+        for i = 1, t[2] do
+            id = id + 1
+            local name = "subc_" .. t[1] .. "_01_" .. i
+            sprs[#sprs + 1] = sprite(name, id, { keys = { container = t[1], IsMoveAble = "" } })
+            list.n = list.n + 1
+            list[list.n] = name
+            Index.add("container", name, "subc_" .. t[1] .. "_01", i, 1)
+        end
+    end
+    local g1, g2 = sprite("subg_01_1", 4690, { flags = { "canBeRemoved" } }), sprite("subg_01_2", 4691, { flags = { "canBeRemoved" } })
+    local lamp, switch = sprite("subl_01_1", 4692, { keys = { lightR = "1" } }), sprite("subl_01_2", 4693, {})
+    for _, s in ipairs({ g1, g2, lamp, switch }) do sprs[#sprs + 1] = s end
+    world(sprs)
+    for i = 1, Index.setName.n do Index.addSetKey(i, "") end
+    W.st = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+    W.refilter = function() end
+    local v = { nav = { setGroups = function() end, setSelected = function() end },
+        cat = { setOptions = function() end, setSelected = function() end }, subs = {} }
+    W.v = v
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.runSubs(v)
+    local cs = v.subs.container
+    local ids, total = {}, 0
+    for i, it in ipairs(cs and cs.items or {}) do
+        ids[i] = it.id .. "=" .. it.n
+        total = total + it.n
+    end
+    check(table.concat(ids, ",") == "n:Crate=6,n:Fridge=5,n:Counter=4,n:Shelves=4,n:Bin=3,n:Oven=3,n:Desk=2,n:Wardrobe=2,other=3"
+        and #ids == W.SUB_TOP + 1,
+        "容器：同名的兩個型別併成一組（Crate 3＋3），照數量取前 8 組（同數照名稱），其餘（Locker）併進其他、和沒翻譯的一起")
+    check(cs and cs.of["subc_locker_01_1"] == "other" and cs.of["subc_woodcrate_01_2"] == "n:Crate" and total == list.n,
+        "容器：被併掉的那組逐項改成其他；子種類合計等於種類的項目數")
+    v.subJob = { kind = "plant", src = "all", list = { n = 2, "subg_01_1", "subg_01_2" }, i = 0, of = {} }
+    W.runSubs(v)
+    check(v.subs.plant and #v.subs.plant.items == 0 and v.subs.plant.of["subg_01_1"] == "grass",
+        "整個種類只有一組（全是草）：不列子種類（items 空），每項照樣記子種類")
+    v.subJob = { kind = "light", src = "all", list = { n = 2, "subl_01_1", "subl_01_2" }, i = 0, of = {} }
+    W.runSubs(v)
+    local li = v.subs.light and v.subs.light.items or {}
+    check(#li == 2 and li[1].id == "switch" and li[2].id == "lamp", "非容器：照 W.SUB_KINDS 的順序列（開關在燈具前），不照數量")
+
+    -- 3. W.refreshCats：選著的子種類不在了回種類，種類也不在回「全部」
+    W.st.cat = "s:container:n:Crate"
+    W.refreshCats(v)
+    local keptSub = W.st.cat
+    W.st.cat = "s:container:n:Nowhere"
+    W.refreshCats(v)
+    local backKind = W.st.cat
+    W.st.cat = "s:light:switch"
+    W.refreshCats(v)
+    check(keptSub == "s:container:n:Crate" and backKind == "k:container" and W.st.cat == "all",
+        "左欄：子種類還在就留著；算完沒有這個子種類回 k:<種類>；種類這次沒列出（目錄沒有燈）回「全部」")
+
+    -- 4. W.filter：選子種類只留那一組；完整圖塊名命中（jump）不濾
+    local function st(o)
+        local s = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+        for k, val in pairs(o) do s[k] = val end
+        return s
+    end
+    local crate = W.filter(st({ cat = "s:container:n:Crate" }))
+    local allCrate = crate.n == 6
+    for i = 1, crate.n do allCrate = allCrate and cs.of[crate[i]] == "n:Crate" end
+    local other = W.filter(st({ cat = "s:container:other" }))
+    local whole = W.filter(st({ cat = "k:container" }))
+    check(allCrate and other.n == 3 and whole.n == list.n, "選子種類：只列那一組（Crate 6、其他 3）；選種類列全部")
+    local jl, jump = W.filter(st({ cat = "s:container:n:Crate", query = "subc_locker_01_1" }))
+    check(jump == "subc_locker_01_1" and jl.n == 1 and jl[1] == "subc_locker_01_1",
+        "完整圖塊名命中：照它那一桶列、選取它，不被選著的子種類濾掉")
+    v.subs = {}
+    check(W.filter(st({ cat = "s:container:n:Crate" })).n == list.n, "子種類還沒算好：先照整個種類列")
+
+    -- 5. 照來源的快取、分幾幀算、算完重列
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.runSubs(v)
+    local fresh = W.filter(st({ cat = "s:container:n:Crate" })).n
+    v.subs.container.src = "elsewhere" -- 當成是別的來源算的（「整套」「換成」直接改 st.source，不經 W.setSource）
+    check(fresh == 6 and W.filter(st({ cat = "s:container:n:Crate" })).n == list.n,
+        "子種類快取照來源：別的來源算好的不套到這個來源（當成還沒算好，先照整個種類列）")
+    v.subs = {}
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.st.source = "elsewhere"
+    W.runSubs(v)
+    check(v.subs.container == nil and v.subJob ~= nil and v.subJob.src == "elsewhere" and v.subJob.i == 0,
+        "算到一半來源換了：照新來源重算，舊來源的不收尾")
+    W.st.source = "all"
+    local calls, early = {}, false
+    W.refilter = function(keep) calls[#calls + 1] = keep == true end
+    v.subs, v.subKeep = {}, true
+    W.st.cat = "s:container:n:Crate"
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    local keepStep, frames = clockStep, 0
+    clockStep = 5 -- 每次看時鐘前進 5 毫秒：每 16 項就超過每幀預算，一幀只做一段
+    while v.subJob and frames < 50 do
+        W.runSubs(v)
+        frames = frames + 1
+        if v.subJob and #calls > 0 then early = true end
+    end
+    clockStep = keepStep
+    check(frames >= 2 and not early and #calls == 1 and calls[1] == true and v.subKeep == nil
+        and v.subs.container ~= nil and W.st.cat == "s:container:n:Crate",
+        "分幾幀算：算完前不重列；等著的清單算完重列一次、照「沒換條件」套（留住選取）")
+    calls, v.subs, v.subKeep = {}, {}, nil
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.runSubs(v)
+    local quiet = #calls
+    calls, v.subs = {}, {}
+    W.st.cat = "s:container:n:Nowhere"
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.runSubs(v)
+    check(quiet == 0 and #calls == 1 and calls[1] == false and W.st.cat == "k:container",
+        "沒有清單在等、選取也沒變：算完不重列；選著的子種類算完不見了：回種類、照「換了條件」重列")
+
+    -- 6. 來源檢查的另外兩個入口（左欄、等待）、真的 W.refilter 的等待分支、屬性丟錯的圖
+    local function subRows()
+        local n = 0
+        for _, g in ipairs(W.categories("all")) do
+            for _, it in ipairs(g.items or {}) do
+                if tostring(it.id):sub(1, 12) == "s:container:" then n = n + 1 end
+            end
+        end
+        return n
+    end
+    v.subs, v.subKeep = {}, nil
+    W.st.cat = "k:container"
+    v.subJob = { kind = "container", src = "all", list = list, i = 0, of = {} }
+    W.runSubs(v)
+    local rowsFresh = subRows()
+    v.subs.container.src = "elsewhere"
+    check(rowsFresh == W.SUB_TOP + 1 and subRows() == 0, "左欄：這個來源算好的子種類才列；別的來源算的不列")
+    local realStatus, Cat = W.setStatus, MinidoracatBuilder.Catalog
+    local keepState = Cat and Cat.state
+    if Cat then Cat.state = "ready" end -- 目錄還在整理時不等子種類（照整個種類列）
+    W.setStatus = function() end
+    W.refilter = realRefilter
+    W.st.cat = "s:container:n:Crate"
+    v.subJob = nil
+    W.refilter(false)
+    local j1, k1 = v.subJob, v.subKeep
+    W.refilter(true)
+    local j2, k2 = v.subJob, v.subKeep
+    W.setStatus = realStatus
+    if Cat then Cat.state = keepState end
+    W.refilter = function() end
+    check(j1 ~= nil and j1.kind == "container" and j1.src == "all" and j1.i == 0 and k1 == false and j2 == j1 and k2 == false,
+        "真的 W.refilter：別的來源算的快取不算數，開始照這個來源算；等的時候有過「換了條件」，之後照「沒換條件」來的也不蓋掉")
+    local bad = { has = function() error("boom") end, get = function() error("boom") end }
+    local keepLamp, keepSwitch = lamp.getProperties, switch.getProperties
+    lamp.getProperties = function() return bad end
+    switch.getProperties = function() error("boom") end
+    local realPrint, logged = print, 0
+    print = function(s)
+        if tostring(s):find("sub-kind failed", 1, true) then logged = logged + 1 else realPrint(s) end
+    end
+    v.subs = {}
+    v.subJob = { kind = "light", src = "all", list = { n = 2, "subl_01_1", "subl_01_2" }, i = 0, of = {} }
+    local okRun = pcall(W.runSubs, v)
+    print = realPrint
+    lamp.getProperties, switch.getProperties = keepLamp, keepSwitch
+    check(okRun and v.subs.light ~= nil and v.subs.light.of["subl_01_1"] == "lamp" and v.subs.light.of["subl_01_2"] == "lamp"
+        and logged == 1,
+        "屬性丟錯的圖（查屬性丟錯、取屬性丟錯）：歸到沒有屬性時的那一組（燈→燈具），不中斷，整輪只記一次 log")
+
+    getTextOrNull, W.refilter, W.v, W.st = realText, realRefilter, realV, realSt
+    sb.DisabledSources, sb.DisabledTilesets = keepSrc, keepTs
+    Index.reset()
+    spriteMap, spriteOrder = keepMap, keepOrder
 end)()
 
 print()

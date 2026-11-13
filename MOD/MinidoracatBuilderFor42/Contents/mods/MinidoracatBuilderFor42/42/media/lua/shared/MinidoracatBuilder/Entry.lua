@@ -9,15 +9,15 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 12
+Entry.VERSION = 13
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
 -- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門第二版
--- （設計稿 Rules.classify 的註記）。
+-- （設計稿 Rules.classify 的註記）。水井與手壓水泵、植物（使用者 2026-11-13 選新增）
 Entry.KINDS = { "floor", "floorOverlay", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
-    "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "light", "wallObject",
-    "attached", "overlay" }
+    "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "well", "light",
+    "wallObject", "attached", "overlay", "plant" }
 Entry.BUILDABLE = {}
 -- 種類開關（沙盒每種一個勾選框，使用者 2026-10-31 選）：鍵＝Kind＋種類 ID 字首大寫，例 KindFloorOverlay。鍵名上線後不能改
 Entry.KIND_KEY = {}
@@ -38,10 +38,17 @@ function Entry.settings()
     return SandboxVars and SandboxVars.MinidoracatBuilder or {}
 end
 
--- 這個種類開著（沙盒沒有這個鍵時當開著）。s＝Entry.settings()，呼叫端已經拿到的就傳
+-- 預設關的種類：沙盒沒有這個鍵、或值不是 true 都當關（水井與手壓水泵：使用者 2026-11-13 選預設關，蓋一格就有永遠用不完的
+-- 乾淨水）。中途加入本版、伺服器的沙盒檔還沒有這個鍵時也是關
+Entry.KIND_OFF = { well = true }
+
+-- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
 function Entry.kindOn(kind, s)
     local key = Entry.KIND_KEY[kind]
-    return key == nil or (s or Entry.settings())[key] ~= false
+    if key == nil then return true end
+    local v = (s or Entry.settings())[key]
+    if Entry.KIND_OFF[kind] then return v == true end
+    return v ~= false
 end
 
 -- 「a;b;c」→ 集合。只快取上一次的字串：管理員改了才重切。
@@ -257,7 +264,7 @@ end
 -- tileset|GroupName|CustomName。第一次碰到一個 tileset 時從 _0 往上掃到第一個沒有的編號（引擎照 nTiles 連號建，
 -- IsoWorld.java:712-728），結果照 tileset 快取：sibCache[tileset][名稱]＝{ N = 圖, … }，不配的不記。
 local SIBLING = { furniture = true, container = true, solid = true, light = true, wallObject = true, attached = true,
-    overlay = true }
+    overlay = true, plant = true }
 local NO_PAIR = { ["AuthenticZ_Store||Wall Piece"] = true, ["DylansRandomFurniture02||Safe"] = true,
     ["Ekron01||Cartoon Poster"] = true }
 local ENGINE_OFFSETS = { "Noffset", "Eoffset", "Soffset", "Woffset" }

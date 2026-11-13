@@ -46,6 +46,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
 [*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
+[*] [b]Sub-kinds[/b]: picking the Light, Furniture, Container or Plants kind splits it one level further, again with item counts. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers.
+[*] [b]Finding light switches[/b]: Lights tab, pick Light on the left, then Light Switches; or just search "switch".
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]Material[/b]: pick planks, metal, brick and stone, glass or logs to list only items whose cost includes that material; Other is everything that uses none of them, such as cloth or electronics. It doesn't look at what you carry, and it works together with Only what I can build. Hardware such as nails and screws doesn't count.
 [*] [b]One item per object[/b]: the facings of one object are one item.
@@ -53,7 +55,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
 [*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
-[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected.
+[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected. Wells and Hand Pumps is off by default and is not counted in N.
 [*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
 [/list]
 [h3]Eyedropper and Pick tile[/h3]
@@ -302,6 +304,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
+[*] [b]Wells and hand pumps[/b]: off by default; they appear in the Furniture tab once an admin turns them on in the sandbox page "what can be built" or in the Manage panel. The water never runs out, is clean, and keeps working after the water shuts off. A well costs 100 Stone + 4 Planks + 4 Nails and needs a shovel or spade; a hand pump costs 10 Steel Sheet + 8 Iron Pipe + 8 Screws and needs a Welding Torch + Welder Mask. They block the square, zombies can break them, and they are as tough as a wall. Take them down with Dismantle (Build Anything).
 [*] [b]Fireplaces[/b]: work like the ones on the map once built, so you can add fuel and light them; stoves, ovens and similar appliances from tile packs are built the way the map builds them too.
 [*] [b]Fireplaces built in 0.6.1 or earlier[/b]: can't be lit; dismantle them with Dismantle (Build Anything) and build them again.
 [*] [b]Rain collector barrels and metal drums[/b]: not listed as tiles, because built by this mod's rules they can't collect rain. For rain collectors, pick the item marked Recipe: it uses the vanilla recipe and collects rain. Ones built before this update can be picked up as in vanilla if they're movable; the immovable one can only be smashed with a sledgehammer, for no materials.
@@ -316,6 +319,17 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Movable lights[/b]: switch them, change the bulb or convert them to batteries as in vanilla.
 [*] [b]Furniture, signs and floor lights with a built-in light[/b]: like lights, they only glow with power, but they have no switch.
 [*] [b]Switches[/b]: a switch in a closed room tries to wire itself to the lights in that room, see Switches and wiring.
+[/list]
+[h3]Plants[/h3]
+[list]
+[*] [b]Where[/b]: the Plants kind in the Decor tab, split into Ornamental Plants and Grass and Wildflowers. All of it is decoration only: nothing grows and nothing can be harvested.
+[*] [b]Ornamental plants[/b]: potted plants, hedges, flower beds and other plants vanilla lets you move. They cost what furniture costs, and you pick them up and move them the vanilla way.
+[*] [b]Hedges, flower beds and bushes need natural ground[/b]: as in vanilla, they only go on grass, dirt and other squares without a built floor; on a built floor the cursor tells you why. Potted plants go anywhere.
+[*] [b]Grass and wildflowers[/b]: 3 Grass Cuttings per square, no tools, no XP. They don't block the square and zombies ignore them.
+[*] [b]Clearing grass[/b]: Dismantle (Build Anything) gives materials back; anyone can also use the vanilla right-click Remove Grass, which does not refund what you paid and gives Grass Cuttings the vanilla way.
+[*] [b]Floors clear them[/b]: building a floor on a square with grass, a hedge or a bush removes them, as in vanilla, with no refund.
+[*] [b]Not listed[/b]: crops, trees, and bushes that can be cut down.
+[*] [b]Gravestones, road signs, mailboxes and the like[/b]: 0.9.0 and earlier treated them as plants and refused them; they are now listed as ordinary furniture or containers.
 [/list]
 === 🧰 Materials
 [h3]What it costs[/h3]
@@ -351,6 +365,8 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Lights[/b]: 1 Scrap Electronics + 1 Electrical Wire.
 [*] [b]Curtains[/b]: 1 Sheet, 2 for long curtains.
 [*] [b]Dirt, gravel and sand floors[/b]: 1 Sack of Dirt, Sack of Gravel or Sack of Sand, no tools.
+[*] [b]Grass and wildflowers[/b]: 3 Grass Cuttings, no tools; still 3 when the material multiplier is below 1.
+[*] [b]Well[/b]: 100 Stone + 4 Planks + 4 Nails. [b]Hand pump[/b]: 10 Steel Sheet + 8 Iron Pipe + 8 Screws.
 [/list]
 [h3]Material read from the tile name[/h3]
 These tiles don't say what they are made of. They used to cost as wood, and now cost by the material their tile name shows (multiplier 1):
@@ -388,7 +404,8 @@ These tiles don't say what they are made of. They used to cost as wood, and now 
 [tr][td]Brick, stone, concrete, ceramic and similar materials[/td][td]Mason's Trowel[/td][/tr]
 [tr][td]Metal[/td][td]Welding Torch + Welder Mask[/td][/tr]
 [tr][td]Lights[/td][td]Screwdriver[/td][/tr]
-[tr][td]Dirt, gravel and sand floors, curtains[/td][td]None[/td][/tr]
+[tr][td]Well[/td][td]Shovel or spade[/td][/tr]
+[tr][td]Dirt, gravel and sand floors, curtains, grass and wildflowers[/td][td]None[/td][/tr]
 [/table]
 [list]
 [*] [b]The details decide[/b]: Tools (carry them) in the details lists exactly what to carry.
@@ -594,7 +611,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [/list]
 [h3]Four pages[/h3]
 [list]
-[*] [b]Kinds[/b]: turn the 21 kinds on or off, such as floors, walls, posts and furniture.
+[*] [b]Kinds[/b]: turn the 23 kinds on or off, such as floors, walls, posts and furniture. Wells and Hand Pumps is off by default; the others are on.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
 [*] [b]Rules[/b]: the twelve rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
@@ -689,7 +706,7 @@ These are not in the catalog either:
 [list]
 [*] [b]Tiles vanilla rewrites[/b]: tiles vanilla Lua changes when the map loads, for example feeding troughs and traps.
 [*] [b]Build recipe facilities[/b]: facility tiles meant to be built from a build recipe are not listed as tiles; they are listed as recipe items instead, see Build recipes.
-[*] [b]Tiles that never run dry[/b]: natural water, wells and the like.
+[*] [b]Tiles that never run dry[/b]: natural water and the like. Wells and hand pumps are the exception: they are a separate kind that is off by default, see Furniture and containers.
 [*] [b]Others[/b]: unbreakable windows, stacked crate tiles (the game swaps them for another tile when a save loads), and the hidden floors and underground blocks the game uses internally.
 [*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like (cots and gurneys are the exception, listed under Furniture).
 [/list]

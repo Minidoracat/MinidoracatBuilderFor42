@@ -53,9 +53,9 @@ W.TAB_KINDS = {
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
     stairs = { "stairs" },
-    furniture = { "furniture", "container", "solid" },
+    furniture = { "furniture", "container", "solid", "well" },
     light = { "light" },
-    decor = { "wallObject", "attached", "overlay" },
+    decor = { "wallObject", "attached", "overlay", "plant" },
 }
 do
     local all = {}
@@ -265,11 +265,11 @@ local function tabKinds(tab)
 end
 W.tabKinds = tabKinds
 
--- 管理員關掉了幾種
+-- 管理員關掉了幾種。預設就關著的種類（Entry.KIND_OFF：水井）沒開不算：沒有人關它，算進去的話每台伺服器的狀態列都寫「關掉了 1 種」
 function W.kindsOff()
     local s, n = Entry.settings(), 0
     for _, k in ipairs(Entry.KINDS) do
-        if not Entry.kindOn(k, s) then n = n + 1 end
+        if not Entry.kindOn(k, s) and not Entry.KIND_OFF[k] then n = n + 1 end
     end
     return n
 end
@@ -379,7 +379,7 @@ function W.mineCount(list, kinds)
     return filterList({ source = W.st.source }, list, "", kinds).n
 end
 
--- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"f:圖塊組"／"r:原版分類"）, source（"all"／"vanilla"／MOD ID）,
+-- state＝{ query, tab, cat（"all"／"fav"／"recent"／"k:種類"／"s:種類:子種類"／"f:圖塊組"／"r:原版分類"）, source（"all"／"vanilla"／MOD ID）,
 --          fav、recent（{ n, 名稱… }）}。回 names（{ n, 名稱… }）, jump（完整圖塊名命中時要選取的那一項；不在目錄時
 --          改選同一件東西在目錄裡的那一項，listedAlt；是這位玩家看得到的配方的圖時選那個配方項目）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
@@ -404,10 +404,10 @@ local function listFor(st)
     if cat == "fav" then return filterList(st, st.fav or EMPTY, ql, kinds), nil end
     if cat == "recent" then return filterList(st, st.recent or EMPTY, ql, kinds), nil end
     local fam, rcat
-    if cat:sub(1, 2) == "k:" then
-        local k = cat:sub(3)
+    local ck = W.catKind(cat) -- 子種類（s:）先列整個種類，W.filter 再濾
+    if ck then
         for _, t in ipairs(kinds) do
-            if t == k then kinds = { k } break end
+            if t == ck then kinds = { ck } break end
         end
     elseif cat:sub(1, 2) == "f:" then
         fam = cat:sub(3)
@@ -445,13 +445,34 @@ local function listFor(st)
     return out, nil
 end
 
--- 上面的清單再套「換成」條件（st.replace.match：名稱 → 朝向，W.openReplace）。還在算時列空的（空狀態寫「正在找」），
--- 不先列整個目錄再跳。整套（st.set，W.openSet）時清單就是那一套
+-- 種類 k 照來源 src 算好的子種類。子種類照來源算，而「整套」「換成」直接改 st.source、不經 W.setSource（審查 1113 Codex）：
+-- 所以快取記著是哪個來源算的，來源不同就當沒算過，不靠每個改來源的地方記得清。src 一律明傳（Kahlua 少傳的參數不保證是 nil）
+local function subsOf(v, k, src)
+    local s = v and v.subs and v.subs[k]
+    if s and s.src == src then return s end
+    return nil
+end
+
+-- 上面的清單再套子種類（"s:" 分類，W.v.subs 算好的；還沒算好時 W.refilter 先不換清單）與「換成」條件（st.replace.match：
+-- 名稱 → 朝向，W.openReplace）。換成還在算時列空的（空狀態寫「正在找」），不先列整個目錄再跳。整套（st.set，W.openSet）時
+-- 清單就是那一套。完整圖塊名命中（jump）時列的是那一桶，不看分類，也不濾子種類
 function W.filter(st)
     if st.set then return st.set.list, nil end
     local rp = st.replace
     if rp and not rp.match then return { n = 0 }, nil end
     local out, jump = listFor(st)
+    local ck, sub = W.catKind(st.cat or "all")
+    local done = sub and not jump and subsOf(W.v, ck, st.source)
+    if done then
+        local of, kept = done.of, { n = 0 }
+        for i = 1, out.n do
+            if of[out[i]] == sub then
+                kept.n = kept.n + 1
+                kept[kept.n] = out[i]
+            end
+        end
+        out = kept
+    end
     local m = rp and rp.match
     if not m then return out, jump end
     local kept = { n = 0 }
@@ -465,7 +486,154 @@ function W.filter(st)
     return kept, jump
 end
 
--- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類／建造配方的原版分類／圖塊組。數量照目前的頁籤與來源算，不含管理員
+-- ===== 子種類（使用者 2026-11-13 選 cat=three）：選了有子種類的種類時，左欄在它下面縮排列子種類 =====
+-- 照圖塊屬性算（W.subOf），不在目錄整理時算（目錄迴圈不多呼叫 Java，bt-perf）：選到那個種類才在 W.pump 分批算
+-- （同「只看能蓋的」），結果 v.subs[種類]＝{ of（名稱 → 子種類）, items（{ id, n }，照顯示順序；不到兩個是空的） }，
+-- 留到目錄重整、沙盒摘要或看得到的配方變了（W.refreshCatalog）、換來源（W.setSource）為止。配方項目照主圖算
+W.SUB_KINDS = {
+    light = { "switch", "lamp", "sign" },
+    furniture = { "wallArt", "rug", "table", "rest", "tabletop", "other" },
+    plant = { "ornamental", "grass" },
+    container = true, -- 照原版容器顯示名分組，項目最多的 W.SUB_TOP 組＋other
+}
+W.SUB_TOP = 8
+local SUB_INDENT = "    " -- NavList 沒有縮排欄位：子種類的名稱前面補空白
+
+-- 分類 ID 對到的種類與子種類："k:light" → "light", nil；"s:light:switch" → "light", "switch"；其他 nil
+function W.catKind(cat)
+    if cat:sub(1, 2) == "k:" then return cat:sub(3), nil end
+    return cat:match("^s:([^:]+):(.+)$")
+end
+
+-- 一項的子種類（p＝圖塊屬性，可能是 nil）。旗標要 IsoFlagType（bed），其他是字串鍵。容器回 "n:<原版顯示名>"：
+-- 顯示名相同的型別併成一組，原版沒有翻譯的歸 other
+function W.subOf(kind, p)
+    if kind == "light" then
+        if not p then return "lamp" end
+        if B.Rules.switchProps(p) then return "switch" end
+        return p:has("streetlight") and "sign" or "lamp"
+    elseif kind == "furniture" then
+        if not p then return "other" end
+        if p:has("SeatMaterial") or p:has(IsoFlagType.bed) then return "rest" end -- 圖塊包的椅子只有 bed 旗標，床和座椅併一類
+        if p:has("IsTable") then return "table" end
+        if p:has("IsTableTop") then return "tabletop" end
+        local mt = p:get("MoveType")
+        if mt == "WallObject" then return "wallArt" end
+        if mt == "FloorRug" then return "rug" end
+        return "other"
+    elseif kind == "plant" then
+        return p and p:has("IsMoveAble") and "ornamental" or "grass"
+    elseif kind == "container" then
+        local t = p and p:get("container")
+        local label = t and getTextOrNull("IGUI_ContainerTitle_" .. t)
+        return label and ("n:" .. label) or "other"
+    end
+    return nil
+end
+
+function W.subLabel(id)
+    if id:sub(1, 2) == "n:" then return id:sub(3) end
+    return getText("IGUI_MBLD_Sub_" .. id)
+end
+
+-- 開始算一個種類：和 W.categories 數的同一批（這個來源、管理員沒關掉的圖塊組＋看得到的配方）
+local function startSubs(v, k)
+    local list, src = { n = 0 }, W.st.source
+    local sets, byTs = (Index.kindSets or EMPTY)[k], (Index.bucket or EMPTY)[k]
+    for j = 1, sets and byTs and sets.n or 0 do
+        local ts = sets[j]
+        if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then append(list, byTs[ts]) end
+    end
+    local shown = Recipes.shown(W.playerNum).list
+    for i = 1, shown.n do
+        local r = shown[i]
+        if r.kind == k and (src == "all" or r.source == src) then
+            list.n = list.n + 1
+            list[list.n] = r.id
+        end
+    end
+    v.subJob = { kind = k, src = src, list = list, i = 0, of = {} }
+end
+
+-- 種類 k 的子種類要等（還沒算好）：回 true，沒在算就開始算。不用分子種類、已經算好、目錄還在整理（整理中照整個種類列，
+-- 整理完 W.refreshCatalog 再來）都回 false
+local function waitSubs(v, k)
+    if not W.SUB_KINDS[k] or subsOf(v, k, W.st.source) or (B.Catalog and B.Catalog.state or "ready") ~= "ready" then return false end
+    if not (v.subJob and v.subJob.kind == k and v.subJob.src == W.st.source) then startSubs(v, k) end
+    return true
+end
+
+-- 一張圖的子種類（給 runSubs 的 pcall 用：取屬性也包在裡面）
+local function subOfSprite(k, spr)
+    return W.subOf(k, spr and spr:getProperties())
+end
+
+-- 每幀做一段（每項 4–9 次 Java 呼叫）；做完排好子種類、重排左欄，等著的清單照它重列
+local function runSubs(v)
+    local job = v.subJob
+    if job.src ~= W.st.source then -- 算到一半來源換了：照新來源重算，舊的不收尾（不然會照舊來源重排左欄）
+        startSubs(v, job.kind)
+        return
+    end
+    local list, of, k, i = job.list, job.of, job.kind, job.i
+    local t0 = getTimestampMs()
+    while i < list.n do
+        i = i + 1
+        local name = list[i]
+        local r = Recipes.byId[name]
+        local spr = Entry.sprite(r and r.sprite or name)
+        -- 哪個圖塊的屬性丟錯：歸到沒有屬性時的那一組（每個種類都列得到）、整輪只記一次 log，不要整個分類停住
+        local ok, sub = pcall(subOfSprite, k, spr)
+        if not ok then
+            if not job.err then print(LOG .. "sub-kind failed for " .. tostring(name) .. ": " .. tostring(sub)) end
+            job.err, sub = true, W.subOf(k, nil)
+        end
+        of[name] = sub or "other"
+        if i % 16 == 0 and getTimestampMs() - t0 >= BUDGET_MS then break end
+    end
+    job.i = i
+    if i < list.n then return end
+    local n = {}
+    for j = 1, list.n do
+        local s = of[list[j]]
+        n[s] = (n[s] or 0) + 1
+    end
+    local items = {}
+    if k == "container" then
+        -- 項目多的在前（同數照名稱）；第 W.SUB_TOP 組之後併進 other
+        local groups, other = {}, n.other or 0
+        for s, c in pairs(n) do
+            if s ~= "other" then groups[#groups + 1] = { id = s, n = c, key = string.format("%09d", 999999999 - c) .. s } end
+        end
+        sortByKey(groups)
+        local demoted = {}
+        for j, g in ipairs(groups) do
+            if j <= W.SUB_TOP then items[#items + 1] = g else demoted[g.id], other = true, other + g.n end
+        end
+        if #groups > W.SUB_TOP then -- 有組被併進 other（Kahlua 沒有 next，不能用 next(demoted) 判空）
+            for j = 1, list.n do
+                if demoted[of[list[j]]] then of[list[j]] = "other" end
+            end
+        end
+        if other > 0 then items[#items + 1] = { id = "other", n = other } end
+    else
+        for _, s in ipairs(W.SUB_KINDS[k]) do
+            if n[s] then items[#items + 1] = { id = s, n = n[s] } end
+        end
+    end
+    if #items < 2 then items = {} end -- 只有一組時和種類本身一樣，不列
+    v.subs[k], v.subJob = { src = job.src, of = of, items = items }, nil
+    local before = W.st.cat
+    W.refreshCats(v) -- 子種類列出來；選著的子種類這次沒有了回它的種類
+    local keep = v.subKeep
+    if keep ~= nil or W.st.cat ~= before then
+        v.subKeep = nil
+        W.refilter(keep == true and W.st.cat == before)
+    end
+end
+W.runSubs = runSubs -- 離線測試用（同 W.runAffordable）
+
+-- 分類（NavList 群組；中窄版攤平成下拉）：我的／種類（選著的種類下面縮排列子種類）／建造配方的原版分類／圖塊組。數量照目前的頁籤與來源算，不含管理員
 -- 關掉的；圖塊組只列這個來源有的（列別的來源的組，點下去是空清單）。配方項目照主圖算種類與圖塊組，另列原版的分類
 -- （「配方：木工」；攤平成下拉時和種類「家具」分得出來）
 function W.categories(tab)
@@ -510,8 +678,21 @@ function W.categories(tab)
     local mine = { { id = "fav", label = counted(getText("IGUI_MBLD_Cat_Fav"), W.mineCount(Favorites.list, kinds)), icon = "markerStar" },
         { id = "recent", label = counted(getText("IGUI_MBLD_Cat_Recent"), W.mineCount(W.st.recent, kinds)), icon = "clock" } }
     local kindItems = { { id = "all", label = counted(getText("IGUI_MBLD_Cat_All"), total) } }
+    -- 選著的種類（或它的子種類）有算好的子種類：縮排列在它下面；攤平成下拉時寫「種類 · 子種類」（flat），收合也看得出是哪一種
+    local openK = W.catKind(W.st.cat or "all")
+    local subs = openK and subsOf(W.v, openK, W.st.source)
     for _, k in ipairs(kinds) do
-        if kindN[k] then kindItems[#kindItems + 1] = { id = "k:" .. k, label = counted(Names.kind(k), kindN[k]) } end
+        if kindN[k] then
+            local kl = Names.kind(k)
+            kindItems[#kindItems + 1] = { id = "k:" .. k, label = counted(kl, kindN[k]) }
+            if k == openK and subs then
+                for _, it in ipairs(subs.items) do
+                    local sl = W.subLabel(it.id)
+                    kindItems[#kindItems + 1] = { id = "s:" .. k .. ":" .. it.id, label = SUB_INDENT .. counted(sl, it.n),
+                        flat = counted(kl .. getText("IGUI_MBLD_Sep") .. sl, it.n) }
+                end
+            end
+        end
     end
     local famItems = {}
     for i, f in ipairs(famList) do
@@ -938,6 +1119,8 @@ function W.whyText(code, arg, name)
         if not Recipes.bySprite[name] then code = "ENTITY_NONE" end
     end
     if code == "DISABLED_KIND" then
+        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
+        if Entry.KIND_OFF[arg] then code = "OFF_DEFAULT" end
         arg = Names.kind(arg)
     elseif code == "DISABLED_SOURCE" and arg then
         arg = W.modName(arg)
@@ -1079,6 +1262,15 @@ function W.refilter(keep)
     -- 「只看能蓋的」還沒做完的那一批是換了條件（keep＝false，例：挑圖塊要選到那張）時，這次也照換了條件套，不然
     -- applyItems 會留住舊的選取
     if v.aff and not v.aff.keep then keep = false end
+    -- 選著的子種類還在分批算（runSubs）：方格等算好再換（同「只看能蓋的」），中間有過換了條件的就照換了條件套
+    local ck, sub = W.catKind(st.cat or "all")
+    if sub and not jump and not st.set and v.subs and waitSubs(v, ck) then
+        v.aff = nil
+        v.subKeep = keep and v.subKeep ~= false
+        W.setStatus(v)
+        return
+    end
+    v.subKeep = nil
     local only, mat = st.only and v.S ~= nil, st.material or "all"
     if only or mat ~= "all" then
         -- 「只看能蓋的」與材料篩選：逐項查很貴（每項要解析與算成本），分批做，做完才換方格內容
@@ -1364,6 +1556,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         key = "lightStreet"
     elseif key == "wall" and p:has(IsoFlagType.makeWindowInvincible) then
         key = "shutter"
+    elseif key == "plant" and not p:has("IsMoveAble") then
+        key = "plantGrass" -- 草與野花：不能搬，原版「移除草」拿得掉（水井 well、能搬的植物照種類那句）
     elseif MinidoracatBuilder.Rules.onWall(key, e.spr) then
         key = "wallHang"
     elseif p:has(IsoFlagType.waterPiped) then
@@ -1715,6 +1909,12 @@ function W.pump(panel)
     prepareVisible(v)
     if v.aff then runAffordable(v) end
     if v.rep then runReplace(v) end
+    -- 換了展開的種類（W.setCat）：這一幀才重排左欄；子種類分批算
+    if v.catsDirty then
+        v.catsDirty = false
+        W.refreshCats(v)
+    end
+    if v.subJob then runSubs(v) end
 end
 
 function W.drawStatus(panel)
@@ -2066,21 +2266,27 @@ function W.setQuery(q)
     W.refilter(false)
 end
 
+-- 選著的分類這次沒列出來時：是子種類、它的種類還在，而且子種類還在算（waitSubs）就留著，左欄先標那個種類；算好了沒有
+-- 這個子種類回它的種類；其他回「全部」。選著種類或它的子種類時，沒算過就開始算（算好 runSubs 再叫這裡列出來）
 function W.refreshCats(v)
     local st = W.st
     local groups = W.categories(st.tab)
-    local flat, found = {}, false
+    local ck, sub = W.catKind(st.cat or "all")
+    local flat, found, kindFound = {}, false, false
     for _, g in ipairs(groups) do
         for _, it in ipairs(g.items) do
-            flat[#flat + 1] = { id = it.id, label = it.label }
+            flat[#flat + 1] = { id = it.id, label = it.flat or it.label }
             if it.id == st.cat then found = true end
+            if ck and it.id == "k:" .. ck then kindFound = true end
         end
     end
-    if not found then st.cat = "all" end
+    local wait = kindFound and v.subs ~= nil and waitSubs(v, ck)
+    if not found then st.cat = (sub and kindFound) and (wait and st.cat or "k:" .. ck) or "all" end
+    local shown = (found or not wait) and st.cat or "k:" .. ck
     v.nav:setGroups(groups)
-    v.nav:setSelected(st.cat, true)
+    v.nav:setSelected(shown, true)
     v.cat:setOptions(flat)
-    v.cat:setSelected(st.cat, true)
+    v.cat:setSelected(shown, true)
 end
 
 function W.refreshSources(v)
@@ -2096,6 +2302,7 @@ function W.refreshSources(v)
 end
 
 function W.refreshCatalog(v)
+    v.subs, v.subJob = {}, nil -- 目錄、沙盒或看得到的配方變了：子種類重算
     v.recipeSig = Recipes.shown(W.playerNum).sig -- W.pump 每秒比它：看得到的配方變了才重整
     refreshSet(v)
     W.refreshSources(v)
@@ -2113,11 +2320,14 @@ function W.onTab(v, id)
     W.refilter(false)
 end
 
+-- 展開的種類換了（子種類要收起或列出來）不在這裡重排左欄：NavList 的點選回呼結束後還會照舊列號設游標，
+-- 這時換列會讓游標停到別列（NavList.lua onMouseUp），交給下一幀的 W.pump
 function W.setCat(id)
     local v = W.v
     if not v or id == nil or id == W.st.cat then return end
     leaveSet(v)
     leaveJump(v)
+    if W.catKind(id) ~= W.catKind(W.st.cat or "all") then v.catsDirty = true end
     W.st.cat = id
     v.nav:setSelected(id, true)
     v.cat:setSelected(id, true)
@@ -2131,7 +2341,10 @@ function W.setSource(id)
         leaveJump(W.v)
     end
     W.st.source = id
-    if W.v then W.refreshCats(W.v) end -- 分類的數量與圖塊組照來源算；選著的組這個來源沒有就回「全部」
+    if W.v then
+        W.v.subs, W.v.subJob = {}, nil -- 子種類照來源算（容器的前 8 組也是）
+        W.refreshCats(W.v) -- 分類的數量與圖塊組照來源算；選著的組這個來源沒有就回「全部」
+    end
     W.refilter(false)
 end
 
@@ -2618,7 +2831,7 @@ function W.create(UI)
     local w = math.max(math.floor(360 * s), math.min(sw - 40, want))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
-        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, mat = {}, ops = EMPTY, sumAt = 0 }
+        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, mat = {}, subs = {}, ops = EMPTY, sumAt = 0 }
     v.iconH = math.floor(56 * s)
     v.tileH = 4 + v.iconH + 4 + 2 * fh + 2 + 6 -- 縮圖＋兩行名稱（W.drawTile）
     st.perRow = st.perRow or W.loadPerRow() -- 第一次開窗才讀檔

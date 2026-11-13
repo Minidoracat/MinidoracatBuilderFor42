@@ -47,7 +47,7 @@ local ICON, PAD = 16, 6
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true,
-    SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
+    NOT_NATURAL = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 
 -- 從按下那格 (ax, ay) 拉到 (ex, ey) 的一排：同一列或同一欄（取位移大的那一軸），最多 max 格。回 { { x, y, z }, ... }

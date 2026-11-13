@@ -301,9 +301,9 @@ end
 -- 在本工具蓋的東西上蓋同一組的另一款＝換掉舊的。同一組：牆、柵欄、門框、窗框互換（不必先拆牆就能開窗），其他照種類。
 Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFrame = "edge" }
 -- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是
--- 本工具拆的（Cost.refund 的 none／sheet）
+-- 本工具拆的（Cost.refund 的 none／sheet）；水井與手壓水泵、植物（使用者 2026-11-13 新增）不換，要先拆再蓋
 Dismantle.NO_REPLACE = { light = true, stairs = true, floorOverlay = true, wallOverlay = true, overlay = true,
-    door = true, window = true, curtain = true }
+    door = true, window = true, curtain = true, well = true, plant = true }
 
 -- 舊的那件會不會佔住新的要放的位置（佔住才換；不佔的照舊同格共存，Check.item 另用 Place.check 確認）：格邊的同組、
 -- 地板（一格一片）、實心或擋放置的、帶 WallSE 的柱子（Place.check 的柱子只看它）。屋頂不換：同格的舊屋頂算支撐，新的

@@ -121,3 +121,11 @@ option MinidoracatBuilder.KindAttached
 
 option MinidoracatBuilder.KindOverlay
 {type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindOverlay,}
+
+/* 水井與手壓水泵（使用者 2026-11-13 選預設關：蓋一格就有永遠用不完的乾淨水）。缺鍵也當關（Entry.KIND_OFF） */
+option MinidoracatBuilder.KindWell
+{type = boolean, default = false, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWell,}
+
+/* 植物：能搬的觀賞植物、草與野花（使用者 2026-11-13 選預設開） */
+option MinidoracatBuilder.KindPlant
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindPlant,}

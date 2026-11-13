@@ -121,9 +121,9 @@ local SKILL = {
     masonry = { wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 5 },
     metal = { wall = 3, post = 3, windowFrame = 3, doorFrame = 3, door = 3, fence = 3, stairs = 5 },
 }
--- 家具、容器、實心物件原版沒有對應配方：照搬運重量三級（同 BY_WEIGHT）要 1、3、5 級，金屬的一律焊接 3（原版家具配方木工 1–7）。
--- 其他種類（掛牆物、疊圖、窗簾、燈、地面覆蓋）不要求
-local WEIGHED = { furniture = true, container = true, solid = true }
+-- 家具、容器、實心物件、能搬的植物原版沒有對應配方：照搬運重量三級（同 BY_WEIGHT）要 1、3、5 級，金屬的一律焊接 3（原版家具
+-- 配方木工 1–7）。其他種類（掛牆物、疊圖、窗簾、燈、地面覆蓋、草）不要求；水井與手壓水泵照 fixedPrice
+local WEIGHED = { furniture = true, container = true, solid = true, plant = true }
 local SKILL_BY_WEIGHT = { 1, 3, 5 }
 -- 硬核「原版材料」（沙盒 RecipeMaterials）：原版配方裡照次數用的耗材，扣次數、不寫進退料表（拆了不退）、不給經驗。
 -- 鍵：tag:base:concrete＝帶 base:concrete 標籤的桶子（黏土漿、混凝土，鐵桶木桶都算，一桶 4 次）；
@@ -138,6 +138,26 @@ local USES = {
         doorFrame = { [TORCH] = 4, [RODS] = 4 }, door = { [TORCH] = 4, [RODS] = 4 }, fence = { [TORCH] = 2, [RODS] = 2 },
         floor = { [TORCH] = 1, [RODS] = 1 }, stairs = { [TORCH] = 4, [RODS] = 4 } },
 }
+-- 固定價（使用者 2026-11-13 選新種類）：items 照倍率乘、uses 是硬核耗材（同 USES）、perk 是經驗與硬核技能（level）的技能，
+-- noXp 的材料不給經驗。
+-- 水井與手壓水泵：原版沒有配方，數量照 Building Craft（Workshop 3459887404，BuildingData/Building_Data_Furniture.lua 的
+--   「特殊」：水井木工 8、石頭 100＋木板 4＋釘子 4、鏟子；手壓水泵焊接 6、鐵皮 10＋鐵管 8＋螺絲 8、焊條 10 次＋噴槍 10 次、噴槍與
+--   焊接面罩）。焊條、噴槍燃料照本 MOD 的金屬規則記成硬核耗材（Building Craft 也照次數扣）。鏟子照標籤 base:diggrave
+--   （ItemTag.java:108 DIG_GRAVE；原版只有 Shovel、Shovel2、SpadeForged、SpadeWood、EntrenchingTool 帶，和 Building Craft 列的
+--   五把相同。base:digplow 另含園藝叉、鋤頭、抹刀、十字鎬，不用）。本工具拆除（builder）
+--   水井的石頭不給經驗（noXp）：經驗只算木板與釘子。
+-- 草與野花（Rules.isGrass）：草屑 3、不要工具、不給經驗。原版「移除草」一格給 2–3 個（ISRemoveGrass.lua:52 ZombRand(2,4)），
+--   本工具拆除退 1..3；倍率低於 1 也照 1 收（floor）
+local WELL_PRICE = { items = { ["Base.Stone2"] = 100, [PLANK] = 4, [NAILS] = 4 }, tools = { "DIG_GRAVE" },
+    perk = PERK.wood, level = 8, noXp = { ["Base.Stone2"] = true } }
+local PUMP_PRICE = { items = { ["Base.SheetMetal"] = 10, [PIPE] = 8, ["Base.Screws"] = 8 }, tools = TOOLS.metal,
+    perk = PERK.metal, level = 6, uses = { [TORCH] = 10, [RODS] = 10 } }
+local GRASS_PRICE = { items = { ["Base.GrassTuft"] = 3 }, tools = {}, floor = true }
+local function fixedPrice(kind, spr)
+    if kind == "well" then return spr:getName() == "camping_01_16" and WELL_PRICE or PUMP_PRICE end
+    if MinidoracatBuilder.Rules.isGrass(kind, spr:getProperties()) then return GRASS_PRICE end
+    return nil
+end
 -- 石牆（MaterialType=Stone）在「原版材料」打開時照原版 StoneWall 收石磚，不收紅磚
 local STONE = { wall = { ["Base.StoneBlock"] = 6 }, post = { ["Base.StoneBlock"] = 6 },
     windowFrame = { ["Base.StoneBlock"] = 5 }, doorFrame = { ["Base.StoneBlock"] = 4 } }
@@ -238,7 +258,7 @@ local function basePrice(kind, p, fam, mt)
         base = LOG[kind]
     end
     if base then return base, fam end
-    if kind == "furniture" or kind == "container" then return BY_WEIGHT[weightTier(p)], "wood" end
+    if kind == "furniture" or kind == "container" or kind == "plant" then return BY_WEIGHT[weightTier(p)], "wood" end
     if kind == "roof" and p:has(IsoFlagType.isEave) then return EAVE, "wood" end
     return WOOD[kind] or SMALL, "wood"
 end
@@ -246,6 +266,8 @@ end
 -- 硬核「需要技能」：回 技能 ID, 等級；不要求的種類回 nil。照基本價那一族（拆解價的也照它：同一件要的技能不看怎麼收料）。
 -- 牆型窗取窗框、窗兩者較高
 function Cost.skillOf(kind, spr)
+    local fx = fixedPrice(kind, spr)
+    if fx then return fx.level and fx.perk, fx.level end
     local p = spr:getProperties()
     local _, fam = basePrice(kind, p, family(kind, spr))
     local lv = SKILL[fam] and SKILL[fam][kind]
@@ -317,6 +339,28 @@ end
 
 -- 一格的成本。multiplier＝沙盒 CostMultiplier（0＝免材料，工具照樣要）。數量、耗材次數都無條件進位。
 function Cost.of(kind, spr, multiplier)
+    local fx = fixedPrice(kind, spr)
+    if fx then
+        local m = multiplier or 1
+        if fx.floor and m < 1 then m = 1 end
+        local out, perkOf, uses, tools = {}, {}, {}, {}
+        for ft, n in pairs(fx.items) do
+            local v = math.ceil(n * m - 1e-9)
+            if v > 0 then
+                out[ft] = v
+                perkOf[ft] = not (fx.noXp and fx.noXp[ft]) and fx.perk or false
+            end
+        end
+        if recipeOn() then
+            for key, n in pairs(fx.uses or EMPTY) do
+                local v = math.ceil(n * (multiplier or 1) - 1e-9)
+                if v > 0 then uses[key] = v end
+            end
+        end
+        for i, t in ipairs(fx.tools) do tools[i] = t end
+        return { items = out, tools = tools, perkOf = perkOf, chanceOf = {}, fee = {}, back = false, scrap = false,
+            uniform = Cost.refund(kind, spr) == "builder", uses = uses }
+    end
     local p = spr:getProperties()
     local fam, mt = family(kind, spr)
     local items, perkOf, chanceOf = {}, {}, {}
