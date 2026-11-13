@@ -51,6 +51,7 @@ local function scanSprite(spr, named)
     else
         local grid = spr:getSpriteGrid()
         if grid and grid:getAnchorSprite() ~= spr then return end -- 多格只收原點
+        if Rules.BAD_GRID[name] then return end -- 格位拼不起來的不列（Entry.resolve 同一條）
         local custom = p:get("CustomName")
         if custom then
             local group = p:get("GroupName")

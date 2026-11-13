@@ -16,9 +16,11 @@ local USE = Materials.USE
 local EMPTY = {}
 
 local function notBroken(item) return not item:isBroken() end
--- 裝著東西的袋子不能當材料（buildUtil.predicateMaterial）
+-- 裝著東西的袋子不能當材料（buildUtil.predicateMaterial）；裝著液體的容器也不收（水井收的水桶：原版配方要空容器時寫
+-- flags[IsEmpty]，例 recipes_blacksmith_furnaces_i.txt:83；isEmptyOfFluid 沒有流體元件時回 false，InventoryItem.java:5122-5132）
 local function usable(item)
-    return not instanceof(item, "InventoryContainer") or item:getInventory():getItems():isEmpty()
+    if instanceof(item, "InventoryContainer") then return item:getInventory():getItems():isEmpty() end
+    return not item:isFluidContainer() or item:isEmptyOfFluid()
 end
 
 -- 玩家所在格與周圍 8 格、走得到的地上物品，逐個交給 fn(wo, item)，fn 回 true 就停。別人的安全屋裡的、裝著東西的袋子

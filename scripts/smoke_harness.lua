@@ -62,6 +62,11 @@ Events = setmetatable({}, {
     end,
 })
 local function fire(name, ...)
+    -- 照引擎：每個 IsoObject 都有 isFloor（IsoObject.java:363）；情境裡臨時做的物件沒寫的當成不是地板
+    local obj = ...
+    if name == "OnObjectAboutToBeRemoved" and type(obj) == "table" and obj.isFloor == nil then
+        obj.isFloor = function() return false end
+    end
     local list = {}
     for i, f in ipairs(handlers[name] or {}) do list[i] = f end -- 照遊戲：觸發中移除不影響這一輪
     for _, f in ipairs(list) do f(...) end
@@ -400,6 +405,9 @@ local function item(ft, tags)
     function it:getContainer() return self.box end
     function it:getCurrentUses() return self.uses or 0 end
     function it:hasTag(t) return self.tags[t] == true end
+    -- 照引擎：沒有流體元件不是流體容器（InventoryItem.java:5122-5132）；fluid＝裝的量，0 是空的
+    function it:isFluidContainer() return self.fluid ~= nil end
+    function it:isEmptyOfFluid() return self.fluid == 0 end
     return it
 end
 local function inventory()
@@ -585,7 +593,9 @@ check(kind({ flags = { "vegitation" }, keys = { IsMoveAble = "" } }, "vegetation
     and kind({ flags = { "vegitation" }, keys = { IsMoveAble = "", StackReplaceTileOffset = "0" } }) == "plant",
     "vegetation_groundcover_ 不收（那組能搬的植物實際沒有貼圖）；疊放圖（StackReplaceTileOffset 不是 0）帶植物鍵也不列")
 check(kind({ keys = { IsMoveAble = "" } }, "eaves_01_0") == "furniture", "e 開頭但不是 e_：照常分類")
-check(kind({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }) == nil, "無限水的地板（天然水面 9999）不列")
+check(kind({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }) == "water"
+    and kind({ flags = { "solidfloor" }, keys = { waterAmount = "9999" } }) == nil,
+    "無限水的地板：帶 water 旗標的天然水面歸「水面」（情境四十七），沒有 water 旗標的照舊不列")
 check(kind({ keys = { IsMoveAble = "", BlocksPlacement = "", waterAmount = "999999" } }) == nil, "無限水的井（能搬）不列")
 check(kind({ flags = { "attachedFloor" }, keys = { waterAmount = "9999" } }) == nil, "無限水的岸邊疊圖不列")
 check(kind({ type = T.stairsBN, keys = { waterAmount = "99999" } }) == nil, "無限水的樓梯不列")
@@ -894,6 +904,17 @@ check(Entry.face(Entry.resolve("odd_01_0"), 1) == nil, "偏移指到別的種類
 local cells = Entry.cells(bedA)
 check(#cells == 3 and cells[1][1] == 0 and cells[1][2] == 0, "多格：原點不在 (0,0) 時以原點為準")
 check(cells[2][1] == -1 and cells[2][2] == 1 and cells[2][4] == bedB, "多格：其他成員的相對位置")
+-- 格組有空位（玩家 2026-11-13 回報吊燈錘不掉）：L 形的床 2×2 只有 3 片，引擎整組移除與原版拿起都會失敗，歸本工具拆
+do
+    local R, C = MinidoracatBuilder.Rules, MinidoracatBuilder.Cost
+    local fullA = sprite("full_01_0", 811, { keys = { IsMoveAble = "" } })
+    local fullB = sprite("full_01_1", 812, { keys = { IsMoveAble = "" } })
+    fakeGrid(2, 1, { { fullA, fullB } })
+    check(R.gridHoles(bedA) and R.gridHoles(bedC) and C.refund("furniture", bedA) == "builder"
+        and C.refund("furniture", bedC) == "builder", "格組有空位的能搬物件：每一片的拆除方式都是本工具拆，不是照原版拿起")
+    check(not R.gridHoles(fullA) and C.refund("furniture", fullA) == "pickup" and not R.gridHoles(chair[1])
+        and C.refund("furniture", chair[1]) == "pickup", "格組沒有空位、或不是多格：能搬的照舊照原版拿起")
+end
 check(#Entry.cells(wallN) == 1, "單格：只有自己")
 local nN, nW = Entry.edges("wall", wallN)
 check(nN and not nW and Entry.north("wall", wallN), "北牆佔北邊、north=true")
@@ -2157,10 +2178,11 @@ do
         for _, t in ipairs({ "HAMMER", "MASONS_TROWEL", "BLOW_TORCH", "WELDING_MASK", "SCREWDRIVER", "DIG_GRAVE" }) do
             want["IGUI_MBLD_Tool_" .. t] = true
         end
-        for _, k in ipairs({ "stairs", "roof", "light", "curtain", "well", "plant", "plantGrass" }) do
+        for _, k in ipairs({ "stairs", "roof", "light", "curtain", "well", "plant", "plantGrass", "water" }) do
             want["IGUI_MBLD_Note_" .. k] = true
         end
         want["IGUI_MBLD_Why_OFF_DEFAULT"] = true -- 預設關的種類（水井）的說明
+        want["IGUI_MBLD_Why_BAD_GRID"] = true -- 格位拼不起來的多格項目（吊燈）的說明
         for _, list in pairs(W.SUB_KINDS) do -- 左欄子種類（容器的是原版顯示名，不另翻）
             if type(list) == "table" then
                 for _, s in ipairs(list) do want["IGUI_MBLD_Sub_" .. s] = true end
@@ -2208,12 +2230,12 @@ local function stopNotices()
         C.pending = { n = nonce, cells = cells, player = p }
         return nonce
     end
-    local function run(count, placed, noRoom)
+    local function run(count, placed, noRoom, none)
         told = nil
         local cells = {}
         for i = 1, count do cells[i] = { i, 0, 0, 0 } end
         local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", cells, nil)
-        C.pending.noRoom = noRoom
+        C.pending.noRoom, C.pending.noneQueued = noRoom, none
         Cursor.onResult("accepted", { n = n })
         for i = 1, placed do Cursor.onResult("placed", { n = n, i = i }) end
         Cursor.tick()
@@ -2225,6 +2247,8 @@ local function stopNotices()
     check(run(8, 0) == "nil|IGUI_MBLD_Refuse_WALK", "一格都沒蓋就停下：照舊用 WALK，標題留給 toast 預設")
     check(run(8, 4, 5) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Refuse_NO_ROOM(5)", "第 5 格旁邊沒空位：前 4 格蓋好後報第 5 格")
     check(run(8, 1, 5) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(1,8)", "還沒走到沒空位那格就停下：照實報蓋好幾格")
+    check(run(4, 0, 4, true) == "nil|IGUI_MBLD_Refuse_NO_ROOM(4)",
+        "一次挖好幾格水面、第 4 格沒空位所以整批沒排：報第 4 格旁邊沒有空位，不報走不過去")
     check(run(8, 8) == nil and Cursor.queued() == nil, "全部蓋好：不通知")
     C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText = realBuild, realToast, realGet, realQ, realGetText
 end
@@ -2815,6 +2839,7 @@ local function dismantleScenario()
         local l = {}
         function l:getSprite() return landS end
         function l:getSquare() return sq end
+        function l:hasModData() return false end
         function l:isStairsObject() return false end
         function l:getAttachedAnimSprite() return self.hung end -- 掛在平台上的圖（本工具的地面覆蓋，Place.attach）
         sq.objects[#sq.objects + 1] = l
@@ -4483,6 +4508,7 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     local other = { class = "IsoObject", att = {} }
     function other:getSquare() return D end
     function other:getSprite() return debrisS end
+    function other:hasModData() return false end
     function other:getAttachedAnimSprite() return javaList({ { getParentSprite = function() return tl2S end } }) end
     fire("OnObjectAboutToBeRemoved", other)
     local kept = okD and Overlays.get(D, TL2) ~= nil
@@ -5354,8 +5380,29 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     local lampS2 = sp("rp_lamp_02_1", 2821, { "solid" }, {}, { type = T.lightswitch })
     local ovX1 = sp("rp_ovl_02_0", 2822, {}, { TileOverlay = "", BlocksPlacement = "" })
     local ovX2 = sp("rp_ovl_02_1", 2823, {}, { TileOverlay = "", BlocksPlacement = "" })
+    -- 多層格組：levels[z + 1][y + 1][x + 1] = sprite（IsoSpriteGrid 的 getSprite(x, y, z)、getLevels），原點在 (0,0,0)
+    local function tallGrid(w, h, levels)
+        local g = {}
+        function g:getWidth() return w end
+        function g:getHeight() return h end
+        function g:getLevels() return #levels end
+        function g:getSprite(x, y, z)
+            local lv = levels[z + 1]
+            return lv and lv[y + 1] and lv[y + 1][x + 1] or nil
+        end
+        function g:getAnchorSprite() return levels[1][1][1] end
+        function g:getSpriteGridPosX() return 0 end
+        function g:getSpriteGridPosY() return 0 end
+        for _, lv in ipairs(levels) do for _, row in pairs(lv) do for _, s in pairs(row) do s.grid = g end end end
+    end
+    local tallA = sp("rp_tall_01_0", 2828, { "solid" }, { IsMoveAble = "" }) -- 兩層樓高：下片、上片
+    local tallB = sp("rp_tall_01_1", 2829, { "solid" }, { IsMoveAble = "" })
+    tallGrid(1, 1, { { { tallA } }, { { tallB } } })
+    local badA = sp("lighting_indoor_03_0", 2830, { "solid" }, { IsMoveAble = "" }) -- 名稱在 Rules.BAD_GRID 的那一組
+    local badB = sp("lighting_indoor_03_1", 2831, { "solid" }, { IsMoveAble = "" })
+    tallGrid(2, 1, { { { badA, badB } } })
     local all = { wallN, wallW, frameN, wallN2, floorA, floorB, lampA, lampB, boxA, boxB, crate, chair, stA, stB, ovA, ovB, gridS,
-        shelfA, shelfB, lampS1, lampS2, ovX1, ovX2 }
+        shelfA, shelfB, lampS1, lampS2, ovX1, ovX2, tallA, tallB, badA, badB }
     for _, s in pairs(pf) do all[#all + 1] = s end
     world(all)
 
@@ -5501,6 +5548,30 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
         "NOT_NATURAL 只在地面不對時說：天然地面上有東西擋、或沒有地板照舊沒有原因碼；一般家具放在地板上不受影響")
     local okH6, cH6 = Place.check("furniture", chair, at(101, 115, { flags = { solid = true }, floor = ground(wood) }), P)
     check(okH6 == false and cH6 == nil, "一般家具在鋪好的地板上被擋：照舊沒有原因碼，不說 NOT_NATURAL")
+    -- 格位拼不起來的多格項目不列（玩家 2026-11-13 回報的水晶吊燈）：原點與其他片都說 BAD_GRID，不叫玩家去找原點
+    check(select(2, Entry.resolve("lighting_indoor_03_0")) == "UNKNOWN" and Entry.why("lighting_indoor_03_0") == "BAD_GRID"
+        and Entry.why("lighting_indoor_03_1") == "BAD_GRID" and Entry.resolve("rp_tall_01_0") ~= nil,
+        "格位拼不起來的項目：解析不到（UNKNOWN），原點與其他片的原因都是 BAD_GRID；一般的兩層項目照舊列")
+    -- 空位在上一層的格組（原版吊燈就是這種：下層兩片、上層只有一片的位置有圖）
+    local upA = sp("rp_up_01_0", 2832, { "solid" }, { IsMoveAble = "" })
+    local upB = sp("rp_up_01_1", 2833, { "solid" }, { IsMoveAble = "" })
+    local upC = sp("rp_up_01_2", 2834, { "solid" }, { IsMoveAble = "" })
+    tallGrid(2, 1, { { { upA, upB } }, { { upC } } })
+    local GR, GC = MinidoracatBuilder.Rules, MinidoracatBuilder.Cost
+    check(GR.gridHoles(upA) and GC.refund("furniture", upC) == "builder" and not GR.gridHoles(tallA)
+        and GC.refund("furniture", tallA) == "pickup", "空位在上一層也算有空位，歸本工具拆；兩層都滿的照舊照原版拿起")
+    -- 兩層樓高的物件：上一層沒有樓層時，預覽與伺服器回同一個原因，伺服器不在半空補格子
+    local n1 = Check.item(P, "rp_tall_01_0", 0, { 104, 105, 0 }, PV)
+    local n2 = Check.item(P, "rp_tall_01_0", 0, { 104, 105, 0 })
+    check(n1 == "NO_UPPER" and n2 == "NO_UPPER" and squares["104,105,1"] == nil,
+        "兩層樓高、上一層沒有格子：預覽與伺服器都回 NO_UPPER，伺服器不補那一格")
+    local upSq = square(104, 105, 1)
+    local n3 = Check.item(P, "rp_tall_01_0", 0, { 104, 105, 0 }, PV)
+    obj(upSq, floorA)
+    local n4 = Check.item(P, "rp_tall_01_0", 0, { 104, 105, 0 }, PV)
+    check(n3 == "NO_UPPER" and n4 ~= "NO_UPPER", "上一層的格子是空的也算沒有樓層；上面有東西就照一般規則往下查")
+    local n5 = Check.item(P, "rp_chair_01_0", 0, { 104, 106, 0 }, PV)
+    check(n5 ~= "NO_UPPER", "只有一層的物件不查上一層")
     ISMoveableSpriteProps = realProps
 
     -- 原地替換
@@ -8539,9 +8610,9 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
     end
     check(wells, "水井與手壓水泵：原版 5 張都歸 well（井帶 EntityScript、無限水也收）")
     check(kind(PUMP, "camping_01_17") == nil and code(PUMP, "camping_01_17") == "WATER"
-        and code({ flags = { "solidfloor", "water" }, keys = { waterAmount = "9999" } }, "blends_natural_02_6") == "WATER"
+        and code({ flags = { "solidfloor" }, keys = { waterAmount = "9999" } }, "blends_natural_02_6") == "WATER"
         and kind(WELL, "camping_01_17") == nil,
-        "其他無限水照舊不列（WATER；帶 EntityScript 的另回 ENTITY），水面 blends_natural_02 也是")
+        "其他無限水照舊不列（WATER；帶 EntityScript 的另回 ENTITY；水面 blends_natural_02 見情境四十七）")
     check(kind(GRASS, "e_newgrass_1_8") == "plant" and kind(WEED, "d_plants_1_16") == "plant"
         and kind({ flags = { "canBeRemoved" }, keys = { BlocksPlacement = "", MoveWithWind = "" } }, "d_plants_1_0") == "plant"
         and kind(OVERLAY, "blends_grassoverlays_01_0") == "plant",
@@ -8590,8 +8661,8 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
     local ki = {}
     for i, k in ipairs(Entry.KINDS) do ki[k] = i end
     check(ki.well == ki.solid + 1 and ki.plant == ki.overlay + 1 and Entry.KIND_KEY.well == "KindWell"
-        and Entry.KIND_KEY.plant == "KindPlant" and Entry.BUILDABLE.well and Entry.BUILDABLE.plant and Entry.VERSION == 13,
-        "種類表：well 接在 solid 後、plant 接在 overlay 後，沙盒鍵 KindWell／KindPlant，規則版本 13")
+        and Entry.KIND_KEY.plant == "KindPlant" and Entry.BUILDABLE.well and Entry.BUILDABLE.plant and Entry.VERSION == 14,
+        "種類表：well 接在 solid 後、plant 接在 overlay 後，沙盒鍵 KindWell／KindPlant，規則版本 14")
     check(Entry.kindOn("well", {}) == false and Entry.kindOn("well", { KindWell = false }) == false
         and Entry.kindOn("well", { KindWell = "true" }) == false and Entry.kindOn("well", { KindWell = true }) == true
         and Entry.kindOn("plant", {}) == true and Entry.kindOn("plant", { KindPlant = false }) == false
@@ -8641,19 +8712,23 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
     local wc, pc = Cost.of("well", wellS), Cost.of("well", pumpS)
     local wp, wl = Cost.skillOf("well", wellS)
     local pp, pl = Cost.skillOf("well", pumpS)
-    check(show(wc.items) == "Base.Nails=4,Base.Plank=4,Base.Stone2=100" and table.concat(wc.tools, ",") == "DIG_GRAVE"
-        and show(pc.items) == "Base.MetalPipe=8,Base.Screws=8,Base.SheetMetal=10"
-        and table.concat(pc.tools, ",") == "BLOW_TORCH,WELDING_MASK" and next(pc.uses) == nil
-        and wp == "Woodwork" and wl == 8 and pp == "MetalWelding" and pl == 6,
-        "水井：石頭 100＋木板 4＋釘子 4、鏟子（DIG_GRAVE）、硬核木工 8；手壓水泵：鐵皮 10＋鐵管 8＋螺絲 8、噴槍＋面罩、硬核焊接 6")
+    check(show(wc.items) == "Base.Bucket=1,Base.FlatStone=8,Base.Rope=1,Base.Stone2=40"
+        and table.concat(wc.tools, ",") == "DIG_GRAVE,MASONS_TROWEL"
+        and show(pc.items) == "Base.MetalPipe=6,Base.Screws=6,Base.SmallSheetMetal=4"
+        and table.concat(pc.tools, ",") == "BLOW_TORCH,WELDING_MASK" and next(pc.uses) == nil and next(wc.uses) == nil
+        and wp == "Masonry" and wl == 4 and pp == "MetalWelding" and pl == 5,
+        "水井：石塊 40＋扁石 8＋繩子 1＋水桶 1、鏟子＋抹刀、硬核石工 4；手壓水泵：鐵管 6＋小鐵片 4＋螺絲 6、噴槍＋面罩、硬核金工 5")
     sb.RecipeMaterials = true
     local pu, wu = Cost.of("well", pumpS).uses, Cost.of("well", wellS).uses
     sb.RecipeMaterials = nil
-    check(pu[Cost.TORCH] == 10 and pu[Cost.RODS] == 10 and next(wu) == nil and Cost.of("well", wellS, 0.5).items["Base.Stone2"] == 50,
-        "硬核「原版材料」：手壓水泵另扣噴槍 10 次、焊條 10 次（不寫進退料）；水井沒有耗材；倍率照乘")
+    check(pu[Cost.TORCH] == 4 and pu[Cost.RODS] == 4 and wu[Cost.CONCRETE] == 4 and wu[Cost.TORCH] == nil
+        and Cost.of("well", wellS, 0.5).items["Base.Stone2"] == 20 and Cost.of("well", wellS, 0.5).items["Base.Bucket"] == 1,
+        "硬核「原版材料」：手壓水泵另扣噴槍 4 次、焊條 4 次，水井黏土漿或混凝土 4 次（都不寫進退料）；倍率照乘、進位")
     local wx, px = Cost.xp({ wc }, player()), Cost.xp({ pc }, player())
-    check(wx.Woodwork == 15 and px.MetalWelding == 57.5,
-        "經驗照本工具拆除的平均拿不回件數：水井木工只算木板、釘子 (3+3)/2×5（石頭 100 顆不給）、手壓水泵焊接 (9+7+7)/2×5")
+    check(next(wx) == nil and wc.perkOf["Base.Stone2"] == false and wc.perkOf["Base.FlatStone"] == false
+        and wc.perkOf["Base.Rope"] == "Masonry" and px.MetalWelding == 32.5,
+        "經驗照本工具拆除的平均拿不回件數：水井石塊、扁石不給，繩子、水桶各 1 件拿得回來，一座井 0 點；"
+        .. "手壓水泵金工 (5+3+5)/2×5＝32.5")
 
     -- 放置、退料表、拆除
     ItemTag.DIG_GRAVE, ItemTag.DIG_PLOW = "DIG_GRAVE", "DIG_PLOW"
@@ -8675,18 +8750,26 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
     sb.CostMultiplier = nil
     check(okG2 and g2Sq.objects[1] and G2.inv:count("Base.GrassTuft") == 0, "倍率 0.5 照樣扣 3 個草屑")
     local H, hSq = at(484, 4513)
-    give(H, { ["Base.Stone2"] = 100, ["Base.Plank"] = 4, ["Base.Nails"] = 4 })
+    give(H, { ["Base.Stone2"] = 40, ["Base.FlatStone"] = 8, ["Base.Rope"] = 1, ["Base.Bucket"] = 1 })
     H.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true, DIG_PLOW = true }))
     sb.KindWell = nil
     local okOff, _, aOff = build(H, 1, "camping_01_16", { 484, 480, 0 })
     sb.KindWell = true
     local okT, _, aT = build(H, 2, "camping_01_16", { 484, 480, 0 })
     H.inv:add(item("Base.Shovel", { DIG_GRAVE = true, DIG_PLOW = true }))
-    local okW = build(H, 3, "camping_01_16", { 484, 480, 0 })
+    local bucket
+    for _, v in ipairs(H.inv.items) do if v.ft == "Base.Bucket" then bucket = v end end
+    bucket.fluid = 3
+    local okWet, _, aWet = build(H, 3, "camping_01_16", { 484, 480, 0 })
+    check(not okWet and aWet.code == "NO_MATERIAL" and aWet.need and aWet.need["Base.Bucket"] ~= nil and H.inv:count("Base.Bucket") == 1
+        and hSq.objects[1] == nil,
+        "裝著水的水桶不當材料（原版要空容器）：只有一個裝水的桶時回 NO_MATERIAL、缺水桶，水桶留著")
+    bucket.fluid = 0
+    local okW = build(H, 4, "camping_01_16", { 484, 480, 0 })
     local wo = hSq.objects[1]
     check(not okOff and aOff.code == "DISABLED" and not okT and aT.code == "NO_TOOL" and aT.tools[1] == "DIG_GRAVE",
         "反面：KindWell 沒開回 DISABLED；只帶抹刀（原版 base:digplow 也有它）回 NO_TOOL、缺鏟子")
-    check(okW and wo and wo.mats["Base.Stone2"] == "100" and H.inv:count("Base.Stone2") == 0
+    check(okW and wo and wo.mats["Base.Stone2"] == "40" and wo.mats["Base.Bucket"] == "1" and H.inv:count("Base.Stone2") == 0
         and wo.set.setBlockAllTheSquare == true and wo.set.setCanPassThrough == false
         and wo.set.setIsThumpable == true and wo.set.setMaxHealth == 450 and wo.set.setThumpDmg == nil,
         "帶鏟子蓋水井：扣料、退料表照付的寫；實心、整格擋住；耐久照牆（450、每下最多扣 1/8），不是實心物件通則的 50")
@@ -8695,7 +8778,7 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
         if o then o.isDismantable = function(self) return self.set.setIsDismantable ~= false end end
     end
     check(go and Dismantle.kindOf(go) == "plant" and wo and Dismantle.kindOf(wo) == "well"
-        and table.concat(Dismantle.tools("well", { remove = { wo } }), ",") == "DIG_GRAVE"
+        and table.concat(Dismantle.tools("well", { remove = { wo } }), ",") == "DIG_GRAVE,MASONS_TROWEL"
         and #Dismantle.tools("plant", { remove = { go } }) == 0,
         "拆除：本工具認得蓋好的草與水井（右鍵、一區拆除同一條），拆水井要鏟子、拆草不用工具")
     check(not Dismantle.swappable("plant", grassS, "plant", weedS) and not Dismantle.swappable("well", wellS, "well", pumpS),
@@ -8916,6 +8999,551 @@ print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）
     getTextOrNull, W.refilter, W.v, W.st = realText, realRefilter, realV, realSt
     sb.DisabledSources, sb.DisabledTilesets = keepSrc, keepTs
     Index.reset()
+    spriteMap, spriteOrder = keepMap, keepOrder
+end)()
+
+print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel）：分類、開關、成本、能不能挖、挖、填平、在水上蓋地板、客戶端重畫")
+;(function()
+    nowMs = nowMs + 180000
+    local Place, Dismantle = MinidoracatBuilder.Place, MinidoracatBuilder.Dismantle
+    local keepMap, keepOrder, realInst, realServer = spriteMap, spriteOrder, instanceof, isServer
+    local keepRM, keepMult, keepKW, keepSkill = sb.RecipeMaterials, sb.CostMultiplier, sb.KindWater, sb.RequireSkill
+    sb.RecipeMaterials, sb.CostMultiplier, sb.RequireSkill = nil, nil, nil
+    local function code(o, name) return select(2, Rules.classify(sprite(name or "test_01_0", 5, o))) end
+    -- 原版屬性（temp/water-grass-1113/props.py 離線讀的 tiledef）
+    local WATER = { flags = { "solidfloor", "solidtrans", "taintedWater", "water", "attachedFloor" }, keys = { waterAmount = "9999" } }
+    local SHORE = { flags = { "attachedFloor", "taintedWater" }, keys = { waterAmount = "9999", FloorAttachmentN = "" } }
+
+    -- 分類
+    local four = true
+    for _, n in ipairs({ 0, 5, 6, 7 }) do four = four and kind(WATER, "blends_natural_02_" .. n) == "water" end
+    check(four and kind(WATER, "riverpack_01_3") == "water",
+        "水面：原版 blends_natural_02_0／5／6／7 是 water；照屬性認（別的 MOD 帶 water 的地板也是）")
+    check(code(SHORE, "blends_natural_02_8") == "WATER" and code(SHORE, "blends_natural_02_1") == "WATER"
+        and code({ flags = { "solidtrans" }, keys = { waterAmount = "999999", BlocksPlacement = "" } }, "camping_01_17") == "WATER"
+        and code({ flags = { "solidfloor" }, keys = { waterAmount = "9999" } }) == "WATER"
+        and code({ flags = { "water" }, keys = { waterAmount = "9999" } }) == "WATER"
+        and code({ flags = { "solidfloor", "water", "EntityScript" } }, "riverpack_01_4") == "ENTITY",
+        "反面：岸邊疊圖、其他無限水、沒有 water 旗標的無限水地板、不是地板的 water 照舊 WATER；帶 EntityScript 的 ENTITY")
+
+    -- 開關
+    local ki = {}
+    for i, k in ipairs(Entry.KINDS) do ki[k] = i end
+    local W = MinidoracatBuilder.Window
+    local inFloorTab = false
+    for _, k in ipairs(W.TAB_KINDS.floor) do inFloorTab = inFloorTab or k == "water" end
+    check(ki.water == ki.floorOverlay + 1 and Entry.KIND_KEY.water == "KindWater" and Entry.KIND_OFF.water == true
+        and inFloorTab and MinidoracatBuilder.Cursor.DRAG.water == "fill"
+        and MinidoracatBuilder.Area.ORDER.water == MinidoracatBuilder.Area.ORDER.floor,
+        "種類表：water 接在 floorOverlay 後、沙盒鍵 KindWater、預設關；在地板頁籤、可拖一片、一區拆除和地板同一順位")
+    check(Entry.kindOn("water", {}) == false and Entry.kindOn("water", { KindWater = false }) == false
+        and Entry.kindOn("water", { KindWater = 1 }) == false and Entry.kindOn("water", { KindWater = true }) == true,
+        "Entry.kindOn：KindWater 缺鍵或不是 true 都當關")
+    local natS = sprite("blends_natural_01_21", 4701, { flags = { "solidfloor" } })
+    local waterS = sprite("blends_natural_02_6", 4702, WATER)
+    local streetS = sprite("floors_exterior_street_01_0", 4703, { flags = { "solidfloor" } })
+    local grassS = sprite("e_newgrass_1_8", 4704, { flags = { "canBeRemoved" }, keys = { MoveWithWind = "" } })
+    local overS = sprite("blends_grassoverlays_01_3", 4705, { flags = { "attachedFloor" } })
+    local bushS = sprite("vegetation_foliage_01_0", 4706, { flags = { "vegitation" } })
+    local treeS = sprite("vegetation_trees_01_8", 4707, { type = T.tree, flags = { "vegitation" } })
+    local crateS = sprite("crate_t_01_0", 4708, { keys = { container = "crate" } })
+    local floorS = sprite("pf_floor_01_0", 4709, { flags = { "solidfloor" } })
+    world({ natS, waterS, streetS, grassS, overS, bushS, treeS, crateS, floorS })
+    sb.KindWater = nil
+    local e0, c0 = Entry.resolve("blends_natural_02_6")
+    local w0, a0 = Entry.why("blends_natural_02_6")
+    local keepText = getTextOrNull
+    getTextOrNull = function(k) return k end
+    local whyText = W.whyText("DISABLED_KIND", "water")
+    getTextOrNull = keepText
+    sb.KindWater = true
+    local e1 = Entry.resolve("blends_natural_02_6")
+    check(e0 == nil and c0 == "DISABLED" and w0 == "DISABLED_KIND" and a0 == "water" and whyText == "IGUI_MBLD_Why_OFF_DEFAULT"
+        and e1 and e1.kind == "water",
+        "伺服器：KindWater 缺鍵回 DISABLED，說明寫「預設關閉」；打開才收")
+
+    -- 成本
+    local c = Cost.of("water", waterS)
+    local c0x, c10 = Cost.of("water", waterS, 0), Cost.of("water", waterS, 10)
+    sb.RecipeMaterials = true
+    local cr = Cost.of("water", waterS, 3)
+    sb.RecipeMaterials = nil
+    sb.RequireSkill = true
+    local perk = Check.skill(player(), "water", waterS)
+    sb.RequireSkill = nil
+    check(next(c.items) == nil and table.concat(c.tools, ",") == "DIG_GRAVE" and next(c0x.items) == nil and next(c10.items) == nil
+        and table.concat(c10.tools, ",") == "DIG_GRAVE" and next(cr.uses) == nil and next(Cost.xp({ c10 }, player())) == nil
+        and Cost.skillOf("water", waterS) == nil and perk == nil and Cost.refund("water", waterS) == "builder",
+        "水面：不收料（倍率 0、10 都一樣）、只要鏟子、沒有耗材、不給經驗、不要技能；本工具填平")
+
+    -- 格子：490..497 × 490..497 是天然地面（BFS 找路要鄰格）；格子屬性照格上物件的聯集算
+    local function mk(spr, class)
+        local o = { spr = spr, md = {}, class = class }
+        function o:getSprite() return self.spr end
+        function o:getProperties() return self.spr:getProperties() end
+        function o:getTextureName() return self.spr:getName() end
+        function o:getType() return self.spr:getType() end
+        function o:getModData() return self.md end
+        function o:hasModData() return next(self.md) ~= nil end
+        function o:transmitModData() self.sentMd = true end
+        function o:getSquare() return self.sq end
+        function o:isObjectNoContainerOrEmpty() return true end
+        function o:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+        function o:isConnectedSpriteGridObject(x) return x == self end
+        function o:isFloor() return self.spr:getProperties():has(F.solidfloor) end
+        function o:getAttachedAnimSprite() return nil end
+        return o
+    end
+    local function props(ob) return ob.getProperties and ob:getProperties() end
+    local function wsq(x, y, z, objs, o)
+        o = o or {}
+        local sq = square(x, y, z, o)
+        local rm = sq.transmitRemoveItemFromSquare
+        function sq:transmitRemoveItemFromSquare(obj, safely) -- 照引擎：移除前先觸發事件（IsoGridSquare.java:5732）
+            fire("OnObjectAboutToBeRemoved", obj)
+            return rm(self, obj, safely)
+        end
+        function sq:transmitAddObjectToSquare(obj, index) -- 照引擎：加進格子並送出（IsoGridSquare.java:5920）
+            obj.sq = self
+            self.objects[#self.objects + 1] = obj
+        end
+        sq.statics, sq.cleared, sq.dropped = {}, 0, {}
+        function sq:disableErosion() self.noErosion = true end
+        for _, ob in ipairs(objs or {}) do
+            ob.sq = sq
+            sq.objects[#sq.objects + 1] = ob
+        end
+        function sq:has(k)
+            for _, ob in ipairs(self.objects) do
+                local p = props(ob)
+                if p and p:has(k) then return true end
+            end
+            return false
+        end
+        function sq:getFloor()
+            for _, ob in ipairs(self.objects) do
+                local p = props(ob)
+                if p and p:has(F.solidfloor) then return ob end
+            end
+            return nil
+        end
+        function sq:hasFloor() return self:getFloor() ~= nil end
+        function sq:getStaticMovingObjects() return { isEmpty = function() return #sq.statics == 0 end } end
+        function sq:getWorldObjects()
+            local l = javaList(self.world)
+            l.isEmpty = function() return #sq.world == 0 end
+            return l
+        end
+        function sq:isVehicleIntersecting() return o.vehicle == true end
+        function sq:clearWater() self.cleared = self.cleared + 1 end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        -- 照引擎（IsoGridSquare.java:4726-4795）：拆舊地板、不是樹的植被、髒水、草地疊圖（帶 canBeRemoved 的草不拆），
+        -- 新地板加在最後，清自己這一格的水面幾何
+        function sq:addFloor(name)
+            for i = #self.objects, 1, -1 do
+                local ob = self.objects[i]
+                local p = props(ob)
+                local n = ob.getTextureName and ob:getTextureName() or ""
+                if p and (p:has(F.solidfloor) or p:has(F.noStart) or (p:has(F.vegitation) and ob:getType() ~= T.tree)
+                    or p:has(F.taintedWater) or n:sub(1, 20) == "blends_grassoverlays") then
+                    self:transmitRemoveItemFromSquare(ob)
+                end
+            end
+            local f = mk(spriteMap[name] or sprite(name, 4790, { flags = { "solidfloor" } }))
+            f.sq = self
+            self.objects[#self.objects + 1] = f
+            self:clearWater()
+            return f
+        end
+        return sq
+    end
+    for x = 490, 497 do for y = 490, 497 do wsq(x, y, 0, { mk(natS) }) end end
+    local function at(x, y) return squares[x .. "," .. y .. ",0"] end
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+
+    -- 能不能挖：每一個原因（不碰世界，直接問 Place.check）
+    local function why(sq) return select(2, Place.check("water", waterS, sq, nil)) end
+    local function okAt(sq) return (Place.check("water", waterS, sq, nil)) == true end
+    local upSq = wsq(491, 501, 1, { mk(natS) })
+    local wetSq = wsq(492, 501, 0, { mk(waterS) })
+    local streetSq = wsq(493, 501, 0, { mk(streetS) })
+    local bareSq = wsq(494, 501, 0, {})
+    local builtSq = wsq(495, 501, 0, { mk(natS, "IsoThumpable") })
+    local busySq = wsq(496, 501, 0, { mk(natS) }, { moving = { {} } })
+    local carSq = wsq(497, 501, 0, { mk(natS) }, { vehicle = true })
+    local treeSq = wsq(491, 502, 0, { mk(natS), mk(treeS) })
+    local crateSq = wsq(492, 502, 0, { mk(natS), mk(crateS) })
+    local itemSq = wsq(493, 502, 0, { mk(natS) })
+    itemSq.world = { {} }
+    local bodySq = wsq(494, 502, 0, { mk(natS) })
+    bodySq.statics = { {} }
+    local softSq = wsq(495, 502, 0, { mk(natS), mk(grassS), mk(overS), mk(bushS) })
+    check(not okAt(upSq) and why(upSq) == nil and why(wetSq) == "SAME_TILE" and why(streetSq) == "NOT_NATURAL"
+        and why(bareSq) == "NOT_NATURAL" and why(builtSq) == "NOT_NATURAL" and why(busySq) == "OCCUPIED" and why(carSq) == "VEHICLE",
+        "不能挖：二樓（沒有原因碼）、已經是水 SAME_TILE、鋪好的地板／沒有地板／本工具蓋的地板 NOT_NATURAL、有人 OCCUPIED、車 VEHICLE")
+    check(not okAt(treeSq) and why(treeSq) == nil and not okAt(crateSq) and why(crateSq) == nil
+        and not okAt(itemSq) and why(itemSq) == nil and not okAt(bodySq) and why(bodySq) == nil and okAt(softSq),
+        "樹、其他物件、地上的物品、屍體擋著不挖（BLOCKED，不替玩家清）；只有草、草地疊圖、不是樹的植被的天然地面可以挖")
+    local cellarSq = wsq(491, 503, -1, { mk(natS) })
+    local ownBush = mk(bushS, "IsoThumpable")
+    ownBush.md.builderEntry = "vegetation_foliage_01_0"
+    local ownSq = wsq(492, 503, 0, { mk(natS), ownBush })
+    check(not okAt(cellarSq) and why(cellarSq) == nil and not okAt(ownSq) and why(ownSq) == nil,
+        "地下室不能挖；格上有本工具蓋的植物也不挖（不替玩家清，退料會跟著不見）")
+    local hungFloor, bareHung = mk(natS), mk(natS)
+    hungFloor.md.builderOverlays = { ["street_trafficlines_01_0"] = true }
+    bareHung.md.builderOverlays = {}
+    local hungSq, bareHungSq = wsq(493, 503, 0, { hungFloor }), wsq(494, 503, 0, { bareHung })
+    check(not okAt(hungSq) and why(hungSq) == nil and okAt(bareHungSq),
+        "地板上掛著本工具的地面覆蓋：不挖（覆蓋和退料會跟著地板不見）；覆蓋都拆掉了的照常可以挖")
+
+    -- 伺服器挖：要鏟子、記原地板、拆掉草、不收料
+    ItemTag.DIG_GRAVE = "DIG_GRAVE"
+    local function digger(id, x, y)
+        local p = player({ id = id, x = x + 0.5, y = y + 0.5, here = at(x, y) })
+        p.inv:add(item("Base.Shovel", { DIG_GRAVE = true }))
+        return p
+    end
+    local P = digger(4711, 492, 493)
+    local tSq = at(492, 492)
+    tSq.objects[#tSq.objects + 1] = mk(grassS)
+    tSq.objects[#tSq.objects].sq = tSq
+    sb.KindWater = nil
+    local offOk, _, offA = build(P, 1, "blends_natural_02_6", { 492, 492, 0 })
+    sb.KindWater = true
+    local bare = player({ id = 4712, x = 493.5, y = 493.5, here = at(493, 493) })
+    bare.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
+    local toolOk, _, toolA = build(bare, 1, "blends_natural_02_6", { 493, 492, 0 })
+    check(not offOk and offA.code == "DISABLED" and not toolOk and toolA.code == "NO_TOOL" and toolA.tools[1] == "DIG_GRAVE"
+        and at(493, 492):getFloor().spr == natS,
+        "反面：KindWater 沒開回 DISABLED；沒鏟子（只有抹刀）回 NO_TOOL、地面不動")
+    local digOk = build(P, 2, "blends_natural_02_6", { 492, 492, 0 })
+    local w = tSq:getFloor()
+    check(digOk and w and w.spr == waterS and #tSq.objects == 1 and tSq:has(F.water) and w.md.builderEntry == "blends_natural_02_6"
+        and w.md.builderWater == "blends_natural_01_21" and w.sentMd == true and P.inv:count("Base.Shovel") == 1,
+        "挖：草和原地板拆掉、放水面；記號記圖名與原地板並送給客戶端；鏟子留著")
+    check(w and Place.dug(w) and Dismantle.kindOf(w) == "water" and Place.refundOf(w) ~= nil and next(Place.refundOf(w)) == nil
+        and table.concat(Dismantle.tools("water", Dismantle.plan(w, "water")), ",") == "DIG_GRAVE"
+        and not Dismantle.swappable("water", waterS, "water", waterS) and Dismantle.replaceable(tSq, "floor", floorS) == nil,
+        "挖好的水面：本工具認得、填平不退料、要鏟子；不參加原地替換（蓋地板時不當替換）")
+    check(tSq.noErosion == true and not Dismantle.swappable("water", waterS, "water", sprite("blends_natural_02_5", 4794, WATER)),
+        "挖好的那一格關掉侵蝕（不會在水面上長出草木）；挖好的水不提供換成另一張水面")
+
+    -- 不是本工具挖的水：拆不掉
+    local river = mk(waterS)
+    local forged = mk(waterS)
+    forged.md.builderEntry = "blends_natural_02_7"
+    check(Dismantle.kindOf(river) == nil and Dismantle.kindOf(forged) == nil and not Place.dug(river),
+        "地圖原有的河、記號和圖不一樣的水：不是本工具的，拆不掉")
+    local rSq = at(494, 492)
+    rSq.objects = { river }
+    river.sq = rSq
+    sent = {}
+    Server.dismantleIntent(P, { n = 9, t = { 494, 492, 0, "blends_natural_02_6" } })
+    Server.dismantle(P, 9, 1)
+    check(rSq:getFloor() == river and sent[#sent] and sent[#sent].cmd == "dismantleSkipped",
+        "拆除請求指到地圖原有的水：跳過，水留著")
+    local Floors = MinidoracatBuilder.Floors
+    local wRefund = Place.refundOf(w)
+    check(type(wRefund) == "table" and next(wRefund) == nil and Floors.get(w) and Floors.get(w).s == "blends_natural_02_6",
+        "挖的時候在地板帳本記一筆空的退料：伺服器照帳本認這片水面")
+
+    -- 填平：換回原地板；沒記到、記的不是天然地面的換泥土
+    local function unbuild(p, n, x, y)
+        sent = {}
+        Server.dismantleIntent(p, { n = n, t = { x, y, 0, "blends_natural_02_6" } })
+        Server.dismantle(p, n, 1)
+        return sent[#sent] and sent[#sent].cmd, sent[#sent] and sent[#sent].args or {}
+    end
+    local nc, na = unbuild(bare, 10, 492, 492)
+    check(nc == "dismantleSkipped" and na.code == "NO_TOOL" and tSq:getFloor() == w, "填平也要鏟子：沒帶回 NO_TOOL，水留著")
+    local fc = unbuild(P, 11, 492, 492)
+    local back = tSq:getFloor()
+    check(fc == "dismantled" and back and back.spr == natS and not tSq:has(F.water) and #tSq.objects == 1
+        and next(at(492, 493).dropped) == nil,
+        "填平：水面移除、換回挖之前的地面，不退任何東西")
+    check(Floors.get(back) == nil, "填平後地板帳本那一筆清掉")
+    -- 帳本沒有紀錄的水：記號和圖一樣也不算本工具挖的，伺服器不填平
+    river.md.builderEntry = "blends_natural_02_6"
+    local kc, ka = unbuild(P, 19, 494, 492)
+    check(Place.dug(river) and Place.refundOf(river) == nil and kc == "dismantleSkipped" and ka.code == "NOT_OURS"
+        and rSq:getFloor() == river and #rSq.objects == 1,
+        "帳本沒有紀錄的水（記號和圖一樣）：伺服器回 NOT_OURS，水留著")
+    river.md.builderEntry = nil
+    -- 帳本那一筆記的是別張水面圖：也不算
+    local water7 = sprite("blends_natural_02_7", 4793, WATER)
+    Floors.put(river, {})
+    local other = mk(water7)
+    other.md.builderEntry = "blends_natural_02_7"
+    other.sq = rSq
+    check(type(Place.refundOf(river)) == "table" and Place.dug(other) and Place.refundOf(other) == nil,
+        "帳本記的圖和現在的圖不一樣：不算本工具挖的")
+    Floors.forget(river)
+    local old, odd = mk(waterS), mk(waterS)
+    old.md.builderEntry = "blends_natural_02_6"
+    odd.md.builderEntry, odd.md.builderWater = "blends_natural_02_6", "floors_exterior_street_01_0"
+    check(Place.waterBase(old) == Place.DIRT and Place.waterBase(odd) == Place.DIRT and Place.DIRT == "blends_natural_01_64"
+        and Place.waterBase(w) == "blends_natural_01_21",
+        "填平換回的地面：沒記到（舊資料）或記的不是天然地面時換泥土")
+    local oSq = at(495, 492)
+    oSq.objects = { old }
+    old.sq = oSq
+    Place.fill(old)
+    check(oSq:getFloor() and oSq:getFloor():getSprite():getName() == "blends_natural_01_64" and not oSq:has(F.water),
+        "沒記到原地板的水面填平：換成泥土，不會留一格沒有地板")
+    -- 填平時水面移不掉（引擎丟的例外 Kahlua 只記 log）：報錯，不在水面上再補一片地板
+    local stuckSq = at(497, 497)
+    local stuck = Place.dig(stuckSq, waterS)
+    local realRemove = stuckSq.transmitRemoveItemFromSquare
+    stuckSq.transmitRemoveItemFromSquare = function() return -1 end
+    local okFill = pcall(Place.fill, stuck)
+    stuckSq.transmitRemoveItemFromSquare = realRemove
+    check(okFill == false and stuckSq:getFloor() == stuck and #stuckSq.objects == 1,
+        "填平時水面移不掉：報錯，那一格維持原樣，不會多出一片地板")
+    -- 水面放不上去（引擎丟的例外 Kahlua 只記 log，addFloor 回 nil；舊地板這時已經拆掉）：補回原本的地面再報錯，
+    -- 沒記進撤回清單，帳本沒有紀錄
+    local nSq = at(490, 497)
+    local realAdd = nSq.addFloor
+    local nPlaced = {}
+    nSq.addFloor = function(self, name)
+        if name == "blends_natural_02_6" then return nil end
+        return realAdd(self, name)
+    end
+    local okDig = pcall(Place.dig, nSq, waterS, nPlaced)
+    nSq.addFloor = realAdd
+    check(okDig == false and #nPlaced == 0 and #nSq.objects == 1 and nSq:getFloor() and nSq:getFloor().spr == natS
+        and Floors.get(nSq:getFloor()) == nil,
+        "水面放不上去：補回原本的地面再報錯，不記撤回、不記帳本")
+    -- 引擎把水面加進格子之後才丟例外（addFloor 回 nil、水面已經在格子上）：拿掉那片水、補回原本的地面再報錯
+    nSq.addFloor = function(self, name)
+        local f = realAdd(self, name)
+        if name == "blends_natural_02_6" then return nil end
+        return f
+    end
+    local okDigX = pcall(Place.dig, nSq, waterS, nPlaced)
+    nSq.addFloor = realAdd
+    check(okDigX == false and #nPlaced == 0 and #nSq.objects == 1 and nSq:getFloor() and nSq:getFloor().spr == natS
+        and not nSq:has(F.water) and Floors.get(nSq:getFloor()) == nil,
+        "水面加進格子後才失敗：拿掉那片水、補回原本的地面再報錯，不留沒有紀錄的水面")
+    -- addFloor 本身壞了（水面和原地面都放不上去）：把拆掉的那片原地板放回去再報錯
+    local keepFloor = nSq:getFloor()
+    nSq.addFloor = function() return nil end
+    local okDigY = pcall(Place.dig, nSq, waterS, nPlaced)
+    nSq.addFloor = realAdd
+    check(okDigY == false and #nPlaced == 0 and #nSq.objects == 1 and nSq:getFloor() == keepFloor,
+        "水面和原地面都放不上去：拆掉的那片原地板放回去，不留一格沒有地板")
+    -- 水面放上去之後才出錯：已經記進撤回清單，撤回換回原地面
+    local realPut = Floors.put
+    Floors.put = function() error("ledger boom") end
+    local okDig3 = pcall(Place.build, "water", { { sq = nSq, spr = waterS } }, nPlaced)
+    Floors.put = realPut
+    local wasWater = nSq:has(F.water)
+    Place.undo(nPlaced)
+    check(okDig3 == false and wasWater and #nPlaced == 1 and nSq:getFloor() and nSq:getFloor().spr == natS and not nSq:has(F.water),
+        "水面放上去之後才出錯：撤回清單有這一格，撤回後換回原地面")
+    -- 填平時原本的地面補不上去：補泥土；兩張都補不上才報錯
+    local dSq = at(491, 497)
+    local dw = Place.dig(dSq, waterS, nil)
+    local realAdd2 = dSq.addFloor
+    dSq.addFloor = function(self, name)
+        if name ~= Place.DIRT then return nil end
+        return realAdd2(self, name)
+    end
+    Place.fill(dw)
+    local dirtOk = dSq:getFloor() and dSq:getFloor():getSprite():getName() == Place.DIRT and #dSq.objects == 1
+    dSq.addFloor = realAdd2
+    local dw2 = Place.dig(dSq, waterS, nil)
+    dSq.addFloor = function() return nil end
+    local okFill2 = pcall(Place.fill, dw2)
+    dSq.addFloor = realAdd2
+    check(dirtOk and okFill2 == false and dSq:getFloor() == dw2 and #dSq.objects == 1 and Floors.get(dw2) ~= nil
+        and Place.refundOf(dw2) ~= nil,
+        "填平時原本的地面補不上去：補泥土；連泥土也補不上就把水面放回去再報錯（不留沒有地板的格子，帳本也還在）")
+    -- 補地時地板加進格子後才失敗（addFloor 回 nil、還沒送給客戶端）：半套的拿掉，不當成填好了，水面放回去再報錯
+    dSq.addFloor = function(self, name)
+        realAdd2(self, name)
+        return nil
+    end
+    local okFill3 = pcall(Place.fill, dw2)
+    dSq.addFloor = realAdd2
+    check(okFill3 == false and dSq:getFloor() == dw2 and #dSq.objects == 1 and Place.refundOf(dw2) ~= nil,
+        "補地時地板加進格子後才失敗：半套的地板拿掉、水面放回去再報錯，不回報成功")
+    -- 沒有記號的水面被別的途徑移除：帳本那一筆照樣清（照帳本與圖名認），之後同格同圖的水不算本工具挖的
+    dw2.md = {}
+    dSq:transmitRemoveItemFromSquare(dw2, false)
+    local later = mk(waterS)
+    later.md.builderEntry = "blends_natural_02_6"
+    later.sq = dSq
+    dSq.objects = { later }
+    check(Floors.get(later) == nil and Place.refundOf(later) == nil, "沒有記號的水面被移除：帳本照樣清掉，同一格之後的水不繼承紀錄")
+    dSq.objects = {}
+    realAdd2(dSq, "blends_natural_01_21")
+    -- 單機在水面旁蓋一般地板：周圍 8 格的水面幾何也重畫（多人由客戶端收到新地板時處理）
+    require "MinidoracatBuilder/Pond"
+    local gSq, gN = at(496, 495), at(497, 496)
+    local g0 = gN.cleared
+    isServer = function() return false end
+    Place.dig(gSq, waterS, nil)
+    isServer = realServer
+    check(gN.cleared - g0 == 1, "單機挖：addFloor 之外再照客戶端那一份清 9 格")
+    -- 拖一片水面：離玩家遠的先挖（玩家在北邊 y＝8.5，拖 10..12 × 10..12，從最近的那一排按下）
+    local Cur = MinidoracatBuilder.Cursor
+    local drag = Cur.shape(10, 10, 0, 12, 12, "fill", 64)
+    local far = Cur.farFirst(drag, 11.5, 8.5)
+    local rowsOk = #far == 9 and drag[1][2] == 10
+    for i = 1, 9 do rowsOk = rowsOk and far[i] ~= nil and far[i][2] == (i <= 3 and 12 or i <= 6 and 11 or 10) end
+    check(rowsOk and far[3][1] == 11 and far[9][1] == 11,
+        "水面拖一片：最遠的那一排先挖、按下的那一排最後；同一排裡離玩家最近的那格最後")
+    local back = Cur.farFirst(far, 11.5, 8.5) -- 已經排好的（遠的在前）再排一次：順序不變
+    local same = #back == 9
+    for i = 1, 9 do same = same and back[i] == far[i] end
+    -- 接到游標上：水面拖一片照遠近排，超過上限的是離玩家最近的幾格；別的種類照按下那格起的蛇形
+    local function dragOf(kind, px, py)
+        local c = { canDrag = true, entry = { kind = kind }, d = 0, max = 6, sides = {},
+            character = { getX = function() return px end, getY = function() return py end } }
+        return Cur.anchors(c, 10, 10, 0, 12, 12)
+    end
+    local wl, fl = dragOf("water", 11.5, 8.5), dragOf("floor", 11.5, 8.5)
+    check(same and #wl == 9 and wl[1][2] == 12 and wl[6].code == nil and wl[7].code == "OVER_MAX" and wl[7][2] == 10
+        and wl[9][2] == 10 and fl[1][1] == 10 and fl[1][2] == 10 and fl[7].code == "OVER_MAX" and fl[9][2] == 12,
+        "游標：水面拖一片遠的在前、超過上限的是最近的那一排；地板照舊從按下那格排起")
+    -- 站在要挖的範圍裡（含邊上那一圈）：整片不送，免得四周挖完被水圍住；站在範圍外一格就照常。地板不受影響
+    local inW, edgeW, inF = dragOf("water", 11.5, 11.5), dragOf("water", 12.9, 10.1), dragOf("floor", 11.5, 11.5)
+    local allIn = #inW == 9 and #edgeW == 9
+    for i = 1, 9 do allIn = allIn and inW[i].code == "STAND_OUTSIDE" and edgeW[i].code == "STAND_OUTSIDE" end
+    check(allIn and inF[1].code == nil and dragOf("water", 13.1, 10.5)[1].code == nil
+        and MinidoracatBuilder.Messages.CODES.STAND_OUTSIDE == true,
+        "游標：拖一片水面時自己站在範圍裡，整片標 STAND_OUTSIDE 不送；站在範圍外照常，地板不受影響")
+    local sSq, sN, pSq = at(490, 494), at(491, 495), at(490, 496)
+    local c0, n0 = sSq.cleared, sN.cleared
+    Place.build("floor", { { sq = sSq, spr = floorS, cost = { items = {} } } }, {})
+    local c1, n1, p1 = sSq.cleared, sN.cleared, pSq.cleared
+    isServer = function() return false end
+    Place.build("floor", { { sq = pSq, spr = floorS, cost = { items = {} } } }, {})
+    isServer = realServer
+    check(c1 - c0 == 1 and n1 == n0 and pSq.cleared - p1 == 2 and sN.cleared - n1 == 1,
+        "蓋一般地板：伺服器只清自己那一格；單機另外照客戶端那一份清 9 格")
+    -- 別的 MOD 的水面地板帶拆解屬性：照樣由本工具填平，不交給原版拆解（一般地板帶同樣屬性的照舊走原版拆解）
+    scrapDefs.WgMetal = { perk = perkObj("MetalWelding"), returnItems = { { returnItem = "Base.ScrapMetal", maxAmount = 2 } } }
+    local modWater = sprite("modwater_01_0", 4791, { flags = WATER.flags, keys = { waterAmount = "9999", CanScrap = "", Material = "WgMetal" } })
+    local modFloor = sprite("modwater_01_1", 4792, { flags = { "solidfloor" }, keys = { CanScrap = "", Material = "WgMetal" } })
+    check(Cost.refund("water", modWater) == "builder" and Cost.refund("floor", modFloor) == "scrap",
+        "帶拆解屬性的水面：拆除方式仍是本工具填平；同樣屬性的一般地板照舊是原版拆解")
+    scrapDefs.WgMetal = nil
+
+    -- 在水面上蓋地板：照「地板一律換」拆掉水面，不留水面紀錄
+    local fSq = at(496, 492)
+    local w2 = Place.dig(fSq, waterS)
+    Place.build("floor", { { sq = fSq, spr = floorS, cost = { items = {} } } }, {})
+    local anyWater = false
+    for _, ob in ipairs(fSq.objects) do anyWater = anyWater or ob == w2 or Dismantle.kindOf(ob) == "water" end
+    check(not anyWater and not fSq:has(F.water) and fSq.objects[1] and fSq.objects[1].name == "pf_floor_01_0",
+        "水面上蓋地板：水面被拆掉、換成新地板，格上沒有水面物件或記號")
+
+    -- 蓋到一半出錯撤回：換回原本的地面，不留沒有地板的格子
+    local uSq = at(497, 492)
+    local placed = {}
+    Place.build("water", { { sq = uSq, spr = waterS } }, placed)
+    local dug = uSq:getFloor() and uSq:getFloor().spr == waterS
+    Place.undo(placed)
+    check(dug and uSq:getFloor() and uSq:getFloor().spr == natS and not uSq:has(F.water), "撤回：挖好的水面換回原地面")
+
+    -- 客戶端重畫（client/MinidoracatBuilder/Pond.lua）
+    require "MinidoracatBuilder/Pond"
+    local Pond = MinidoracatBuilder.Pond
+    local function counts(cx, cy)
+        local out = {}
+        for dy = -1, 1 do for dx = -1, 1 do out[#out + 1] = at(cx + dx, cy + dy).cleared end end
+        return out
+    end
+    local function grew(before, after, by)
+        for i = 1, #before do if after[i] - before[i] ~= by then return false end end
+        return true
+    end
+    local trap = mk(crateS)
+    function trap:getSquare() error("non-floor object touched its square") end
+    local nilProps = { getProperties = function() return nil end, getSquare = function() error("touched") end }
+    local b0 = counts(494, 494)
+    local okTrap = pcall(Pond.onObjectAdded, trap) and pcall(Pond.onObjectAdded, nilProps)
+    check(okTrap and grew(b0, counts(494, 494), 0), "客戶端：不是地板的物件（含沒有屬性的地上物品）不碰任何格子")
+    local wObj = mk(waterS)
+    wObj.sq = at(494, 494)
+    local b1 = counts(494, 494)
+    fire("OnObjectAdded", wObj)
+    check(grew(b1, counts(494, 494), 1), "客戶端：收到水面地板，那一格和周圍 8 格的水面幾何各清一次（事件已掛上）")
+    local dry = mk(natS)
+    dry.sq = at(494, 494)
+    local b2 = counts(494, 494)
+    Pond.onObjectAdded(dry)
+    check(grew(b2, counts(494, 494), 1), "客戶端：填平後收到乾地地板，周圍 8 格的岸邊幾何也清掉重建")
+    local upObj = mk(natS)
+    upObj.sq = wsq(494, 494, 1, {})
+    local b3 = counts(494, 494)
+    Pond.onObjectAdded(upObj)
+    check(grew(b3, counts(494, 494), 0) and upObj.sq.cleared == 0, "客戶端：二樓的地板不碰一樓的水面幾何")
+    local b4 = counts(492, 495)
+    Place.dig(at(492, 495), waterS)
+    local mp = counts(492, 495)
+    isServer = function() return false end
+    Place.fill(at(492, 495):getFloor())
+    isServer = realServer
+    local sp = counts(492, 495)
+    check(mp[5] - b4[5] == 1 and mp[1] == b4[1] and sp[1] - mp[1] == 1 and sp[5] - mp[5] == 2,
+        "伺服器挖：只清自己那一格（引擎 addFloor），不叫客戶端的重畫；單機填平：addFloor 之外再照客戶端那一份清 9 格")
+    -- 一次挖好幾格：每格都排一次走路（不靠「排隊當下已經在旁邊」的判斷），站位排除它自己和前面緊鄰的格子；只挖一格照舊
+    local keepClient, keepLu, keepQ = isClient, luautils, ISTimedActionQueue
+    isServer, isClient = function() return false end, function() return false end
+    local q, finds, adjWalks = {}, {}, 0
+    ISTimedActionQueue = { clear = function() q = {} end, add = function(a) q[#q + 1] = a end,
+        isPlayerDoingAction = function() return false end }
+    luautils = { walkAdj = function() adjWalks = adjWalks + 1 return true end, walkAdjWall = function() return true end }
+    AdjacentFreeTileFinder = { Find = function(sq, _, skip)
+        finds[#finds + 1] = { sq = sq, n = #skip, first = skip[1] }
+        return at(493, 496)
+    end }
+    ISWalkToTimedAction = { new = function(_, _, loc) return { walk = loc } end }
+    sb.KindWater = true
+    nowMs = nowMs + 6000
+    local dn = MinidoracatBuilder.Client.build(P, "blends_natural_02_6",
+        { { 493, 492, 0, 0 }, { 493, 493, 0, 0 }, { 491, 494, 0, 0 } }, nil)
+    check(dn ~= nil and #q == 6 and q[1].walk == at(493, 496) and q[2].i == 1 and q[3].walk and q[4].i == 2 and q[6].i == 3
+        and adjWalks == 0 and #finds == 3 and finds[1].n == 1 and finds[1].first == at(493, 492) and finds[2].n == 2
+        and finds[3].n == 1,
+        "一次挖好幾格：每格各排一次走路再排動作；站位排除自己和前面緊鄰的格子，不緊鄰的不放進清單")
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.build(P, "blends_natural_02_6", { { 493, 492, 0, 0 } }, nil)
+    check(adjWalks == 1 and #finds == 3 and #q == 1 and q[1].i == 1, "只挖一格：照舊走原版的走到旁邊")
+    -- 後面有一格找不到站位：整批不排（只排前面幾格的話，挖完可能把最後站的地方圍住），記下是第幾格
+    local calls = 0
+    AdjacentFreeTileFinder.Find = function()
+        calls = calls + 1
+        if calls == 2 then return nil end
+        return at(493, 496)
+    end
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.build(P, "blends_natural_02_6",
+        { { 493, 492, 0, 0 }, { 493, 493, 0, 0 }, { 491, 494, 0, 0 } }, nil)
+    local pend = MinidoracatBuilder.Client.pending
+    check(#q == 0 and calls == 2 and pend and pend.noRoom == 2 and pend.noneQueued == true,
+        "一次挖好幾格、其中一格沒有站位：一個動作都不排，記下第 2 格沒有空位、整批沒排")
+    -- 一次填平好幾格：近的先填；排隊當下四周都是水、沒有地方站的那格，走到緊鄰、前面排過的那一格（輪到時已經填成地面）；
+    -- 旁邊沒有排過的格子才跳過
+    local w1, w2, w3 = Place.dig(at(491, 492), waterS, nil), Place.dig(at(490, 492), waterS, nil),
+        Place.dig(at(490, 490), waterS, nil)
+    local function fillItem(obj, x, y)
+        return { x = x, y = y, z = 0, name = "blends_natural_02_6", kind = "water", route = "builder", obj = obj }
+    end
+    luautils.walkAdj = function(_, sq) return sq == at(491, 492) end
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.dismantleMany(P, { fillItem(w3, 490, 490), fillItem(w2, 490, 492), fillItem(w1, 491, 492) }, nil)
+    local ub = MinidoracatBuilder.Client.pendingUnbuild
+    check(#q == 3 and q[1].i == 3 and q[2].walk == at(491, 492) and q[3].i == 2 and ub and ub.skipped.NO_ROOM == 1,
+        "一次填平好幾格：近的先排；沒有站位的走到緊鄰、前面排過的那格再填；旁邊沒有排過的才跳過（NO_ROOM 1 格）")
+    isServer, isClient, luautils, ISTimedActionQueue = realServer, keepClient, keepLu, keepQ
+    AdjacentFreeTileFinder, ISWalkToTimedAction = nil, nil
+
+    instanceof = realInst
+    sb.RecipeMaterials, sb.CostMultiplier, sb.KindWater, sb.RequireSkill = keepRM, keepMult, keepKW, keepSkill
     spriteMap, spriteOrder = keepMap, keepOrder
 end)()
 

@@ -140,21 +140,28 @@ local USES = {
 }
 -- 固定價（使用者 2026-11-13 選新種類）：items 照倍率乘、uses 是硬核耗材（同 USES）、perk 是經驗與硬核技能（level）的技能，
 -- noXp 的材料不給經驗。
--- 水井與手壓水泵：原版沒有配方，數量照 Building Craft（Workshop 3459887404，BuildingData/Building_Data_Furniture.lua 的
---   「特殊」：水井木工 8、石頭 100＋木板 4＋釘子 4、鏟子；手壓水泵焊接 6、鐵皮 10＋鐵管 8＋螺絲 8、焊條 10 次＋噴槍 10 次、噴槍與
---   焊接面罩）。焊條、噴槍燃料照本 MOD 的金屬規則記成硬核耗材（Building Craft 也照次數扣）。鏟子照標籤 base:diggrave
---   （ItemTag.java:108 DIG_GRAVE；原版只有 Shovel、Shovel2、SpadeForged、SpadeWood、EntrenchingTool 帶，和 Building Craft 列的
---   五把相同。base:digplow 另含園藝叉、鋤頭、抹刀、十字鎬，不用）。本工具拆除（builder）
---   水井的石頭不給經驗（noXp）：經驗只算木板與釘子。
+-- 水井（camping_01_16）：原版沒有配方。井壁算四段，每段照原版石櫃 Stone_Cabinet（entities/furniture/entity_stone_cabinet.txt：
+--   石塊 10、扁石 2、黏土漿或混凝土 1 次、石工）：石塊 40、扁石 8、硬核耗材黏土漿或混凝土 4 次；另收打水用的繩子 1、水桶 1
+--   （Base.Bucket：原版戰利品表與黏土漿、混凝土桶用完後換回的都是它，drainable.txt 的 ReplaceOnDeplete）。工具：鏟子挖井
+--   ＋抹刀砌井壁。技能照石工 4（介於石牆 2 與石柵欄 5 之間）。石塊、扁石不給經驗（使用者裁定），其餘照本工具拆除的規則給。
+-- 手壓水泵（camping_01_64..67）：件數是本工具自己定的設計值（原版沒有這個配方）：鐵管 6 當井管、小鐵片 4 當泵身、螺絲 6；
+--   工具照本工具的金屬類（TOOLS.metal：噴槍＋面罩）；硬核耗材與技能照原版金屬樓梯（噴槍 4 次、焊條 4 次、金工 5，
+--   stairs/entity_welding_stairs.txt:40-48）。
+-- 鏟子照標籤 base:diggrave（ItemTag.java:108 DIG_GRAVE：原版只有 Shovel、Shovel2、SpadeForged、SpadeWood、EntrenchingTool
+--   帶；base:digplow 另含園藝叉、鋤頭、抹刀、十字鎬，不用）。水井、水泵都是本工具拆除（builder）。
+-- 水面（kind water，使用者 2026-11-13 選 cost=shovel）：只要鏟子，不收料、不給經驗、不要技能，倍率不影響；填平也只要鏟子、不退料。
 -- 草與野花（Rules.isGrass）：草屑 3、不要工具、不給經驗。原版「移除草」一格給 2–3 個（ISRemoveGrass.lua:52 ZombRand(2,4)），
 --   本工具拆除退 1..3；倍率低於 1 也照 1 收（floor）
-local WELL_PRICE = { items = { ["Base.Stone2"] = 100, [PLANK] = 4, [NAILS] = 4 }, tools = { "DIG_GRAVE" },
-    perk = PERK.wood, level = 8, noXp = { ["Base.Stone2"] = true } }
-local PUMP_PRICE = { items = { ["Base.SheetMetal"] = 10, [PIPE] = 8, ["Base.Screws"] = 8 }, tools = TOOLS.metal,
-    perk = PERK.metal, level = 6, uses = { [TORCH] = 10, [RODS] = 10 } }
+local WELL_PRICE = { items = { ["Base.Stone2"] = 40, ["Base.FlatStone"] = 8, ["Base.Rope"] = 1, ["Base.Bucket"] = 1 },
+    tools = { "DIG_GRAVE", TOOLS.masonry[1] }, perk = PERK.masonry, level = 4, uses = { [CONCRETE] = 4 },
+    noXp = { ["Base.Stone2"] = true, ["Base.FlatStone"] = true } }
+local PUMP_PRICE = { items = { [PIPE] = 6, ["Base.SmallSheetMetal"] = 4, ["Base.Screws"] = 6 }, tools = TOOLS.metal,
+    perk = PERK.metal, level = SKILL.metal.stairs, uses = USES.metal.stairs }
+local WATER_PRICE = { items = {}, tools = { "DIG_GRAVE" } }
 local GRASS_PRICE = { items = { ["Base.GrassTuft"] = 3 }, tools = {}, floor = true }
 local function fixedPrice(kind, spr)
     if kind == "well" then return spr:getName() == "camping_01_16" and WELL_PRICE or PUMP_PRICE end
+    if kind == "water" then return WATER_PRICE end
     if MinidoracatBuilder.Rules.isGrass(kind, spr:getProperties()) then return GRASS_PRICE end
     return nil
 end
@@ -554,23 +561,27 @@ function Cost.xp(costs, player)
 end
 
 -- 蓋好之後拆掉退什麼（介面的「拆除方式」）。原版拆解怎麼分流（ISMoveableSpriteProps.fromObject，:33-47）：
---   "pickup"：能搬（IsMoveAble），拿起來帶走。
+--   "pickup"：能搬（IsMoveAble），拿起來帶走。格組有空位的例外（Rules.gridHoles）：原版拿不起來、也拆解不了，歸 "builder"。
 --   "scrap"：CanScrap 且 Material 有定義（:104-123）、有拆解產出：照圖塊材質重查產出（getScrapItemsList，:3304-3348）。
 --   "builder"：其他不能搬的 IsoThumpable 與燈：本工具拆除（Server.dismantle），每項退 1..v（v＝退料表）。第一個
 --     Material 有拆解定義的，原版搬動工具也能拆（ISThumpableSpriteProps，:4320-4340），同樣 1..v；一樓以下的地板不給它拆
 --     （Place.thumpable 的 isDismantable）。掛上去的地面覆蓋與牆上疊圖（Rules.onFloor、Rules.onWall）不是物件，原版拆解點
---     不到，帶 CanScrap 的也歸本工具拆（牆上疊圖那條邊沒有牆、建成獨立物件時也一樣，拆除方式只看圖）。
+--     不到，帶 CanScrap 的也歸本工具拆（牆上疊圖那條邊沒有牆、建成獨立物件時也一樣，拆除方式只看圖）。水面（water）一律
+--     本工具填平（Place.fill：換回原本的地面），別的 MOD 的水面地板帶 CanScrap 也一樣。
 --   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
 --   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
+    if kind == "water" then return "builder" end
     local p = spr:getProperties()
-    if p:has("IsMoveAble") then return "pickup" end
-    if kind == "curtain" then return "sheet" end
     local R = MinidoracatBuilder.Rules
+    if p:has("IsMoveAble") and not R.gridHoles(spr) then return "pickup" end
+    if kind == "curtain" then return "sheet" end
     if R.onFloor(kind, spr) or R.onWall(kind, spr) then return "builder" end
     local mat = p:get("Material")
-    if p:has("CanScrap") and mat and mat ~= "Undefined" and scrapInto(kind, p, {}, {}) then return "scrap" end
+    if p:has("CanScrap") and mat and mat ~= "Undefined" and not R.gridHoles(spr) and scrapInto(kind, p, {}, {}) then
+        return "scrap"
+    end
     if NOT_BUILDER[kind] then return "none" end
     return "builder"
 end

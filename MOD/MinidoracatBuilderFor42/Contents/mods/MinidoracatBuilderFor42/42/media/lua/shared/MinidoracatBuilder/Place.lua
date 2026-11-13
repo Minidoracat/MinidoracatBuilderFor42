@@ -395,11 +395,136 @@ local function overlapOk(kind, spr, sq)
     return true
 end
 
+-- ---------------------------------------------------------------- 水面（使用者 2026-11-13 選 pond=do、cost=shovel）
+-- 水面是原版的水面地板（一般 IsoObject，不是 IsoThumpable）：擋人、擋殭屍，能取（髒）水、釣魚，殭屍不打。
+Place.NATURAL = "blends_natural_01" -- 天然地面（草地、泥土、沙）的圖名開頭
+Place.DIRT = "blends_natural_01_64" -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:82-88）
+
+-- 挖水面時這一件可以跟著消失：草、草地疊圖、不是樹的植被（原版 addFloor 自己拆的那幾種，IsoGridSquare.java:4730-4747；
+-- 只帶 canBeRemoved 的草 addFloor 不拆，Place.dig 先拆）。本工具蓋的植物不算：不替玩家清，退料會跟著不見
+local function soft(o)
+    local p = o:getProperties()
+    if not p or o:getType() == T.tree then return false end
+    if o:hasModData() and o:getModData().builderEntry then return false end
+    if p:has(F.canBeRemoved) or p:has(F.vegitation) then return true end
+    local spr = o:getSprite()
+    local name = spr and spr:getName()
+    return name ~= nil and name:sub(1, 20) == "blends_grassoverlays"
+end
+
+-- 能不能在 sq 挖水面：只在一樓（z＝0）；已經是水 SAME_TILE；地板要是天然地面、不是本工具蓋的地板（IsoThumpable：帳本的退料
+-- 會跟著不見），不然 NOT_NATURAL；格上有人、殭屍、動物 OCCUPIED；地上有物品、屍體，或有草與植被以外的東西（含樹）不挖（BLOCKED）：
+-- 不替玩家清東西，地上的物品不會被水吞掉。地板上掛著本工具的地面覆蓋（記號 builderOverlays，Place.attach）也不挖：地板
+-- 一拆覆蓋和它的退料就跟著不見。車子壓著由 Place.check 開頭擋（VEHICLE）
+local function waterOk(sq)
+    if sq:getZ() ~= 0 then return false end
+    if sq:has(F.water) then return false, "SAME_TILE" end
+    local floor = sq:getFloor()
+    local fs = floor and floor:getSprite()
+    local fname = fs and fs:getName()
+    if not fname or fname:sub(1, #Place.NATURAL) ~= Place.NATURAL or instanceof(floor, "IsoThumpable") then
+        return false, "NOT_NATURAL"
+    end
+    local hung = floor:hasModData() and floor:getModData().builderOverlays
+    if type(hung) == "table" then
+        for _ in pairs(hung) do return false end
+    end
+    if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
+    if not (sq:getWorldObjects():isEmpty() and sq:getStaticMovingObjects():isEmpty()) then return false end
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        if o ~= floor and not soft(o) then return false end
+    end
+    return true
+end
+
+-- 單機：伺服器與畫面在同一個 Lua，引擎不會對 addFloor 觸發 OnObjectAdded（只有客戶端收到 AddItemToMap 才觸發，
+-- AddItemToMapPacket.java:94），照客戶端那一份重畫水面幾何（client/MinidoracatBuilder/Pond.lua）
+local function redraw(obj)
+    if isClient() or isServer() then return end
+    local Pond = MinidoracatBuilder.Pond
+    if Pond and obj then Pond.onObjectAdded(obj) end
+end
+
+-- 本工具挖的水面：記號 builderEntry 就是現在的圖，圖帶 water 旗標（Dismantle.ours 認它；伺服器另外查地板帳本，
+-- Place.refundOf）。先看 modData：地圖物件多半沒有，一區拆除整區掃時一次引擎呼叫就返回
+function Place.dug(obj)
+    if not obj:hasModData() then return false end
+    local e = obj:getModData().builderEntry
+    if not e then return false end
+    local spr = obj:getSprite()
+    return spr ~= nil and spr:getName() == e and spr:getProperties():has(F.water)
+end
+
+-- 填平換回哪張：挖之前記的地板（builderWater；照挖的條件只收天然地面、圖還在）；沒記到或不對的換泥土
+function Place.waterBase(obj)
+    local b = obj:hasModData() and obj:getModData().builderWater
+    if type(b) == "string" and b:sub(1, #Place.NATURAL) == Place.NATURAL and Entry.sprite(b) then return b end
+    return Place.DIRT
+end
+
+-- 照原版 addFloor 在「沒有地板」的格子放一片（挖與填平都先拆掉舊的）：它清這一格的水面幾何、送給客戶端
+-- （IsoGridSquare.java:4726-4795）。引擎丟的例外 Kahlua 只記 log、回 nil，新地板這時可能已經加進格子但還沒重算、
+-- 還沒送出（加入物件在前）：這種半套的一律拿掉，回 nil，由呼叫端退回確定的狀態，不當成放好了
+local function layFloor(sq, name)
+    local obj = sq:addFloor(name)
+    if obj and sq:getObjects():contains(obj) then return obj end
+    local left = sq:getFloor()
+    if left then sq:transmitRemoveItemFromSquare(left, false) end
+    return nil
+end
+
+-- 挖（伺服器）：記下原本的地板圖名，拆掉格上的草、植被與原地板（只拆這一格，Place.clearFloor；waterOk 已確定格上只有
+-- 這些），再放水面。物件已經送出，記號另外 transmitModData（存檔跟著物件）。伺服器在地板帳本記一筆空的退料：這片是不是
+-- 本工具挖的以帳本為準（Place.refundOf）。水面放不上去：補回原本的地面（補不上就把拆掉的那片原地板放回去）再報錯。
+-- 放上去就記進 placed（{ water = 物件 }，同 Place.attach 的紀錄），後面出錯時 Place.undo 換回地面。不登記水面 zone
+-- （那一帶會沒有「釣魚」，原型 Q4）
+function Place.dig(sq, spr, placed)
+    local floor = sq:getFloor()
+    local fs = floor and floor:getSprite()
+    local base = fs and fs:getName()
+    Place.clearFloor(sq)
+    local obj = layFloor(sq, spr:getName())
+    if not obj then
+        if not layFloor(sq, base or Place.DIRT) and floor then sq:transmitAddObjectToSquare(floor, -1) end
+        error("water not placed at " .. sq:getX() .. "," .. sq:getY())
+    end
+    if placed then placed[#placed + 1] = { water = obj } end
+    -- 這一格不再長東西（同 placeFloor）：侵蝕照挖之前的天然地面分了類，時間到會在水面上長出草木
+    sq:disableErosion()
+    if isServer() then sendServerCommand("erosion", "disableForSquare", { x = sq:getX(), y = sq:getY(), z = sq:getZ() }) end
+    local md = obj:getModData()
+    md.builderEntry, md.builderWater = spr:getName(), base
+    obj:transmitModData()
+    local Floors = MinidoracatBuilder.Floors
+    if Floors then Floors.put(obj, {}) end
+    redraw(obj)
+    return obj
+end
+
+-- 填平（伺服器）：移除水面、換回原本的地面。移除時引擎丟的例外 Kahlua 只記 log：確認已經不在格子上才補地；原本的地面
+-- 補不上去就補泥土；兩張都補不上（addFloor 本身壞了）就把水面照原樣放回去、帳本重記，再報錯，不留一格沒有地板
+function Place.fill(obj)
+    local sq = obj:getSquare()
+    local base = Place.waterBase(obj)
+    sq:transmitRemoveItemFromSquare(obj, false)
+    if sq:getObjects():contains(obj) then error("water not removed at " .. sq:getX() .. "," .. sq:getY()) end
+    local floor = layFloor(sq, base) or layFloor(sq, Place.DIRT)
+    if not floor then
+        sq:transmitAddObjectToSquare(obj, -1)
+        local Floors = MinidoracatBuilder.Floors
+        if Floors then Floors.put(obj, {}) end
+        error("no floor after filling water at " .. sq:getX() .. "," .. sq:getY())
+    end
+    redraw(floor)
+end
+
 -- 能不能在 sq 放 spr（種類 kind）。成功回 true 與桌面高度（放在桌上、疊上去的物件要墊高，原版搬家具算的）；
 -- 失敗回 false 與原因碼（游標分原因說；nil＝其他，Check.item 回 BLOCKED）：
 --   SAME_TILE：同一格已經有同一張圖（不是可疊的）。VEHICLE：車子壓著。OCCUPIED：會擋路的東西那格有人、殭屍或動物。
 --   STACK_FULL：可疊的箱子疊到原版的高度上限。NOT_SURFACE：可疊的箱子放在可疊、卻不是桌面的箱子上。
---   NOT_NATURAL：樹叢、樹籬、墓碑這類（MoveType 是 Vegitation）放在不是天然地面的地板上。
+--   NOT_NATURAL：樹叢、樹籬、墓碑這類（MoveType 是 Vegitation）放在不是天然地面的地板上；水面挖在不是天然地面的格子（waterOk）。
 --   SQUARE_FULL：疊放模式下這一格已經到沙盒的上限。
 -- player 只給原版搬家具的判斷讀玩家所在格（窗上物件）；擺放技能與工具不查（placeTool 已清掉）。
 -- role：多格項目裡這一格的角色（Entry.cells 第 5 欄；目前只有樓梯有）。planned：見 Place.roofAt。
@@ -410,6 +535,7 @@ end
 function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
+    if kind == "water" then return waterOk(sq) end
     overlap = overlap == true -- Kahlua 少傳的參數不保證是 nil（家族 pitfalls）：只認明確的 true
     local p = spr:getProperties()
     -- 可疊的（IsStackable：軍用箱、紙箱這類）同一張也能疊，高度交給下面原版搬家具的判斷
@@ -547,13 +673,19 @@ end
 
 -- 拆了退什麼（Server.dismantle 與伺服器的原地替換讀，只在伺服器）：燈、家電（Place.keyed）照伺服器帳本；一樓以下的地板照
 -- 地板帳本，現在的圖和蓋的時候一樣、這一格只有它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、
--- 還沒搬的舊地板照 buildMaterials（Place.migrate）。都沒有回 nil。
+-- 還沒搬的舊地板照 buildMaterials（Place.migrate）。本工具挖的水面也照地板帳本認（Place.dig 記的那筆，圖要一樣），
+-- 不收料所以退空表。都沒有回 nil。
 function Place.refundOf(obj)
     if Place.keyed(obj) then
         local Ledger, Dismantle = MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
         local mats = Ledger and Ledger.get(obj)
         if mats and Dismantle then mats = Dismantle.lightRefund(obj, mats) end
         return mats
+    end
+    if Place.dug(obj) then
+        local Floors = MinidoracatBuilder.Floors
+        local e = Floors and Floors.get(obj)
+        return e and e.s == obj:getSprite():getName() and e.i or nil
     end
     local sq = obj:getSquare()
     if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return obj:getBuildMaterials() end
@@ -724,6 +856,7 @@ local function placeFloor(sq, obj)
     sq:clearWater()
     sq:disableErosion()
     if isServer() then sendServerCommand("erosion", "disableForSquare", { x = x, y = y, z = z }) end
+    redraw(obj) -- 單機蓋在水面旁或水面上：周圍的水面幾何照新地板重畫（多人由客戶端的 Pond 處理）
 end
 
 -- 牆、柵欄、門框、窗框插在最後一個 solidfloor 物件後面；門插在同方向的門框後面，沒有門框照牆。照 42.22 原版建好後重插
@@ -972,7 +1105,9 @@ function Place.build(kind, cells, placed)
         local sq, spr = c.sq, c.spr
         local north = Entry.north(kind, spr)
         local obj
-        if kind == "door" then
+        if kind == "water" then
+            Place.dig(sq, spr, placed)
+        elseif kind == "door" then
             obj = IsoDoor.new(getCell(), sq, spr:getName(), north)
             obj:getModData().builderEntry = spr:getName() -- 讀檔時認得出來（Place.harden）；拆除不認門（Dismantle.mine）
             if proof("ZombieProofDoors") then obj:setHealth(DOOR_HP) end
@@ -1024,6 +1159,7 @@ end
 
 -- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
 -- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。掛上去的（Place.attach 的紀錄）拿掉那張、清帳本。
+-- 挖好的水面（{ water }）換回原本的地面，不留一格沒有地板；出錯只記 log（呼叫端已經在收拾，不再往上丟）
 function Place.undo(placed)
     for i = #placed, 1, -1 do
         local obj = placed[i]
@@ -1031,6 +1167,11 @@ function Place.undo(placed)
             Place.detach(obj.host, obj.name)
             local Overlays, sq = MinidoracatBuilder.Overlays, obj.host:getSquare()
             if Overlays and sq then Overlays.forget(sq, obj.name, obj.edge) end
+        elseif type(obj) == "table" and obj.water then
+            if obj.water:getSquare() then
+                local ok, err = pcall(Place.fill, obj.water)
+                if not ok then print("[MinidoracatBuilderFor42] water undo failed: " .. tostring(err)) end
+            end
         else
             local sq = obj:getSquare()
             if sq then sq:transmitRemoveItemFromSquare(obj, false) end
@@ -1079,7 +1220,15 @@ function Place.onAboutToBeRemoved(obj)
     if instanceof(obj, "IsoWorldInventoryObject") then return end
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
-    if not instanceof(obj, "IsoThumpable") then return end
+    if not instanceof(obj, "IsoThumpable") then
+        -- 本工具挖的水面（一般地板物件）：地板帳本那一筆記的就是這張圖才清。照帳本認，不看物件上的記號
+        local Floors = MinidoracatBuilder.Floors
+        if Floors and obj:isFloor() then
+            local e, spr = Floors.get(obj), obj:getSprite()
+            if e and spr and e.s == spr:getName() then Floors.forget(obj) end
+        end
+        return
+    end
     local Floors, sq = MinidoracatBuilder.Floors, obj:getSquare()
     if Floors and sq and sq:getZ() <= 0 and obj:isFloor() then Floors.forget(obj) end
     if obj:hasModData() and obj:getModData().builderEntry then wipe(obj:getBuildMaterials()) end

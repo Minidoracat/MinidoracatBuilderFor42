@@ -48,7 +48,7 @@ W.PER_ROW_MIN, W.PER_ROW_MAX, W.PER_ROW_DEFAULT = 2, 10, 5
 -- 頁籤與種類（設計稿的九個頁籤；只列 Entry.BUILDABLE）。柱子在「牆」頁籤（使用者 2026-10-31 選新增「柱子」）
 W.TABS = { "all", "floor", "wall", "doorWindow", "roof", "stairs", "furniture", "light", "decor" }
 W.TAB_KINDS = {
-    floor = { "floor", "floorOverlay" },
+    floor = { "floor", "floorOverlay", "water" },
     wall = { "wall", "fence", "post", "wallOverlay" },
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
@@ -1474,7 +1474,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
     if refund == "none" then
         y = warnLines(v, ops, getText("IGUI_MBLD_Refund_none"), y, dw)
-    elseif refund then
+    elseif refund and e.kind ~= "water" then -- 水面不收料、填平是換回原本的地面，種類說明已經寫了
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
             y = y + lh

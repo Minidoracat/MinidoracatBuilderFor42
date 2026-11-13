@@ -81,6 +81,40 @@ function Client.build(player, e, cells, overlap)
     return n
 end
 
+-- 拖一片水面時第 i 格要站哪：前面幾格輪到它時已經是水，站位不挑它們和它自己（AdjacentFreeTileFinder 的排除清單）。
+-- 排除清單只放緊鄰這一格的（原版對每個候選格逐筆比對清單，全放會隨格數平方長）。dug＝前面排過的 { x, y, sq }。
+-- 回站位的格子；false＝旁邊沒有站得到的空格；格子沒載入回 nil，照樣送
+local function standToDig(player, c, dug)
+    local sq = getCell():getGridSquare(c[1], c[2], c[3])
+    if not sq then return nil end
+    local skip = { sq }
+    for _, d in ipairs(dug) do
+        if math.abs(d[1] - c[1]) <= 1 and math.abs(d[2] - c[2]) <= 1 then skip[#skip + 1] = d[3] end
+    end
+    dug[#dug + 1] = { c[1], c[2], sq }
+    return AdjacentFreeTileFinder.Find(sq, player, skip) or false
+end
+
+-- 水面一次挖好幾格（游標已經把格子排成離玩家遠的在前，Cursor.farFirst）：先把每格的站位都排出來，有一格沒有站位就
+-- 整批不排，只排前面幾格的話挖完可能把最後站的地方圍住。每格都真的排一次走路：luautils.walkAdj 照排隊當下的位置判斷，
+-- 覺得已經在旁邊就不排，輪到時玩家卻可能正站在這一格上（挖前一格時站的），伺服器會回有人擋著
+local function queueDig(b)
+    local dug, stands = {}, {}
+    for i, c in ipairs(b.cells) do
+        local s = standToDig(b.player, c, dug)
+        if s == false then
+            print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; nothing queued")
+            b.noRoom, b.noneQueued = i, true -- 整批沒排：提示照「第 i 格旁邊沒有空位」說（Cursor.tick）
+            return
+        end
+        stands[i] = s or false
+    end
+    for i = 1, #b.cells do
+        if stands[i] then ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, stands[i])) end
+        ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(b.player, b.n, i))
+    end
+end
+
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
 -- 佇列空了以後 Cursor.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，
@@ -88,6 +122,7 @@ end
 local function queue(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
+    if walk and b.kind == "water" and #b.cells > 1 then return queueDig(b) end
     for i, c in ipairs(b.cells) do
         if walk and walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
@@ -230,14 +265,61 @@ local function finish(b, refused)
     if b.onDone then b.onDone(s) else tell(b, s) end
 end
 
+-- 一次填平好幾格水面：近的先填。排隊當下裡面那幾格四周都是水、沒有地方站；前面排過的格子輪到時已經填成地面，
+-- 找不到站位的就走到緊鄰（上下左右）、前面排過的那一格。都沒有才跳過（NO_ROOM）。逐筆插入，不用 table.sort（家族規則）
+local function queueFill(b, ponds)
+    local px, py = b.player:getX(), b.player:getY()
+    local order, key = {}, {}
+    for _, it in ipairs(ponds) do
+        local dx, dy = it.x + 0.5 - px, it.y + 0.5 - py
+        local k, i = dx * dx + dy * dy, #order
+        while i > 0 and key[i] > k do
+            order[i + 1], key[i + 1] = order[i], key[i]
+            i = i - 1
+        end
+        order[i + 1], key[i + 1] = it, k
+    end
+    local cell, filled = getCell(), {}
+    for _, it in ipairs(order) do
+        local stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+        if stand == false then
+            for _, f in ipairs(filled) do
+                local sq = math.abs(f.x - it.x) + math.abs(f.y - it.y) == 1 and cell:getGridSquare(f.x, f.y, f.z)
+                if sq then
+                    ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, sq))
+                    stand = true
+                    break
+                end
+            end
+        end
+        if stand == false then
+            resolve(b, b.index[it], "NO_ROOM", { code = "NO_ROOM" })
+            print(LOG .. "dismantle not queued at " .. it.x .. "," .. it.y .. "," .. it.z .. ": NO_ROOM")
+        else
+            ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n, b.index[it]))
+            filled[#filled + 1] = it
+        end
+    end
+end
+
 -- 伺服器收下才走過去、照 items 的順序排動作（同 Client.build）。旁邊沒空位、原版拆解現在不能拆的那一件跳過，照排下一件。
 -- 建造作弊時本工具拆的不走過去（同 queue；原版 ISDestroyCursor.lua:24），原版拆解的照原版走（它看搬運作弊，不看建造作弊）。
+-- 水面超過一格時留到最後一起排（queueFill）
 local function queueUnbuild(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
+    local ponds = {}
+    if walk then
+        for _, it in ipairs(b.items) do
+            if it.kind == "water" and it.route ~= "scrap" then ponds[#ponds + 1] = it end
+        end
+    end
+    local batch = #ponds > 1
     for _, it in ipairs(b.items) do
         local code
-        if it.route == "scrap" then
+        if batch and it.kind == "water" and it.route ~= "scrap" then
+            code = nil -- 留給 queueFill
+        elseif it.route == "scrap" then
             code = queueScrap(b.player, it.obj)
             if code then settle(b, code, { code = code }) else b.scrapping[#b.scrapping + 1] = it end
         elseif walk and walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
@@ -248,6 +330,7 @@ local function queueUnbuild(b)
         end
         if code then print(LOG .. "dismantle not queued at " .. it.x .. "," .. it.y .. "," .. it.z .. ": " .. code) end
     end
+    if batch then queueFill(b, ponds) end
     if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
 end
 

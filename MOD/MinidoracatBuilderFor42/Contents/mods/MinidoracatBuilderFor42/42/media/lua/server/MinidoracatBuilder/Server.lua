@@ -217,7 +217,7 @@ local function giveXp(player, costs)
 end
 
 -- ---------------------------------------------------------------- 移除與退料（拆除、原地替換共用）
-local DIRT = "blends_natural_01_64" -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:82-88）
+local DIRT = Place.DIRT -- 原版拆掉 z ≤ 0 的地板換成泥土（ISDismantleAction.lua:82-88）
 
 -- 每項退 1..v 件（原版 ISDismantleAction、ISThumpableSpriteProps 同一算法，ISDismantleAction.lua:69-72）
 local function rollInto(into, mats)
@@ -236,9 +236,14 @@ local function drop(player, sq, refund)
 end
 
 -- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
--- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；掛上去的地面覆蓋、牆面疊圖拿掉那張、清覆蓋帳本。移除時引擎丟的
+-- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；本工具挖的水面填平、換回挖之前的地面（Place.fill）；
+-- 掛上去的地面覆蓋、牆面疊圖拿掉那張、清覆蓋帳本。移除時引擎丟的
 -- 例外 Kahlua 只記 log、不往上丟（MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
 local function removeAll(kind, plan)
+    if kind == "water" then
+        for _, o in ipairs(plan.remove) do Place.fill(o) end
+        return
+    end
     local t = plan.overlay
     if t then
         if not Place.detach(t.host, t.name) then

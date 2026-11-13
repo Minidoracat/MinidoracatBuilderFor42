@@ -19,13 +19,13 @@ local LOG = "[MinidoracatBuilderFor42] "
 local PAD, GAP = 8, 6
 -- 一區拆除的預覽不再照時間過期：同一個範圍、世界戳記（Area.stamp）沒變就回同一份（游標拖曳中停住才問、按住不動每秒問一次）
 
--- 拆的順序（設計稿 3.4）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板；同一順位由上層往下。
+-- 拆的順序（設計稿 3.4）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板（水面跟地板一起填平）；同一順位由上層往下。
 -- 二樓地板上有東西時不給拆（FLOOR_IN_USE），照這個順序拆到它時上面已經空了。表外的種類算 2
 local ORDER = {
     floorOverlay = 1, wallOverlay = 1, wallObject = 1, windowObject = 1, attached = 1, overlay = 1,
     furniture = 2, container = 2, solid = 2, light = 2,
     wall = 3, fence = 3, post = 3, doorFrame = 3, windowFrame = 3,
-    stairs = 4, roof = 5, floor = 6,
+    stairs = 4, roof = 5, floor = 6, water = 6,
 }
 Area.ORDER = ORDER
 

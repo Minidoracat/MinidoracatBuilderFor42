@@ -15,7 +15,8 @@ local Rules, Entry, Cost = MinidoracatBuilder.Rules, MinidoracatBuilder.Entry, M
 local Materials, Check, Place = MinidoracatBuilder.Materials, MinidoracatBuilder.Check, MinidoracatBuilder.Place
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
--- 本 MOD 蓋的片：Place 建的 IsoThumpable，或沒有 buildMaterials 的燈、家電（Place.keyed），modData 的 builderEntry 有值。
+-- 本 MOD 蓋的片：Place 建的 IsoThumpable，或沒有 buildMaterials 的燈、家電（Place.keyed）、本工具挖的水面（Place.dug：一般
+-- IsoObject 的地板，圖還是挖的那張），modData 的 builderEntry 有值。
 -- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
 -- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
 -- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
@@ -24,7 +25,7 @@ local function mine(o)
     local e = o:getModData().builderEntry
     if not e then return false end
     local thump = instanceof(o, "IsoThumpable")
-    if not (thump or Place.keyed(o)) then return false end
+    if not (thump or Place.keyed(o) or Place.dug(o)) then return false end
     if thump and o:isFloor() then
         local spr = o:getSprite()
         return spr ~= nil and spr:getName() == e, true
@@ -301,9 +302,10 @@ end
 -- 在本工具蓋的東西上蓋同一組的另一款＝換掉舊的。同一組：牆、柵欄、門框、窗框互換（不必先拆牆就能開窗），其他照種類。
 Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFrame = "edge" }
 -- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是
--- 本工具拆的（Cost.refund 的 none／sheet）；水井與手壓水泵、植物（使用者 2026-11-13 新增）不換，要先拆再蓋
+-- 本工具拆的（Cost.refund 的 none／sheet）；水井與手壓水泵、植物、水面（使用者 2026-11-13 新增）不換，要先拆（水面是填平）再蓋。
+-- 在水面上蓋地板照「地板一律換」：Place.clearFloor 拆掉水面（不是替換，不退料），水面的記號跟著物件消失
 Dismantle.NO_REPLACE = { light = true, stairs = true, floorOverlay = true, wallOverlay = true, overlay = true,
-    door = true, window = true, curtain = true, well = true, plant = true }
+    door = true, window = true, curtain = true, well = true, plant = true, water = true }
 
 -- 舊的那件會不會佔住新的要放的位置（佔住才換；不佔的照舊同格共存，Check.item 另用 Place.check 確認）：格邊的同組、
 -- 地板（一格一片）、實心或擋放置的、帶 WallSE 的柱子（Place.check 的柱子只看它）。屋頂不換：同格的舊屋頂算支撐，新的

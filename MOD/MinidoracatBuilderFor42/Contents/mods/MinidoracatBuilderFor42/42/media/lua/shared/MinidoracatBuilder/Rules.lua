@@ -17,6 +17,7 @@ local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.
 local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
 local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
 local invincible, doorOpen, collideN, collideW = F.makeWindowInvincible, F.open, F.collideN, F.collideW
+local waterFlag = F.water
 
 -- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
 local TYPE = {}
@@ -412,6 +413,9 @@ local function kindOfProps(name, p, t)
     -- 也有帶 solidfloor 的（UMCTP、Constown 53 張，2026-11-07 Workshop keke），不當地板：往下照能不能搬分到家具或地面覆蓋
     local mt = p:get("MoveType")
     if p:has(solidfloor) and mt ~= "FloorRug" then -- 平屋頂地板也在這
+        -- 水面（帶 water 旗標的地板，原版 blends_natural_02_0／5／6／7；使用者 2026-11-13 選做成種類 water，預設關）。照屬性認，
+        -- 不寫死名稱：別的 MOD 的水面地板也收。岸邊疊圖片沒有 water 旗標、不是地板，照舊走下面的無限水
+        if p:has(waterFlag) then return "water" end
         if infiniteWater(p) then return nil, "WATER" end
         return "floor"
     end
@@ -455,7 +459,7 @@ end
 --   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴（農作物、樹、積雪圖這類；前綴裡的觀賞植物與草照收）、
 --   ENTITY 建造配方的圖、TREE 樹、PLANT 不收的植物（樹、canBeCut、農作物這類不能搬又不是草的、有容器的樹叢）與有功能的
 --   物件、COLLECTOR 蓋了裝不了水的集水桶、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水
---   （水井與手壓水泵以外）、STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED
+--   （水井與手壓水泵、水面地板以外）、STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED
 --   拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、NO_KIND 沒有能判斷種類的屬性。
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。spr 是 sprite 本身（看多格）。
 -- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
@@ -569,5 +573,26 @@ function Rules.stairsSet(named, bName)
     end
     return nil
 end
+
+-- 格組有空位：寬×高×層數裡有位置沒有圖（L 形的辦公桌、原版那盞跨兩層的吊燈）。引擎移除多格物件與原版拿起都要求每個位置
+-- 找得到一片（IsoObjectUtils.getSpriteGridMultiTileObjects、ISMoveableSpriteProps:getSpriteGridCache），有空位就整組失敗：
+-- 大錘、原版拿起都拿不掉，所以這類一律由本工具拆（Cost.refund）。沒有格組的圖第一行就返回
+function Rules.gridHoles(spr)
+    local grid = spr:getSpriteGrid()
+    if not grid then return false end
+    local w, h, l = grid:getWidth(), grid:getHeight(), grid:getLevels()
+    for z = 0, l - 1 do
+        for y = 0, h - 1 do
+            for x = 0, w - 1 do
+                if not grid:getSprite(x, y, z) then return true end
+            end
+        end
+    end
+    return false
+end
+
+-- 原版圖塊定義的格位拼不起來的多格項目（照原點的名稱），不列：
+--   lighting_indoor_03_0：水晶吊燈，四片裡兩片排在上一層樓，照格位放出來是半圈燈座加兩段分開的垂飾
+Rules.BAD_GRID = { lighting_indoor_03_0 = true }
 
 return Rules

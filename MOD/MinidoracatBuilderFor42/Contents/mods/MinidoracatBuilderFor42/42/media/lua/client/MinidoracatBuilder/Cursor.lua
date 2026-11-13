@@ -24,8 +24,9 @@ local Class, Marks, Panel
 local LOG = "[MinidoracatBuilderFor42] "
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
--- 配方項目照同一份（Recipes.dragMode）
-local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", wall = "ring", fence = "ring", post = "edge" }
+-- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘
+local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", water = "fill", wall = "ring", fence = "ring",
+    post = "edge" }
 Cursor.DRAG = DRAG
 -- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
 -- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
@@ -47,7 +48,7 @@ local ICON, PAD = 16, 6
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true,
-    NOT_NATURAL = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
+    NOT_NATURAL = true, NO_UPPER = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 
 -- 從按下那格 (ax, ay) 拉到 (ex, ey) 的一排：同一列或同一欄（取位移大的那一軸），最多 max 格。回 { { x, y, z }, ... }
@@ -488,8 +489,34 @@ function Cursor:isValid(square)
     return self.okN > 0
 end
 
+-- 水面：離玩家遠的先挖（Client 的 walkToDig 照這個順序排站位：挖過的不站，還沒挖的可以站）。照格子中心到玩家的距離，
+-- 同原版挑站位的算法（AdjacentFreeTileFinder.lua:36-47）。超過一次上限時沒排進去的是離玩家最近的那幾格。
+-- 逐筆插入，不用 table.sort（家族規則）；從比較遠的那一頭讀起：拖曳的清單大致照距離排，這樣幾乎不用搬
+function Cursor.farFirst(list, px, py)
+    local out, key = {}, {}
+    local last = #list
+    if last == 0 then return out end
+    local function dist(a)
+        local dx, dy = a[1] + 0.5 - px, a[2] + 0.5 - py
+        return dx * dx + dy * dy
+    end
+    local from, to, step = last, 1, -1
+    if dist(list[1]) > dist(list[last]) then from, to, step = 1, last, 1 end
+    for n = from, to, step do
+        local a = list[n]
+        local k, i = dist(a), #out
+        while i > 0 and key[i] < k do
+            out[i + 1], key[i + 1] = out[i], key[i]
+            i = i - 1
+        end
+        out[i + 1], key[i + 1] = a, k
+    end
+    return out
+end
+
 -- 這次要預覽的錨點 { x, y, z, d }：不能拖的只有按下那格；拖成一直線照目前朝向；兩邊都 ≥2 格照 DRAG 拉長方形
 -- （圍一圈時每格的 d 照 self.sides）。沒有那一面的格子帶 code＝NO_FACE，排在上限之後的帶 OVER_MAX（照畫、不送）。
+-- 一次挖好幾格水面而玩家站在範圍裡：整片帶 STAND_OUTSIDE、不送。照走路的排法，四周挖完後玩家會被水圍在中間出不來
 function Cursor:anchors(ax, ay, az, ex, ey)
     self.mode = nil
     if not self.canDrag then return { { ax, ay, az, self.d } } end
@@ -502,12 +529,19 @@ function Cursor:anchors(ax, ay, az, ex, ey)
     else
         list = Cursor.line(ax, ay, az, ex, ey, DRAW_MAX)
     end
+    if self.entry.kind == "water" then list = Cursor.farFirst(list, self.character:getX(), self.character:getY()) end
     for i, a in ipairs(list) do
         if a.side then a[4] = self.sides[a.side] else a[4] = self.d end
         if a[4] == nil then
             a.code = "NO_FACE"
         elseif i > self.max then
             a.code, a.extra = "OVER_MAX", { max = self.max }
+        end
+    end
+    if self.entry.kind == "water" and #list > 1 then
+        local px, py = math.floor(self.character:getX()), math.floor(self.character:getY())
+        if px >= math.min(ax, ex) and px <= math.max(ax, ex) and py >= math.min(ay, ey) and py <= math.max(ay, ey) then
+            for _, a in ipairs(list) do a.code, a.extra = "STAND_OUTSIDE", nil end
         end
     end
     return list
@@ -1106,7 +1140,8 @@ function Cursor.tick()
     watch = nil
     if w.placed >= w.count then return end
     local stuck, title = Client.pending.noRoom, w.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
-    if stuck and w.placed + 1 >= stuck then -- 前面的都蓋好了，停在旁邊沒空位的那一格
+    -- 前面的都蓋好了，停在旁邊沒空位的那一格；一次挖好幾格水面時有一格沒空位就整批沒排（Client 的 noneQueued）
+    if stuck and (w.placed + 1 >= stuck or Client.pending.noneQueued) then
         tell(w.player, "NO_ROOM", { i = stuck, n = w.count }, title)
     elseif w.placed > 0 then
         Messages.toast(w.player, getText("IGUI_MBLD_Stopped", tostring(w.placed), tostring(w.count)), title)

@@ -55,7 +55,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
 [*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
-[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected. Wells and Hand Pumps is off by default and is not counted in N.
+[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected. Wells and Hand Pumps and Water are off by default and are not counted in N.
 [*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
 [/list]
 [h3]Eyedropper and Pick tile[/h3]
@@ -152,9 +152,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, floor overlays, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them. Recipe walls, fences and posts too.
+[*] [b]What you can drag[/b]: floors, floor overlays, water, walls, posts, fences and roofs, by holding the left button, dragging, and releasing to queue them. Recipe walls, fences and posts too.
 [*] [b]Drag straight[/b]: builds a row.
-[*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays and roofs fill it; walls and fences go around its edges, switching to the piece for the right direction on the north and south sides and on the west and east sides; posts go on every square of the edges.
+[*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays, water and roofs fill it; walls and fences go around its edges, switching to the piece for the right direction on the north and south sides and on the west and east sides; posts go on every square of the edges.
 [*] [b]A ring missing two sides[/b]: when the tileset has no piece for the other direction, those two sides turn red and aren't built.
 [*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped, with one line per reason for the skipped ones.
 [*] [b]When short[/b]: the box says what those tiles still need together.
@@ -304,7 +304,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
 [*] [b]Sinks, toilets and bathtubs[/b]: as when moved in vanilla, they have no running water. Plumb them inside a closed room with a pipe wrench, and they draw water from a rain collector barrel or other water container one floor up, right above or one square around.
 [*] [b]Containers[/b]: hold items right away.
-[*] [b]Wells and hand pumps[/b]: off by default; they appear in the Furniture tab once an admin turns them on in the sandbox page "what can be built" or in the Manage panel. The water never runs out, is clean, and keeps working after the water shuts off. A well costs 100 Stone + 4 Planks + 4 Nails and needs a shovel or spade; a hand pump costs 10 Steel Sheet + 8 Iron Pipe + 8 Screws and needs a Welding Torch + Welder Mask. They block the square, zombies can break them, and they are as tough as a wall. Take them down with Dismantle (Build Anything).
+[*] [b]Wells and hand pumps[/b]: off by default; they appear in the Furniture tab once an admin turns them on in the sandbox page "what can be built" or in the Manage panel. The water never runs out, is clean, and keeps working after the water shuts off. A well costs 40 Stone + 8 Large Smooth Flat Stone + 1 Rope + 1 Bucket and needs a shovel or spade plus a Mason's Trowel; a hand pump costs 6 Iron Pipe + 4 Steel Sheet - Small + 6 Screws and needs a Welding Torch + Welder Mask. They block the square, zombies can break them, and they are as tough as a wall. Take them down with Dismantle (Build Anything).
 [*] [b]Fireplaces[/b]: work like the ones on the map once built, so you can add fuel and light them; stoves, ovens and similar appliances from tile packs are built the way the map builds them too.
 [*] [b]Fireplaces built in 0.6.1 or earlier[/b]: can't be lit; dismantle them with Dismantle (Build Anything) and build them again.
 [*] [b]Rain collector barrels and metal drums[/b]: not listed as tiles, because built by this mod's rules they can't collect rain. For rain collectors, pick the item marked Recipe: it uses the vanilla recipe and collects rain. Ones built before this update can be picked up as in vanilla if they're movable; the immovable one can only be smashed with a sledgehammer, for no materials.
@@ -330,6 +330,19 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Floors clear them[/b]: building a floor on a square with grass, a hedge or a bush removes them, as in vanilla, with no refund.
 [*] [b]Not listed[/b]: crops, trees, and bushes that can be cut down.
 [*] [b]Gravestones, road signs, mailboxes and the like[/b]: 0.9.0 and earlier treated them as plants and refused them; they are now listed as ordinary furniture or containers.
+[/list]
+[h3]Water[/h3]
+[list]
+[*] [b]Where[/b]: the Water kind in the Floors tab. Off by default; it shows up once an admin turns it on in the sandbox page "what can be built" or in the Manage panel.
+[*] [b]Where you can dig[/b]: only on natural ground at ground level, meaning grass, dirt, sand and other squares without a built floor. Built floors, floors built with Build Anything and upper levels don't work, and the cursor tells you why.
+[*] [b]What it costs[/b]: just carry a shovel or spade. No materials (the material multiplier doesn't change that), no XP and no skill.
+[*] [b]What's on the square[/b]: wild grass, grass overlays and bushes are cleared with no refund. Squares with a tree, furniture, items on the ground or a corpse can't be dug; clear them first. Plants built with Build Anything and floor overlays you hung on the ground must be dismantled first too. Not with someone standing there or a vehicle on it either.
+[*] [b]Dragging an area[/b]: digging starts at the square farthest from you and works back toward you, so the squares you need to stand on are not dug first. Drag from outside the area: if you are standing inside it, the whole area turns red and nothing is dug, so you can't end up surrounded by water. If you drag more squares than the per-drag limit, the ones left out are the squares nearest to you.
+[*] [b]No regrowth[/b]: a square you dug no longer grows grass or plants on its own, even after you fill it back.
+[*] [b]Once dug[/b]: like water on the map, it blocks people and zombies; you can take water from it (tainted, so boil or purify it before drinking) and fish there.
+[*] [b]Filling it back[/b]: right-click Dismantle (Build Anything) with a shovel or spade. It fills back to the ground that was there before, with nothing refunded. Water with no record of the old ground fills back to dirt.
+[*] [b]Building a floor on water[/b]: replaces it like any other floor and the water is gone; dismantling that floor later turns the square into dirt.
+[*] [b]The map's own rivers and lakes[/b]: can't be filled with Build Anything.
 [/list]
 === 🧰 Materials
 [h3]What it costs[/h3]
@@ -366,7 +379,8 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [*] [b]Curtains[/b]: 1 Sheet, 2 for long curtains.
 [*] [b]Dirt, gravel and sand floors[/b]: 1 Sack of Dirt, Sack of Gravel or Sack of Sand, no tools.
 [*] [b]Grass and wildflowers[/b]: 3 Grass Cuttings, no tools; still 3 when the material multiplier is below 1.
-[*] [b]Well[/b]: 100 Stone + 4 Planks + 4 Nails. [b]Hand pump[/b]: 10 Steel Sheet + 8 Iron Pipe + 8 Screws.
+[*] [b]Well[/b]: 40 Stone + 8 Large Smooth Flat Stone + 1 Rope + 1 Bucket (empty; a bucket with water in it doesn't count). [b]Hand pump[/b]: 6 Iron Pipe + 4 Steel Sheet - Small + 6 Screws.
+[*] [b]Water[/b]: no materials, whatever the material multiplier.
 [/list]
 [h3]Material read from the tile name[/h3]
 These tiles don't say what they are made of. They used to cost as wood, and now cost by the material their tile name shows (multiplier 1):
@@ -404,7 +418,8 @@ These tiles don't say what they are made of. They used to cost as wood, and now 
 [tr][td]Brick, stone, concrete, ceramic and similar materials[/td][td]Mason's Trowel[/td][/tr]
 [tr][td]Metal[/td][td]Welding Torch + Welder Mask[/td][/tr]
 [tr][td]Lights[/td][td]Screwdriver[/td][/tr]
-[tr][td]Well[/td][td]Shovel or spade[/td][/tr]
+[tr][td]Well[/td][td]Shovel or spade + Mason's Trowel[/td][/tr]
+[tr][td]Water[/td][td]Shovel or spade[/td][/tr]
 [tr][td]Dirt, gravel and sand floors, curtains, grass and wildflowers[/td][td]None[/td][/tr]
 [/table]
 [list]
@@ -435,7 +450,8 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [list]
 [*] [b]Which level[/b]: each item needs the skill level of the matching vanilla recipe, see the table.
 [*] [b]Which skill[/b]: follows the kind of material it is costed as, so anything costed as wood needs Carpentry.
-[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights and floor overlays.
+[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights, floor overlays and water.
+[*] [b]Wells and hand pumps[/b]: a well needs Masonry 4, a hand pump Welding 5.
 [*] [b]Skill too low[/b]: the cursor square turns red, and the box by the mouse and the notice say which skill and level you need.
 [*] [b]Details[/b]: an extra line such as Skill: Carpentry 2, with your level and a warning when it's too low.
 [*] [b]The grid[/b]: items your skill is too low for are dimmed with a warning, like items you can't afford.
@@ -479,6 +495,8 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [tr][td]Door[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
 [tr][td]Stairs (whole set)[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
 [tr][td]Shopfront and escalator glass walls[/td][td]None[/td][td]1 + 2 uses[/td][/tr]
+[tr][td]Well[/td][td]4 uses[/td][td]None[/td][/tr]
+[tr][td]Hand pump[/td][td]None[/td][td]4 + 4 uses[/td][/tr]
 [/table]
 === 🧰 Switches and wiring
 [h3]Automatic wiring[/h3]
@@ -532,7 +550,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 {{img:10-dismantle-en.jpg}}
 [h3]Dismantle (Build Anything)[/h3]
 [list]
-[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved.
+[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved; it also fills back water you dug.
 [*] [b]What it can't remove[/b]: things built in vanilla or other ways, and what the map already had. It does not replace the vanilla sledgehammer: pick those up, disassemble them or smash them as in vanilla.
 [*] [b]How[/b]: right-click and choose Dismantle (Build Anything): name. The piece lights up while you hover the option; your character walks over, and a notice says what came back.
 [*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu, greyed out, and hovering says how to remove them.
@@ -611,7 +629,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [/list]
 [h3]Four pages[/h3]
 [list]
-[*] [b]Kinds[/b]: turn the 23 kinds on or off, such as floors, walls, posts and furniture. Wells and Hand Pumps is off by default; the others are on.
+[*] [b]Kinds[/b]: turn the 24 kinds on or off, such as floors, walls, posts and furniture. Wells and Hand Pumps and Water are off by default; the others are on.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
 [*] [b]Rules[/b]: the twelve rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
@@ -653,11 +671,12 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns;LifestyleHobbies[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods, mods whose tiles belong to their own build menus, and Lifestyle: Hobbies, which gives hobby functions by tile name, are off. The default only applies to new worlds, and existing worlds keep the setting in their save[/td][/tr]
 [tr][td]Disabled tilesets[/td][td]Empty[/td][td]Tileset names separated by semicolons[/td][td]Tiles from these tilesets can't be built, for example walls_exterior_house_01[/td][/tr]
 [/table]
-The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes, all on by default. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
+The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes, all on by default except Wells and Hand Pumps and Water. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
 [table]
 [tr][th]Option[/th][th]Covers[/th][/tr]
 [tr][td]Floor[/td][td]Floors, including flat roof floors[/td][/tr]
 [tr][td]Floor overlay[/td][td]Rugs, road markings and other overlays laid on a floor[/td][/tr]
+[tr][td]Water[/td][td]Water dug into natural ground at ground level, off by default[/td][/tr]
 [tr][td]Wall[/td][td]Walls, including corner walls that cover two sides. Corner posts are under Post[/td][/tr]
 [tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
 [tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
@@ -672,11 +691,13 @@ The other page, Minidoracat Build Anything: what can be built, has 21 checkboxes
 [tr][td]Stairs[/td][td]Three-piece stairs[/td][/tr]
 [tr][td]Furniture[/td][td]Furniture and objects that can be picked up[/td][/tr]
 [tr][td]Container[/td][td]Containers you can store items in, such as cabinets, fridges and crates[/td][/tr]
+[tr][td]Wells and Hand Pumps[/td][td]Wells and hand pumps with water that never runs out, off by default[/td][/tr]
 [tr][td]Solid object[/td][td]Objects that block the whole square and can't be picked up[/td][/tr]
 [tr][td]Light[/td][td]Lights, light switches, street lights and lit signs[/td][/tr]
 [tr][td]Wall-mounted[/td][td]Things hung on a wall, such as pictures, shelves and signs[/td][/tr]
 [tr][td]Attached object[/td][td]Objects attached to the side of a wall or to a ceiling[/td][/tr]
 [tr][td]Overlay[/td][td]Other overlay pieces[/td][/tr]
+[tr][td]Plants[/td][td]Ornamental plants you can move, grass and wildflowers. Decoration only[/td][/tr]
 [/table]
 [list]
 [*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools, and like vanilla your character doesn't walk over and there is no distance limit. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
@@ -706,7 +727,7 @@ These are not in the catalog either:
 [list]
 [*] [b]Tiles vanilla rewrites[/b]: tiles vanilla Lua changes when the map loads, for example feeding troughs and traps.
 [*] [b]Build recipe facilities[/b]: facility tiles meant to be built from a build recipe are not listed as tiles; they are listed as recipe items instead, see Build recipes.
-[*] [b]Tiles that never run dry[/b]: natural water and the like. Wells and hand pumps are the exception: they are a separate kind that is off by default, see Furniture and containers.
+[*] [b]Tiles that never run dry[/b]: natural water and the like. Wells and hand pumps are the exception: they are a separate kind that is off by default, see Furniture and containers. The natural water floor tiles are another exception, listed as Water, off by default and only dug into natural ground, see Water.
 [*] [b]Others[/b]: unbreakable windows, stacked crate tiles (the game swaps them for another tile when a save loads), and the hidden floors and underground blocks the game uses internally.
 [*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like (cots and gurneys are the exception, listed under Furniture).
 [/list]

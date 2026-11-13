@@ -129,3 +129,7 @@ option MinidoracatBuilder.KindWell
 /* 植物：能搬的觀賞植物、草與野花（使用者 2026-11-13 選預設開） */
 option MinidoracatBuilder.KindPlant
 {type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindPlant,}
+
+/* 水面：在一樓天然地面挖水面，只要鏟子（使用者 2026-11-13 選 pond=do，預設關）。缺鍵也當關（Entry.KIND_OFF） */
+option MinidoracatBuilder.KindWater
+{type = boolean, default = false, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWater,}

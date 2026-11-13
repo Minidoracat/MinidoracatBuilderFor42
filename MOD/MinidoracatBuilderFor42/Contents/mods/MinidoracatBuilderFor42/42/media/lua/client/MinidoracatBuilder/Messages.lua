@@ -9,17 +9,18 @@ MinidoracatBuilder.Messages = Messages
 local Entry, USE = MinidoracatBuilder.Entry, MinidoracatBuilder.Materials.USE
 
 -- 每個碼一個翻譯鍵 IGUI_MBLD_Refuse_<碼>：伺服器的拒絕碼（Server.intent／Check.item，含 Place.check 的放不下原因
--- SAME_TILE、VEHICLE、OCCUPIED、STACK_FULL、NOT_SURFACE、NOT_NATURAL、疊放模式的 SQUARE_FULL，原地替換時舊的那件的 NOT_EMPTY、ATTACHED、NOT_OURS，硬核「需要技能」的
+-- SAME_TILE、VEHICLE、OCCUPIED、STACK_FULL、NOT_SURFACE、NOT_NATURAL、兩層樓高的物件上一層沒有樓層的 NO_UPPER、疊放模式的 SQUARE_FULL，原地替換時舊的那件的 NOT_EMPTY、ATTACHED、NOT_OURS，硬核「需要技能」的
 -- SKILL），加上客戶端自己判斷的
 -- WALK（一格都還沒蓋就停下）、NO_ROOM（第 i 格旁邊沒有空位可站，Client.lua 的 queue）、游標的 OVER_MAX（超過一次拖曳
--- 最多幾項，extra.max）與 NO_FACE（長方形那一邊這款沒有對應的朝向）。
+-- 最多幾項，extra.max）、NO_FACE（長方形那一邊這款沒有對應的朝向）與 STAND_OUTSIDE（拖一片水面時自己站在範圍裡）。
 -- 不在表裡的碼退回 IGUI_MBLD_Refuse_Other 並附上碼，玩家回報時看得到。
 Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, RATE_LIMITED = true,
     BAD_REQUEST = true, NO_INTENT = true, UNKNOWN = true, UNSUPPORTED = true, DISABLED = true, BAD_FACE = true,
     TOO_FAR = true, UNREACHABLE = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true,
     OUTSIDE_SAFEHOUSE = true, BLOCKED = true, NO_MATERIAL = true, NO_TOOL = true, INTERNAL = true, WALK = true,
     NO_ROOM = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true, OVER_MAX = true,
-    NO_FACE = true, NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true, SKILL = true, SQUARE_FULL = true, NOT_NATURAL = true }
+    NO_FACE = true, NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true, SKILL = true, SQUARE_FULL = true, NOT_NATURAL = true,
+    NO_UPPER = true, STAND_OUTSIDE = true }
 
 -- 耗材鍵（Cost 的 uses）→ 名稱：tag:base:concrete 照標籤收（黏土漿、混凝土的桶子都算），寫通稱；其他是 fullType
 function Messages.useName(key)

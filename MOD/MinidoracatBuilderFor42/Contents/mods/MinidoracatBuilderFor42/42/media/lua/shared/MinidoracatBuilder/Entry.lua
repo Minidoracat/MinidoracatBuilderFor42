@@ -9,13 +9,13 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 13
+Entry.VERSION = 14
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
 -- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門第二版
--- （設計稿 Rules.classify 的註記）。水井與手壓水泵、植物（使用者 2026-11-13 選新增）
-Entry.KINDS = { "floor", "floorOverlay", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
+-- （設計稿 Rules.classify 的註記）。水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）
+Entry.KINDS = { "floor", "floorOverlay", "water", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
     "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "well", "light",
     "wallObject", "attached", "overlay", "plant" }
 Entry.BUILDABLE = {}
@@ -38,9 +38,9 @@ function Entry.settings()
     return SandboxVars and SandboxVars.MinidoracatBuilder or {}
 end
 
--- 預設關的種類：沙盒沒有這個鍵、或值不是 true 都當關（水井與手壓水泵：使用者 2026-11-13 選預設關，蓋一格就有永遠用不完的
--- 乾淨水）。中途加入本版、伺服器的沙盒檔還沒有這個鍵時也是關
-Entry.KIND_OFF = { well = true }
+-- 預設關的種類：沙盒沒有這個鍵、或值不是 true 都當關（使用者 2026-11-13 選預設關：水井與手壓水泵蓋一格就有永遠用不完的
+-- 乾淨水；水面會改地形、擋路）。中途加入本版、伺服器的沙盒檔還沒有這個鍵時也是關
+Entry.KIND_OFF = { well = true, water = true }
 
 -- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
 function Entry.kindOn(kind, s)
@@ -112,6 +112,7 @@ function Entry.resolve(name)
     end
     local grid = spr:getSpriteGrid()
     if grid and grid:getAnchorSprite() ~= spr then return nil, "UNKNOWN" end -- 多格只收原點
+    if Rules.BAD_GRID[name] then return nil, "UNKNOWN" end -- 格位拼不起來的不列（目錄同一條規則，Catalog.scanSprite）
     local tileset, num = name:match("^(.*)_(%d+)$")
     if not tileset then return nil, "UNKNOWN" end
     local file = Sources.fileOf(id)
@@ -207,7 +208,11 @@ function Entry.why(name, nested)
     elseif kind then
         local grid = spr:getSpriteGrid()
         local anchor = grid and grid:getAnchorSprite()
-        if anchor and anchor ~= spr then code, alt = "PART", anchor:getName() end
+        if anchor and anchor ~= spr then
+            code, alt = "PART", anchor:getName()
+        elseif Rules.BAD_GRID[name] then
+            code = "BAD_GRID"
+        end
     end
     if alt and not Entry.resolve(alt) then
         -- 叫玩家去找的那張也不能蓋（管理員關掉了、打不破的窗…）：照著做也找不到，改說它的原因

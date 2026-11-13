@@ -1,9 +1,10 @@
 -- 一樓以下地板的退料帳本（只在伺服器）：本 MOD 蓋的一樓以下地板不寫 buildMaterials（Place.groundFloor），本工具拆的時候
--- 照這裡退（Place.refundOf）。鍵是位置 "x,y,z"：同一格只有一片本 MOD 的地板（放地板前 Place.clearFloor 先拆掉舊的）。
+-- 照這裡退（Place.refundOf）。本工具挖的水面也記在這裡（Place.dig，退料是空表）：填平時照這一筆認是不是本工具挖的。
+-- 鍵是位置 "x,y,z"：同一格只有一片本 MOD 的地板（放地板前 Place.clearFloor 先拆掉舊的）。
 -- 值記蓋的圖名與退料表，現在的圖和蓋的圖一樣才退。和燈、平台的帳本（Ledger）分開，各自一個存檔
 -- （gos_MinidoracatBuilderFloors.bin，跟世界一起存檔、一起回溯）；不建全域物件、不送客戶端。
--- ponytail：一筆約 80 bytes，單一 GOS 系統存檔上限 10 MiB（pz-family-docs pitfalls）約十二萬片；真的逼近時照
--- VehicleManager 改分片。
+-- ponytail：一筆約 80 bytes，單一 GOS 系統存檔上限 10 MiB（pz-family-docs pitfalls）約十二萬筆（地板與水面合計）；
+-- 真的逼近時照 VehicleManager 改分片。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
 

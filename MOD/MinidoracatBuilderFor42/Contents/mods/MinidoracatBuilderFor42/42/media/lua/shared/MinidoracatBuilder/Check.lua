@@ -192,6 +192,12 @@ function Check.item(player, name, d, anchor, opts)
     end
     local cell = getCell()
     for _, c in ipairs(cells) do
+        -- 兩層樓高的物件在上一層的那幾片：那裡要已經有樓層（格子存在而且上面有東西），不然放不下。先查再補格子，
+        -- 兩端回同一個原因，伺服器也不會為了被拒的請求在半空補出空格子。樓梯的平台片（role）不算：伺服器會在上面蓋平台
+        if c.z > anchor[3] and not c.role then
+            local up = cell:getGridSquare(c.x, c.y, c.z)
+            if not (up and up:getObjects():size() > 0) then return "NO_UPPER", { x = c.x, y = c.y, z = c.z }, info end
+        end
         if preview then
             c.sq = cell:getGridSquare(c.x, c.y, c.z)
         else
