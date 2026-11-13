@@ -460,8 +460,8 @@ function HARNESS_DRIFT()
                 end
             end
         end
-        if not (ok and n == r.n and bytes == r.bytes) then
-            bad[#bad + 1] = r.id .. " n=" .. n .. "/" .. r.n .. " bytes=" .. bytes .. "/" .. r.bytes
+        if not (ok and n == r.n - r.left and bytes == r.bytes) then
+            bad[#bad + 1] = r.id .. " n=" .. n .. "/" .. (r.n - r.left) .. " bytes=" .. bytes .. "/" .. r.bytes
         end
     end
     return table.concat(bad, "; ")
@@ -4593,6 +4593,21 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         Overlays.forget(F1, "ov_extra")
         Overlays.forget(F2, TL)
         Overlays.forget(F2, "ov_extra")
+        -- 那一件只掛一張、帳本滿、圖又拿不掉（引擎出錯）：先清掉的那一筆照樣記得回去（放回去不比拿掉之前大）
+        nowMs = nowMs + 180000
+        local F3, fF3 = ground(45, 47)
+        give(Pl, pay)
+        build(Pl, 2620, TL, { 45, 47, 0 })
+        function fF3:RemoveAttachedAnim() end
+        St.SHARD_BYTES, St.SHARD_HARD, St.SHARD_SLACK, HARNESS_GOS_COUNT = 1, 1, 0, 100
+        print = function() end
+        here.dropped = {}
+        c2, a2 = unbuild(Pl, 2621, 45, 47, TL)
+        print = realPrint
+        St.SHARD_BYTES, St.SHARD_HARD, St.SHARD_SLACK, HARNESS_GOS_COUNT = kB, kH, kS, nil
+        check(c2 == "dismantleRefused" and a2.code == "INTERNAL" and hung(fF3) == TL and Overlays.get(F3, TL) ~= nil
+            and Overlays.get(F3, TL)["Base.Plank"] == 1 and next(here.dropped) == nil and HARNESS_DRIFT() == "",
+            "帳本滿、那一件只掛一張、圖拿不掉：INTERNAL、不退料，帳本那一筆記回原樣")
         nowMs = nowMs + 180000 -- 這一段多送的三個請求不算進後面的限流
     end)()
 
@@ -6763,9 +6778,25 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     local X3 = lamp(S(153, 152), lampA, "mark")
     inst.built["152,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 6 }
     inst.built["153,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 8 }
+    -- 同一格同一張圖另有一盞帳本認得的燈（不是從舊紀錄搬的）：不會被當成舊紀錄已經搬過
+    local T1 = lamp(at(156, 152), lampA, "mark")
+    Ledger.put(T1, { ["Base.ElectricWire"] = 2 })
+    local T2 = lamp(S(156, 152), lampA, "mark")
+    inst.built["156,152,0,kl_01_0"] = { ["Base.ElectricWire"] = 11 }
     HARNESS_REOPEN(Ledger)
-    check(inst.built["144,144,0,kl_01_0"] == nil and lampE(A1.keyId) == a1,
-        "下一次開服：分片讀得到上一場發的編號，舊紀錄這時才刪")
+    check(inst.built["144,144,0,kl_01_0"] == nil and lampE(A1.keyId) == a1 and lampE(A1.keyId).o == true,
+        "下一次開服：分片讀得到從舊紀錄搬過去的那盞，舊紀錄這時才刪")
+    local shadow = inst.built["156,152,0,kl_01_0"] ~= nil
+    fire("LoadChunk", S(156, 152):getChunk())
+    check(shadow and T2.keyId > 0 and T2.keyId ~= T1.keyId and lampE(T2.keyId).i["Base.ElectricWire"] == 11
+        and lampE(T1.keyId).i["Base.ElectricWire"] == 2 and lampE(T1.keyId).o == nil,
+        "同一格同一張圖另有一盞後來蓋的燈：舊紀錄不被它擋掉，讀到那一塊時照樣搬給還沒認得的那盞，退料各是各的")
+    -- 搬過的那盞旁邊之後多一盞帳本認不得的同款燈：舊紀錄已經刪了，不會再發給它（不多退）
+    local A3 = lamp(S(144, 144), lampA, "mark")
+    HARNESS_REOPEN(Ledger)
+    fire("LoadChunk", sqA:getChunk())
+    check(A3.keyId == -1 and Ledger.get(A3) == nil and lampE(A1.keyId) == a1, "搬過之後同一格多一盞帳本認不得的同款燈：不會領到那一筆")
+    sqA:transmitRemoveItemFromSquare(A3)
     fire("LoadChunk", S(152, 152):getChunk())
     check(W.keyId > 0 and W.keyId ~= 999 and lampE(W.keyId).i["Base.ElectricWire"] == 6 and W2.keyId == 998
         and X3.keyId == -1 and inst.built["153,152,0,kl_01_0"] == nil,
@@ -6835,6 +6866,19 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("LoadChunk", S(190, 190):getChunk())
     check(stuck and Ledger.get(G) ~= nil and Ledger.get(G)["Base.ElectricWire"] == 5,
         "帳本滿了記不進去：舊紀錄原樣留著（不算定案）、編號不用掉、燈不動，下次開服放得下時照樣搬")
+    -- 還沒定案的舊燈（帳本滿了記不進去）被移除：舊紀錄跟著清
+    local H = lamp(at(197, 197), lampA, "mark")
+    inst.built["197,197,0,kl_01_0"] = { ["Base.ElectricWire"] = 3 }
+    HARNESS_REOPEN(Ledger)
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = 1, 1, 100
+    print = function() end
+    fire("LoadChunk", S(197, 197):getChunk())
+    print = realPrint
+    Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
+    local waiting = inst.built["197,197,0,kl_01_0"] ~= nil and H.keyId == -1
+    S(197, 197):transmitRemoveItemFromSquare(H)
+    check(waiting and inst.built["197,197,0,kl_01_0"] == nil,
+        "還沒定案的舊燈（帳本滿了記不進去）被移除：舊紀錄跟著清，不留給之後同一格同一張圖的燈")
     -- 退料表讀不懂的舊紀錄：重試也一樣，刪掉（那盞本工具拆不了），不留著每次開服重來
     local U = lamp(at(195, 195), lampA, "mark")
     inst.built["195,195,0,kl_01_0"] = { ["Base.ElectricWire"] = {} }

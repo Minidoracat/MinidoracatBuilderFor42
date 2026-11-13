@@ -247,10 +247,12 @@ end
 -- 鍵 k 新的一筆放第幾片（esz＝紀錄本身、sg＝值的簽名、dsz＝值放進對照表要的大小；沒有對照表的帳本 sg 是 nil、dsz 是 0）；
 -- 都放不下回 nil。第二個回傳值 true＝這次開了新的一片
 local function pick(S, k, esz, sg, dsz)
-    -- 換掉一筆是先 del 再 put：原本那一片放得下，新的就回那一片（同一個鍵的紀錄盡量不換存檔）；放不下才照下面的選
+    -- 換掉一筆是先 del 再 put：原本那一片放得下，新的就回那一片（同一個鍵的紀錄盡量不換存檔）；放不下才照下面的選。
+    -- 和原位換值同一個規則：放回去不比拿掉之前大的一律可以（拆到一半要記回原樣時一定記得回去），變大的可以用到餘裕
     if S.gone == k then
         local sh = S.shards[S.goneAt]
-        if sh.bytes + need(sh, esz, sg, dsz) <= Store.SHARD_HARD then return S.goneAt end
+        local after = sh.bytes + need(sh, esz, sg, dsz)
+        if after <= S.goneWas or after <= Store.SHARD_HARD + Store.SHARD_SLACK then return S.goneAt end
     end
     local goal, best, bestAfter = math.min(Store.SHARD_BYTES, Store.SHARD_HARD), nil, nil
     for i = 1, S.m do
@@ -383,8 +385,9 @@ function Store:del(k)
     settle(self, k)
     local sh, cur, at = locate(self, k)
     if not sh then return end
+    local was = sh.bytes
     drop(self, sh, k, cur)
-    self.gone, self.goneAt = k, at
+    self.gone, self.goneAt, self.goneWas = k, at, was
 end
 
 -- 每一筆呼叫 fn(鍵, 值)（開服時整理用；fn 裡不改這本帳本）
@@ -456,8 +459,8 @@ function Store.report()
         local S = byId[id]
         if S then
             local st = S:stats()
-            -- 筆數含還在舊表、放不進分片的（照樣查得到）；檔數與大小只算分片
-            out[#out + 1] = { id = id, n = st.n + S.nleft, shards = S.m, bytes = st.bytes }
+            -- 筆數含還在舊表、放不進分片的（left 筆，照樣查得到）；檔數與大小只算分片
+            out[#out + 1] = { id = id, n = st.n + S.nleft, left = S.nleft, shards = S.m, bytes = st.bytes }
         end
     end
     return out
