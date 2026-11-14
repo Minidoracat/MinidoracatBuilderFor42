@@ -216,7 +216,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Walls, floors and fences[/h3]
 [list]
 [*] [b]Zombies can break them[/b]: walls, posts and window frames have 450 durability, fences 300. Server owners can turn on Zombies can't break builds in the sandbox.
-[*] [b]Stair openings[/b]: walls, fences and door frames can't block the way onto or off stairs.
+[*] [b]Stair openings[/b]: walls, fences, door frames and fence gates can't block the way onto or off stairs.
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
@@ -250,6 +250,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
+[*] [b]Fence gates[/b]: need no door frame and go on any empty edge; they can't go where there is already a wall, fence, door or window, so leave a gap first.
 [*] [b]Double doors and garage doors[/b]: not supported yet.
 [*] [b]Windows[/b]: open, smashed and glass-removed tiles are not listed, so you always place a whole window.
 [*] [b]Unbreakable windows[/b]: not in the catalog, and neither are window frames, posts and wall overlays that make a window unbreakable (walls such as mall shutters are listed).
@@ -682,7 +683,7 @@ The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes
 [tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
 [tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
 [tr][td]Wall overlay[/td][td]Decorative pieces laid over a wall[/td][/tr]
-[tr][td]Door[/td][td]Doors. They go into a door frame; fence gates don't need one[/td][/tr]
+[tr][td]Door[/td][td]Doors. They go into a door frame[/td][/tr]
 [tr][td]Window[/td][td]Windows. They go into a window frame; windows drawn together with their frame go straight on a wall edge[/td][/tr]
 [tr][td]Door frame[/td][td]Door frames[/td][/tr]
 [tr][td]Window frame[/td][td]Window frames[/td][/tr]

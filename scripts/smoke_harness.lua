@@ -10629,6 +10629,61 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         and not Place.check("door", gate, square(235, 230, 1)) and not Place.check("door", gate, square(236, 230, 0, { stairs = true }))
         and not Place.check("door", lone, empty),
         "柵欄門照一般格邊：那條邊有柵欄、有門、門框裡已有門、樓上腳下沒有地板、格上有樓梯都擋；沒有開門圖的不蓋")
+    -- 沒有門框的柵欄門照樣過樓梯出入口與多格家具兩關（審查 1114 Codex）：格上沒有樓梯，只有某一條邊被原版判成出入口
+    local gateN = door("fg_gaten_01_1", 9520, { "doorN" }, { CustomName = "Fence gate" })
+    list[#list + 1], list[#list + 2] = gateN, door("fg_gaten_01_3", 9522, { "doorN", "open" }, {})
+    world(list)
+    local realStair = buildUtil.stairIsBlockingPlacement
+    local function exits(blockNorth)
+        buildUtil.stairIsBlockingPlacement = function(_, _, north) return north == blockNorth end
+        local w, n = Place.check("door", gate, square(237, 230, 0)), Place.check("door", gateN, square(237, 230, 0))
+        buildUtil.stairIsBlockingPlacement = realStair
+        return w == true, n == true
+    end
+    local wOnN, nOnN = exits(true)
+    local wOnW, nOnW = exits(false)
+    check(wOnN and not nOnN and not wOnW and nOnW, "柵欄門不擋樓梯出入口：照門佔的邊查（朝北的查北邊、朝西的查西邊）")
+    local function cut(px, py) -- 格上有多格家具的一片，它在整組裡的位置是 (px, py)
+        local sq = square(238, 230, 0)
+        local piece = sprite("fg_sofa_01_1", 9521, {})
+        piece.grid = { getSpriteGridPosX = function() return px end, getSpriteGridPosY = function() return py end }
+        sq.objects[1] = { getSprite = function() return piece end, getProperties = function() return piece:getProperties() end }
+        return sq
+    end
+    check(not Place.check("door", gate, cut(1, 0)) and Place.check("door", gate, cut(0, 1)) == true
+        and not Place.check("door", gateN, cut(0, 1)) and Place.check("door", gateN, cut(1, 0)) == true,
+        "柵欄門不切開多格家具：朝西的擋 x > 0 的片、朝北的擋 y > 0 的片")
+    -- 沒有名稱、也翻不過去的門（圖塊包的一般門常這樣）：不算柵欄門、不丟錯，照舊要門框（審查 1114 Claude）
+    local bare = door("fg_bare_01_0", 9523, { "doorW" }, {})
+    list[#list + 1], list[#list + 2] = bare, door("fg_bare_01_2", 9524, { "doorW", "open" }, {})
+    world(list)
+    check(Rules.gate(bare:getProperties()) == false and not Place.check("door", bare, empty)
+        and Place.check("door", bare, framed) == true, "沒有名稱的門：不算柵欄門，沒有門框不能放、有門框能放")
+    -- 蓋：沒有門框時照牆插在最後一個地板後面、家具前面（原版 door.OnCreate 找不到門框的那條路，buildRecipeCode.lua:646-658）
+    local realDoor = IsoDoor
+    IsoDoor = { new = function(_, sq, name, north)
+        local d = { name = name, north = north, md = {} }
+        function d:getModData() return self.md end
+        function d:setHealth() end
+        function d:setExplored() end
+        function d:transmitCompleteItemToClients() end
+        function d:getContainerCount() return 0 end
+        function d:getSquare() return sq end
+        function d:getSprite() return spriteMap[name] end
+        function d:getProperties() return spriteMap[name]:getProperties() end
+        function d:getType() return T.normal end
+        return d
+    end }
+    local function obj(spr) return { getProperties = function() return spr:getProperties() end,
+        getType = function() return spr:getType() end, getSprite = function() return spr end } end
+    local FL = obj(sprite("fg_floor_01_0", 9525, { flags = { "solidfloor" } }))
+    local CH = obj(sprite("fg_chair_01_0", 9526, { keys = { IsMoveAble = "" } }))
+    local orderSq = square(239, 230, 0)
+    orderSq.objects = { FL, CH }
+    local okBuild = pcall(Place.build, "door", { { sq = orderSq, spr = gate, cost = {} } }, {})
+    IsoDoor = realDoor
+    check(okBuild and orderSq.objects[1] == FL and orderSq.objects[2] and orderSq.objects[2].name == "fg_gate_01_0"
+        and orderSq.objects[2].north == false and orderSq.objects[3] == CH, "蓋沒有門框的柵欄門：建 IsoDoor，插在地板後、家具前")
 
     local K = player({ id = 510, x = 230.5, y = 231.5, here = square(230, 231, 0) })
     local function both(name, x)
