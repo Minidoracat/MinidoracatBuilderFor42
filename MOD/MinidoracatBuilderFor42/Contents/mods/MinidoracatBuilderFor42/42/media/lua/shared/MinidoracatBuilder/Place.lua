@@ -1128,6 +1128,8 @@ function Place.build(kind, cells, placed)
             placed[#placed + 1] = obj
             finish(sq, obj)
             if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(obj, refundable(c.cost)) end
+            -- 單機：伺服器這段和客戶端同一個程序，沒有 OnObjectAdded（那是多人客戶端收封包時發的），在這裡登記
+            if Place.onLoaded then Place.onLoaded(obj) end
         elseif kind == "container" and Place.applianceOf(spr) then
             obj = newAppliance(c, Place.applianceOf(spr))
             placed[#placed + 1] = obj

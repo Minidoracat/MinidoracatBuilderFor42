@@ -489,9 +489,11 @@ local function watchTick()
         if not sq or obj:getObjectIndex() < 0 then -- 拆掉、拿走或那一塊卸載了
             table.remove(watched, i)
         else
+            -- 也比 RoomDef：房間物件沒換、定義換了一份時一樣算重建
             local room = sq:getRoom()
-            if room ~= w.room then
-                w.room = room
+            local def = room and room:getRoomDef() or nil
+            if room ~= w.room or def ~= w.def then
+                w.room, w.def = room, def
                 if room then lightRoom(obj) end
             end
         end
@@ -502,15 +504,17 @@ local function watchTick()
     end
 end
 
--- 本工具的開關（不含燈、招牌）進到客戶端的世界：新放的（OnObjectAdded）與讀格子時載入的（Place.migrate）
+-- 本工具的開關（不含燈、招牌）進到客戶端的世界：多人新放的（OnObjectAdded）、單機新放的（Place.build）與讀格子時
+-- 載入的（Place.migrate）
 local function watch(obj, room)
+    local def = room and room:getRoomDef() or nil
     for i = 1, #watched do
         if watched[i].obj == obj then
-            watched[i].room = room
+            watched[i].room, watched[i].def = room, def
             return
         end
     end
-    watched[#watched + 1] = { obj = obj, room = room }
+    watched[#watched + 1] = { obj = obj, room = room, def = def }
     if not watching then
         watching = true
         Events.OnTick.Add(watchTick)

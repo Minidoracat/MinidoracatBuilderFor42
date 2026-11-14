@@ -3579,7 +3579,11 @@ local function circuitScenario()
         local sw = light(85, 100, swS, "mark")
         local offLamp, offSw = light(85, 100, lampS, "mark"), light(85, 100, swS, "mark")
         offLamp.on, offSw.on = false, false
-        sq.room, sq.userRoom = { getLightSwitches = function() return javaList({ offLamp, offSw }) end }, true
+        local function roomOf(list, def)
+            return { def = def, getLightSwitches = function() return javaList(list) end,
+                getRoomDef = function(self) return self.def end }
+        end
+        sq.room, sq.userRoom = roomOf({ offLamp, offSw }, "d1"), true
         HARNESS_CASCADE = { offLamp, offSw }
         fire("OnObjectAdded", sw)
         local userOk = sw.lit == true and not offLamp.on and not offSw.on
@@ -3592,9 +3596,12 @@ local function circuitScenario()
         sw.lit = nil
         tick()
         local sameOk = sw.lit == nil
-        sq.room = { getLightSwitches = function() return javaList({ offLamp, offSw }) end }
+        sq.room = roomOf({ offLamp, offSw }, "d1")
         tick()
         local rebuiltOk = sw.lit == true and not offLamp.on and not offSw.on
+        sw.lit, sq.room.def = nil, "d2" -- 房間物件沒換、定義換了一份：一樣補切
+        tick()
+        rebuiltOk = rebuiltOk and sw.lit == true
         local loaded = light(85, 100, swS, "mark")
         local Pl = MinidoracatBuilder.Place
         local harden, fit = Pl.harden, Pl.fitContainers
@@ -3604,7 +3611,7 @@ local function circuitScenario()
         tick()
         local loadedOk = loaded.lit == true
         sw.lit, loaded.lit, sw.gone = nil, nil, true
-        sq.room = { getLightSwitches = function() return javaList({}) end }
+        sq.room = roomOf({}, "d3")
         tick()
         check(sameOk and rebuiltOk and loadedOk and sw.lit == nil and loaded.lit == true,
             "自建房間重建：格子換了房間物件時，本工具的開關照自己的狀態補切房間燈一次（其他燈與開關還原）；房間沒換不切；"
