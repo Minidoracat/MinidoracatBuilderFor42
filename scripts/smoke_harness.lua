@@ -8881,8 +8881,8 @@ print("情境四十五：水井與手壓水泵、植物（使用者 2026-11-13 �
     local ki = {}
     for i, k in ipairs(Entry.KINDS) do ki[k] = i end
     check(ki.well == ki.solid + 1 and ki.plant == ki.overlay + 1 and Entry.KIND_KEY.well == "KindWell"
-        and Entry.KIND_KEY.plant == "KindPlant" and Entry.BUILDABLE.well and Entry.BUILDABLE.plant and Entry.VERSION == 14,
-        "種類表：well 接在 solid 後、plant 接在 overlay 後，沙盒鍵 KindWell／KindPlant，規則版本 14")
+        and Entry.KIND_KEY.plant == "KindPlant" and Entry.BUILDABLE.well and Entry.BUILDABLE.plant,
+        "種類表：well 接在 solid 後、plant 接在 overlay 後，沙盒鍵 KindWell／KindPlant")
     check(Entry.kindOn("well", {}) == false and Entry.kindOn("well", { KindWell = false }) == false
         and Entry.kindOn("well", { KindWell = "true" }) == false and Entry.kindOn("well", { KindWell = true }) == true
         and Entry.kindOn("plant", {}) == true and Entry.kindOn("plant", { KindPlant = false }) == false

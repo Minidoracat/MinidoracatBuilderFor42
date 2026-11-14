@@ -1,27 +1,16 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-0.11.0[/h1]
+[h1]Minidoracat Build Anything for B42 42.22.2-0.11.1[/h1]
 [i]2026-11-14[/i]
 
 [b]English summary[/b]
 [list]
-[*] Server side: the records this mod keeps to refund what you dismantle (floors and ponds, overlays, lights and appliances, circuits) are now stored in a compact format and split across several save files, so busy servers no longer approach the game's size limit for a single file. Nothing changes for players; everything already built keeps its refund and wiring.
-[*] Admin panel: the Rules page now ends with a "Server records" section showing how many entries, files and how much space each record uses.
-[*] Server admins: after this update, do not roll back to an older version of this mod, and when restoring a backup restore the whole save folder.
+[*] Fence gate tiles (the ones without the "Recipe" badge) no longer need a door frame: place them on any empty edge, for example in a gap between two fences. Before, they were always refused with "Something is in the way".
+[*] They still can't go on an edge that already has a wall, fence, door or window, so leave a gap first. Regular doors still need a door frame.
+[*] Gates from other mods' tile packs count too when their name contains "gate" or they can be hopped over.
 [/list]
 
-[h3]✨ 新增[/h3]
+[h3]🔧 修正[/h3]
 [list]
-[*] [b]管理面板看得到伺服器紀錄的大小[/b]：「規則」頁最下面多一段「伺服器紀錄」，列出地板與水面、地面覆蓋與牆面疊圖、燈與家電與樓梯平台、線路這四份紀錄各有幾筆、分成幾個檔、多大
-[/list]
-
-[h3]🔄 變更[/h3]
-[list]
-[*] [b]伺服器記「蓋了什麼、拆了退什麼」的四份紀錄改成分開存檔、格式更省空間[/b]：蓋得多的伺服器，一樓地板的那一份以前全放在一個存檔裡，再多下去會碰到遊戲的單檔大小上限。現在四份紀錄都會自動分成好幾個檔，地板與疊圖的紀錄每一筆佔的空間也小很多。以前蓋的東西照舊能拆、退料不變、線路照舊；玩家與管理員都不用做任何事
-[/list]
-
-[h3]🛠️ 給服主[/h3]
-[list]
-[*] 存檔資料夾會多出 gos_MinidoracatBuilderFloors_1.bin、gos_MinidoracatBuilderOverlays_1.bin、gos_MinidoracatBuilder_1.bin、gos_MinidoracatBuilderCircuits_1.bin（用到才有；一個約 6 MiB 才開下一個）。更新後第一次開服把舊檔裡的紀錄複製過去；之後哪一次開服確認每一筆都讀得回來，才清掉舊檔裡的那一份
-[*] 更新後請不要降回舊版：舊版讀不到分開存的紀錄，以前蓋的地板、疊圖、燈與家電會拆不了或不退料，線路會不見
-[*] 還原備份時請把整個存檔資料夾一起換回去，不要只蓋回其中幾個檔
-[*] 伺服器上所有 MOD 的全域物件系統合計到 100 個時，這個 MOD 不再開新的檔（log 會寫 cannot open another shard）
+[*] [b]圖塊的柵欄門不用門框就能蓋[/b]：木柵欄門、鐵柵欄門、鐵絲網門這些沒有「配方」標記的柵欄門，以前一定要先有門框，放在空地或兩段柵欄之間都會顯示「有東西擋住」。現在和原版配方的柵欄門一樣，那條邊空著就能蓋；放進門框也照舊可以
+[*] 那條邊已經有牆、柵欄、門或窗時照舊不能放，請先留一格缺口。一般的門照舊要門框
+[*] 其他 MOD 圖塊包裡名稱帶 gate 或能翻過去的門也算柵欄門
 [/list]
