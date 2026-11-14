@@ -1,28 +1,27 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-0.10.0[/h1]
+[h1]Minidoracat Build Anything for B42 42.22.2-0.11.0[/h1]
 [i]2026-11-14[/i]
 
 [b]English summary[/b]
 [list]
-[*] New kind "Plants" on the Decor tab: potted plants, hedges and flower beds, plus grass and wildflowers as pure decoration.
-[*] The left side now splits Light, Furniture, Container, Plants and Floor overlay into sub-kinds, so light switches, curbs and road markings are easy to find.
-[*] Two new kinds that are off by default (admins turn them on under sandbox "Minidoracat Build Anything: what can be built" or in the Manage panel): "Wells and Hand Pumps", and "Water" (dig ponds with a shovel; fill them back in with Dismantle).
-[*] Tombstones, road signs, mailboxes, flamingos, garden gnomes and birdbaths can now be built.
-[*] The crystal chandelier is no longer listed and ones already built can be removed; L-shaped office desks and cabinets can now be dismantled.
+[*] Server side: the records this mod keeps to refund what you dismantle (floors and ponds, overlays, lights and appliances, circuits) are now stored in a compact format and split across several save files, so busy servers no longer approach the game's size limit for a single file. Nothing changes for players; everything already built keeps its refund and wiring.
+[*] Admin panel: the Rules page now ends with a "Server records" section showing how many entries, files and how much space each record uses.
+[*] Server admins: after this update, do not roll back to an older version of this mod, and when restoring a backup restore the whole save folder.
 [/list]
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]新種類「植物」[/b]：盆栽、樹籬、花圃這些觀賞植物，以及草、野花，列在「裝飾」頁籤。觀賞植物照家具收料，放下後照原版拿起；樹籬、花圃和原版一樣要放在草地或泥土上。草與野花每格收 3 個草屑、不擋路。全部是純裝飾，不會長大也不能收成
-[*] [b]左邊的種類再分一層[/b]：點「燈」「家具」「容器」「植物」「地面覆蓋」時，下面多一層子種類。找線路用的電燈開關：「燈」頁籤，左邊點「燈」再點「電燈開關」。找路緣、路面標線：「地板」頁籤，左邊點「地面覆蓋」再點子種類
-[*] [b]新種類「水井與手壓水泵」（預設關閉）[/b]：管理員在沙盒或「管理」面板打開後，「家具」頁籤會多出水井與手壓水泵。蓋好的水用不完、是乾淨的，停水後照樣有水，所以預設不開。水井收石塊、大扁平石板、繩子和空水桶；手壓水泵收鐵管、小金屬片和螺絲
-[*] [b]新種類「水面」（預設關閉）[/b]：管理員打開後，可以帶鏟子在一樓的草地、泥土上挖出水面，不收材料。水會擋住人和殭屍，可以裝水（髒水，要煮過）和釣魚。可以拖一片，要站在範圍外面拖。用「拆除（建造工坊）」帶鏟子可以填平，回到挖之前的地面；地圖原有的河、湖不能填
-[*] [b]收材料時不會拿裝著水的桶子[/b]：裝著水或其他液體的容器不會被當成材料收走
+[*] [b]管理面板看得到伺服器紀錄的大小[/b]：「規則」頁最下面多一段「伺服器紀錄」，列出地板與水面、地面覆蓋與牆面疊圖、燈與家電與樓梯平台、線路這四份紀錄各有幾筆、分成幾個檔、多大
 [/list]
 
-[h3]🔧 修正[/h3]
+[h3]🔄 變更[/h3]
 [list]
-[*] [b]墓碑、路牌、郵筒、火鶴、花園地精、鳥浴盆可以蓋了[/b]：這 39 張原版圖以前被當成植物擋掉，現在照一般的家具或容器列出
-[*] [b]水晶吊燈蓋出來分成兩截、拆不掉[/b]：原版圖塊資料把它的上半截排在上一層樓。現在不再列出；已經蓋出來的，用右鍵「拆除（建造工坊）」可以拆掉
-[*] [b]L 形辦公桌與櫃子蓋了拆不掉[/b]：原版拿不起來、大錘也砸不掉。現在用「拆除（建造工坊）」可以拆並退料，以前蓋的也拆得掉
-[*] [b]兩層樓高的物件，游標先說清楚[/b]：教堂窗、大幅畫作、雕像要佔到上一層。上面沒有樓層的地方，游標直接標紅並說明要先蓋上一層
+[*] [b]伺服器記「蓋了什麼、拆了退什麼」的四份紀錄改成分開存檔、格式更省空間[/b]：蓋得多的伺服器，一樓地板的那一份以前全放在一個存檔裡，再多下去會碰到遊戲的單檔大小上限。現在四份紀錄都會自動分成好幾個檔，地板與疊圖的紀錄每一筆佔的空間也小很多。以前蓋的東西照舊能拆、退料不變、線路照舊；玩家與管理員都不用做任何事
+[/list]
+
+[h3]🛠️ 給服主[/h3]
+[list]
+[*] 存檔資料夾會多出 gos_MinidoracatBuilderFloors_1.bin、gos_MinidoracatBuilderOverlays_1.bin、gos_MinidoracatBuilder_1.bin、gos_MinidoracatBuilderCircuits_1.bin（用到才有；一個約 6 MiB 才開下一個）。更新後第一次開服把舊檔裡的紀錄複製過去；之後哪一次開服確認每一筆都讀得回來，才清掉舊檔裡的那一份
+[*] 更新後請不要降回舊版：舊版讀不到分開存的紀錄，以前蓋的地板、疊圖、燈與家電會拆不了或不退料，線路會不見
+[*] 還原備份時請把整個存檔資料夾一起換回去，不要只蓋回其中幾個檔
+[*] 伺服器上所有 MOD 的全域物件系統合計到 100 個時，這個 MOD 不再開新的檔（log 會寫 cannot open another shard）
 [/list]
