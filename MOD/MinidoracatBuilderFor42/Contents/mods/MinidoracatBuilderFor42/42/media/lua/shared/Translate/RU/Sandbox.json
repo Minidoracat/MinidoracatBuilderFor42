@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Покрытие стены",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Декоративные детали поверх стены.\nЕсли выключено, игроки не видят это и не могут строить. Уже построенное остаётся, и его можно разобрать.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Дверь",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Двери. Ставятся в дверной проём.\nЕсли выключено, игроки не видят это и не могут строить. Уже построенное остаётся, и его можно разобрать.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Двери. Ставятся в дверной проём; калиткам в заборе он не нужен.\nЕсли выключено, игроки не видят это и не могут строить. Уже построенное остаётся, и его можно разобрать.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Окно",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Окна. Ставятся в оконную раму.\nЕсли выключено, игроки не видят это и не могут строить. Уже построенное остаётся, и его можно разобрать.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Дверной проём",

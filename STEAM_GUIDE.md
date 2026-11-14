@@ -682,7 +682,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
 [tr][td]柵欄[/td][td]可以翻過去的柵欄與欄杆[/td][/tr]
 [tr][td]柱子[/td][td]轉角柱與柵欄柱[/td][/tr]
 [tr][td]牆面疊圖[/td][td]疊在牆上的裝飾片[/td][/tr]
-[tr][td]門[/td][td]門，裝在門框上[/td][/tr]
+[tr][td]門[/td][td]門，裝在門框上；柵欄門不用門框[/td][/tr]
 [tr][td]窗[/td][td]窗，裝在窗框上；窗和窗框畫在同一張的直接放在牆邊[/td][/tr]
 [tr][td]門框[/td][td]門框[/td][/tr]
 [tr][td]窗框[/td][td]窗框[/td][/tr]

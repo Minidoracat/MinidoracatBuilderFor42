@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "벽 오버레이",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "벽 위에 덧대는 장식 조각.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindDoor": "문",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "문. 문틀에 답니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "문. 문틀에 답니다. 울타리 문은 문틀이 필요 없습니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindWindow": "창문",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "창문. 창틀에 답니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "문틀",

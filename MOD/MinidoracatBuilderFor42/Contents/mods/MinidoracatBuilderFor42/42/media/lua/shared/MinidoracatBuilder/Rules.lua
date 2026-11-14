@@ -549,6 +549,15 @@ function Rules.framedWindow(t)
     return t == T.wall
 end
 
+-- 柵欄門：不用門框就能蓋的門。原版配方寫 dontNeedFrame（entity_wood_fencegate.txt 等），地圖上的也沒有門框；圖塊沒有
+-- 這個欄位，照「能翻過去」或 CustomName 帶 gate 認（原版 18 張單片柵欄門都叫 Fence gate；圖塊包另有 Fence Gate、
+-- Railing Gate、Cell Gate）。p＝門的屬性；只在放門時查，不進目錄迴圈
+function Rules.gate(p)
+    if p:has(HoppableN) or p:has(HoppableW) or p:has(TallHoppableN) or p:has(TallHoppableW) then return true end
+    local name = p:get("CustomName")
+    return name ~= nil and name:lower():find("gate", 1, true) ~= nil
+end
+
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
 -- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。

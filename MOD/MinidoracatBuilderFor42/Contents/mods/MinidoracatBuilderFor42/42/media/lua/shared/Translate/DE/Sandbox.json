@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Wand-Overlay",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Dekoteile, die über eine Wand gelegt werden.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Tür",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Türen. Sie kommen in einen Türrahmen.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Türen. Sie kommen in einen Türrahmen; Zauntore brauchen keinen.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Fenster",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Fenster. Sie kommen in einen Fensterrahmen.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Türrahmen",

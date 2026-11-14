@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Wall overlay",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Decorative pieces laid over a wall.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Door",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Doors. They go into a door frame.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Doors. They go into a door frame; fence gates don't need one.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Window",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Windows. They go into a window frame.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Door frame",

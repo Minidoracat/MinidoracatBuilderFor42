@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Calque de mur",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Éléments décoratifs posés sur un mur.\nDésactivé : les joueurs ne le voient pas et ne peuvent pas le construire. Ce qui est déjà construit reste en place et peut toujours être démonté.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Porte",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Portes. Elles se posent dans un cadre de porte.\nDésactivé : les joueurs ne le voient pas et ne peuvent pas le construire. Ce qui est déjà construit reste en place et peut toujours être démonté.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Portes. Elles se posent dans un cadre de porte ; les portails de clôture n'en ont pas besoin.\nDésactivé : les joueurs ne le voient pas et ne peuvent pas le construire. Ce qui est déjà construit reste en place et peut toujours être démonté.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Fenêtre",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Fenêtres. Elles se posent dans un cadre de fenêtre.\nDésactivé : les joueurs ne le voient pas et ne peuvent pas le construire. Ce qui est déjà construit reste en place et peut toujours être démonté.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Cadre de porte",

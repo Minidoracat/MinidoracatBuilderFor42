@@ -10594,6 +10594,54 @@ print("情境五十：管理面板的伺服器紀錄（2026-11-14）：伺服器
     getText, getSpecificPlayer, isClient, sendClientCommand, clockStep = realGetText, realSpecific, realIsClient, realSend, keepStep
 end)()
 
+print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）：一般的門照舊要門框；柵欄門那條邊空著就能蓋")
+;(function()
+    local Place, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Check
+    local EW = GridSquareEdgeFacingDirection.EAST_WEST
+    local function door(name, id, flags, keys) return sprite(name, id, { flags = flags, keys = keys }) end
+    local gate = door("fg_gate_01_0", 9501, { "doorW" }, { CustomName = "Fence gate" })
+    local hop = door("fg_hop_01_0", 9503, { "doorW", "HoppableW" }, {})      -- 沒有名稱、能翻過去
+    local railing = door("fg_rail_01_0", 9505, { "doorW" }, { CustomName = "Railing Gate" })
+    local plain = door("fg_door_01_0", 9507, { "doorW" }, { CustomName = "Door" })
+    local lone = door("fg_lone_01_0", 9509, { "doorW" }, { CustomName = "Fence gate" }) -- 沒有 +2 的開門圖
+    local old = IsoSpriteManager.instance:getNamedMap():values()._raw
+    local list = {}
+    for i, s in ipairs(old) do list[i] = s end
+    for _, s in ipairs({ gate, hop, railing, plain, lone }) do list[#list + 1] = s end
+    for i, n in ipairs({ "fg_gate_01_2", "fg_hop_01_2", "fg_rail_01_2", "fg_door_01_2" }) do
+        list[#list + 1] = door(n, 9510 + i, { "doorW", "open" }, {})
+    end
+    world(list)
+    check(Rules.gate(gate:getProperties()) and Rules.gate(hop:getProperties()) and Rules.gate(railing:getProperties())
+        and not Rules.gate(plain:getProperties()), "Rules.gate：名稱帶 gate（不分大小寫）或能翻過去的門；一般的門不算")
+
+    local empty = square(230, 230, 0)
+    local framed = square(231, 230, 0, { flags = { DoorWallW = true, cutW = true } })
+    local fenced = square(232, 230, 0, { flags = { HoppableW = true, collideW = true } })
+    local taken = square(233, 230, 0, { doors = { [EW] = {} } })
+    local full = square(234, 230, 0, { flags = { DoorWallW = true, cutW = true }, doors = { [EW] = {} } })
+    check(not Place.check("door", plain, empty) and Place.check("door", plain, framed) == true and not Place.check("door", plain, full),
+        "一般的門照舊：沒有門框不能放，有門框、還沒有門才能放")
+    check(Place.check("door", gate, empty) == true and Place.check("door", hop, empty) == true
+        and Place.check("door", railing, empty) == true and Place.check("door", gate, framed) == true,
+        "柵欄門：空著的邊可蓋，放進門框也照舊可以")
+    check(not Place.check("door", gate, fenced) and not Place.check("door", gate, taken) and not Place.check("door", gate, full)
+        and not Place.check("door", gate, square(235, 230, 1)) and not Place.check("door", gate, square(236, 230, 0, { stairs = true }))
+        and not Place.check("door", lone, empty),
+        "柵欄門照一般格邊：那條邊有柵欄、有門、門框裡已有門、樓上腳下沒有地板、格上有樓梯都擋；沒有開門圖的不蓋")
+
+    local K = player({ id = 510, x = 230.5, y = 231.5, here = square(230, 231, 0) })
+    local function both(name, x)
+        local a = Check.item(K, name, 0, { x, 230, 0 }, { preview = true })
+        local b = Check.item(K, name, 0, { x, 230, 0 })
+        return a == b and (a or "ok")
+    end
+    check(both("fg_gate_01_0", 230) == "ok" and both("fg_gate_01_0", 232) == "BLOCKED"
+        and both("fg_door_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 231) == "ok",
+        "Check.item：預覽與伺服器同一個結果（柵欄門空邊可蓋、有柵欄擋；一般的門要門框）")
+    world(old)
+end)()
+
 print()
 if failures > 0 then
     print(failures .. " 項失敗")

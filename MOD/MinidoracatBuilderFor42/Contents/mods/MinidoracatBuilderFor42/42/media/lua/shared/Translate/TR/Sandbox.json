@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Duvar katmanı",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Duvarın üstüne konan dekoratif parçalar.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Kapı",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Kapılar. Kapı çerçevesine takılır.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Kapılar. Kapı çerçevesine takılır; çit kapıları çerçeve gerektirmez.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Pencere",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Pencereler. Pencere çerçevesine takılır.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Kapı çerçevesi",

@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Nakładka ściany",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Ozdobne elementy nałożone na ścianę.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Drzwi",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Drzwi. Montuje się je we framudze.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Drzwi. Montuje się je we framudze; furtki w ogrodzeniu jej nie wymagają.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Okno",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Okna. Montuje się je w ramie okna.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Framuga",

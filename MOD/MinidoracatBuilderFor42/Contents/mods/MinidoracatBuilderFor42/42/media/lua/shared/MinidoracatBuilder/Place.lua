@@ -557,9 +557,14 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
         local refused, dirtN, dirtW = basement(sq, spr, n, w)
         if refused then return false end
         if kind == "door" then
-            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在
-            return doorPairExists(spr) and ((n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
-                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil))
+            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。柵欄門（Rules.gate）
+            -- 沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，ISBuildIsoEntity.lua:302-310）
+            if not doorPairExists(spr) then return false end
+            if (n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
+                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil) then
+                return true
+            end
+            if not Rules.gate(p) then return false end
         end
         -- 一般的窗要放進同方向、還沒有窗的窗框。牆型窗（Rules.framedWindow：窗和窗框同一張，地圖也不另放窗框）照下面
         -- 一般格邊判斷：那條邊已經有窗框（地圖的或本工具蓋的）、牆、窗時 edgeTaken 擋下，不疊兩層框（BLOCKED）

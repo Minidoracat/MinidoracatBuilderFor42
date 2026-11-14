@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "壁オーバーレイ",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "壁に重ねる装飾パーツ。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindDoor": "ドア",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "ドア。ドア枠に取り付けます。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "ドア。ドア枠に取り付けます。フェンスゲートはドア枠なしで設置できます。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindWindow": "窓",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "窓。窓枠に取り付けます。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "ドア枠",

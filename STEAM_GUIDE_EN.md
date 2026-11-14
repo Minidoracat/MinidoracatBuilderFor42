@@ -682,7 +682,7 @@ The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes
 [tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
 [tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
 [tr][td]Wall overlay[/td][td]Decorative pieces laid over a wall[/td][/tr]
-[tr][td]Door[/td][td]Doors. They go into a door frame[/td][/tr]
+[tr][td]Door[/td][td]Doors. They go into a door frame; fence gates don't need one[/td][/tr]
 [tr][td]Window[/td][td]Windows. They go into a window frame; windows drawn together with their frame go straight on a wall edge[/td][/tr]
 [tr][td]Door frame[/td][td]Door frames[/td][/tr]
 [tr][td]Window frame[/td][td]Window frames[/td][/tr]

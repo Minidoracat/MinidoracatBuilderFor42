@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Camada de parede",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Peças decorativas sobre uma parede.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Porta",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Portas. Vão em um batente de porta.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Portas. Vão em um batente de porta; portões de cerca não precisam de um.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Janela",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Janelas. Vão em um batente de janela.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Batente de porta",

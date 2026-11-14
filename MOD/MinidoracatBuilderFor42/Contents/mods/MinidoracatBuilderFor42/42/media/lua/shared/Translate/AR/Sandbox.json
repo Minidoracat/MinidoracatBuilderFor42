@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "Capa de pared",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "Piezas decorativas sobre una pared.\nDesactivado: los jugadores no lo ven ni lo pueden construir. Lo ya construido se queda y aún se puede desarmar.",
     "Sandbox_MinidoracatBuilder_KindDoor": "Puerta",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Puertas. Van en un bastidor de puerta.\nDesactivado: los jugadores no lo ven ni lo pueden construir. Lo ya construido se queda y aún se puede desarmar.",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "Puertas. Van en un bastidor de puerta; las puertas de valla no lo necesitan.\nDesactivado: los jugadores no lo ven ni lo pueden construir. Lo ya construido se queda y aún se puede desarmar.",
     "Sandbox_MinidoracatBuilder_KindWindow": "Ventana",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "Ventanas. Van en un marco de ventana.\nDesactivado: los jugadores no lo ven ni lo pueden construir. Lo ya construido se queda y aún se puede desarmar.",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "Bastidor de puerta",

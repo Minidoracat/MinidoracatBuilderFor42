@@ -46,7 +46,7 @@
     "Sandbox_MinidoracatBuilder_KindWallOverlay": "墙面贴图",
     "Sandbox_MinidoracatBuilder_KindWallOverlay_tooltip": "叠在墙上的装饰片。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
     "Sandbox_MinidoracatBuilder_KindDoor": "门",
-    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "门，装在门框上。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
+    "Sandbox_MinidoracatBuilder_KindDoor_tooltip": "门，装在门框上；栅栏门不用门框。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
     "Sandbox_MinidoracatBuilder_KindWindow": "窗户",
     "Sandbox_MinidoracatBuilder_KindWindow_tooltip": "窗户，装在窗框上。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
     "Sandbox_MinidoracatBuilder_KindDoorFrame": "门框",
