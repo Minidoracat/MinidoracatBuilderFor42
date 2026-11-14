@@ -465,12 +465,17 @@ function Server.complete(player, n, i)
         xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
         drop(player, cells[1].sq, refund)
         -- Quests & Achievements（選用，不寫 require）：付料的新建算 1 個建造；沒扣到任何東西（倍率 0）、原地替換不算，
-        -- 建造作弊沒有 plan 進不來（服主 2026-11-15）。出錯不影響這一項已經蓋好
+        -- 建造作弊沒有 plan 進不來（服主 2026-11-15）。出錯不影響這一項已經蓋好。built 回 true，或 false＋錯誤碼
+        -- （印一行），或單獨的 false（超過每分鐘上限、玩家還沒有 Quest 帳號：預期內，不印）
         local quest = MinidoracatQuest and MinidoracatQuest.v1
         if quest and type(quest.built) == "function" and not rep
             and #plan.take + #plan.ground + #plan.boxes + #plan.uses > 0 then
-            local qok, qerr = pcall(quest.built, player)
-            if not qok then print(LOG .. "quest built failed: " .. tostring(qerr)) end
+            local qok, counted, code = pcall(quest.built, player)
+            if not qok then
+                print(LOG .. "quest built failed: " .. tostring(counted))
+            elseif counted == false and code ~= nil then
+                print(LOG .. "quest built refused: " .. tostring(code))
+            end
         end
     end
     Place.settle(cells)

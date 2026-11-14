@@ -6130,11 +6130,46 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     local QC = player({ id = 3299, x = 113.5, y = 113.5, here = here, cheat = true })
     check(fresh(QC, 113, true) and #qCalls == 1 and QC.inv:count("Base.Plank") == wallCost["Base.Plank"],
         "Quest：建造作弊（背包有料也不扣）不算建造")
+    -- 這次拿走的東西從哪來都算（背包、地上、釘子盒、耗材任一）；都沒拿不算；放置出錯不算（審查 1115 Codex）
+    local realPlan, realConsume, realBuild, realPrint = Materials.plan, Materials.consume, MinidoracatBuilder.Place.build, print
+    Materials.consume = function() end
+    local function shaped(over) -- 回這一次多叫了幾次 built（沒蓋成回 nil）
+        local plan = { take = {}, ground = {}, boxes = {}, left = 0, uses = {} }
+        for k, v in pairs(over) do plan[k] = v end
+        Materials.plan = function() return plan end
+        local n0 = #qCalls
+        return fresh(P, 113) and #qCalls - n0 or nil
+    end
+    check(shaped({ take = { 1 } }) == 1 and shaped({ ground = { 1 } }) == 1 and shaped({ boxes = { 1 } }) == 1
+        and shaped({ uses = { 1 } }) == 1 and shaped({}) == 0,
+        "Quest：料來自背包、地上、釘子盒、耗材任一都算 1 個建造；什麼都沒拿不算")
+    MinidoracatBuilder.Place.build = function() error("injected build failure") end
+    Materials.plan = function() return { take = { 1 }, ground = {}, boxes = {}, left = 0, uses = {} } end
+    local nFail = #qCalls
+    local failed = not fresh(P, 113)
+    local _, aFail = last()
+    check(failed and aFail.code == "INTERNAL" and #qCalls == nFail, "Quest：放置出錯（INTERNAL）不算建造")
+    MinidoracatBuilder.Place.build = realBuild
+    -- built 的回傳：false＋錯誤碼印一行（帶錯誤碼）；單獨的 false（限速、還沒有帳號）與 true 不印
+    local lines = {}
+    print = function(s) if tostring(s):find("quest built", 1, true) then lines[#lines + 1] = s end end
+    MinidoracatQuest.v1.built = function() return false, "not_ready" end
+    local okCode = fresh(P, 113)
+    local nCode = #lines
+    MinidoracatQuest.v1.built = function() return false end
+    local okLone = fresh(P, 113)
+    MinidoracatQuest.v1.built = function() return true end
+    local okTrue = fresh(P, 113)
+    print = realPrint
+    check(okCode and okLone and okTrue and nCode == 1 and #lines == 1 and lines[1]:find("not_ready", 1, true) ~= nil,
+        "Quest 的 built 回 false＋錯誤碼：照樣蓋好、印一行帶錯誤碼；單獨的 false 與 true 不印")
+    Materials.plan, Materials.consume = realPlan, realConsume
     MinidoracatQuest.v1.built = function() error("boom") end
     check(fresh(P, 114, true) and P.inv:count("Base.Plank") == 0, "Quest 的 built 丟錯：照樣蓋好、照樣扣料")
     MinidoracatQuest.v1.built = nil
     check(fresh(P, 115, true), "Quest 的 facade 沒有 built（舊版）：照常蓋")
     MinidoracatQuest = nil
+    nowMs = nowMs + 6000 -- 上面多送的請求不佔後面的限流額度
     -- 移除舊的失敗：收回新的、舊的留著、不扣不退
     local FS = S(116, 113)
     local base = FS.transmitRemoveItemFromSquare
@@ -6201,9 +6236,13 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     local OH = obj(FH, floorA, {})
     give(P, fTotal.items)
     nonce = nonce + 1
+    local qH = 0
+    MinidoracatQuest = { v1 = { built = function() qH = qH + 1 end } }
     local okH, cmdH, aH = build(P, nonce, "cs_floor_01_1", { 114, 115, 0 })
+    MinidoracatQuest = nil
     check(okH and cmdH == "placed" and aH.replaced == nil and not has(FH, OH) and named(FH, "cs_floor_01_1") ~= nil,
         "舊的一樓地板帳本對不上：照一般蓋新地板（不算替換、不卡 NOT_OURS）")
+    check(qH == 1, "Quest：舊地板帳本對不上、照一般蓋的那次算 1 個建造（和 log 印 BUILD 同一個判斷）")
     -- 換地板時舊地板上本工具掛的地面覆蓋：換好照帳本掛回去；掛不回去（這裡圖不存在）就整份退，帳本不留半筆
     local FJ = S(112, 112)
     FJ.objects = {}
