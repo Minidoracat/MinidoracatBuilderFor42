@@ -275,9 +275,9 @@ Admin.ledger = Admin.ledger or { asked = nil, rows = nil }
 local KNOWN_LEDGER = {}
 for _, id in ipairs(Admin.LEDGERS) do KNOWN_LEDGER[id] = true end
 
--- 不到 1 MB 用整數 KB，以上用一位小數 MB；單位不翻譯
+-- 不到 1 MB 用整數 KB（無條件進位：有紀錄的小帳本不會顯示成 0 KB），以上用一位小數 MB；單位不翻譯
 function Admin.sizeText(bytes)
-    if bytes < 1048576 then return math.floor(bytes / 1024) .. " KB" end
+    if bytes < 1048576 then return math.ceil(bytes / 1024) .. " KB" end
     local t = math.floor(bytes * 10 / 1048576 + 0.5)
     return math.floor(t / 10) .. "." .. t % 10 .. " MB"
 end

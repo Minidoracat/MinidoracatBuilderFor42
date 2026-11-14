@@ -10552,8 +10552,9 @@ print("情境五十：管理面板的伺服器紀錄（2026-11-14）：伺服器
         { id = "ledger", n = 0, shards = 1, bytes = 1023 },
         { id = "circuits", n = 7, shards = 3, bytes = 5 * 1048576 + 104857 } })
     check(#lines == 4 and lines[1] == row("floors", 29568, 1, "512 KB") and lines[2] == row("overlays", 3, 2, "1.0 MB")
-        and lines[3] == row("ledger", 0, 1, "0 KB") and lines[4] == row("circuits", 7, 3, "5.1 MB"),
-        "每本一行：不到 1 MB 用整數 KB、以上一位小數 MB；缺欄位、不是數字、負數、NaN、太大、id 不認得或不是字串的都跳過")
+        and lines[3] == row("ledger", 0, 1, "1 KB") and lines[4] == row("circuits", 7, 3, "5.1 MB")
+        and Admin.sizeText(0) == "0 KB" and Admin.sizeText(1048575) == "1024 KB",
+        "每本一行：不到 1 MB 用整數 KB（進位，空的才是 0 KB）、以上一位小數 MB；缺欄位、不是數字、負數、NaN、太大、id 不認得或不是字串的都跳過")
     check(#Admin.ledgerLines(nil) == 0 and #Admin.ledgerLines("x") == 0 and #Admin.ledgerLines({ "a", 5 }) == 0,
         "list 不是表或項目不是表：空的，不丟錯")
     -- 狀態：單機當場回、兩次至少隔 3 秒；多人送指令、5 秒沒回改說沒有回報、回了空的也說沒有回報
