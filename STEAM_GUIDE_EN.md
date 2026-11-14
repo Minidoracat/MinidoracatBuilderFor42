@@ -20,6 +20,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Required[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]
 [*] [b]Optional[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078]Minidoracat Safehouse[/url], whose safehouse permissions decide where you can build.
+[*] [b]Optional[/b]: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3827762894]Minidoracat Quests & Achievements[/url] (a version that supports this): each thing you pay materials for counts as 1 build. Build cheat, builds that took no materials, and in-place replacements do not count.
 [/list]
 [h3]Where it works[/h3]
 [list]

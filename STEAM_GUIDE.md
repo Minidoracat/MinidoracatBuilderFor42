@@ -20,6 +20,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
 [list]
 [*] [b]必裝[/b]：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701]Minidoracat UI Library[/url]
 [*] [b]選用[/b]：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078]Minidoracat Safehouse[/url]，照它的安全屋權限決定能不能蓋。
+[*] [b]選用[/b]：[url=https://steamcommunity.com/sharedfiles/filedetails/?id=3827762894]Minidoracat Quests & Achievements[/url]（要支援這項的版本），付材料蓋的東西每件算 1 個建造；建造作弊、沒收到材料、原地替換不算。
 [/list]
 [h3]在哪裡能用[/h3]
 [list]
