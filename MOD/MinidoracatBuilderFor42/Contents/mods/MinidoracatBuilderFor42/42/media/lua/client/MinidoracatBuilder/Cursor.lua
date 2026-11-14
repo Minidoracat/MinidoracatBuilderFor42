@@ -140,6 +140,54 @@ function Cursor.faces(entry)
     return out
 end
 
+-- 屋頂的鏡像片（2026-11-14 群聊 Patty：「原版材質拉出來都只有一個方向」）：屋頂的兩個坡向是目錄裡的兩項，圖塊屬性沒有
+-- 方向，編號排法又每個 tileset 不一樣（同一列 c↔5−c、上下列 c↔5−c、c↔7−c、相鄰兩張、隔一兩列）。所以照這幾種排法
+-- 列候選，再比圖：候選的遮罩水平翻過來和自己一樣才算（IsoSprite.isMaskClicked 的 flip，IsoSprite.java:338-360）。
+-- 自己左右對稱的（平頂、四角錐）不配。離線用同一個做法量原版 1,987 張屋頂：配到 1,018 張，配錯 6 張。
+-- 只在客戶端：伺服器沒有貼圖，所以不是朝向（d），按旋轉鍵是換成那一項重開游標（Cursor.turn）。
+local MIRROR_STEP, MIRROR_TOL = 8, 6 -- 每 8 px 取一點；不一樣的點最多 6 個
+local mirrorCache = {}
+local function maskDiff(spr, flip, ref, w, h)
+    local out, n, bad = {}, 0, 0
+    for y = MIRROR_STEP / 2, h - 1, MIRROR_STEP do
+        for x = MIRROR_STEP / 2, w - 1, MIRROR_STEP do
+            n = n + 1
+            out[n] = spr:isMaskClicked(IsoDirections.N, x, y, flip)
+            if ref and out[n] ~= ref[n] then
+                bad = bad + 1
+                if bad > MIRROR_TOL then return nil end
+            end
+        end
+    end
+    return out
+end
+
+function Cursor.mirror(entry)
+    if entry.kind ~= "roof" then return nil end
+    local hit = mirrorCache[entry.name]
+    if hit ~= nil then return hit or nil end
+    mirrorCache[entry.name] = false
+    local tex = entry.spr:getTextureForCurrentFrame(IsoDirections.N)
+    if not tex then return nil end
+    local w, h = tex:getWidthOrig(), tex:getHeightOrig()
+    local own = maskDiff(entry.spr, false, nil, w, h)
+    if maskDiff(entry.spr, true, own, w, h) then return nil end -- 左右對稱（沒有遮罩時整張都是 false，也走這裡）
+    local n = entry.num
+    local row, col = n - n % 8, n % 8
+    for _, num in ipairs({ row + 5 - col, row + 8 + 5 - col, row - 8 + 5 - col, row + 7 - col, n % 2 == 0 and n + 1 or n - 1,
+        n + 8, n - 8, n + 16, n - 16 }) do
+        local other = num >= 0 and num ~= n and Entry.resolve(entry.tileset .. "_" .. num)
+        if other and other.kind == "roof" then
+            local t = other.spr:getTextureForCurrentFrame(IsoDirections.N)
+            if t and t:getWidthOrig() == w and t:getHeightOrig() == h and maskDiff(other.spr, true, own, w, h) then
+                mirrorCache[entry.name] = other.name
+                return other.name
+            end
+        end
+    end
+    return nil
+end
+
 -- 起始朝向：指定的有就用；否則用項目本身那一面（標籤才寫得出朝向），再不然第一個
 function Cursor.pickFace(entry, faces, d)
     for i = 1, faces.n do
@@ -262,6 +310,7 @@ function Cursor.new(player, entry, d, overlap)
     o.offsBy = {}
     o.faces = Cursor.faces(entry)
     o:setFace(Cursor.pickFace(entry, o.faces, d))
+    o.mirror = o.faces.n == 1 and Cursor.mirror(entry) or nil
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
     -- 屋頂預設蓋在上一層：站在下面那層往上蓋。屋頂與地板都能用 PgUp／PgDn、手把 X 切換（LAYERED；isValid 照它換算）
     o.up = entry.kind == "roof"
@@ -345,7 +394,11 @@ function Cursor:setFace(d)
 end
 
 function Cursor:turn(step)
-    if self.faces.n > 1 then self:setFace(Cursor.nextFace(self.faces, self.d, step)) end
+    if self.faces.n > 1 then return self:setFace(Cursor.nextFace(self.faces, self.d, step)) end
+    if self.mirror then -- 屋頂：換成鏡像的那一項（Cursor.mirror），蓋在哪一層照舊
+        local o = Cursor.start(self.character:getPlayerNum(), self.mirror, 0, self.overlap)
+        if o then o.up = self.up end
+    end
 end
 
 -- DoTileBuilding 每幀拿它當目前的 sprite 名稱（ISBuildingObject.lua:129）；原版的四向 sprite 欄位這裡不用
@@ -433,12 +486,12 @@ function Cursor:getXPrompt()
 end
 
 function Cursor:getLBPrompt()
-    if self.faces and self.faces.n > 1 then return getText("IGUI_Controller_RotateLeft") end
+    if self.faces and (self.faces.n > 1 or self.mirror) then return getText("IGUI_Controller_RotateLeft") end
     return nil
 end
 
 function Cursor:getRBPrompt()
-    if self.faces and self.faces.n > 1 then return getText("IGUI_Controller_RotateRight") end
+    if self.faces and (self.faces.n > 1 or self.mirror) then return getText("IGUI_Controller_RotateRight") end
     return nil
 end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:671-676）
@@ -731,7 +784,7 @@ function Cursor:texts()
             parts[#parts + 1] = getText(swap > 0 and "IGUI_MBLD_HintSwap" or "IGUI_MBLD_HintBuild")
             if self.canDrag then parts[#parts + 1] = getText("IGUI_MBLD_HintDrag") end
         end
-        if self.faces.n > 1 and self.rotateName then
+        if (self.faces.n > 1 or self.mirror) and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
         if LAYERED[self.entry.kind] then

@@ -115,6 +115,11 @@ local function sprite(name, id, o)
     function s:getType() return o.type or T.normal end
     function s:hasNoTextures() return o.noTex == true end
     function s:getSpriteGrid() return self.grid end
+    -- 貼圖與遮罩（Cursor.mirror）：o.mask(x, y) 回那一點透不透明，圖框 64×64；沒給就是沒有貼圖
+    function s:getTextureForCurrentFrame()
+        return o.mask and { getWidthOrig = function() return 64 end, getHeightOrig = function() return 64 end } or nil
+    end
+    function s:isMaskClicked(_, x, y, flip) return o.mask(flip and 64 - x or x, y) end
     function s:getProperties()
         if o.boom then error("boom") end
         return props
@@ -5573,6 +5578,14 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
         shelfA, shelfB, lampS1, lampS2, ovX1, ovX2, tallA, tallB, badA, badB }
     for _, s in pairs(pf) do all[#all + 1] = s end
     all[#all + 1] = sp("lighting_indoor_01_4", 2832, {}, {}, { type = T.lightswitch }) -- 原版開關的 8 張之一（名稱帶牆面與位置）
+    -- 屋頂的鏡像片：0 與 5 互為左右鏡像（同一列 c↔5−c），1 左右對稱，2 的候選（5）形狀不一樣，3 沒有貼圖
+    local function roofSpr(n, mask)
+        return sprite("rf_01_" .. n, 2840 + n, { type = T.WestRoofT, keys = { RoofGroup = "1" }, mask = mask })
+    end
+    for _, s in ipairs({ roofSpr(0, function(x) return x < 32 end), roofSpr(5, function(x) return x > 32 end),
+        roofSpr(1, function() return true end), roofSpr(2, function(x, y) return x < 32 and y < 32 end), roofSpr(3) }) do
+        all[#all + 1] = s
+    end
     world(all)
 
     -- 配對面
@@ -5603,6 +5616,10 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
         and lf.n == 1 and lf[1] == 0, "朝向清單：只佔一條邊的牆多一個配對面（d＝5），按旋轉鍵在兩張之間換；沒有另一邊的只有自己")
     check(Win.canTurn("pf_house_01_0") == true and Win.canTurn("pf_lone_01_0") == false and Win.canTurn("gone_99_0") == false,
         "旋轉標記：放置時轉得動的才標（照游標的朝向清單）；轉不動的、不存在的不標")
+    local function mir(n) return Cur.mirror(Entry.resolve("rf_01_" .. n)) end
+    check(mir(0) == "rf_01_5" and mir(5) == "rf_01_0" and mir(1) == nil and mir(2) == nil and mir(3) == nil
+        and Cur.mirror(wallEntry) == nil and Win.canTurn("rf_01_0") == true and Win.canTurn("rf_01_1") == false,
+        "屋頂的鏡像片：候選的圖水平翻過來和自己一樣才配；左右對稱、形狀不同、沒有貼圖的不配；別的種類不配；配得到的有旋轉標記")
     local Nm = MinidoracatBuilder.Names
     Nm.reset()
     check(Nm.of("lighting_indoor_01_4"):find("IGUI_MBLD_Switch_4", 1, true)

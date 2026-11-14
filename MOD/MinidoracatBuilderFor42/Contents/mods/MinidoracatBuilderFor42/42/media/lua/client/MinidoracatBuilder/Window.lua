@@ -1015,12 +1015,12 @@ local function prepareVisible(v)
     end
 end
 
--- 放置時按旋轉鍵換得到別的朝向（或牆、柵欄、門框、窗框的另一面）：照游標實際會用的那份算（Cursor.faces）。
--- 建造配方項目走原版游標，不標
+-- 放置時按旋轉鍵換得到別的朝向（或牆、柵欄、門框、窗框的另一面、屋頂的鏡像片）：照游標實際會用的那份算
+-- （Cursor.faces、Cursor.mirror）。建造配方項目走原版游標，不標
 function W.canTurn(name)
     local C = B.Cursor
     local e = C and C.faces and Entry.resolve(name)
-    return e ~= nil and e ~= false and C.faces(e).n > 1
+    return e ~= nil and e ~= false and (C.faces(e).n > 1 or C.mirror(e) ~= nil)
 end
 
 -- 「放置時按 R 旋轉」；旋轉鍵沒綁時 nil
@@ -1497,7 +1497,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    local size = getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e)))
+    local faces = faceCount(e) + (B.Cursor.mirror(e) and 1 or 0)
+    local size = getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faces))
     local turn = W.canTurn(e.name) and W.turnHint()
     if turn then size = size .. getText("IGUI_MBLD_Sep") .. turn end
     y = para(v, ops, size, 0, y, dw, c.textMuted)
