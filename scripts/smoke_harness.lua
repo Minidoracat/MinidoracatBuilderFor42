@@ -6080,6 +6080,9 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     at(116, 113, { flags = { WallN = true } })
     local OW = obj(S(115, 113), wallN, { ["Base.Plank"] = "10", ["Base.Nails"] = "1" })
     OW.hp = 225 -- 被打掉一半
+    -- Quests & Achievements（選用整合）：facade 在時，只有付料的新建叫 built 一次（服主 2026-11-15）
+    local qCalls = {}
+    MinidoracatQuest = { v1 = { built = function(p) qCalls[#qCalls + 1] = p end } }
     nonce = nonce + 1
     local okP, _, aP = build(P, nonce, "cs_wall_02_1", { 115, 113, 0 })
     check(not okP and aP.code == "NO_MATERIAL" and next(pay) ~= nil and aP.need["Base.Plank"] == pay["Base.Plank"]
@@ -6109,6 +6112,29 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     check(NW and NW.set.setName == "cs_wall_02_1", "本工具蓋的 IsoThumpable 一律有名稱（圖名）：爬窗框時引擎拿名稱比對，null 會 NPE")
     check(NW and NW.set.setMaxHealth and NW.set.setHealth == math.floor(NW.set.setMaxHealth / 2),
         "替換照舊件剩下的耐久比例（舊的剩一半，新的也一半）：換一款不能順便修好")
+    check(#qCalls == 0, "Quest：缺料被拒、原地替換都不算建造")
+    local wallCost = Cost.sum(Cost.forCells("wall", { wallN }, 1)).items
+    local function fresh(p, y, paid) -- 在空格上新蓋一片牆（站近一點：MaxDistance）
+        at(118, y)
+        if paid then give(p, wallCost) end
+        nonce = nonce + 1
+        p.pos.x = 117.5
+        local ok, cmd = build(p, nonce, "cs_wall_01_1", { 118, y, 0 })
+        p.pos.x = 113.5
+        return ok and cmd == "placed" and named(S(118, y), "cs_wall_01_1") ~= nil
+    end
+    check(fresh(P, 111, true) and #qCalls == 1 and qCalls[1] == P, "Quest：付料的新建叫 built(player) 一次")
+    sb.CostMultiplier = 0
+    check(fresh(P, 112) and #qCalls == 1, "Quest：材料倍率 0（沒扣到任何東西）照樣蓋、不算建造")
+    sb.CostMultiplier = nil
+    local QC = player({ id = 3299, x = 113.5, y = 113.5, here = here, cheat = true })
+    check(fresh(QC, 113, true) and #qCalls == 1 and QC.inv:count("Base.Plank") == wallCost["Base.Plank"],
+        "Quest：建造作弊（背包有料也不扣）不算建造")
+    MinidoracatQuest.v1.built = function() error("boom") end
+    check(fresh(P, 114, true) and P.inv:count("Base.Plank") == 0, "Quest 的 built 丟錯：照樣蓋好、照樣扣料")
+    MinidoracatQuest.v1.built = nil
+    check(fresh(P, 115, true), "Quest 的 facade 沒有 built（舊版）：照常蓋")
+    MinidoracatQuest = nil
     -- 移除舊的失敗：收回新的、舊的留著、不扣不退
     local FS = S(116, 113)
     local base = FS.transmitRemoveItemFromSquare

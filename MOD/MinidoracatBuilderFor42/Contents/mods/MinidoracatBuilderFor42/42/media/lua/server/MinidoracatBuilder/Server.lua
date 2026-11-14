@@ -464,6 +464,14 @@ function Server.complete(player, n, i)
         Materials.consume(player, plan)
         xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
         drop(player, cells[1].sq, refund)
+        -- Quests & Achievements（選用，不寫 require）：付料的新建算 1 個建造；沒扣到任何東西（倍率 0）、原地替換不算，
+        -- 建造作弊沒有 plan 進不來（服主 2026-11-15）。出錯不影響這一項已經蓋好
+        local quest = MinidoracatQuest and MinidoracatQuest.v1
+        if quest and type(quest.built) == "function" and not rep
+            and #plan.take + #plan.ground + #plan.boxes + #plan.uses > 0 then
+            local qok, qerr = pcall(quest.built, player)
+            if not qok then print(LOG .. "quest built failed: " .. tostring(qerr)) end
+        end
     end
     Place.settle(cells)
     if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好

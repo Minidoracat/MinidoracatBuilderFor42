@@ -22,6 +22,7 @@ Project Zomboid Build 42 MOD。
 
 - [Minidoracat UI Library](https://steamcommunity.com/sharedfiles/filedetails/?id=3789836701)
 - 選用：[Minidoracat Safehouse](https://steamcommunity.com/sharedfiles/filedetails/?id=3819478078)
+- 選用：[Minidoracat Quests & Achievements](https://steamcommunity.com/sharedfiles/filedetails/?id=3827762894)（付材料蓋的東西算進建造成就與任務）
 
 ## 安裝
 
