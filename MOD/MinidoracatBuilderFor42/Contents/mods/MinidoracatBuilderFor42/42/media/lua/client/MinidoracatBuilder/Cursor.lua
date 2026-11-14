@@ -152,7 +152,9 @@ local function maskDiff(spr, flip, ref, w, h)
     for y = MIRROR_STEP / 2, h - 1, MIRROR_STEP do
         for x = MIRROR_STEP / 2, w - 1, MIRROR_STEP do
             n = n + 1
-            out[n] = spr:isMaskClicked(IsoDirections.N, x, y, flip)
+            -- 引擎翻轉時讀的是第「圖寬 − x」欄，比真正的鏡像偏 1 px（IsoSprite.java:351-353），所以翻轉那邊查 x+1。
+            -- 不補的話少配約兩成（E2E builder-fb1114-roof1：800 張，離線照引擎算 849、補了 1,018）
+            out[n] = spr:isMaskClicked(IsoDirections.N, flip and x + 1 or x, y, flip)
             if ref and out[n] ~= ref[n] then
                 bad = bad + 1
                 if bad > MIRROR_TOL then return nil end
@@ -310,7 +312,8 @@ function Cursor.new(player, entry, d, overlap)
     o.offsBy = {}
     o.faces = Cursor.faces(entry)
     o:setFace(Cursor.pickFace(entry, o.faces, d))
-    o.mirror = o.faces.n == 1 and Cursor.mirror(entry) or nil
+    -- 欄位不能叫 mirror：實例查不到欄位時會拿到 Cursor.mirror 這個函式，判斷永遠成立（roof1 實踩）
+    o.mirrorName = o.faces.n == 1 and Cursor.mirror(entry) or nil
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
     -- 屋頂預設蓋在上一層：站在下面那層往上蓋。屋頂與地板都能用 PgUp／PgDn、手把 X 切換（LAYERED；isValid 照它換算）
     o.up = entry.kind == "roof"
@@ -395,8 +398,8 @@ end
 
 function Cursor:turn(step)
     if self.faces.n > 1 then return self:setFace(Cursor.nextFace(self.faces, self.d, step)) end
-    if self.mirror then -- 屋頂：換成鏡像的那一項（Cursor.mirror），蓋在哪一層照舊
-        local o = Cursor.start(self.character:getPlayerNum(), self.mirror, 0, self.overlap)
+    if self.mirrorName then -- 屋頂：換成鏡像的那一項（Cursor.mirror），蓋在哪一層照舊
+        local o = Cursor.start(self.character:getPlayerNum(), self.mirrorName, 0, self.overlap)
         if o then o.up = self.up end
     end
 end
@@ -486,12 +489,12 @@ function Cursor:getXPrompt()
 end
 
 function Cursor:getLBPrompt()
-    if self.faces and (self.faces.n > 1 or self.mirror) then return getText("IGUI_Controller_RotateLeft") end
+    if self.faces and (self.faces.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateLeft") end
     return nil
 end
 
 function Cursor:getRBPrompt()
-    if self.faces and (self.faces.n > 1 or self.mirror) then return getText("IGUI_Controller_RotateRight") end
+    if self.faces and (self.faces.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateRight") end
     return nil
 end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:671-676）
@@ -784,7 +787,7 @@ function Cursor:texts()
             parts[#parts + 1] = getText(swap > 0 and "IGUI_MBLD_HintSwap" or "IGUI_MBLD_HintBuild")
             if self.canDrag then parts[#parts + 1] = getText("IGUI_MBLD_HintDrag") end
         end
-        if (self.faces.n > 1 or self.mirror) and self.rotateName then
+        if (self.faces.n > 1 or self.mirrorName) and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
         if LAYERED[self.entry.kind] then
