@@ -6160,12 +6160,15 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     local okLone = fresh(P, 113)
     MinidoracatQuest.v1.built = function() return true end
     local okTrue = fresh(P, 113)
-    print = realPrint
-    check(okCode and okLone and okTrue and nCode == 1 and #lines == 1 and lines[1]:find("not_ready", 1, true) ~= nil,
+    local nQuiet = #lines
+    check(okCode and okLone and okTrue and nCode == 1 and nQuiet == 1 and lines[1]:find("not_ready", 1, true) ~= nil,
         "Quest 的 built 回 false＋錯誤碼：照樣蓋好、印一行帶錯誤碼；單獨的 false 與 true 不印")
     Materials.plan, Materials.consume = realPlan, realConsume
     MinidoracatQuest.v1.built = function() error("boom") end
-    check(fresh(P, 114, true) and P.inv:count("Base.Plank") == 0, "Quest 的 built 丟錯：照樣蓋好、照樣扣料")
+    local okBoom = fresh(P, 114, true)
+    print = realPrint
+    check(okBoom and P.inv:count("Base.Plank") == 0 and #lines == 2 and lines[2]:find("boom", 1, true) ~= nil,
+        "Quest 的 built 丟錯：照樣蓋好、照樣扣料，印一行帶錯誤訊息")
     MinidoracatQuest.v1.built = nil
     check(fresh(P, 115, true), "Quest 的 facade 沒有 built（舊版）：照常蓋")
     MinidoracatQuest = nil
