@@ -234,9 +234,26 @@ end
 --   3. 編號 ±1、±2、±3（先 + 後 −）第一張。都沒有回 nil。
 -- 離線量過原版 4,045 張單邊非門窗的格邊圖：1. 956、2. 726、3. 811、找不到 1,552（2026-11-01）。
 -- 圖塊表在一個 session 裡不變，照項目名稱快取（false＝找不到）
+-- 樓梯（2026-11-14 群聊：「寫了朝西就只能朝西」）：引擎只有往北、往西兩種，另一面＝同一個 tileset 編號最近（±8 內，
+-- 先 + 後 −）、方向不同的那一組的底片。原版一款的兩組編號相鄰（fixtures_stairs_01 的 3..5 與 8..10、手扶梯 0 與 8）
+local STAIR_SPAN = 8
+local function stairsOpposite(entry)
+    local named = IsoSpriteManager.instance:getNamedMap()
+    local set = Rules.stairsSet(named, entry.name)
+    if not set then return nil end
+    for d = 1, STAIR_SPAN do
+        for _, num in ipairs({ entry.num + d, entry.num - d }) do
+            local name = entry.tileset .. "_" .. num
+            local other = num >= 0 and named:containsKey(name) and Rules.stairsSet(named, name)
+            if other and other.dir ~= set.dir then return named:get(name) end
+        end
+    end
+    return nil
+end
 local pairCache = {}
 local function opposite(entry)
     local kind = entry.kind
+    if kind == "stairs" then return stairsOpposite(entry) end
     if not Entry.EDGE[kind] or kind == "door" or kind == "window" then return nil end
     local n, w = Entry.edges(kind, entry.spr)
     if n == w then return nil end

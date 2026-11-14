@@ -736,6 +736,12 @@ local s2 = Rules.stairsSet(named, "st_01_7")
 check(s2 and s2.m == "st_01_6" and s2.t == "st_01_5" and s2.dir == "N", "遞減三格成組")
 check(Rules.stairsSet(named, "st_01_9") == nil, "少一格：不成組")
 check(Rules.stairsSet(named, "st_01_1") == nil, "中段不當起點")
+do
+    local eW, eN = Entry.resolve("st_01_0"), Entry.resolve("st_01_7")
+    local pW, pN = eW and Entry.face(eW, 5), eN and Entry.face(eN, 5)
+    check(pW and pW:getName() == "st_01_7" and pN and pN:getName() == "st_01_0",
+        "樓梯的配對面：同一個 tileset 最近、方向不同的那一組（往西 ↔ 往北）；湊不成組的不算")
+end
 
 print("情境四：來源表（檔號 → MOD）")
 check(Sources.fileOf(0) == 1 and Sources.fileOf(1048575) == 1, "id < 1048576 是檔號 1")
