@@ -114,7 +114,9 @@ function Cursor.sides(entry, cur)
     return out
 end
 
--- 項目有的朝向：1..4（N、E、S、W）裡 Entry.face 有回值、sprite 不重複的；一個都沒有時只有 0（項目本身）
+-- 項目有的朝向：1..4（N、E、S、W）裡 Entry.face 有回值、sprite 不重複的；一個都沒有時只有 0（項目本身）。
+-- 牆、柵欄、門框、窗框這類只佔一條格邊的，另一條邊是目錄裡的另一項（Entry.face 的 d＝5，配對面）：接在最後，按 R 換過去
+-- （2026-11-14 群聊回報：牆只能照挑的那一張蓋，要回視窗找另一面）。伺服器本來就收 d＝5（拖一圈在用）
 function Cursor.faces(entry)
     local out, seen = { n = 0 }, {}
     for d = 1, 4 do
@@ -126,7 +128,15 @@ function Cursor.faces(entry)
             out[out.n] = d
         end
     end
-    if out.n == 0 then out.n, out[1] = 1, 0 end
+    if out.n == 0 then
+        out.n, out[1] = 1, 0
+        seen[entry.name] = true
+    end
+    local pair = Entry.face(entry, 5)
+    if pair and not seen[pair:getName()] then
+        out.n = out.n + 1
+        out[out.n] = 5
+    end
     return out
 end
 
@@ -669,12 +679,13 @@ end
 -- 全部畫在跟著滑鼠的標籤框（self.src：文字、顏色交錯）。
 function Cursor:texts()
     local Names, Sep = B.Names, getText("IGUI_MBLD_Sep")
-    local name = Names and Names.of(self.name) or self.name
+    -- 配對面是目錄裡的另一項：標籤寫那一項的名稱，不加朝向
+    local name = Names and Names.of(self.d == 5 and self.sprName or self.name) or self.name
     if self.mode then
         local key = self.mode == "ring" and "IGUI_MBLD_ShapeRing" or self.mode == "edge" and "IGUI_MBLD_ShapeEdge"
             or "IGUI_MBLD_Size"
         name = name .. Sep .. getText(key, tostring(self.shapeW), tostring(self.shapeH))
-    elseif self.d ~= 0 then
+    elseif self.d ~= 0 and self.d ~= 5 then
         name = name .. Sep .. (Names and Names.face(self.d) or tostring(self.d)) -- 鍵由 Window 定義
     end
     self.label = name

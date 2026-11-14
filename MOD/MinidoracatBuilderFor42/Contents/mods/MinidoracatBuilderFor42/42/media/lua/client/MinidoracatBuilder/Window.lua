@@ -1006,8 +1006,28 @@ local function prepareVisible(v)
             v.textN = v.textN + 1
         end
         if v.S and v.dim[name] == nil then setDim(v, name, isShort(v.S, name)) end
+        if v.rot[name] == nil then
+            if v.rotN >= CACHE_MAX then v.rot, v.rotN = {}, 0 end
+            v.rot[name] = W.canTurn(name)
+            v.rotN = v.rotN + 1
+        end
         if getTimestampMs() - t0 >= BUDGET_MS then return end
     end
+end
+
+-- 放置時按旋轉鍵換得到別的朝向（或牆、柵欄、門框、窗框的另一面）：照游標實際會用的那份算（Cursor.faces）。
+-- 建造配方項目走原版游標，不標
+function W.canTurn(name)
+    local C = B.Cursor
+    local e = C and C.faces and Entry.resolve(name)
+    return e ~= nil and e ~= false and C.faces(e).n > 1
+end
+
+-- 「放置時按 R 旋轉」；旋轉鍵沒綁時 nil
+function W.turnHint()
+    local key = getCore():getKey(KeybindId.ROTATE_BUILDING)
+    if not (key and key > 0) then return nil end
+    return getText("IGUI_MBLD_Tip_Rotate", getKeyName(key))
 end
 
 -- 格子的提示框與手把焦點說明：「名稱 · 還缺材料」
@@ -1434,7 +1454,7 @@ end
 
 local function faceCount(e)
     local seen = {}
-    for d = 0, 4 do
+    for d = 0, 5 do
         local f = Entry.face(e, d)
         if f then
             local dup = false
@@ -1477,7 +1497,10 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e))), 0, y, dw, c.textMuted)
+    local size = getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faceCount(e)))
+    local turn = W.canTurn(e.name) and W.turnHint()
+    if turn then size = size .. getText("IGUI_MBLD_Sep") .. turn end
+    y = para(v, ops, size, 0, y, dw, c.textMuted)
     -- 疊放上限照原版疊箱子：自己可疊又是桌面，下面那件也是桌面，總高 ≤ 96（Place.STACK_MAX；
     -- ISMoveableSpriteProps.lua:1772-1776），第 N 層要 N × Surface ≤ 96。疊兩個就超過、或自己不是桌面的（例：UMCTP
     -- 畫好高度的半箱）疊不上，不寫。自己帶 IsTableTop 的走前面放桌上那一支（:1751-1763，同格只放一件），自己帶 IsHigh
@@ -1856,6 +1879,7 @@ function W.syncSettings(v)
         -- 成本倍率可能變了：缺料標示全部重算（材料摘要沒變也要，Materials.same 管不到成本）
         -- 材料分類照成本怎麼收（照配方收、硬核耗材），一起清
         v.S, v.dim, v.dimN, v.sumAt, v.mat = nil, {}, 0, 0, {}
+        v.rot, v.rotN = {}, 0 -- 關掉的種類或來源變了：另一面可能不能蓋了
         W.restartReplace(v) -- 成本倍率、關掉的種類或來源變了：同材料的款式重算
         W.refreshTabs(v)
         W.refreshCatalog(v)
@@ -1998,6 +2022,8 @@ function W.drawTile(v, el, name, x, y, w, h, state)
         el:drawRect(x + 3, by, v.badgeW, v.fh, 0.9, ac.r, ac.g, ac.b)
         el:drawText(v.badge, x + 6, by, on.r, on.g, on.b, 1, v.font)
     end
+    -- 放置時能旋轉的：左上角標旋轉圖示（右上是缺料、左下是配方；手把已選取的勾也在左上，那時不畫）
+    if v.rot[name] and name ~= v.padPicked then v.UI.Icons.draw(el, "reload", x + 3, y + 3, 14, c.textMuted, 1) end
     local lines = v.text[name]
     if lines then
         local col = dim and c.textMuted or c.text
@@ -2053,7 +2079,9 @@ end
 -- 滑鼠停在格子上的提示：「名稱 · 材料夠不夠 · 雙擊直接建造」（手把、鍵盤的焦點說明另外是 W.focusLabel）
 function W.tileTip(v, name)
     if not name then return nil end
-    return W.tipOf(v, name) .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Tip_DoubleClick")
+    local Sep = getText("IGUI_MBLD_Sep")
+    local turn = v.rot[name] and W.turnHint()
+    return W.tipOf(v, name) .. (turn and (Sep .. turn) or "") .. Sep .. getText("IGUI_MBLD_Tip_DoubleClick")
 end
 
 -- ===== 動作 =====
@@ -2858,7 +2886,8 @@ function W.create(UI)
     local w = math.max(math.floor(360 * s), math.min(sw - 40, want))
     local h = math.max(math.floor(320 * s), math.min(sh - 80, math.max(math.floor(420 * s), math.floor(sh * 0.7))))
     local v = { UI = UI, theme = theme, colors = theme.colors, font = font, fh = fh, s = s,
-        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, mat = {}, subs = {}, ops = EMPTY, sumAt = 0 }
+        tex = {}, texN = 0, text = {}, textN = 0, dim = {}, dimN = 0, rot = {}, rotN = 0, mat = {}, subs = {}, ops = EMPTY,
+        sumAt = 0 }
     v.iconH = math.floor(56 * s)
     v.tileH = 4 + v.iconH + 4 + 2 * fh + 2 + 6 -- 縮圖＋兩行名稱（W.drawTile）
     st.perRow = st.perRow or W.loadPerRow() -- 第一次開窗才讀檔

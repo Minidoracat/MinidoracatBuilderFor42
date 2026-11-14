@@ -6,6 +6,7 @@ require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Materials"
 require "TimedActions/MinidoracatBuilderPlaceAction"
 require "TimedActions/MinidoracatBuilderDismantleAction"
+require "MinidoracatBuilder/Place"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
@@ -449,6 +450,73 @@ end)
 --     看起來沒反應（builder-rooms-1029g）。switchLight 會把房間裡其他燈與開關的 activated 一起改掉（:517-523），同一幀照原值
 --     還原（同伺服器 Circuits 的 apply）。地圖房屋的房間燈由伺服器同步，客戶端自己切會和伺服器不一致；沒有房間時切了也看不到
 --     （開關的光源不畫，:790-794）。招牌不算開關（Rules.switchProps），不補。
+-- 自建房間的開關照自己的狀態切房間燈，房間裡其他燈與開關的 activated 同一幀還原。回那個房間（不在自建房間回 nil）
+local function lightRoom(obj)
+    local sq = obj:getSquare()
+    local room = sq and sq:isUserDefinedRoom() and sq:getRoom()
+    if not room then return nil end
+    local list, others, was = room:getLightSwitches(), {}, {}
+    for i = 0, list:size() - 1 do
+        local o = list:get(i)
+        if o ~= obj then
+            others[#others + 1] = o
+            was[#others] = o:isActivated()
+        end
+    end
+    obj:switchLight(obj:isActivated())
+    for i, o in ipairs(others) do
+        if o:isActivated() ~= was[i] then o:setActivated(was[i]) end
+    end
+    return room
+end
+
+-- 自建房間重建後房間燈會熄（2026-11-14 群聊回報：拆一面牆重新裝修，整棟其他房間的燈都滅了，開關卻還顯示開著）。
+-- 蓋牆、拆牆讓區域重算時，引擎把那棟的房間全部丟掉重建（WorldRegionToMetaGrid.java:386-431 移除並 clear 舊的 IsoRoom，
+-- IsoMetaGrid.java:382-399 建新的），房間燈照物件池裡 RoomDef 的舊值建（:271、:610-612），不看開關；單機讀檔時開關先載入、
+-- 房間後建，load 裡補切的那段又只在多人客戶端跑（IsoLightSwitch.java:352-353）。重建沒有 Lua 事件，RoomDef 的 lightsActive
+-- 也讀不到，所以記下每個本工具開關上次所在的 IsoRoom，每秒比一次：換了一個（或從沒有變成有）就照開關的狀態補切一次。
+-- 只在換房間物件時切：switchLight 會讓整張光照重算（:556 recalcLightTime），不能每秒都切。
+local WATCH_MS = 1000
+local watched, watchAt, watching = {}, 0, false
+local function watchTick()
+    local t = getTimestampMs()
+    if t >= watchAt and t - watchAt < WATCH_MS then return end
+    watchAt = t
+    for i = #watched, 1, -1 do
+        local w = watched[i]
+        local obj = w.obj
+        local sq = obj:getSquare()
+        if not sq or obj:getObjectIndex() < 0 then -- 拆掉、拿走或那一塊卸載了
+            table.remove(watched, i)
+        else
+            local room = sq:getRoom()
+            if room ~= w.room then
+                w.room = room
+                if room then lightRoom(obj) end
+            end
+        end
+    end
+    if #watched == 0 then
+        watching = false
+        Events.OnTick.Remove(watchTick)
+    end
+end
+
+-- 本工具的開關（不含燈、招牌）進到客戶端的世界：新放的（OnObjectAdded）與讀格子時載入的（Place.migrate）
+local function watch(obj, room)
+    for i = 1, #watched do
+        if watched[i].obj == obj then
+            watched[i].room = room
+            return
+        end
+    end
+    watched[#watched + 1] = { obj = obj, room = room }
+    if not watching then
+        watching = true
+        Events.OnTick.Add(watchTick)
+    end
+end
+
 local function onAdded(obj)
     if not instanceof(obj, "IsoLightSwitch") or not obj:hasModData() or not obj:getModData().builderEntry then return end
     local spr = obj:getSprite()
@@ -464,23 +532,17 @@ local function onAdded(obj)
         return
     end
     if not MinidoracatBuilder.Rules.switchProps(p) then return end
-    local sq = obj:getSquare()
-    local room = sq and sq:isUserDefinedRoom() and sq:getRoom()
-    if not room then return end
-    local list, others, was = room:getLightSwitches(), {}, {}
-    for i = 0, list:size() - 1 do
-        local o = list:get(i)
-        if o ~= obj then
-            others[#others + 1] = o
-            was[#others] = o:isActivated()
-        end
-    end
-    obj:switchLight(obj:isActivated())
-    for i, o in ipairs(others) do
-        if o:isActivated() ~= was[i] then o:setActivated(was[i]) end
-    end
+    watch(obj, lightRoom(obj))
 end
 
 Events.OnObjectAdded.Add(onAdded)
+
+-- 讀格子時載入的開關只登記、不馬上切（房間記成沒有）：這時房間多半還沒建；建好後、或本來就有時，watchTick 補切一次
+MinidoracatBuilder.Place.onLoaded = function(obj)
+    if not instanceof(obj, "IsoLightSwitch") then return end
+    local spr = obj:getSprite()
+    local p = spr and spr:getProperties()
+    if p and MinidoracatBuilder.Rules.switchProps(p) then watch(obj, nil) end
+end
 
 return Client

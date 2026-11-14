@@ -1344,6 +1344,7 @@ end
 
 function Place.migrate(obj)
     if not (obj:hasModData() and obj:getModData().builderEntry) then return end
+    if Place.onLoaded then Place.onLoaded(obj) end -- 客戶端登記開關，房間重建後補切房間燈（Client.lua）
     Place.harden(obj)
     Place.fitContainers(obj)
     if not instanceof(obj, "IsoThumpable") then return end

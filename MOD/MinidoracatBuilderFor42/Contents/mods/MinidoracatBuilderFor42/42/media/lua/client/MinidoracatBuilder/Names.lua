@@ -41,6 +41,12 @@ function Names.tileset(ts)
     return (ts:gsub("_", " "))
 end
 
+-- 原版電燈開關的 8 張圖：4 面牆 × 2 個位置，原版譯名都叫「電燈開關」，縮圖又小，分不出來（2026-11-14 群聊回報以為只有
+-- 4 個方向）。名稱接「哪面牆、靠哪一頭」（IGUI_MBLD_Switch_<n>）；位置是從貼圖量的（Tiles2x.pack，格子 128×256：
+-- _0 在北牆靠東、_4 靠西；_1 西牆靠南、_5 靠北；_2 東牆靠北、_7 靠南；_3 南牆靠西、_6 靠東），圖塊屬性裡沒有，所以照圖名寫
+local SWITCH = {}
+for i = 0, 7 do SWITCH["lighting_indoor_01_" .. i] = i end
+
 local function compose(name, kind, short)
     local r = Recipes.get(name)
     if r then return r.name end
@@ -63,6 +69,8 @@ local function compose(name, kind, short)
             shown = getText("IGUI_MBLD_Name_Composed", Names.kind(kind), Names.tileset(ts), num)
         end
     end
+    local sw = SWITCH[name]
+    if sw then shown = shown .. (short and "\n" or getText("IGUI_MBLD_Sep")) .. getText("IGUI_MBLD_Switch_" .. sw) end
     if spr:getSpriteGrid() then
         local n = #Entry.cells(spr)
         if n > 1 then shown = getText("IGUI_MBLD_Name_Cells", shown, tostring(n)) end

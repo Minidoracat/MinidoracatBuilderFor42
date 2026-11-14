@@ -2771,6 +2771,7 @@ local function dismantleScenario()
             floor = spr:getProperties():has(IsoFlagType.solidfloor) } -- isFloor 是建的時候設的欄位，換圖不變
         function o:getSprite() return spr end
         function o:getSquare() return sq end
+        function o:getObjectIndex() return 0 end
         function o:hasModData() return true end
         function o:getModData() return self.md end
         function o:isDismantable() return self.dism ~= false end
@@ -3480,6 +3481,7 @@ local function circuitScenario()
             isLit = spr:getProperties():has("lightR") }
         function o:getSprite() return spr end
         function o:getSquare() return sq end
+        function o:getObjectIndex() return self.gone and -1 or 0 end
         function o:hasModData() return true end
         function o:getModData() return self.md end
         function o:getKeyId() return self.keyId end
@@ -3581,6 +3583,34 @@ local function circuitScenario()
         HARNESS_CASCADE = { offLamp, offSw }
         fire("OnObjectAdded", sw)
         local userOk = sw.lit == true and not offLamp.on and not offSw.on
+        -- 房間重建（蓋牆、拆牆讓區域重算；2026-11-14）：格子換了一個 IsoRoom，一秒內照開關的狀態補切一次、其他燈與開關還原；
+        -- 房間沒換就不再切（switchLight 會讓光照整張重算）；讀格子載入的開關（Place.migrate）也登記；不在世界上的不再看
+        local function tick()
+            nowMs = nowMs + 1500
+            fire("OnTick")
+        end
+        sw.lit = nil
+        tick()
+        local sameOk = sw.lit == nil
+        sq.room = { getLightSwitches = function() return javaList({ offLamp, offSw }) end }
+        tick()
+        local rebuiltOk = sw.lit == true and not offLamp.on and not offSw.on
+        local loaded = light(85, 100, swS, "mark")
+        local Pl = MinidoracatBuilder.Place
+        local harden, fit = Pl.harden, Pl.fitContainers
+        Pl.harden, Pl.fitContainers = function() end, function() end -- 這裡只看 migrate 有沒有登記開關
+        Pl.migrate(loaded)
+        Pl.harden, Pl.fitContainers = harden, fit
+        tick()
+        local loadedOk = loaded.lit == true
+        sw.lit, loaded.lit, sw.gone = nil, nil, true
+        sq.room = { getLightSwitches = function() return javaList({}) end }
+        tick()
+        check(sameOk and rebuiltOk and loadedOk and sw.lit == nil and loaded.lit == true,
+            "自建房間重建：格子換了房間物件時，本工具的開關照自己的狀態補切房間燈一次（其他燈與開關還原）；房間沒換不切；"
+            .. "讀格子載入的開關也補；已經不在世界上的開關不再切")
+        loaded.gone = true
+        tick()
         sw.lit, sq.userRoom = nil, false
         fire("OnObjectAdded", sw)
         local mapOk = sw.lit == nil
@@ -5287,6 +5317,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         function x:hasModData() return next(self.md) ~= nil end
         function x:getModData() return self.md end
         function x:getSquare() return up end
+        function x:getObjectIndex() return 0 end
         function x:getThumpDmg() return self.dmg end
         function x:setThumpDmg(v) self.dmg = v end
         function x:isThumpable() return self.barricaded == true or self.thump == true end -- 引擎：有木板一律 true
@@ -5514,6 +5545,7 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     local all = { wallN, wallW, frameN, wallN2, floorA, floorB, lampA, lampB, boxA, boxB, crate, chair, stA, stB, ovA, ovB, gridS,
         shelfA, shelfB, lampS1, lampS2, ovX1, ovX2, tallA, tallB, badA, badB }
     for _, s in pairs(pf) do all[#all + 1] = s end
+    all[#all + 1] = sp("lighting_indoor_01_4", 2832, {}, {}, { type = T.lightswitch }) -- 原版開關的 8 張之一（名稱帶牆面與位置）
     world(all)
 
     -- 配對面
@@ -5536,6 +5568,21 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     local wallEntry = Entry.resolve("pf_house_01_0")
     check(Entry.face(wallEntry, 5) == Entry.face(wallEntry, 5) and Entry.face(wallEntry, 0) == pf.pf_house_01_0,
         "配對面：同一項目查兩次結果一樣（快取），d＝0 照舊是自己")
+    -- 游標的朝向清單接上配對面（2026-11-14）：牆按旋轉鍵換到另一條邊那一張、再按回來；找不到另一邊的照舊只有自己。
+    -- 建造視窗的旋轉標記照同一份清單
+    local Cur, Win = MinidoracatBuilder.Cursor, MinidoracatBuilder.Window
+    local wf, lf = Cur.faces(wallEntry), Cur.faces(Entry.resolve("pf_lone_01_0"))
+    check(wf.n == 2 and wf[1] == 0 and wf[2] == 5 and Cur.nextFace(wf, 0, 1) == 5 and Cur.nextFace(wf, 5, 1) == 0
+        and lf.n == 1 and lf[1] == 0, "朝向清單：只佔一條邊的牆多一個配對面（d＝5），按旋轉鍵在兩張之間換；沒有另一邊的只有自己")
+    check(Win.canTurn("pf_house_01_0") == true and Win.canTurn("pf_lone_01_0") == false and Win.canTurn("gone_99_0") == false,
+        "旋轉標記：放置時轉得動的才標（照游標的朝向清單）；轉不動的、不存在的不標")
+    local Nm = MinidoracatBuilder.Names
+    Nm.reset()
+    check(Nm.of("lighting_indoor_01_4"):find("IGUI_MBLD_Switch_4", 1, true)
+        and Nm.short("lighting_indoor_01_4"):find("\nIGUI_MBLD_Switch_4", 1, true)
+        and not Nm.of("lighting_indoor_03_0"):find("IGUI_MBLD_Switch", 1, true),
+        "電燈開關的名稱：原版 8 張開關接「哪面牆、靠哪一頭」，方格的短名放在第二行；其他圖不接")
+    Nm.reset()
 
     -- 格子與物件
     for x = 100, 107 do for y = 100, 107 do square(x, y, 0) end end
@@ -6635,6 +6682,7 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
         if how then o.md.builderEntry = spr:getName() end
         function o:getSprite() return self.spr end
         function o:getSquare() return sq end
+        function o:getObjectIndex() return 0 end
         function o:hasModData() return next(self.md) ~= nil end
         function o:getModData() return self.md end
         function o:getKeyId() return self.keyId end
