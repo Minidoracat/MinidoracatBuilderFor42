@@ -234,21 +234,33 @@ end
 --   3. 編號 ±1、±2、±3（先 + 後 −）第一張。都沒有回 nil。
 -- 離線量過原版 4,045 張單邊非門窗的格邊圖：1. 956、2. 726、3. 811、找不到 1,552（2026-11-01）。
 -- 圖塊表在一個 session 裡不變，照項目名稱快取（false＝找不到）
--- 樓梯（2026-11-14 群聊：「寫了朝西就只能朝西」）：引擎只有往北、往西兩種，另一面＝同一個 tileset 編號最近（±8 內，
--- 先 + 後 −）、方向不同的那一組的底片。原版一款的兩組編號相鄰（fixtures_stairs_01 的 3..5 與 8..10、手扶梯 0 與 8）
-local STAIR_SPAN = 8
+-- 樓梯（2026-11-14 群聊：「寫了朝西就只能朝西」）：引擎只有往北、往西兩種。同一個 tileset 裡湊得成組的底片照編號排，
+-- 第 i 組往西的配第 i 組往北的；兩邊組數不同就不配。原版都對得上（fixtures_stairs_01：西 0、3、16、19、32、48、64，
+-- 北 8、11、24、27、40、56、72；crafted_02：北 96、西 106）。「找編號最近、方向不同的」會把 3 配到 8、48 配到 56
+-- （E2E builder-fb1114-new2）。一個 tileset 掃一次（編號有空號，掃到 STAIR_SCAN）
+local STAIR_SCAN = 1023
+local stairPairs = {}
 local function stairsOpposite(entry)
-    local named = IsoSpriteManager.instance:getNamedMap()
-    local set = Rules.stairsSet(named, entry.name)
-    if not set then return nil end
-    for d = 1, STAIR_SPAN do
-        for _, num in ipairs({ entry.num + d, entry.num - d }) do
-            local name = entry.tileset .. "_" .. num
-            local other = num >= 0 and named:containsKey(name) and Rules.stairsSet(named, name)
-            if other and other.dir ~= set.dir then return named:get(name) end
+    local t = stairPairs[entry.tileset]
+    if not t then
+        t = {}
+        stairPairs[entry.tileset] = t
+        local named, lists = IsoSpriteManager.instance:getNamedMap(), { W = {}, N = {} }
+        for i = 0, STAIR_SCAN do
+            local name = entry.tileset .. "_" .. i
+            local set = named:containsKey(name) and Rules.stairsSet(named, name)
+            if set then
+                local l = lists[set.dir]
+                l[#l + 1] = name
+            end
+        end
+        if #lists.W == #lists.N then
+            for i = 1, #lists.W do
+                t[lists.W[i]], t[lists.N[i]] = lists.N[i], lists.W[i]
+            end
         end
     end
-    return nil
+    return t[entry.name] and Entry.sprite(t[entry.name]) or nil
 end
 local pairCache = {}
 local function opposite(entry)

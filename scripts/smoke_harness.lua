@@ -728,7 +728,14 @@ print("情境三：樓梯湊組")
 world({ sprite("st_01_0", 1, { type = T.stairsBW }), sprite("st_01_1", 2, { type = T.stairsMW }),
     sprite("st_01_2", 3, { type = T.stairsTW }), sprite("st_01_5", 4, { type = T.stairsTN }),
     sprite("st_01_6", 5, { type = T.stairsMN }), sprite("st_01_7", 6, { type = T.stairsBN }),
-    sprite("st_01_9", 7, { type = T.stairsBW }), sprite("st_01_10", 8, { type = T.stairsMW }) })
+    sprite("st_01_9", 7, { type = T.stairsBW }), sprite("st_01_10", 8, { type = T.stairsMW }),
+    -- 原版 fixtures_stairs_01 的排法：兩款往西（0、3）在前，兩款往北（8、11）在下一列
+    sprite("sv_01_0", 9, { type = T.stairsBW }), sprite("sv_01_1", 10, { type = T.stairsMW }),
+    sprite("sv_01_2", 11, { type = T.stairsTW }), sprite("sv_01_3", 12, { type = T.stairsBW }),
+    sprite("sv_01_4", 13, { type = T.stairsMW }), sprite("sv_01_5", 14, { type = T.stairsTW }),
+    sprite("sv_01_8", 15, { type = T.stairsBN }), sprite("sv_01_9", 16, { type = T.stairsMN }),
+    sprite("sv_01_10", 17, { type = T.stairsTN }), sprite("sv_01_11", 18, { type = T.stairsBN }),
+    sprite("sv_01_12", 19, { type = T.stairsMN }), sprite("sv_01_13", 20, { type = T.stairsTN }) })
 local named = IsoSpriteManager.instance:getNamedMap()
 local s1 = Rules.stairsSet(named, "st_01_0")
 check(s1 and s1.m == "st_01_1" and s1.t == "st_01_2" and s1.dir == "W", "遞增三格成組")
@@ -739,8 +746,15 @@ check(Rules.stairsSet(named, "st_01_1") == nil, "中段不當起點")
 do
     local eW, eN = Entry.resolve("st_01_0"), Entry.resolve("st_01_7")
     local pW, pN = eW and Entry.face(eW, 5), eN and Entry.face(eN, 5)
-    check(pW and pW:getName() == "st_01_7" and pN and pN:getName() == "st_01_0",
-        "樓梯的配對面：同一個 tileset 最近、方向不同的那一組（往西 ↔ 往北）；湊不成組的不算")
+    local function pairOf(n)
+        local e = Entry.resolve(n)
+        local p = e and Entry.face(e, 5)
+        return p and p:getName()
+    end
+    check(pW and pW:getName() == "st_01_7" and pN and pN:getName() == "st_01_0"
+        and pairOf("sv_01_0") == "sv_01_8" and pairOf("sv_01_3") == "sv_01_11" and pairOf("sv_01_8") == "sv_01_0"
+        and pairOf("sv_01_11") == "sv_01_3",
+        "樓梯的配對面：同一個 tileset 照編號排，第 i 組往西配第 i 組往北（3 配 11，不是最近的 8）；湊不成組的不算")
 end
 
 print("情境四：來源表（檔號 → MOD）")
