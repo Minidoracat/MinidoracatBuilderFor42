@@ -47,7 +47,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
 [*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
 [*] [b]Sub-kinds[/b]: picking the Light, Furniture, Container, Plants or Floor overlay kind splits it one level further, again with item counts. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers. Floor overlay: Curbs and Edging (curb stones and the edge strips where two ground types meet), Road Markings, Cracks and Grime, Other.
-[*] [b]Finding light switches[/b]: Lights tab, pick Light on the left, then Light Switches; or just search "switch".
+[*] [b]Finding light switches[/b]: Lights tab, pick Light on the left, then Light Switches; or just search "switch". The 8 vanilla switches are named by the wall they sit on and which end (for example "N wall, east").
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]Material[/b]: pick planks, metal, brick and stone, glass or logs to list only items whose cost includes that material; Other is everything that uses none of them, such as cloth or electronics. It doesn't look at what you carry, and it works together with Only what I can build. Hardware such as nails and screws doesn't count.
 [*] [b]One item per object[/b]: the facings of one object are one item.
@@ -142,7 +142,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
 [*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; with Overlap on over an occupied tile, which piece it is on that tile; when your skill is too low, which skill and level you need.
-[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things).
+[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things). Walls, fences, door frames and window frames switch to the other side of the same set; stairs switch between the west-going and north-going sets; sloped roofs switch to the mirrored piece. Items you can rotate show a rotate icon at the top left of their tile in the window.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
 [*] [b]Keep building[/b]: the cursor stays after you build.
