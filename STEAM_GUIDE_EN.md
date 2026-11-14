@@ -139,9 +139,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]The cursor[/h3]
 [list]
 [*] [b]After pressing Build[/b]: the window hides and a ghost appears on the ground.
-[*] [b]Ghost colours[/b]: white means it can be built, red means it can't, with a warning on that square, and yellow with a swap mark means it replaces what is there.
+[*] [b]Ghost colours[/b]: white can be built; red can't, with a warning on that square; yellow with a swap mark replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
-[*] [b]The box by the mouse[/b]: shows the name, facing, how many tiles you are dragging, why it can't be built and the key hints; when stacking crates, which level it goes on; with Overlap on over an occupied tile, which piece it is on that tile; when your skill is too low, which skill and level you need.
+[*] [b]The box by the mouse[/b]: shows the name, facing, tile count while dragging, why it can't be built and the key hints; also the level when stacking crates, the piece number when overlapping, and the skill and level you lack.
 [*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things). Walls, fences, door frames and window frames switch to the other side of the same set; stairs switch between the west-going and north-going sets; sloped roofs switch to the mirrored piece. Items you can rotate show a rotate icon at the top left of their tile in the window.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
@@ -169,9 +169,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [/list]
 [h3]Replacing in place[/h3]
 [list]
-[*] [b]How[/b]: build another style of the same kind over a floor, wall, fence, solid furniture or similar that you built with Build Anything, and it's replaced in place, with no need to dismantle first. Dragging a row or area works too; those tiles turn yellow.
+[*] [b]How[/b]: build another style of the same kind over a floor, wall, fence, solid furniture or similar that you built with Build Anything, and it's replaced in place; no need to dismantle first. Dragging a row or area works too; those tiles turn yellow.
 [*] [b]What swaps with what[/b]: things of the same kind; walls, door frames and window frames also swap with each other, so you can put a window in a wall without taking the wall down. They must be on the same edge of the square.
-[*] [b]Materials[/b]: you only pay what the new one needs beyond the old one; whatever the old one had left over comes back like dismantling, between 1 and all of each material, at your feet. Same materials means nothing extra. The box shows what you pay and what comes back.
+[*] [b]Materials[/b]: you only pay what the new one needs beyond the old one; the old one's leftovers come back like dismantling (1 to all of each material) at your feet. Same materials cost nothing extra. The box shows what you pay and what comes back.
 [*] [b]XP[/b]: only for the materials you pay.
 [*] [b]Durability[/b]: the new one keeps the old one's remaining durability, so swapping doesn't repair it.
 [*] [b]Swapping floors[/b]: floor overlays you added with Build Anything, such as road markings, stay on the new floor.
@@ -182,7 +182,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [/list]
 [h3]Overlap[/h3]
 [list]
-[*] [b]What it's for[/b]: tile-pack pieces meant to share a tile with another piece, such as a cooktop on a counter, lockers drawn as bottom, middle and top, or a rack with clothes hanging on it.
+[*] [b]What it's for[/b]: tile-pack pieces meant to share a tile with another piece, such as a cooktop on a counter, lockers drawn as bottom, middle and top, or clothes on a rack.
 [*] [b]Turning it on[/b]: select furniture, a container or a solid object, press Overlap below the details so it lights up, then press Build. It stays on until you turn it off.
 [*] [b]When on[/b]: you can build on a tile that already holds something, and the box by the mouse shows "Overlap: 2 / 3 on this tile". Nothing is replaced in place.
 [*] [b]When off[/b]: the usual rules apply: an occupied tile blocks the build, and building over your own piece replaces it.
@@ -196,9 +196,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Maximum distance[/b]: 3 tiles by default, at most one level up or down, and the admin can change it.
 [*] [b]Your character walks over[/b]: it walks next to each tile before building.
-[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences sit on the edge of a square and can be built from either side.
+[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences can be built from either side.
 [*] [b]Places you can't reach[/b]: through a wall or a closed door or window, furniture and the like can't be placed.
-[*] [b]With the build cheat on[/b]: like vanilla, your character doesn't walk over. It builds and dismantles where it stands, at any distance, even places it can't reach. Actions still take their usual time. Things in an area dismantle that go through vanilla Disassemble are still walked to, as in vanilla.
+[*] [b]With the build cheat on[/b]: your character doesn't walk over: it builds and dismantles from where it stands, at any distance, even unreachable places. Actions still take their usual time. Area dismantles that use vanilla Disassemble are still walked to.
 [*] [b]Someone standing there[/b]: things that block movement are not placed on a square where a player or zombie stands.
 [*] [b]When you can't build[/b]: in a vehicle or dead.
 [/list]
