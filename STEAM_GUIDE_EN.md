@@ -257,9 +257,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Undo last build[/h3]
 [list]
 [*] [b]How[/b]: press Ctrl+Z while placing, or Undo last build in the build window.
-[*] [b]What it takes down[/b]: the last batch you clicked or dragged yourself that built at least one piece, newest first, with materials back as for Dismantle (Build Anything); furniture and containers that dismantle the vanilla way are taken down too. There's no count limit: above the server's Most items at once it goes request after request. Anything still queued is cancelled too.
-[*] [b]What it leaves[/b]: things you can pick up, things you can only smash, and curtains; the notice says which vanilla action to use. Anything someone else took down and built again on the same tile is left alone too.
-[*] [b]Stopping halfway[/b]: if you walk away or the server refuses, what wasn't taken down stays; press Undo last build again to continue.
+[*] [b]What it takes down[/b]: the last batch you clicked or dragged yourself that built at least one piece, newest first, with materials back as for Dismantle (Build Anything); furniture and containers that dismantle the vanilla way are taken down too, and so are road markings, rugs, wall overlays and other things laid on something else (what's underneath stays). There's no count limit: above the server's Most items at once it goes request after request. Anything still queued is cancelled too.
+[*] [b]What it leaves[/b]: things you can pick up, things you can only smash (including a window you just built; the notice points to the sledgehammer), and curtains; the notice says which vanilla action to use. Anything someone else took down and built again on the same tile is left alone too.
+[*] [b]Stopping halfway[/b]: if you walk away, press Esc (B on a gamepad), start building or dismantling something else, or some pieces can't be taken down right now (no tool, no free spot to stand, not loaded), what wasn't taken down stays; bring the tool or move closer, then press Undo last build again to continue.
 [*] [b]Only one batch[/b]: it's forgotten once all of it is taken down, and pressing again says "Nothing you just built to take down." It's also forgotten when you restart the game; build recipes and building from a blueprint don't count.
 [*] [b]While planning[/b]: Ctrl+Z undoes the last planning step and never takes down anything real.
 [/list]
@@ -436,7 +436,7 @@ Tiles without dismantle materials cost this, by material (multiplier 1):
 [list]
 [*] [b]Lights[/b]: 1 Scrap Electronics + 1 Electrical Wire.
 [*] [b]Curtains[/b]: 1 Sheet, 2 for long curtains.
-[*] [b]Doors[/b]: every door except garage doors, each double door piece too, costs at least 2 Door Hinge + 1 Doorknob, as much as it drops when broken; doors priced by dismantle output get these added when short, with no XP for the added ones.
+[*] [b]Doors[/b]: every door except garage doors, each double door piece too, costs at least 2 Door Hinge + 1 Doorknob, as much as it drops when broken; doors priced by dismantle output get these added when short, with no XP for the added ones. With the material multiplier below 1 this hardware isn't reduced, and doors without dismantle materials also cost at least 2 Plank; garage doors follow the multiplier.
 [*] [b]Dirt, gravel and sand floors[/b]: 1 Sack of Dirt, Sack of Gravel or Sack of Sand, no tools.
 [*] [b]Grass and wildflowers[/b]: 3 Grass Cuttings, no tools; still 3 when the material multiplier is below 1.
 [*] [b]Well[/b]: 40 Stone + 8 Large Smooth Flat Stone + 1 Rope + 1 Bucket (empty; a bucket with water in it doesn't count). [b]Hand pump[/b]: 6 Iron Pipe + 4 Steel Sheet - Small + 6 Screws.
@@ -620,7 +620,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Skill[/b]: dismantling needs no skill, even with Require vanilla skill levels on.
 [*] [b]XP[/b]: dismantling gives none.
 [*] [b]Stairs[/b]: all three steps go together, and materials come back once.
-[*] [b]Garage doors and double doors[/b]: the whole set goes together, and materials come back once; not while a piece isn't loaded yet or is missing.
+[*] [b]Garage doors and double doors[/b]: the whole set goes together, and materials come back once; not while a piece isn't loaded yet or is missing. The tools needed go by the pieces that are actually there.
 [*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it.
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
@@ -676,13 +676,13 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Floors[/b]: Floor down and Floor up, or PgUp/PgDn, change the floor you draw on; floors below are faded and floors above aren't drawn.
 [*] [b]Piece count[/b]: shows "N/4,096 pieces".
 [*] [b]Library[/b]: opens the blueprint library.
-[*] [b]Hide/Show[/b]: hides the blueprint ghost on the ground; it can also have a key (Blueprint: hide/show, unbound by default).
+[*] [b]Hide/Show[/b]: hides the blueprint ghost on the ground, only hides it and doesn't save; it can also have a key (Blueprint: hide/show, unbound by default).
 [*] [b]Done[/b]: saves, closes the toolbar and opens the blueprint panel.
 [/list]
 [h3]Select and erase[/h3]
 [list]
 [*] [b]Select[/b]: hold the left button and drag a box; selected pieces turn cyan and the toolbar gets another row: Move, Rotate 90°, Copy, Delete, Save as new. Hold Shift to include every floor.
-[*] [b]Move, Copy[/b]: the selected pieces follow the mouse; click to drop, R to rotate 90°, right-click to cancel.
+[*] [b]Move, Copy[/b]: the selected pieces follow the mouse; click to drop, R to rotate 90°, right-click to cancel. What you drop matches the ghost; if some pieces can't turn, a notice says so as soon as you press R.
 [*] [b]Rotate 90°[/b]: walls, doors and windows move to the matching edge. Wall corners, stairs and furniture with only one facing move but keep their facing, and a notice says how many.
 [*] [b]Delete[/b]: the Delete button or the Delete key.
 [*] [b]Save as new[/b]: type a name to save the selected pieces as a new blueprint in the same place.
@@ -691,7 +691,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [h3]Limits and saving[/h3]
 [list]
 [*] [b]Size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces. Going over shows a notice with the reason when you release, and nothing is added.
-[*] [b]When it saves[/b]: on Done, Save, Hide, Put away and when you place it; if the game crashes in between, the unsaved part is lost. If it can't save, the blueprint stays and a notice asks you to check your disk space; Put away, Done and swapping blueprints wait until it can save.
+[*] [b]When it saves[/b]: on Done, Save, Move in the panel while planning, Put away and when you place it; if the game crashes in between, the unsaved part is lost. If it can't save, the blueprint stays and a notice asks you to check your disk space; Put away, Done, Move and swapping blueprints wait until it can save.
 [/list]
 === 🧰 Blueprints: placing and the blueprint panel
 {{img:19-plan-panel-en.jpg}}
@@ -700,7 +700,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]From the library[/b]: pick one and press Place, and the whole blueprint follows the mouse; R (LB/RB on a gamepad) rotates 90°, a click places it, right-click (B) cancels.
 [*] [b]Back to original spot[/b]: when the saved position is within 100 tiles, the toolbar has Back to original spot (X on a gamepad).
 [*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays.
-[*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was.
+[*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was. While planning it saves first, and stays in planning if it can't save.
 [*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark.
 [*] [b]Coming back[/b]: the blueprint is still there when you return. Every save and every server keeps its own, stored on your computer. If the blueprint file can't be opened this time, it's hidden but its spot is kept and it's read again next time you load; it's only removed when the file was deleted or damaged.
 [/list]
@@ -742,7 +742,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [/list]
 [h3]Pausing and stopping[/h3]
 [list]
-[*] [b]It pauses[/b]: when you press Pause, press Esc, walk away, attack or aim, build or dismantle something yourself, start editing or moving the blueprint on the ground, a zombie chases you, the game is paused, or the server refuses a whole batch. A notice says why. While planning, Build from blueprint can't be pressed; press Done first.
+[*] [b]It pauses[/b]: when you press Pause, press Esc, walk away, attack or aim, build or dismantle something yourself (including recipes placed one at a time such as stairs, and paint, wallpaper or plaster), start editing or moving the blueprint on the ground, a zombie chases you, the game is paused, or the server refuses a whole batch. A notice says why. While planning, Build from blueprint can't be pressed; press Done first. While something you started yourself is still going, Build from blueprint doesn't start and says it's already building.
 [*] [b]Carry on[/b]: once that's dealt with, press Resume to continue with the rest.
 [*] [b]It stops[/b]: when you get in a vehicle, fall asleep, die, the blueprint is put away or replaced, or an admin turns building from blueprints off. Press Build from blueprint again to start on the rest.
 [*] [b]What's built stays[/b]: pausing or stopping never takes anything down.
@@ -763,14 +763,14 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [list]
 [*] [b]Open[/b]: press Blueprints in the build window when no blueprint is on the ground; the Plan Blueprint toolbar and the blueprint panel have Library too.
 [*] [b]Where they are kept[/b]: each blueprint is a file on your computer, shared by every save and every server; Open folder opens the blueprint folder. There's no limit on how many.
-[*] [b]Backups[/b]: every blueprint has a .cfg backup with the same name next to it; if saving is cut off halfway, it's repaired the next time it's read.
+[*] [b]Backups[/b]: every blueprint has a .cfg backup with the same name next to it; if saving is cut off halfway, you still get a whole version back next time you load.
 [*] [b]File names[/b]: files you put in the folder yourself can only use letters and numbers in the name; others aren't listed, and the title row says how many files weren't listed.
 [*] [b]The list[/b]: Name, Size, Pieces, Can't build, Last used; search by name, sort by Recently used, Name or Pieces.
 [*] [b]For each blueprint[/b]: Place, Share, Rename, Duplicate, Delete (asks first, with the name and piece count).
 [*] [b]Names[/b]: up to 40 characters.
 [*] [b]Other buttons[/b]: Import, Open folder, Capture a building, New blank blueprint.
 [*] [b]New blank blueprint[/b]: if a blueprint is on the ground it asks first, saves and puts that one away (built pieces stay), then opens a blank one.
-[*] [b]The file of the one on the ground[/b]: renaming it renames the one on the ground; deleting it turns the one on the ground into an unsaved blueprint that gets a new file name when saved. Placing the same file again after its contents changed swaps in the file's version; right-click leaves it where it was.
+[*] [b]The file of the one on the ground[/b]: renaming it renames the one on the ground; deleting it turns the one on the ground into an unsaved blueprint that gets a new file name when saved. Placing the same file again after its contents changed: if the one on the ground isn't being planned, the file's version replaces it and right-click leaves it where it was; while planning, it asks first, and if you swap, the one on the ground is saved and put away and the new one is later saved under another file name.
 [/list]
 [h3]Sharing[/h3]
 [list]
@@ -783,12 +783,12 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 {{img:22-import-en.jpg}}
 [list]
 [*] [b]Open[/b]: press Import in the library.
-[*] [b]Paste a share code[/b]: press Paste from clipboard. If what you just copied doesn't show up, switch to another window and back to the game, then press it again. Codes that are too long can't be pasted; use the blueprint file instead.
-[*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder. File names can only use letters and numbers; others aren't listed, and it says how many weren't.
+[*] [b]Paste a share code[/b]: copy the share code, then press Paste from clipboard; the line next to it says "Share code read (N characters)." There's no box to type in, and pressing it again replaces the code. If what you just copied doesn't show up, switch to another window and back to the game, then press it again. Codes that are too long can't be pasted; use the blueprint file instead.
+[*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder, which clears any share code read. File names can only use letters and numbers; others aren't listed, and it says how many weren't.
 [*] [b]Check[/b]: press Check to see how many pieces can be built here; a share code that's incomplete or was edited says why.
 [*] [b]Pieces you can't build here[/b]: listed by reason: a mod isn't enabled (with the mod name and Workshop ID, and Open Workshop page), a mod is enabled but some tiles are gone, turned off by the server, not buildable; mods updated since the blueprint was saved are listed with both versions. Each list shows up to 30, then says how many more weren't listed.
 [*] [b]Swap for...[/b]: each missing item can be swapped for one available here, all at once. Or leave them: you can still save and place it, and those pieces are marked as unbuildable.
-[*] [b]Keep it[/b]: Save to library, or Place it on the ground straight away.
+[*] [b]Keep it[/b]: Save to library, or Place it on the ground straight away. When Save to library uses the same file as the one on the ground, that one is replaced with what you saved; if it's being planned, it's saved as a new blueprint instead, and the notice gives the new name.
 [/list]
 [h3]When a mod is updated or removed[/h3]
 [list]
@@ -882,7 +882,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
 [tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]The most items one build or dismantle request can take. Dragging more than this builds them in batches one after another, and Undo last build also removes in batches; dismantling an area still takes at most this many items at once. Also the widest garage door (2 when set lower)[/td][/tr]
 [tr][td]Most pieces per tile[/td][td]3[/td][td]1–5[/td][td]With Overlap on, how many blocking objects and containers one tile can hold. 1 turns Overlap off. Only affects new builds; pieces already built stay[/td][/tr]
-[tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
+[tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1; doors other than garage doors always cost at least 2 Door Hinge + 1 Doorknob a piece, plus 2 Plank without dismantle materials[/td][/tr]
 [tr][td]Require vanilla skill levels[/td][td]Off[/td][td]On/off[/td][td]Each item needs the skill level of the matching vanilla recipe, for example a wooden wall needs Carpentry 2, a wooden window Carpentry 5, wooden stairs Carpentry 6, a brick wall Masonry 2 and a metal wall Welding 3. Furniture and containers have no vanilla recipe, so they need Carpentry 1, 3 or 5 by carry weight, or Welding 3 if metal. Wall hangings, overlays, curtains and lights need no skill. The build cheat isn't affected, and dismantling still needs no skill. See Hardcore options[/td][/tr]
 [tr][td]Vanilla recipe materials[/td][td]Off[/td][td]On/off[/td][td]Items also use up the consumables of the matching vanilla recipe: masonry uses clay cement or concrete (4 uses per bucket), metal uses Welding Torch fuel (10 uses per torch) and Welding Rods (20 uses per pack). Stone walls take Stone Block instead of Brick. Consumables come from your inventory and the ground next to you, aren't refunded when dismantled and give no extra XP. The material cost multiplier applies to uses too. See Hardcore options[/td][/tr]
 [tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
@@ -999,7 +999,7 @@ end)
 [*] [b]New keys and the quick pick bar[/b]: only for the first player. The key hints in the box by the mouse don't show combinations with Shift or Ctrl; check the key bindings page.
 [*] [b]Undo last build[/b]: only remembers the last batch you placed yourself in this session, and forgets it when you restart the game.
 [*] [b]Blueprint size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces.
-[*] [b]When planning saves[/b]: only on Done, Save, Hide, Put away and placing; if the game crashes in between, the unsaved part is lost.
+[*] [b]When planning saves[/b]: only on Done, Save, Move while planning, Put away and placing; Hide doesn't save. If the game crashes in between, the unsaved part is lost.
 [*] [b]Deleted blueprints leave tiny files[/b]: the game can't really delete files, so deleting or renaming leaves a marker file of about 20 bytes and its .cfg backup in the blueprint folder; the library doesn't list them, and a new blueprint with the same name reuses them. To clear them, delete them by hand from Open folder.
 [*] [b]A share code you just copied won't paste[/b]: switch to another window and back to the game, then press Paste from clipboard again.
 [*] [b]Skipped when building from a blueprint[/b]: wall paint, wallpaper and plaster; pieces two or more floors away from you (go there and press it again).
@@ -1098,7 +1098,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [/list]
 [h3]How do I give a house I built to a friend?[/h3]
 [list]
-[*] Press Capture a building in the library, select it and save it as a blueprint, then press Share and send the share code; your friend presses Import in their library, pastes it, presses Check, then saves it to the library or places it straight away.
+[*] Press Capture a building in the library, select it and save it as a blueprint, then press Share and send the share code; your friend copies it, presses Import in their library, then Paste from clipboard and Check, then saves it to the library or places it straight away.
 [*] If the share code is too long, send the file instead: find the .txt file with Open folder (the .cfg with the same name is a backup and isn't needed), and your friend puts it in their blueprint folder and picks it in Import.
 [*] If your friend lacks a mod you used, Import lists which one, and the missing items can be swapped for others.
 [/list]
