@@ -13372,7 +13372,8 @@ end)()
     local toasts, sent, specCalls = {}, 0, 0
     Msg.toast = function(_, t) toasts[#toasts + 1] = t end
     B.Client.build = function() sent = sent + 1 return sent end
-    MinidoracatBuilder.Recipes = { faces = function() return nil end } -- 配方片查不到面：轉向時算轉不了（不碰別段的假配方資料）
+    -- 配方片查不到面：轉向時算轉不了（不碰別段的假配方資料）；沒有配方游標
+    MinidoracatBuilder.Recipes = { faces = function() return nil end, cursor = function() return nil end }
     MinidoracatUI, ISUIElement = nil, nil -- 沒有框架：工具列不出、換張要確認時只通知
     JoypadState = { players = {} }
     UIManager = { getUI = function() return javaList({}) end }
@@ -13582,7 +13583,9 @@ end)()
     local o = drags[0]
     o:isValid(sq(80, 80, 0))
     o:rotateKey(19)
-    getCell():setDrag(nil, 0) -- 右鍵
+    check(PM.drag(0) == o and PM.drag(1) == nil, "搬：拖曳物件查得到（只有拿著的那位玩家）")
+    MinidoracatBuilder.Cursor.onRightMouseUp() -- 右鍵：不是建造游標也要取消（關掉拖曳物件 → deactivate）
+    check(drags[0] == nil and PM.drag(0) == nil, "右鍵：藍圖的搬／擺放也取消")
     ox, oy = PM.origin()
     check(PM.state() == "fixed" and ox == 51 and oy == 50 and at(plan, 52 - 51, 0, 0) and at(plan, 1, 0, 0).d == 0,
         "搬到一半取消：轉過的撤回，回原位置")

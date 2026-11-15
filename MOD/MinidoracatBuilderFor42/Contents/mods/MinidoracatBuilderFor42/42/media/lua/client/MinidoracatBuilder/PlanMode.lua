@@ -39,6 +39,8 @@ local function whyText(code) return getText(WHY[code] or "IGUI_MBLD_PlanTooWide"
 
 function PM.plan() return S.plan end
 function PM.state() return S.plan and S.mode or "none" end
+-- 這位玩家手上的擺放／搬／複製／手把框選（沒有回 nil）；Cursor 的右鍵取消用
+function PM.drag(pn) return S.drag and S.drag.player == pn and S.drag or nil end
 function PM.planning() return S.mode == "edit" end
 function PM.hidden() return S.hidden end
 function PM.level() return S.level end

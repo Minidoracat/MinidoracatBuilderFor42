@@ -1247,10 +1247,10 @@ end
 -- 右鍵取消放置，不跳原版右鍵選單：原版放開右鍵時，按下與放開點到同一個物件才開選單（ISObjectClickHandler.lua:387-401），
 -- 引擎先發 OnRightMouseUp 再發 OnObjectRightMouseButtonUp（UIManager.java:750-756），所以這裡清掉按下時記的物件、自己關
 -- 游標（原版是開選單時順便關，ISWorldObjectContextMenu.lua:180）。沒點到物件時原版本來不開選單，現在一樣關游標。
--- 只清原版的欄位，不換原版函式。滑鼠只有玩家 0 用；配方項目開的游標一起
+-- 只清原版的欄位，不換原版函式。滑鼠只有玩家 0 用；配方項目開的游標、藍圖的擺放／搬／複製（PlanMode 的拖曳物件）一起
 function Cursor.onRightMouseUp()
-    local R = B.Recipes
-    if not (Cursor.get(0) or (R and R.cursor(0))) then return end
+    local R, PM = B.Recipes, B.PlanMode
+    if not (Cursor.get(0) or (R and R.cursor(0)) or (PM and PM.drag and PM.drag(0))) then return end
     if ISObjectClickHandler then ISObjectClickHandler.rdownObject = nil end
     getCell():setDrag(nil, 0)
 end
