@@ -13122,7 +13122,8 @@ end)()
         sprite("pcd_01_2", 1304, { flags = { "doorN", "open" } }),
         sprite("pct_01_0", 1305, { type = T.tree }),
         sprite("pcx_01_0", 1306, { flags = { "WallN" }, keys = { WallN = "" } }),
-        sprite("blends_natural_01_0", 1307, { flags = { "solidfloor" } }) })
+        sprite("blends_natural_01_0", 1307, { flags = { "solidfloor" } }),
+        sprite("blends_natural_01_8", 1308, { flags = { "FloorOverlay" } }) })
     sb.DisabledTilesets = "pcx_01"
     local function obj(name, o)
         o = o or {}
@@ -13272,7 +13273,11 @@ end)()
     -- 208..215 × 200..207：牆、開著的門、樹、天然草地、地上物品（圖也是牆，不能收）；上一層一塊地板；框外 (216,200) 的牆
     square(209, 201, 0).objects[1] = obj("pcw_01_0")
     square(210, 201, 0).objects[1] = obj("pcd_01_2")
-    square(211, 202, 0).objects[1] = obj("blends_natural_01_0")
+    local grass = obj("blends_natural_01_0")
+    function grass:getAttachedAnimSprite() -- 草地邊緣的漸層圖是附著在地面上的
+        return javaList({ { getName = function() return "blends_natural_01_8" end } })
+    end
+    square(211, 202, 0).objects[1] = grass
     square(212, 202, 0).objects[1] = obj("pct_01_0")
     square(213, 203, 0).objects[1] = obj("pcw_01_0", { worldItem = true })
     square(209, 202, 1).objects[1] = obj("pcf_01_0")
@@ -13296,8 +13301,8 @@ end)()
         "擷取不收：開著的門圖、地上物品、框外的牆")
     local groups = {}
     for _, g in ipairs(Cap.groups(out.skip)) do groups[g.group] = g.n end
-    check(out.skipped == 2 and groups.Terrain == 1 and groups.Plant == 1 and out.over == 0 and out.wide == 0,
-        "不收的分組：天然地面 1、樹 1")
+    check(out.skipped == 3 and groups.Terrain == 2 and groups.Plant == 1 and out.over == 0 and out.wide == 0,
+        "不收的分組：天然地面連它邊緣的漸層圖 2、樹 1")
     -- 存檔、讀回片數相同（假磁碟）
     local disk = {}
     getFileWriter = function(p)

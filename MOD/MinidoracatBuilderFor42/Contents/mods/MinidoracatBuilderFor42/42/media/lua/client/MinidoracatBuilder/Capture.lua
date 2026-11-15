@@ -71,12 +71,13 @@ local function recipeTile(res, name, x, y, z)
     return true
 end
 
--- 一張圖。z0＝框選的最低層（那一層的天然地面不收）
+-- 一張圖。z0＝框選的最低層（那一層的天然地面不收，連它邊緣附著的漸層圖一起：那些是地形，不是蓋出來的）
 function Capture.tile(res, name, x, y, z, z0)
     if not name:find("_%d+$") then return end
     local entry = Entry.resolve(name)
     if entry then
-        if z == z0 and (entry.kind == "floor" or entry.kind == "water") and name:find("^blends_natural_") then
+        local k = entry.kind
+        if z == z0 and (k == "floor" or k == "water" or k == "floorOverlay") and name:find("^blends_natural_") then
             return skip(res, "TERRAIN")
         end
         return addTile(res, entry, name, x, y, z)
