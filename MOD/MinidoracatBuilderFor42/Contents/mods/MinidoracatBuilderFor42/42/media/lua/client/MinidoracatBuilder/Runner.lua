@@ -45,7 +45,7 @@ local WHOLE = { OFF = true, NOT_ALLOWED = true, STALE = true, RATE_LIMITED = tru
     STATE = true, INTERNAL = true }
 
 -- st.state："idle"｜"pick"｜"build"｜"fetch"｜"check"（一批停下，下一幀看是誰停的）｜"paused"｜"done"
-local st = { state = "idle", skip = {}, placed = {}, bad = {} }
+local st = { state = "idle", skip = {}, placed = {}, bad = {}, stepped = {} }
 local listeners = {}
 local summary, summaryAt
 
@@ -263,8 +263,8 @@ function Runner.manual(player)
     if active() and player == st.player then halt("paused", "MANUAL") end
 end
 
--- "idle"｜"pick"｜"build"｜"fetch"｜"paused"｜"done"（內部的 check 對外算 build）
-function Runner.state() return st.state == "check" and "build" or st.state end
+-- "idle"｜"pick"｜"build"｜"fetch"｜"paused"｜"done"（內部的 check、讓位走開的那幾步對外算 build）
+function Runner.state() return (st.state == "check" or (st.state == "fetch" and st.asideFor ~= nil)) and "build" or st.state end
 
 -- 暫停或結束的原因：碼, 給玩家看的一句；沒有回 nil
 function Runner.reason()
@@ -609,6 +609,51 @@ local function evaluate(player, b)
     return ok, any and need or nil, short
 end
 
+-- 玩家腳下那一格上還沒蓋、只被玩家自己擋住的片：PlanCheck 判成 OCCUPIED 的，或這一輪挑批時才發現而跳過的。
+-- 那一格還有別人、殭屍或動物就不算。回 那片, 它佔的格子（IsoGridSquare）；沒有回 nil
+local function standingOn(player, plan)
+    local here, PC = player:getCurrentSquare(), planCheck()
+    if not here or here:getMovingObjects():size() ~= 1 then return nil end
+    local hx, hy, hz = here:getX(), here:getY(), here:getZ()
+    local found, own
+    B.Plan.each(plan, function(p)
+        if found or st.stepped[p] or st.placed[p] then return end
+        local sk = st.skip[p]
+        if sk then
+            if sk.code ~= "OCCUPIED" then return end
+        else
+            local state, detail = PC.state(p)
+            if state ~= "blocked" or detail ~= "OCCUPIED" then return end
+        end
+        local id, x, y, z, d = resolve(p)
+        local entry = id and id:sub(1, #RECIPE) ~= RECIPE and Entry.resolve(id)
+        local spr = entry and Entry.face(entry, d)
+        if not spr then return end
+        local list, hit = {}, false
+        for _, o in ipairs(Entry.cells(spr)) do
+            local cx, cy, cz = x + o[1], y + o[2], z + o[3]
+            if cx == hx and cy == hy and cz == hz then hit = true end
+            local sq = getCell():getGridSquare(cx, cy, cz)
+            if sq then list[#list + 1] = sq end
+        end
+        if hit then found, own = p, list end
+    end)
+    return found, own
+end
+
+-- 照圖蓋自己把人帶到要放東西的那一格上（例如蓋屋頂時站在房裡，接著要在腳下放家具）：走到旁邊再蓋，不回報
+-- 「這格有人」。一片只讓一次。回 true＝排了走路（走完由 Runner.tick 請 PlanCheck 重查那一片）
+local function stepAside(player, plan)
+    local p, own = standingOn(player, plan)
+    if not p then return false end
+    st.stepped[p] = true
+    local to = AdjacentFreeTileFinder.Find(player:getCurrentSquare(), player, own)
+    if not to then return false end
+    st.skip[p], st.asideFor = nil, p
+    ISTimedActionQueue.add(ISWalkToTimedAction:new(player, to))
+    return true
+end
+
 -- 一批的虛影（同游標放開時 tryBuild 組的 parts）：各格 { x, y, z, sprite, yoff }
 local function partsOf(id, list)
     local entry = Entry.resolve(id)
@@ -738,6 +783,10 @@ local function pick(player, plan)
         st.nextPick = t + RETRY_MS
         return
     end
+    if not b and stepAside(player, plan) then
+        st.state = "fetch" -- 等走完再挑（同拿料的等法；沒有在拿料，fetchDone 不做事）
+        return
+    end
     if not b then
         local s = buildSummary()
         summary, summaryAt = s, t
@@ -786,13 +835,14 @@ function Runner.start(player)
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
-    st.lastDone, st.idleAt = nil, nil
+    st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     local boxes, any = #Runner.boxes() > 0, false
     B.Plan.each(plan, function(p)
         if any then return end
         local s = PC.state(p)
         if s == nil or s == "ok" or (s == "short" and boxes) then any = true end
     end)
+    if not any and standingOn(player, plan) then any = true end -- 只剩腳下那一片：走開就能蓋
     if not any then
         summary, summaryAt = buildSummary(), getTimestampMs()
         return nil, "NOTHING"
@@ -862,6 +912,11 @@ function Runner.tick()
         if t < st.idleAt then st.idleAt = t end
         if t - st.idleAt < SETTLE_MS then return end
         st.idleAt = nil
+        if st.asideFor then -- 讓位走完：那一片請 PlanCheck 重查，等它查完再挑（同一批蓋完後的等法）
+            local _, x, y, z = resolve(st.asideFor)
+            if x then touch(x, y, z) end
+            st.asideFor, st.lastDone = nil, t
+        end
         fetchDone(p)
         st.state = "pick"
         return

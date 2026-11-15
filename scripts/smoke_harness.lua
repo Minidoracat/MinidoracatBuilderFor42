@@ -14884,6 +14884,53 @@ end)()
     run(1)
     check(R.state() ~= "paused" and #pushes == n0 + 2 and #pushes[#pushes].anchors == 1, "只拒一片（i＞0）：那片跳過，其他接著送")
 
+    -- 玩家站在要放家具的那一格（PlanCheck 判成 OCCUPIED）：先走到旁邊再蓋，不回報「這格有人」
+    do
+        local realState, realAF, realWalk, realHere = B.PlanCheck.state, AdjacentFreeTileFinder, ISWalkToTimedAction, K.getCurrentSquare
+        local DET, movers, finds = {}, 1, 0
+        B.PlanCheck.state = function(p) return S[p], DET[p] end
+        K.getCurrentSquare = function(k)
+            return { getX = function() return math.floor(k:getX()) end, getY = function() return math.floor(k:getY()) end,
+                getZ = function() return 0 end,
+                getMovingObjects = function() return { size = function() return movers end } end }
+        end
+        AdjacentFreeTileFinder = { Find = function() finds = finds + 1; return { side = true } end }
+        ISWalkToTimedAction = { new = function(_, _, sq) return { walkTo = sq } end }
+
+        newPlan()
+        local chair = put("rn_furniture", 0, 0, 0) -- 世界 (100,100,0)＝K 站的那一格
+        S[chair], DET[chair] = "blocked", "OCCUPIED"
+        actions, movers = {}, 2
+        local sA, cA = R.start(K)
+        movers = 1
+        local sB = R.start(K)
+        run(1)
+        local walked, stA, nA = #actions == 1 and actions[1].walkTo ~= nil, R.state(), #pushes
+        doing = true
+        run(3)
+        doing = false
+        S[chair], DET[chair] = "ok", nil -- 走開了：PlanCheck 重查後可蓋
+        local t0 = touched
+        drive()
+        check(sA == nil and cA == "NOTHING", "反面：腳下那格還有別人，不讓位（沒有能蓋的）")
+        check(sB == true and walked and stA == "build" and nA == 0 and finds == 1,
+            "只剩腳下那一片：照圖蓋先排走路讓位（對外算在蓋），不回「沒有能蓋的」")
+        check(touched > t0 and #pushes == 1 and pushes[1].id == "rn_furniture" and R.state() == "done" and (R.reason()) == "DONE",
+            "走開後請 PlanCheck 重查，接著把那一片蓋好")
+
+        newPlan()
+        local sofa = put("rn_furniture", 0, 0, 0)
+        S[sofa], DET[sofa] = "blocked", "OCCUPIED"
+        actions, finds = {}, 0
+        R.start(K)
+        drive() -- 走開後還是 OCCUPIED（別人站上去）：不再讓
+        local sum = R.summary()
+        check(finds == 1 and #pushes == 0 and R.state() == "done" and (R.reason()) == "LEFT" and sum and sum.blocked.OCCUPIED == 1,
+            "一片只讓一次：走開後還是有人就列進沒蓋的")
+
+        B.PlanCheck.state, AdjacentFreeTileFinder, ISWalkToTimedAction, K.getCurrentSquare = realState, realAF, realWalk, realHere
+    end
+
     -- 暫停條件：殭屍在追、自己走、Esc；藍圖收起就停止
     newPlan()
     put("rn_floor", 0, 2, 0)
