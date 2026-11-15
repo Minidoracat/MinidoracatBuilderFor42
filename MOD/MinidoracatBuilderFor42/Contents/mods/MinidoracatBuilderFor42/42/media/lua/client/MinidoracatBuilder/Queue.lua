@@ -226,7 +226,8 @@ local function undoEnd(run)
         text = text and (text .. " " .. line) or line
         title = title or getText("IGUI_MBLD_NotRemoved")
     end
-    if text then Messages.toast(run.player, text, title) end
+    -- 總結加上要自己拆的說明，拉丁語系會超過預設的 8 行
+    if text then Messages.toast(run.player, text, title, 12) end
 end
 
 -- 送下一筆（每筆最多 MaxCellsPerDrag 件，同伺服器 Server.dismantleIntent 的上限）；上一筆輪完才送，停下、被拒就收尾
