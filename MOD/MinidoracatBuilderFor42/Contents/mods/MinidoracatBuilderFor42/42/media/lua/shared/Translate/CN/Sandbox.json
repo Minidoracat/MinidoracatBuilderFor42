@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "开放按图建造",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "开启后，玩家可以让角色按地上的蓝图一块块自动建造，也能指定材料箱让角色去取料。每一块照样检查距离、安全屋、材料和技能，和手动建造一样。\n关闭后无法开始按图建造，规划蓝图和材料表照常可用。",
     "Sandbox_MinidoracatBuilder": "Minidoracat 自由建造",
     "Sandbox_MinidoracatBuilder_Enabled": "开放建造",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "关闭后，服务器拒绝本模组的所有建造请求。已经建好的东西照常保留。",

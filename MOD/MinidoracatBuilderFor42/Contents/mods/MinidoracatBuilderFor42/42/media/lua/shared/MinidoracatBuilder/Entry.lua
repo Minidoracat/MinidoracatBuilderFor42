@@ -9,12 +9,12 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 16
+Entry.VERSION = 17
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
--- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門第二版
--- （設計稿 Rules.classify 的註記）。水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）
+-- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門歸門（Entry.doorSet）。
+-- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）
 Entry.KINDS = { "floor", "floorOverlay", "water", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
     "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "well", "light",
     "wallObject", "attached", "overlay", "plant" }
@@ -112,6 +112,8 @@ function Entry.resolve(name)
     end
     local grid = spr:getSpriteGrid()
     if grid and grid:getAnchorSprite() ~= spr then return nil, "UNKNOWN" end -- 多格只收原點
+    -- 車庫門、雙開門只收湊得成整組的頭片、第 1 片（目錄同一條規則，Catalog.scanSprite）
+    if kind == "door" and Rules.grouped(spr:getProperties()) and not Entry.doorSet(spr) then return nil, "UNKNOWN" end
     if Rules.BAD_GRID[name] then return nil, "UNKNOWN" end -- 格位拼不起來的不列（目錄同一條規則，Catalog.scanSprite）
     local tileset, num = name:match("^(.*)_(%d+)$")
     if not tileset then return nil, "UNKNOWN" end
@@ -129,6 +131,88 @@ end
 local function offset(name, d)
     local tileset, num = name:match("^(.*)_(%d+)$")
     return tileset and (tileset .. "_" .. (tonumber(num) + d)) or nil
+end
+
+-- 車庫門、雙開門一組各片（關著的圖）和第一片的編號差，照放的順序：車庫門頭、中、尾（引擎照相鄰格的值 1–3 認同一組，
+-- IsoDoor.getGarageDoorPrev／Next，IsoDoor.java:3064-3144）；雙開門第 1–4 片（原版 ISDoubleDoor:new 的圖號，ISDoubleDoor.lua）。
+-- 開著的圖：車庫門 +8（IsoDoor 建構子，IsoDoor.java:690-700）、雙開門照 DoubleDoorNorth／WestSpriteOffset（:139-140）。
+-- 離線量原版 tiledef（2026-11-16）：車庫門 14 組、雙開門 7 組，南北兩向各一套，全部照這張表排
+local GARAGE_OFF, GARAGE_OPEN = { 0, 1, 2 }, { 8, 8, 8 }
+local DOUBLE_N, DOUBLE_N_OPEN = { 0, 1, 8, 9 }, { 5, 3, 4, 4 }
+local DOUBLE_W, DOUBLE_W_OPEN = { 0, 1, -8, -7 }, { 4, 4, 5, 3 }
+local function doorGroup(spr)
+    local p = spr:getProperties()
+    local key = (p:has("GarageDoor") and "GarageDoor") or (p:has("DoubleDoor") and "DoubleDoor") or nil
+    if not key or tonumber(p:get(key)) ~= 1 then return nil end
+    local north = p:has(IsoFlagType.doorN)
+    if north == p:has(IsoFlagType.doorW) then return nil end
+    local garage = key == "GarageDoor"
+    local offs = garage and GARAGE_OFF or north and DOUBLE_N or DOUBLE_W
+    local opens = garage and GARAGE_OPEN or north and DOUBLE_N_OPEN or DOUBLE_W_OPEN
+    local name, parts, members = spr:getName(), {}, {}
+    Rules.ensure()
+    for i, d in ipairs(offs) do
+        local part = offset(name, d)
+        local s = part and Entry.sprite(part)
+        local q = s and s:getProperties()
+        if not (q and tonumber(q:get(key)) == i and q:has(IsoFlagType.doorN) == north and q:has(IsoFlagType.doorW) ~= north
+            and Rules.classify(s) == "door") then
+            return nil
+        end
+        local open = offset(part, opens[i])
+        local o = open and Entry.sprite(open)
+        if not (o and tonumber(o:getProperties():get(key)) == i + #offs) then return nil end -- 開著的值：車庫門 4–6、雙開門 5–8
+        parts[i] = s
+        members[part], members[open] = true, true
+    end
+    return { garage = garage, north = north, parts = parts, members = members }
+end
+
+-- spr 是車庫門頭片（GarageDoor＝1）或雙開門第 1 片（DoubleDoor＝1），而且整組各片與各片開著的圖都在、值與方向都對時回
+-- { garage = 是不是車庫門, north, parts = { 關著的各片 }, members = { [各片關著、開著的圖名] = true } }，否則 nil。
+-- 圖塊表一個 session 不變，照名稱快取
+local doorSets = {}
+function Entry.doorSet(spr)
+    local name = spr:getName()
+    local c = doorSets[name]
+    if c == nil then
+        c = doorGroup(spr) or false
+        doorSets[name] = c
+    end
+    return c or nil
+end
+
+-- 一組放成一排的佔地（同 Entry.cells 的格式）：車庫門 w 格（頭、中段重複、尾）；雙開門 4 格（w 不看）。往哪排照引擎：
+-- 北向沿 +x；西向沿 −y（車庫門 getGarageDoorNext、雙開門 DoubleDoorWestClosedYOffset，IsoDoor.java:3105-3144,145-148）
+function Entry.groupCells(set, w)
+    local dx, dy = set.north and 1 or 0, set.north and 0 or -1
+    local n = set.garage and w or 4
+    local out = {}
+    for i = 1, n do
+        local k = i
+        if set.garage then k = (i == 1 and 1) or (i == n and 3) or 2 end
+        out[i] = { dx * (i - 1), dy * (i - 1), 0, set.parts[k] }
+    end
+    return out
+end
+
+-- 車庫門、雙開門的其他片（含開著的）所屬那一組的第一片名稱；找不到 nil。其他片的編號在第一片 −8..+13 以內（雙開門西向
+-- 第 3 片關著是 −8、北向第 4 片開著是 +13）
+local function doorFirst(name)
+    for d = -16, 16 do
+        local a = d ~= 0 and offset(name, d)
+        local s = a and Entry.sprite(a)
+        local set = s and Rules.grouped(s:getProperties()) and Entry.doorSet(s)
+        if set and set.members[name] then return a end
+    end
+    return nil
+end
+
+-- 車庫門、雙開門任一片的圖名（關著、開著都可）→ 那一組的項目 ID（第一片關著的圖名）；不成組回 nil
+function Entry.doorItem(name)
+    local s = Entry.sprite(name)
+    if s and Rules.grouped(s:getProperties()) and Entry.doorSet(s) then return name end
+    return doorFirst(name)
 end
 
 -- 原版兩張一組、交替排的柵欄與圍牆，北向、西向各一對 { A, B }：BrokenFences.lua 註解寫「2-tile」的五族（8–11、32–35、64–67；
@@ -168,10 +252,12 @@ local function stairsBottom(name)
 end
 
 -- 這個名稱為什麼不能蓋、該改找哪一張（建造視窗搜完整圖塊名、右鍵挑圖塊用）。回 code, arg, alt：
---   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 車庫門、
---     PART 多格的其他格、STAIRS_SET 湊不成三格的樓梯片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
+--   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 不能蓋的種類、
+--     PART 多格的其他格（車庫門、雙開門的其他片也是）、STAIRS_SET 湊不成三格的樓梯片、DOOR_SET 湊不成整組的車庫門、雙開門、
+--     DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
 --   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
---   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片），能蓋才給。
+--   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、車庫門頭片與雙開門
+--     第 1 片），能蓋才給。
 --     那張也不能蓋時改給它能蓋的那張，不然 code／arg 改說它的原因（只往下查一層；nested 是內部用的）
 function Entry.why(name, nested)
     local entry, res = Entry.resolve(name)
@@ -203,6 +289,9 @@ function Entry.why(name, nested)
         end
     elseif res == "UNSUPPORTED" then
         code = "UNSUPPORTED"
+    elseif kind == "door" and Rules.grouped(p) then
+        alt = doorFirst(name)
+        code = alt and "PART" or "DOOR_SET"
     elseif kind == "stairs" then
         code, alt = "STAIRS_SET", stairsBottom(name)
     elseif kind then
@@ -228,7 +317,7 @@ function Entry.why(name, nested)
     return code or "UNKNOWN", arg, alt
 end
 
--- 配對面（d＝5，矩形建造沿四邊圍一圈用）：原版北牆、西牆是不同項目（目錄不併）。只對佔一條格邊的種類（門、窗不算），
+-- 配對面（d＝5，矩形建造沿四邊圍一圈用）：原版北牆、西牆是不同項目（目錄不併）。只對佔一條格邊的種類（門、窗另見 doorOpposite），
 -- 項目只佔北或西其中一條時，在同一個 tileset 找只佔另一條、同種類的圖，照順序：
 --   1. 編號 xor 1（原版牆多是偶數西、奇數北）；2. xor 1 和自己同一條邊時是兩張一組（4W 5W 6N 7N），改看 ±2；
 --   3. 編號 ±1、±2、±3（先 + 後 −）第一張。都沒有回 nil。
@@ -262,11 +351,54 @@ local function stairsOpposite(entry)
     end
     return t[entry.name] and Entry.sprite(t[entry.name]) or nil
 end
+-- 門、窗的配對面（使用者 2026-11-14：有可靠規律的才配，沒有就不配）。
+--   車庫門頭片、雙開門第 1 片：編號 ±3（車庫門）、±6（雙開門）那張也湊得成同一種整組、方向相反。
+--   單扇門、窗：編號 xor 1、方向相反；xor 1 和自己同方向時，對齊的四張是兩兩一組（WWNN）改看 ±2。兩張要互配（對方照同一條找回
+--     自己）、GroupName＋CustomName 相同。
+-- 離線量原版 tiledef（2026-11-16）：車庫門、雙開門 28 組第一片全部配上；單扇門 129 張配上 128；窗 276 張配上 238（名稱不同
+-- 2 張、不互配 8 張、找不到 28 張，這些不配）
+local function doorEdge(tileset, kind, num) -- 這個編號是同種類、單一格邊的門或窗時回 sprite, 是否佔北邊
+    local spr = num >= 0 and Entry.sprite(tileset .. "_" .. num)
+    if not spr or Rules.classify(spr) ~= kind or Rules.grouped(spr:getProperties()) then return nil, nil end
+    local n, w = Entry.edges(kind, spr)
+    if n == w then return nil, nil end
+    return spr, n
+end
+local function doorPartner(tileset, kind, num)
+    local _, north = doorEdge(tileset, kind, num)
+    if north == nil then return nil, nil end
+    local x = num % 2 == 0 and num + 1 or num - 1
+    local spr, n2 = doorEdge(tileset, kind, x)
+    if spr and n2 == north then
+        x = num % 4 < 2 and num + 2 or num - 2
+        spr, n2 = doorEdge(tileset, kind, x)
+    end
+    if spr and n2 ~= north then return x, spr end
+    return nil, nil
+end
+local function doorOpposite(entry)
+    local set = entry.kind == "door" and Rules.grouped(entry.spr:getProperties()) and Entry.doorSet(entry.spr)
+    if set then
+        local step = set.garage and 3 or 6
+        for _, d in ipairs({ step, -step }) do
+            local s = entry.num + d >= 0 and Entry.sprite(entry.tileset .. "_" .. (entry.num + d))
+            local o = s and Rules.grouped(s:getProperties()) and Entry.doorSet(s)
+            if o and o.garage == set.garage and o.north ~= set.north then return s end
+        end
+        return nil
+    end
+    local x, spr = doorPartner(entry.tileset, entry.kind, entry.num)
+    if not spr or doorPartner(entry.tileset, entry.kind, x) ~= entry.num then return nil end
+    local a, b = entry.spr:getProperties(), spr:getProperties()
+    if a:get("GroupName") ~= b:get("GroupName") or a:get("CustomName") ~= b:get("CustomName") then return nil end
+    return spr
+end
 local pairCache = {}
 local function opposite(entry)
     local kind = entry.kind
     if kind == "stairs" then return stairsOpposite(entry) end
-    if not Entry.EDGE[kind] or kind == "door" or kind == "window" then return nil end
+    if kind == "door" or kind == "window" then return doorOpposite(entry) end
+    if not Entry.EDGE[kind] then return nil end
     local n, w = Entry.edges(kind, entry.spr)
     if n == w then return nil end
     local function only(num) -- 這個編號的圖只佔另一條邊、同種類
@@ -412,7 +544,12 @@ end
 -- 原點＝grid 第一層第一個非空成員（IsoSpriteGrid.java:23-31），不一定在 (0,0)。
 -- 樓梯（項目＝底片）：原點是頂片，接著中片、底片，最後是上一層的平台（角色 top／mid／bottom／platform）。
 -- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:196-206,263-289）。
+-- 車庫門頭片照最短的 2 格（Entry.groupCells；拖一排的寬度由 Check.item 照請求另算），雙開門 4 格。
 function Entry.cells(spr)
+    if Rules.grouped(spr:getProperties()) then
+        local set = Entry.doorSet(spr)
+        if set then return Entry.groupCells(set, 2) end
+    end
     if Rules.typeCode(spr:getType()) == "stairs" then
         local named = IsoSpriteManager.instance:getNamedMap()
         local set = Rules.stairsSet(named, spr:getName())

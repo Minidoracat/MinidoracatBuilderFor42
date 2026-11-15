@@ -22,7 +22,7 @@ Client.pending = nil -- 最近送出的請求：{ n, e, entry, kind, player, cel
 -- skipped = { [碼] = 件數 }, refund = { [fullType] = 件數 }, total, left（還沒輪到的件數）, onDone }。輪完就清成 nil
 Client.pendingUnbuild = nil
 Client.results = {}  -- 伺服器回覆（refused／placed／dismantle*），新的在後；介面與 E2E 讀
--- Client.onResult(cmd, args)：游標設定（Cursor.lua）；每則建造回覆（accepted／refused／placed）收進 results 之後呼叫
+-- Client.onResult(cmd, args)：排程設定（Queue.lua）；每則建造回覆（accepted／refused／placed）收進 results 之後呼叫
 local lastNonce = getTimestampMs() % 1000000
 
 -- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；其他不站在 own（同一件的其他格）上，
@@ -58,7 +58,8 @@ end
 -- 蓋 e（項目 ID），每格 cells[i] = { x, y, z, d } 一項：原點與朝向（0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面，
 -- Entry.face；牆拉長方形圍一圈時四邊的朝向不同）。回 nonce；不能送（項目或某格的朝向不存在、單機時請求當場被拒）回 nil
 -- 與原因碼。會清掉玩家目前排著的動作（每人只留一個請求，設計稿）。動作等伺服器回 accepted 才排（單機當場就回）。
--- overlap＝true：疊放模式（建造視窗的「疊放」鈕），隨請求送去，伺服器照沙盒重算
+-- overlap＝true：疊放模式（建造視窗的「疊放」鈕），隨請求送去，伺服器照沙盒重算。
+-- 車庫門只送一個錨點，第 5 欄是寬度（格數，Cursor.garageAnchor），送成 args.w；其他項目不送 w（伺服器收到會回 BAD_REQUEST）
 function Client.build(player, e, cells, overlap)
     local entry, code = Entry.resolve(e)
     if not entry then return nil, code end
@@ -69,7 +70,9 @@ function Client.build(player, e, cells, overlap)
     end
     lastNonce = lastNonce % 2000000000 + 1
     local n = lastNonce
-    local args = { n = n, e = e, c = flat, v = Entry.digest(), o = overlap == true or nil }
+    local set = entry.kind == "door" and Entry.doorSet(entry.spr)
+    local w = set and set.garage and cells[1] and cells[1][5] or nil
+    local args = { n = n, e = e, c = flat, v = Entry.digest(), o = overlap == true or nil, w = w }
     Client.pending = { n = n, e = e, entry = entry, kind = entry.kind, cells = cells, player = player }
     Client.pendingUnbuild = nil -- 每人只留一個請求：還沒輪完的拆除，收到回覆也不再排
     ISTimedActionQueue.clear(player)
@@ -105,7 +108,7 @@ local function queueDig(b)
         local s = standToDig(b.player, c, dug)
         if s == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; nothing queued")
-            b.noRoom, b.noneQueued = i, true -- 整批沒排：提示照「第 i 格旁邊沒有空位」說（Cursor.tick）
+            b.noRoom, b.noneQueued = i, true -- 整批沒排：提示照「第 i 格旁邊沒有空位」說（Queue.tick）
             return
         end
         stands[i] = s or false
@@ -118,7 +121,7 @@ end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
--- 佇列空了以後 Cursor.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，
+-- 佇列空了以後 Queue.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，
 -- Check.near）
 local function queue(b)
     b.queued = true
@@ -354,6 +357,9 @@ function Client.dismantleMany(player, items, onDone)
     end
     local b = { n = n, list = list, index = index, items = items, player = player, done = 0, skipped = {}, refund = {},
         total = #items, left = #items, got = 0, res = {}, scrapping = {}, onDone = onDone, at = getTimestampMs() }
+    -- 拆除照「停下」處理：圖塊建造排著的全部取消（選單、一區拆除放開前已寫出會取消幾格，Cursor.cancels）
+    local Q = MinidoracatBuilder.Queue
+    if Q then Q.cancel(player) end
     Client.pendingUnbuild = b
     Client.pending = nil -- 同上：還沒收下的建造請求作廢
     ISTimedActionQueue.clear(player)

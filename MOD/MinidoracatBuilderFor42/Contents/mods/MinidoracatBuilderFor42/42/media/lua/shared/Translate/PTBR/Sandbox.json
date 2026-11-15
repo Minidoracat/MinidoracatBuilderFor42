@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Permitir construir pelo projeto",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Quando ativado, os jogadores podem fazer o personagem construir um projeto colocado, peça por peça, e buscar materiais nas caixas que escolherem. Cada peça continua sendo verificada quanto a distância, base, materiais e habilidade, como ao construir à mão.\nDesativado: a construção pelo projeto não pode começar. Planejar projetos e a lista de materiais continuam funcionando.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
     "Sandbox_MinidoracatBuilder_Enabled": "Ativar construção",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Quando desativado, o servidor recusa todo pedido de construção deste mod. O que já foi construído permanece.",

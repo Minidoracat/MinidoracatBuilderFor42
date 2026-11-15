@@ -77,11 +77,12 @@ local function unbuildLeft(player)
     return b.left or 0
 end
 
--- cancels＝接在說明後面的「會取消正在拆的 N 件」（沒有時是空字串）
+-- cancels＝接在說明後面的「會取消正在拆的 N 件」（沒有時是空字串）。不能選的列標籤後面加狀態字（IGUI_MBLD_Menu_No*）：
+-- 原版只把它畫成紅字（ISContextMenu.lua:441-443），對比低又只靠顏色（審查 1116 #4）；E2E 照「以那句開頭」比對，不受影響
 local function addOne(context, label, player, t, cancels)
-    local opt = context:addOption(label, player, Menu.onPick, t)
-    highlight(opt, t, getCore():getBadHighlitedColor())
     local code, extra = Dismantle.check(player, t.kind, t.plan, true)
+    local opt = context:addOption(code and getText("IGUI_MBLD_Menu_NoDismantle", label) or label, player, Menu.onPick, t)
+    highlight(opt, t, getCore():getBadHighlitedColor())
     if code then
         opt.notAvailable = true
         tip(opt, Messages.unbuildRefusal(code, extra))
@@ -93,7 +94,7 @@ end
 
 -- 本 MOD 蓋的、不歸本工具拆的：變灰，說明寫該用原版哪個動作（重用詳情的拆除方式 IGUI_MBLD_Refund_<route>）
 local function addOther(context, label, t)
-    local opt = context:addOption(label)
+    local opt = context:addOption(getText("IGUI_MBLD_Menu_NoDismantle", label))
     opt.notAvailable = true
     highlight(opt, t, getCore():getBadHighlitedColor())
     tip(opt, getText("IGUI_MBLD_Refund_" .. t.route))
@@ -149,6 +150,50 @@ function Menu.tiles(worldobjects)
     return out
 end
 
+-- 「當作藍圖的材料箱」（照圖蓋缺料時角色走來拿，Runner）：點到的格子上每個容器，地上有藍圖時才列。
+-- 回 { { c＝容器, i＝已點名的第幾個（沒有＝nil）, title }… }
+function Menu.planBoxes(worldobjects)
+    local B = MinidoracatBuilder
+    local R, PM = B.Runner, B.PlanMode
+    if not (R and R.boxOf and PM and PM.plan and PM.plan()) then return {} end
+    local out, done = {}, {}
+    for _, w in ipairs(worldobjects) do
+        local sq = w:getSquare()
+        if sq and not done[sq] then
+            done[sq] = true
+            local objs = sq:getObjects()
+            for i = 0, objs:size() - 1 do
+                local o = objs:get(i)
+                for ci = 0, o:getContainerCount() - 1 do
+                    local c = o:getContainerByIndex(ci)
+                    -- 名稱同原版背包頁（ISInventoryPage.lua:1727-1728）
+                    local title = c:getCustomName() or getTextOrNull("IGUI_ContainerTitle_" .. c:getType())
+                        or getTextOrNull("IGUI_ContainerTitle_" .. c:getDisplayType()) or c:getType()
+                    out[#out + 1] = { c = c, i = R.boxOf(c), title = title }
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- 點名或取消點名；寫檔失敗時說一聲
+function Menu.toggleBox(playerNum, box)
+    local R = MinidoracatBuilder.Runner
+    if not R then return end
+    local ok
+    if box.i then ok = R.removeBox(box.i) else ok = R.addBox(box.c) end
+    if not ok then Messages.toast(getSpecificPlayer(playerNum), getText("IGUI_MBLD_Menu_PlanBoxFailed")) end
+end
+
+local function addBoxes(context, playerNum, boxes)
+    for _, b in ipairs(boxes) do
+        local label = getText(b.i and "IGUI_MBLD_Menu_PlanBoxOff" or "IGUI_MBLD_Menu_PlanBox")
+        local opt = context:addOption(getText("IGUI_MBLD_Menu_Named", label, b.title), playerNum, Menu.toggleBox, b)
+        tip(opt, getText(b.i and "IGUI_MBLD_Menu_PlanBoxOffTip" or "IGUI_MBLD_Menu_PlanBoxTip"))
+    end
+end
+
 -- 選了一張：打開建造視窗，搜尋欄填完整圖塊名（W.setQuery：清單換成它所在的那一桶並選到它；不在目錄時改選同一件
 -- 東西能蓋的那一項，或說明原因）
 function Menu.pickTile(playerNum, name)
@@ -157,7 +202,8 @@ function Menu.pickTile(playerNum, name)
 end
 
 -- 子選單一列：能蓋的「種類：名稱」；同一件東西有能蓋的那一項時（開著的門、多格的其他格…）照樣能選，寫那一項的種類；
--- 建造配方的圖寫「配方：配方名」；其他不能蓋的變紅、停上去寫原因（紅字是原版「不能選」的顏色，ISContextMenu.lua:441-443）
+-- 建造配方的圖寫「配方：配方名」；其他不能蓋的變紅、標籤後面加「（不能蓋）」、停上去寫原因（紅字是原版「不能選」的顏色，
+-- ISContextMenu.lua:441-443）
 local function addPick(sub, playerNum, name)
     local r = Recipes.forSprite(playerNum, name)
     if r then
@@ -171,8 +217,9 @@ local function addPick(sub, playerNum, name)
         e = alt and Entry.resolve(alt)
     end
     local label = e and getText("IGUI_MBLD_Menu_Named", Names.kind(e.kind), name) or name
-    local opt = sub:addOption(label, playerNum, Menu.pickTile, name)
-    if code and not alt then
+    local bad = code and not alt
+    local opt = sub:addOption(bad and getText("IGUI_MBLD_Menu_NoBuild", label) or label, playerNum, Menu.pickTile, name)
+    if bad then
         opt.notAvailable = true
         local tip = ISWorldObjectContextMenu.addToolTip()
         tip.description = MinidoracatBuilder.Window.whyText(code, arg, name)
@@ -224,8 +271,11 @@ function Menu.fill(playerNum, context, worldobjects, test)
     local targets, others = Menu.targets(worldobjects)
     local tiles = MinidoracatBuilder.Window and Menu.tiles(worldobjects) or {}
     local n = #targets + #others
-    if n == 0 and #tiles == 0 then return end
+    local boxes = Menu.planBoxes(worldobjects)
+    if n == 0 and #tiles == 0 and #boxes == 0 then return end
     if test then return ISWorldObjectContextMenu.setTest() end -- 手把：有選項就回報（ISWorldObjectContextMenu.lua:122-125）
+    addBoxes(context, playerNum, boxes)
+    if n == 0 and #tiles == 0 then return end
     local left, lines = unbuildLeft(player), {}
     if left > 0 then lines[1] = getText("IGUI_MBLD_Menu_CancelsUnbuild", tostring(left)) end
     -- 拆除也清佇列、作廢建造請求（Client.dismantleMany）：圖塊排隊中的與配方拖的一排還沒蓋的格子一起停，先說

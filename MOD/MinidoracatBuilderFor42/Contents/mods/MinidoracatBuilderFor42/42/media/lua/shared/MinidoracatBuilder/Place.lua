@@ -556,9 +556,11 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
         local n, w = Entry.edges(kind, spr)
         local refused, dirtN, dirtW = basement(sq, spr, n, w)
         if refused then return false end
-        if kind == "door" then
+        if kind == "door" and not Rules.grouped(p) then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。柵欄門（Rules.gate）
-            -- 沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，ISBuildIsoEntity.lua:302-310）
+            -- 沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，ISBuildIsoEntity.lua:302-310）。
+            -- 車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身帶牆屬性，雙開門原版配方也不要門框
+            -- （entity_wood_doubledoor.txt 的 dontNeedFrame）
             if not doorPairExists(spr) then return false end
             if (n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
                 or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil) then
@@ -676,11 +678,52 @@ local function otherFloor(sq, obj)
     return false
 end
 
+-- 車庫門、雙開門的第一片（車庫門頭片、雙開門第 1 片），照引擎找同一組的方式（IsoDoor.getGarageDoorFirst、getDoubleDoorObject，
+-- IsoDoor.java:2785-2843,3146-3161）；不是 IsoDoor、不成組、找不到第一片回 nil。第一片開關時不搬格（車庫門只換圖、雙開門
+-- 只搬第 2、3 片，IsoDoor.java:2650-2754,3191-3217），所以整組的記號與帳本都放在它身上
+function Place.doorAnchor(obj)
+    if not instanceof(obj, "IsoDoor") then return nil end
+    if IsoDoor.getGarageDoorIndex(obj) ~= -1 then
+        local a = IsoDoor.getGarageDoorFirst(obj) -- 找不到頭片時回自己（:3146-3161）
+        return a ~= nil and IsoDoor.getGarageDoorIndex(a) == 1 and a or nil
+    end
+    local i = IsoDoor.getDoubleDoorIndex(obj)
+    if i == -1 then return nil end
+    return i == 1 and obj or IsoDoor.getDoubleDoorObject(obj, 1)
+end
+
+-- 本 MOD 蓋的車庫門、雙開門的一片：第一片帶記號（builderEntry）。雙開門開關時第 2、3 片換成新物件、記號不跟過去
+-- （IsoDoor.java:2738-2742），所以只看第一片。只給介面列、找物件用；退不退料只看伺服器帳本（Place.refundOf）
+function Place.ourDoor(obj)
+    local a = Place.doorAnchor(obj)
+    return a ~= nil and a:hasModData() and a:getModData().builderEntry ~= nil
+end
+
+-- 世界上的車庫門、雙開門任一片（開著、關著，誰蓋的都行）→ 整組：{ e = 項目 ID（第一片關著的圖名，Entry.doorItem），
+-- x, y, z = 第一片那格（錨點）, w = 片數（車庫門照實際連著的片數；雙開門 4）, garage, north, objects = 各片 }。
+-- 第一片找不到、片數不完整（雙開門少片、車庫門少於 2 片）或圖湊不成整組回 nil。照圖擷取、介面列用
+function Place.doorGroup(obj)
+    local a = Place.doorAnchor(obj)
+    local spr = a and a:getSprite()
+    local e = spr and Entry.doorItem(spr:getName())
+    if not e then return nil end
+    local garage = IsoDoor.getGarageDoorIndex(a) ~= -1
+    local list = garage and buildUtil.getGarageDoorObjects(a) or buildUtil.getDoubleDoorObjects(a)
+    if #list < (garage and 2 or 4) then return nil end
+    local sq = a:getSquare()
+    return { e = e, x = sq:getX(), y = sq:getY(), z = sq:getZ(), w = #list, garage = garage, north = a:isNorth(), objects = list }
+end
+
 -- 拆了退什麼（Server.dismantle 與伺服器的原地替換讀，只在伺服器）：燈、家電（Place.keyed）照伺服器帳本；一樓以下的地板照
 -- 地板帳本，現在的圖和蓋的時候一樣、這一格只有它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、
 -- 還沒搬的舊地板照 buildMaterials（Place.migrate）。本工具挖的水面也照地板帳本認（Place.dig 記的那筆，圖要一樣），
--- 不收料所以退空表。都沒有回 nil。
+-- 不收料所以退空表。車庫門、雙開門照伺服器帳本那一組的一筆（Place.build；obj 是哪一片都行）。都沒有回 nil。
 function Place.refundOf(obj)
+    local door = Place.doorAnchor(obj)
+    if door then
+        local Ledger = MinidoracatBuilder.Ledger
+        return Ledger and Ledger.getDoor(door) or nil
+    end
     if Place.keyed(obj) then
         local Ledger, Dismantle = MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
         local mats = Ledger and Ledger.get(obj)
@@ -1106,6 +1149,7 @@ end
 -- 拆回時會略過）。丟錯由呼叫端 pcall 接。
 function Place.build(kind, cells, placed)
     if kind == "stairs" then return placeStairs(cells, placed) end
+    local first = #placed + 1
     for _, c in ipairs(cells) do
         local sq, spr = c.sq, c.spr
         local north = Entry.north(kind, spr)
@@ -1114,7 +1158,8 @@ function Place.build(kind, cells, placed)
             Place.dig(sq, spr, placed)
         elseif kind == "door" then
             obj = IsoDoor.new(getCell(), sq, spr:getName(), north)
-            obj:getModData().builderEntry = spr:getName() -- 讀檔時認得出來（Place.harden）；拆除不認門（Dismantle.mine）
+            -- 讀檔時認得出來（Place.harden）。單扇門拆除不認（Dismantle.mine）；車庫門、雙開門照第一片的記號認整組（Place.ourDoor）
+            obj:getModData().builderEntry = spr:getName()
             if proof("ZombieProofDoors") then obj:setHealth(DOOR_HP) end
             placed[#placed + 1] = obj
             finish(sq, obj, edgeIndex(sq, kind, north))
@@ -1161,6 +1206,15 @@ function Place.build(kind, cells, placed)
                 Floors.put(obj, refundable(c.cost))
             end
         end
+    end
+    -- 車庫門、雙開門（單扇門只有一格）：IsoDoor 沒有 buildMaterials，整組的退料記成伺服器帳本一筆，鍵是第一片（Place.refundOf）
+    local Ledger = MinidoracatBuilder.Ledger
+    if kind == "door" and #cells > 1 and Ledger then
+        local items = {}
+        for _, c in ipairs(cells) do
+            for ft, n in pairs(refundable(c.cost)) do items[ft] = (items[ft] or 0) + n end
+        end
+        Ledger.putDoor(placed[first], items)
     end
 end
 
@@ -1222,11 +1276,19 @@ end
 --   IsoThumpable：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
 --     原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
 --     物件不該再退料。
+--   車庫門任何一片、雙開門第 1、4 片（拆、砸、殭屍打壞、原版拆解）：整組那一筆帳本清掉，剩下的片不再退料（只在伺服器）。
+--     雙開門第 2、3 片開關時會被移除再重建（IsoDoor.java:2650-2754），不算。
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
+    if instanceof(obj, "IsoDoor") then
+        local Ledger, i = MinidoracatBuilder.Ledger, IsoDoor.getDoubleDoorIndex(obj)
+        local a = Ledger and i ~= 2 and i ~= 3 and Place.doorAnchor(obj)
+        if a then Ledger.forgetDoor(a) end
+        return
+    end
     if not instanceof(obj, "IsoThumpable") then
         -- 本工具挖的水面（一般地板物件）：地板帳本那一筆記的就是這張圖才清。照帳本認，不看物件上的記號
         local Floors = MinidoracatBuilder.Floors
@@ -1345,7 +1407,12 @@ function Place.fitContainers(obj)
 end
 
 function Place.migrate(obj)
-    if not (obj:hasModData() and obj:getModData().builderEntry) then return end
+    if not (obj:hasModData() and obj:getModData().builderEntry) then
+        -- 雙開門第 2、3 片開關過就換成沒記號、耐久照預設的新物件（IsoDoor.java:2738-2742）：照第一片認，讀檔時重套「殭屍敲不破門」
+        -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）
+        if instanceof(obj, "IsoDoor") and Place.ourDoor(obj) then Place.harden(obj) end
+        return
+    end
     if Place.onLoaded then Place.onLoaded(obj) end -- 客戶端登記開關，房間重建後補切房間燈（Client.lua）
     Place.harden(obj)
     Place.fitContainers(obj)

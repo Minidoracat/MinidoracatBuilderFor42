@@ -405,6 +405,10 @@ function Cost.of(kind, spr, multiplier)
         base, fam = basePrice(kind, p, fam, mt)
         if kind == "curtain" and m < 1 then m = 1 end
         copyInto(base, items)
+        -- 雙開門一組四片＝兩扇門（原版 entity_wood_doubledoor.txt：木板 8、釘子 8、鉸鏈 4、門把 2）：每片收半扇、進位
+        if kind == "door" and p:has("DoubleDoor") then
+            for ft, n in pairs(items) do items[ft] = n / 2 end
+        end
         -- 牆型窗（窗和窗框畫在同一張，Rules.framedWindow）：同一族的窗框＋窗
         framed = kind == "window" and MinidoracatBuilder.Rules.framedWindow(spr:getType())
         if framed then
@@ -448,6 +452,9 @@ function Cost.of(kind, spr, multiplier)
     if recipeOn() then
         local raw = {}
         copyInto(usesOf(fam, kind, mt), raw)
+        if kind == "door" and p:has("DoubleDoor") then -- 同上：每片半扇
+            for key, n in pairs(raw) do raw[key] = n / 2 end
+        end
         if framed then
             for key, n in pairs(usesOf(fam, "windowFrame", mt)) do raw[key] = (raw[key] or 0) + n end
         end
@@ -569,12 +576,14 @@ end
 --     不到，帶 CanScrap 的也歸本工具拆（牆上疊圖那條邊沒有牆、建成獨立物件時也一樣，拆除方式只看圖）。水面（water）一律
 --     本工具填平（Place.fill：換回原本的地面），別的 MOD 的水面地板帶 CanScrap 也一樣。
 --   "sheet"：不能搬的窗簾。任何 IsoCurtain 都能用原版「移除窗簾」拿回 1 張床單（IsoCurtain.removeSheet）。
---   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。
+--   "none"：其他門、窗（不是 IsoThumpable，Place.build 用 IsoDoor／IsoWindow）只能砸，不退料。車庫門、雙開門例外（"builder"）：
+--     整組一起拆，退料記在伺服器帳本（Place.build、Dismantle.plan）。原版拆解只拆一片，拆了那組的帳本跟著清（Place.onAboutToBeRemoved）。
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
     if kind == "water" then return "builder" end
     local p = spr:getProperties()
     local R = MinidoracatBuilder.Rules
+    if kind == "door" and R.grouped(p) then return "builder" end
     if p:has("IsMoveAble") and not R.gridHoles(spr) then return "pickup" end
     if kind == "curtain" then return "sheet" end
     if R.onFloor(kind, spr) or R.onWall(kind, spr) then return "builder" end

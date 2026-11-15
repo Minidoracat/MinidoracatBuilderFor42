@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Bauen nach Plan erlauben",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Wenn an, können Spieler ihren Charakter einen gesetzten Bauplan Teil für Teil bauen lassen; er holt Material auch aus ausgewählten Kisten. Jedes Teil wird weiterhin auf Entfernung, Safehouse, Material und Fähigkeit geprüft, genau wie beim Bauen von Hand.\nWenn aus, kann Bauen nach Plan nicht starten. Baupläne planen und die Materialliste funktionieren weiterhin.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
     "Sandbox_MinidoracatBuilder_Enabled": "Bauen aktivieren",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Wenn aus, lehnt der Server jede Bauanfrage dieses Mods ab. Bereits Gebautes bleibt.",
@@ -78,7 +80,7 @@
     "Sandbox_MinidoracatBuilder_KindWell": "Brunnen und Handpumpen",
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "Wenn an, können Spieler Brunnen und Handpumpen bauen: unbegrenzt sauberes Wasser, das auch nach dem Abstellen des Wassers weiterläuft. Standardmäßig aus.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Pflanzen",
+    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Zierpflanzen, Gras und Wildblumen. Nur Deko.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindWater": "Wasser",
-    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Wenn an, können Spieler im Erdgeschoss natürlichen Boden wie Gras oder Erde zu Wasser ausgraben. Dafür braucht es nur eine Schaufel: kein Material und keine Fähigkeit. Das Wasser versperrt Menschen und Zombies den Weg, liefert gefährliches Wasser, und man kann darin angeln. Auseinandernehmen macht daraus wieder den ursprünglichen Boden. Standardmäßig aus.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
-    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Zierpflanzen, Gras und Wildblumen. Nur Deko.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden."
+    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Wenn an, können Spieler im Erdgeschoss natürlichen Boden wie Gras oder Erde zu Wasser ausgraben. Dafür braucht es nur eine Schaufel: kein Material und keine Fähigkeit. Das Wasser versperrt Menschen und Zombies den Weg, liefert gefährliches Wasser, und man kann darin angeln. Auseinandernehmen macht daraus wieder den ursprünglichen Boden. Standardmäßig aus.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden."
 }

@@ -50,6 +50,7 @@ Admin.RULES = {
     { key = "ZombieProof", kind = "bool", default = false },
     { key = "ZombieProofDoors", kind = "bool", default = false },
     { key = "ContainerCapacityMultiplier", kind = "number", min = 1, max = 10, step = 0.1, default = 1 },
+    { key = "AllowAutoBuild", kind = "bool", default = true },
 }
 local TABS = { "kinds", "sources", "tilesets", "rules" }
 
@@ -96,7 +97,7 @@ local function errText(err, key)
     if err == "NO_PERMISSION" then return getText("IGUI_MBLD_Admin_NoPermission") end
     if err == "BUSY" then return getText("IGUI_MBLD_Admin_Busy") end
     if err == "TOO_LONG" then return getText("IGUI_MBLD_Admin_TooLong", getText("Sandbox_MinidoracatBuilder_" .. tostring(key))) end
-    return getText("IGUI_MBLD_Admin_Error", tostring(err) .. " " .. tostring(key or ""))
+    return getText("IGUI_MBLD_Admin_Error", key and (tostring(err) .. " " .. tostring(key)) or tostring(err))
 end
 
 -- ===== 權限與能力 =====
@@ -675,8 +676,8 @@ end
 
 -- ----- 草稿與狀態列 -----
 
--- 從 SandboxVars 重讀。開面板、自己的套用成功、還原：草稿清掉。設定被別人或快捷鈕改了：keep＝true，草稿只留和新值
--- 還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去）
+-- 從 SandboxVars 重讀。自己的套用成功、按「還原」：草稿清掉。重新打開面板、設定被別人或快捷鈕改了：keep＝true，草稿只留
+-- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動，審查 1116 #6）
 function Panel:reload(keep)
     local s, old = Entry.settings(), keep and self.edit
     local b = { kinds = {}, srcOff = parseSet(s.DisabledSources), tsOff = parseSet(s.DisabledTilesets), rules = {},
@@ -989,7 +990,7 @@ function Admin.open(playerNum)
     if p.sent or p.failed then
         p:setStatus() -- 等待中或失敗：草稿留著（「再試一次」要用），不重讀
     else
-        p:reload()
+        p:reload(true)
     end
     Admin.askLedgers(playerNum)
     p.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）

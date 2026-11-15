@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Bau-Cursor: Pipette (halten, dann etwas anklicken)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Bau-Cursor: Stapeln umschalten",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Bau-Cursor: nächstes Zuletzt-Objekt",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Bau-Cursor: Bau rückgängig",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Bauplan planen: rückgängig",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Bauplan planen: wiederholen",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Bauplan planen: Auswahl löschen",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Bauplan: aus-/einblenden",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Knopf in der Toolbar anzeigen",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Der Build-Anything-Knopf in der Familien-Toolbar. Wenn aus, öffnest du das Fenster mit der Taste unter Tastaturbelegung > Minidoracat Build Anything.",

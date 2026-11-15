@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "建築カーソル：スポイト（押しながらクリック）",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "建築カーソル：重ね置き切替",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "建築カーソル：最近使った次の項目",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "建築カーソル：直前の建築を取消",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "設計図の計画：元に戻す",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "設計図の計画：やり直す",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "設計図の計画：選択を削除",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "設計図：表示／非表示",
   "UI_MinidoracatBuilder_Options": "自由建築",
   "UI_MinidoracatBuilder_ShowDock": "ツールバーにボタンを表示",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "ファミリーツールバーの「自由建築」ボタンです。オフのときは、「キーバインド > Minidoracat 自由建築」で設定したキーでウィンドウを開いてください。",

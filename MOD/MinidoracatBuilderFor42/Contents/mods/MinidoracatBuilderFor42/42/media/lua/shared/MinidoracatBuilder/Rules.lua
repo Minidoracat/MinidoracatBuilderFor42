@@ -359,6 +359,11 @@ local function plantKind(p)
     return "plant"
 end
 
+-- 車庫門、雙開門的片（引擎照這兩個屬性認整組：IsoDoor.getGarageDoorIndex、getDoubleDoorIndex，IsoDoor.java:2756-2783,3035-3062）
+function Rules.grouped(p)
+    return p:has("GarageDoor") or p:has("DoubleDoor")
+end
+
 -- 種類判斷本體（不看 entity），回種類，或 nil 與原因碼
 local function kindOfProps(name, p, t)
     local tc = TYPE[t]
@@ -370,10 +375,10 @@ local function kindOfProps(name, p, t)
         if p:has("CanScrap") or p:has("IsMoveAble") then return nil, "STAIRS_PART" end
         return "stairs"
     end
-    if p:has("GarageDoor") then return "garage" end
+    -- 車庫門、雙開門的每一片（含開著的）都歸門：拆除照現在的圖認種類（Dismantle.classOf）。目錄只收湊得成整組的頭片、
+    -- 第 1 片（Entry.doorSet），整組一起蓋（Place.build）
+    if Rules.grouped(p) then return "door" end
     if p:has(doorN) or p:has(doorW) then
-        -- 雙開門要四片一組、開門圖在 +4（IsoDoor.java:610-617），單片放會開錯圖、MP 不同步；之後和車庫門一起做
-        if p:has("DoubleDoor") then return nil, "DOUBLE_DOOR" end
         -- 開著的門：關著那張 +2，載入圖塊時引擎替它補上門旗標與 open（IsoWorld.java:1489-1517），和關著那張是同一扇門
         if p:has(doorOpen) then return nil, "DOOR_OPEN" end
         return "door"
@@ -458,7 +463,7 @@ end
 -- 回種類字串；不列時回 nil 與原因碼（建造視窗說明為什麼搜不到，Entry.why；翻譯 IGUI_MBLD_Why_<碼>）：
 --   LUA 依名稱不列、WINDOW_STATE 窗的狀態圖、PREFIX 名稱前綴（農作物、樹、積雪圖這類；前綴裡的觀賞植物與草照收）、
 --   ENTITY 建造配方的圖、TREE 樹、PLANT 不收的植物（樹、canBeCut、農作物這類不能搬又不是草的、有容器的樹叢）與有功能的
---   物件、COLLECTOR 蓋了裝不了水的集水桶、DOUBLE_DOOR 雙開門、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水
+--   物件、COLLECTOR 蓋了裝不了水的集水桶、DOOR_OPEN 開著的門、INVINCIBLE 打不破、WATER 無限水
 --   （水井與手壓水泵、水面地板以外）、STACK 疊放圖、STAIRS_PART 能搬或能拆的樓梯片、LIGHT 不會亮或顏色不全的燈、CURTAIN_CLOSED
 --   拉上的窗簾、BLOCKS_EDGE 擋一條格邊卻不是牆、NO_KIND 沒有能判斷種類的屬性。
 -- name＝sprite 名稱、p＝getProperties()、t＝getType()；呼叫端已經拿到的就直接傳，不再取一次。spr 是 sprite 本身（看多格）。

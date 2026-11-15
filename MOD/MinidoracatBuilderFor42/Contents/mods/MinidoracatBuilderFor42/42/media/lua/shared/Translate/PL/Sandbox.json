@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Zezwól na budowanie według projektu",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Gdy włączone, gracze mogą kazać postaci budować postawiony projekt element po elemencie i pobierać materiały z wybranych skrzyń. Każdy element nadal jest sprawdzany pod kątem odległości, schronienia, materiałów i umiejętności, tak jak przy budowaniu ręcznym.\nGdy wyłączone, budowanie według projektu się nie uruchomi. Planowanie projektów i lista materiałów nadal działają.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
     "Sandbox_MinidoracatBuilder_Enabled": "Włącz budowanie",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Gdy wyłączone, serwer odrzuca każde żądanie budowy z tego moda. To, co już zbudowano, zostaje.",
@@ -78,7 +80,7 @@
     "Sandbox_MinidoracatBuilder_KindWell": "Studnie i pompy ręczne",
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "Gdy włączone, gracze mogą budować studnie i pompy ręczne: niekończąca się czysta woda, która działa także po odcięciu wody. Domyślnie wyłączone.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Rośliny",
+    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Rośliny ozdobne, trawa i dzikie kwiaty. Tylko ozdoba.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_KindWater": "Woda",
-    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Gdy włączone, gracze mogą na poziomie gruntu wykopać wodę w naturalnym podłożu, takim jak trawa lub ziemia. Wystarczy łopata: bez materiałów i bez umiejętności. Woda blokuje ludzi i zombie, daje skażoną wodę i można w niej łowić ryby. Rozmontowanie przywraca pierwotne podłoże. Domyślnie wyłączone.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
-    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Rośliny ozdobne, trawa i dzikie kwiaty. Tylko ozdoba.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować."
+    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Gdy włączone, gracze mogą na poziomie gruntu wykopać wodę w naturalnym podłożu, takim jak trawa lub ziemia. Wystarczy łopata: bez materiałów i bez umiejętności. Woda blokuje ludzi i zombie, daje skażoną wodę i można w niej łowić ryby. Rozmontowanie przywraca pierwotne podłoże. Domyślnie wyłączone.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować."
 }

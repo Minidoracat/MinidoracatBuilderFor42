@@ -5,6 +5,7 @@
 --   （Store.pos）, s = 蓋的圖名, i = { [fullType] = 退料數 } }。蓋的時候把編號寫進物件的 keyId（IsoObject 的欄位，任何類別
 --   都跟著存檔），認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
 -- 樓梯平台：同一本，["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。
+-- 車庫門、雙開門（IsoDoor，沒有 buildMaterials）：同一本，["x,y,z,doorN"／"…,doorW"] = 整組的退料表（Ledger.putDoor）。
 -- 線路：gos_MinidoracatBuilderCircuits_<n>.bin（Ledger.circuits；格式與讀寫在 Circuits.lua，成員的鍵照 Ledger.key）。
 -- 主系統 MinidoracatBuilder（gos_MinidoracatBuilder.bin）只留：下一個編號（lamps.next、circuits.next）、分片以前的存檔
 --   （lamps.e、built 的平台、circuits.c，Store.adopt 搬完就清），以及 0.3.0 以前的燈（built["x,y,z,sprite"] = 退料表；
@@ -241,6 +242,32 @@ function Ledger.forget(obj)
         return
     end
     local k = Ledger.key(obj)
+    if k then L:del(k) end
+end
+
+-- 本 MOD 蓋的車庫門、雙開門：整組一筆，["x,y,z,doorN"／"…,doorW"] = 整組的退料表，鍵是第一片（Place.doorAnchor）的位置與
+-- 方向（同一格北邊、西邊各能有一組）。第一片開關時不搬格，所以不看圖；也不看 modData（客戶端改得到）
+local function doorKey(anchor)
+    local sq = anchor:getSquare()
+    if not sq then return nil end
+    return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. ",door" .. (anchor:isNorth() and "N" or "W")
+end
+
+-- Place.build 蓋好整組後記；帳本還沒建或滿了只記 log（之後本工具拆不了，大錘照樣能砸）
+function Ledger.putDoor(anchor, items)
+    local k = Ledger.instance and doorKey(anchor)
+    local copy = {}
+    for ft, n in pairs(items) do copy[ft] = n end
+    if not (k and valid(copy, k) and L:put(k, copy)) then print(LOG .. "door ledger not ready or full; not recorded: " .. tostring(k)) end
+end
+
+function Ledger.getDoor(anchor)
+    local k = Ledger.instance and doorKey(anchor)
+    return k and L:get(k) or nil
+end
+
+function Ledger.forgetDoor(anchor)
+    local k = Ledger.instance and doorKey(anchor)
     if k then L:del(k) end
 end
 

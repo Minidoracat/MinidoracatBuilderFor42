@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Курсор строительства: пипетка (зажмите и щёлкните по объекту)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Курсор строительства: «Поверх» вкл/выкл",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Курсор строительства: следующий из недавних",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Курсор строительства: отменить постройку",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Планирование чертежа: отменить",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Планирование чертежа: повторить",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Планирование чертежа: удалить выделенное",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Чертёж: скрыть/показать",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Показывать кнопку на панели",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Кнопка Build Anything на панели модов Minidoracat. Если она выключена, открывайте окно клавишей из «Назначение клавиш > Minidoracat Build Anything».",

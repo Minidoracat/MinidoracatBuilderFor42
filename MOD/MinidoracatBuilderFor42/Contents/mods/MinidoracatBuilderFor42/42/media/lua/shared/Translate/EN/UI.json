@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Build cursor: eyedropper (hold, then click something)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Build cursor: toggle overlap",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Build cursor: next recent item",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Build cursor: undo last build",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Blueprint planning: undo",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Blueprint planning: redo",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Blueprint planning: delete selection",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Blueprint: hide/show",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Show toolbar button",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "The Build Anything button on the family toolbar. When it is off, open the window with the key set in Key bindings > Minidoracat Build Anything.",

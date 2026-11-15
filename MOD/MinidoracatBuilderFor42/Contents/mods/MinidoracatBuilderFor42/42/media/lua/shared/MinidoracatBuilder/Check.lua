@@ -175,7 +175,19 @@ function Check.item(player, name, d, anchor, opts)
     spr = Entry.alternate(spr, anchor[1], anchor[2]) -- 交替柵欄：這一格放的那張（成本、放置、記號都照它）
     info.spr = spr
     local cells, sprites = {}, {}
-    for j, o in ipairs(Entry.cells(spr)) do
+    -- 車庫門：寬度 w＝錨點第 5 欄（Server.intent 只收車庫門帶它），2..MaxCellsPerDrag；雙開門與其他項目照 Entry.cells
+    local set = entry.kind == "door" and Entry.doorSet(spr)
+    local offs
+    if set and set.garage then
+        local w = anchor[5]
+        if type(w) ~= "number" or w % 1 ~= 0 or w < 2 or w > math.max(2, setting("MaxCellsPerDrag", 32)) then
+            return "BAD_REQUEST", nil, info
+        end
+        offs = Entry.groupCells(set, w)
+    else
+        offs = Entry.cells(spr)
+    end
+    for j, o in ipairs(offs) do
         cells[j] = { x = anchor[1] + o[1], y = anchor[2] + o[2], z = anchor[3] + o[3], spr = o[4], role = o[5] }
         sprites[j] = o[4]
     end

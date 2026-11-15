@@ -18,8 +18,14 @@ local MODULE = "MinidoracatBuilder"
 local KEEP = 32 -- Wiring.results 只留最近幾筆
 local BUSY_MS = 5000 -- 送出後這麼久沒回覆就不再等（伺服器每個指令都回，這是保險）
 local PAD, GAP, SW = 8, 6, 10
--- 接線模式的外框顏色（設計稿）：這個開關綠、已接黃、可接白、別條線路灰
+-- 接線模式的外框顏色（設計稿）：這個開關綠、已接黃、可接白、別條線路灰。綠色盲分不出綠與黃（審查 1116 #3），所以每種
+-- 另配一個框架圖示（UI.Icons，rev 2／6），世界上與面板圖例畫同一個；缺圖示時退回 ASCII 字（Kahlua 字串字面值不能有非 ASCII）
 local COLOR = { this = { 0, 1, 0 }, wired = { 1, 0.85, 0.4 }, free = { 0.95, 0.95, 0.95 }, other = { 0.55, 0.55, 0.55 } }
+local ICON = { this = "plug", wired = "check", free = "plus", other = "lock" }
+local ALT = { this = "S", wired = "v", free = "+", other = "x" }
+local ICOL = {}
+for k, c in pairs(COLOR) do ICOL[k] = { r = c[1], g = c[2], b = c[3], a = 1 } end
+local MARK = 16 -- 世界上狀態圖示的邊長（同 Cursor 的警告三角）
 -- 開關本身（回覆沒有 side；side＝"t" 是點的目標、"l" 是線路上的燈）回這些碼時接線模式關掉
 local FATAL = { GONE = true, NOT_LOADED = true, NOT_SWITCH = true, TOO_FAR = true, OFF = true, NOT_ALLOWED = true, STATE = true }
 -- 放燈沒自動接上的原因 → 翻譯鍵（伺服器 Circuits.lampPlaced）
@@ -182,14 +188,25 @@ local function mark(m, o, rgb)
     m.marked[#m.marked + 1] = o
 end
 
+-- 外框＋狀態圖示：圖示照格子排，同一格好幾個時往右排開；只收找得到物件的（m.icons，畫的時候不配置）
 local function remark(m)
     unmark(m)
+    local icons, per = { n = 0 }, {}
+    local function add(o, c, k)
+        mark(m, o, COLOR[k])
+        local p = posOf(c.x, c.y, c.z)
+        local i = (per[p] or 0) + 1
+        per[p] = i
+        icons.n = icons.n + 1
+        icons[icons.n] = { x = c.x, y = c.y, z = c.z, k = k, dx = (i - 1) * (MARK + 4) }
+    end
     local sw = objAt(m.sw)
-    if sw then mark(m, sw, COLOR.this) end
+    if sw then add(sw, m.sw, "this") end
     for _, c in ipairs(m.cand or {}) do
         local o = objAt(c)
-        if o then mark(m, o, COLOR[c.status]) end
+        if o then add(o, c, c.status) end
     end
+    m.icons = icons
 end
 
 -- 伺服器回的這條線路與附近可接的 → 狀態、外框。一格可能有好幾個（byPos 存清單，pick 記下一次要選的那一個的鍵）
@@ -450,6 +467,30 @@ end
 
 local LINES = 8 -- 線路、上限、圖例兩列、說明三列、游標停的那一個
 
+-- 狀態圖示，缺圖時畫字。墊 surface 底（同 Cursor 的記號層），在亮的地板上也看得清楚
+local function drawMark(el, UI, k, x, y, bg)
+    if bg then UI.Skin.fill(el, x - 2, y - 2, MARK + 4, MARK + 4, bg, nil, 1) end
+    if not UI.Icons.draw(el, ICON[k], x, y, MARK, ICOL[k], 1) then
+        el:drawText(ALT[k], x + 4, y, COLOR[k][1], COLOR[k][2], COLOR[k][3], 1, UIFont.Small)
+    end
+end
+
+-- 世界上的記號層：每個標了外框的物件那一格中央畫它的狀態圖示（畫法同 Cursor 的 marksRender：1×1 元件不裁切，
+-- backMost 不蓋在介面上，不收滑鼠）
+local Marks
+local function noClick() return false end
+local function marksRender(self)
+    local m = Wiring.mode
+    if not m or m.marks ~= self or not m.icons then return end
+    local UI, pn, ox, oy, bg, list = self.UI, m.pn, self:getAbsoluteX(), self:getAbsoluteY(), m.colors.surface, m.icons
+    for i = 1, list.n do
+        local it = list[i]
+        local sx = isoToScreenX(pn, it.x + 0.5, it.y + 0.5, it.z) - ox - MARK / 2 + it.dx
+        local sy = isoToScreenY(pn, it.x + 0.5, it.y + 0.5, it.z) - oy - MARK / 2
+        drawMark(self, UI, it.k, sx, sy, bg)
+    end
+end
+
 local function drawPanel(panel)
     local m = Wiring.mode
     if not m then return end
@@ -466,7 +507,8 @@ local function drawPanel(panel)
             local it = m.legend[row * 2 + i]
             local rgb = COLOR[it.k]
             panel:drawRect(x, y + math.floor((fh - SW) / 2), SW, SW, 1, rgb[1], rgb[2], rgb[3])
-            panel:drawText(it.s, x + SW + 4, y, c.r, c.g, c.b, c.a or 1, f)
+            drawMark(panel, m.UI, it.k, x + SW + 4, y + math.floor((fh - MARK) / 2))
+            panel:drawText(it.s, x + SW + MARK + 8, y, c.r, c.g, c.b, c.a or 1, f)
             x = x + m.legendW
         end
         y = y + fh
@@ -484,7 +526,7 @@ local function buildPanel(m, UI)
     local font = UIFont.Small
     local tm = getTextManager()
     local fh = tm:getFontHeight(font)
-    m.colors, m.font, m.fh = theme.colors, font, fh
+    m.colors, m.font, m.fh, m.UI, m.theme = theme.colors, font, fh, UI, theme
     m.limit = getText("IGUI_MBLD_Wire_Limit", tostring(CC.MAX_S), tostring(CC.MAX_L))
     m.legend = { { k = "this", s = getText("IGUI_MBLD_Wire_LegendThis") }, { k = "wired", s = getText("IGUI_MBLD_Wire_LegendWired") },
         { k = "free", s = getText("IGUI_MBLD_Wire_LegendFree") }, { k = "other", s = getText("IGUI_MBLD_Wire_LegendOther") } }
@@ -492,7 +534,7 @@ local function buildPanel(m, UI)
     local w = tm:MeasureStringX(font, getText("IGUI_MBLD_Wire_Circuit", "4", "16"))
     w = math.max(w, tm:MeasureStringX(font, m.limit))
     m.legendW = 0
-    for _, it in ipairs(m.legend) do m.legendW = math.max(m.legendW, SW + 4 + tm:MeasureStringX(font, it.s) + 12) end
+    for _, it in ipairs(m.legend) do m.legendW = math.max(m.legendW, SW + MARK + 8 + tm:MeasureStringX(font, it.s) + 12) end
     w = math.max(w, m.legendW * 2)
     for _, s in ipairs(m.hint) do w = math.max(w, tm:MeasureStringX(font, s)) end
     m.fit, m.textW = UI.Text and UI.Text.fit, w -- 游標停的那一行截成面板寬（名稱長短不一）
@@ -519,7 +561,7 @@ local function buildPanel(m, UI)
         return b
     end
     local room = button(getText("IGUI_MBLD_Wire_Room"), nil, function() MinidoracatBuilder.Wiring.op("room") end)
-    local clear = button(getText("IGUI_MBLD_Wire_Clear"), nil, function() MinidoracatBuilder.Wiring.op("clear") end)
+    local clear = button(getText("IGUI_MBLD_Wire_Clear"), "danger", function() MinidoracatBuilder.Wiring.confirmClear() end)
     local done = button(getText("IGUI_MBLD_Wire_Done"), "primary", function() MinidoracatBuilder.Wiring.close() end)
     local by = top + text.height + GAP
     room:setX(PAD)
@@ -532,6 +574,41 @@ local function buildPanel(m, UI)
     win:addToUIManager()
     if JoypadState.players[pn + 1] then setJoypadFocus(pn, nil) end -- 手把留給游標（框架顯示視窗時會接手手把）
     m.win = win
+    if not Marks then
+        Marks = ISUIElement:derive("MinidoracatBuilderWireMarks")
+        Marks.render, Marks.onRightMouseDown, Marks.onRightMouseUp = marksRender, noClick, noClick
+    end
+    local mk = Marks:new(0, 0, 1, 1)
+    mk.wantMouseEvents = false
+    mk.UI = UI
+    mk:initialise()
+    mk:addToUIManager()
+    mk:backMost()
+    m.marks = mk
+end
+
+-- 「全部拔掉」：先跳確認框寫出盞數，按了確認才送 clear（一按就拿掉整條線路的燈、不能復原，審查 1116 #2；同一區拆除
+-- 的確認：danger 樣式、寫出數量）。框不擋操作、開在游標旁（框架 rev 26 的 modal／anchor；舊框架忽略這兩個欄位，照舊
+-- 置中加遮罩）。線路上沒有燈時沒有東西會丟，直接送。確認時接線模式已經關掉或換了開關就不送
+function Wiring.confirmClear()
+    local m = Wiring.mode
+    if not m or not m.nL or busy(m) then return nil end
+    if m.nL == 0 then return Wiring.op("clear") end
+    local UI = MinidoracatUI and MinidoracatUI.v1
+    if not (UI and UI.Dialog and UI.CAPABILITIES and UI.CAPABILITIES.dialog) then
+        tell(m.player, getText("IGUI_MBLD_NeedFramework"))
+        return nil
+    end
+    if m.confirm then return nil end
+    m.confirm = UI.Dialog.show({ title = getText("IGUI_MBLD_Wire_ClearConfirm", tostring(m.nL)),
+        text = getText("IGUI_MBLD_Wire_ClearText"), confirmText = getText("IGUI_MBLD_Wire_Clear"),
+        cancelText = getText("UI_Cancel"), danger = true, opaque = true, theme = m.theme, modal = false,
+        anchor = not JoypadState.players[m.pn + 1] and "mouse" or nil,
+        onResult = function(ok)
+            m.confirm = nil
+            if ok and Wiring.mode == m then MinidoracatBuilder.Wiring.op("clear") end
+        end })
+    return m.confirm
 end
 
 -- 開接線模式：sw＝{ x, y, z, e }（本工具的開關）。先向伺服器要這條線路與附近可接的，回來才有外框
@@ -563,9 +640,17 @@ function Wiring.close()
     if not m then return end
     Wiring.mode = nil
     unmark(m)
-    if m.win then
-        m.win:setVisible(false)
-        m.win:removeFromUIManager()
+    if m.confirm then
+        local UI = MinidoracatUI and MinidoracatUI.v1
+        pcall(UI.Dialog.close, m.confirm, false)
+        m.confirm = nil
+    end
+    for _, k in ipairs({ "win", "marks" }) do -- 建到一半出錯時可能只有其中一個
+        local el = m[k]
+        if el then
+            el:setVisible(false)
+            el:removeFromUIManager()
+        end
     end
     if m.cursor and getCell():getDrag(m.pn) == m.cursor then getCell():setDrag(nil, m.pn) end
 end
@@ -627,8 +712,10 @@ local function lampMenu(context, playerNum, player, o, label)
     context:addSubMenu(opt, sub)
     local info = sub:addOption(getText("IGUI_MBLD_Wire_Loading"))
     local st = {}
-    local unplug = sub:addOption(getText("IGUI_MBLD_Menu_Unplug"), playerNum, Wiring.unplug, o)
-    local open = sub:addOption(getText("IGUI_MBLD_Menu_OpenWiring"), playerNum, Wiring.openFromLamp, st)
+    -- 回覆前與沒有接線時拔線、打開接線模式不能選：標籤後面加「（不能選）」，不只靠原版的紅字（審查 1116 #4）
+    local unplugText, openText = getText("IGUI_MBLD_Menu_Unplug"), getText("IGUI_MBLD_Menu_OpenWiring")
+    local unplug = sub:addOption(getText("IGUI_MBLD_Menu_NoUse", unplugText), playerNum, Wiring.unplug, o)
+    local open = sub:addOption(getText("IGUI_MBLD_Menu_NoUse", openText), playerNum, Wiring.openFromLamp, st)
     info.notAvailable, unplug.notAvailable, open.notAvailable = true, true, true
     local q = lastQ % 2000000000 + 1
     local mine = { info, unplug, open }
@@ -654,6 +741,7 @@ local function lampMenu(context, playerNum, player, o, label)
             info.notAvailable = false
             info.onHighlight, info.onHighlightParams = highlight, { r.s }
             unplug.notAvailable, open.notAvailable = false, false
+            unplug.name, open.name = unplugText, openText
             st.sw = r.s[1]
         end
         sub:setWidth(sub:calcWidth())

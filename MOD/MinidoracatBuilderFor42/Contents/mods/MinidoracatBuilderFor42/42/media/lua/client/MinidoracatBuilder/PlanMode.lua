@@ -1,0 +1,1051 @@
+-- 規劃與擺放：地上的藍圖只有這個模組持有（PlanMode.plan()）。只在客戶端：規劃片與擺放虛影由 PlanGhost 每幀畫，
+-- 不建世界物件、不送指令、不寫 modData；地上的藍圖在哪記在本機檔（PlanStore），藍圖本身存藍圖檔（PlanFile）。
+-- 規劃開著時，建造游標（Cursor）與配方游標（Recipes 叫 PlanMode.addCells）放開不蓋，改記進藍圖，一次放開算一步。
+-- 狀態：none（沒有藍圖）→ edit（規劃中）／place（整張跟著游標）→ fixed（在地上）。
+-- 藍圖的座標相對原點 plan.ox, oy, oz（世界座標）；跟著游標時 plan.ox 是 nil，位置記在拖曳物件上。
+require "MinidoracatBuilder/Entry"
+require "MinidoracatBuilder/Turn"
+require "MinidoracatBuilder/Plan"
+require "MinidoracatBuilder/PlanFile"
+require "MinidoracatBuilder/PlanStore"
+require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Cursor"
+require "MinidoracatBuilder/Window" -- 它的按鍵先登記，這裡的接在同一節後面
+
+MinidoracatBuilder = MinidoracatBuilder or {}
+local B = MinidoracatBuilder
+local PM = B.PlanMode or {}
+B.PlanMode = PM
+local Entry, Turn, Plan, PlanFile, PlanStore, Messages, Cursor = B.Entry, B.Turn, B.Plan, B.PlanFile, B.PlanStore,
+    B.Messages, B.Cursor
+
+local LOG = "[MinidoracatBuilderFor42] "
+PM.TINT = { r = 0.75, g = 0.6, b = 1 } -- 規劃片的淡紫色（PlanGhost、游標地框共用）
+local HOME_RANGE = 100                -- 離原位置這麼近才給「放回原位置」
+local SHOW_MAX = 256                  -- 框選時最多標幾格（每格一個地框）
+PM.BIND_UNDO, PM.BIND_REDO = "MinidoracatBuilder_PlanUndo", "MinidoracatBuilder_PlanRedo"
+PM.BIND_HIDE, PM.BIND_DELETE = "MinidoracatBuilder_PlanHide", "MinidoracatBuilder_PlanDelete"
+local WHY = { FULL = "IGUI_MBLD_PlanFull", TOO_WIDE = "IGUI_MBLD_PlanTooWide", TOO_HIGH = "IGUI_MBLD_PlanTooHigh" }
+
+-- plan、mode、hidden、level、tool（draw｜select｜erase）、sel（選到的片）、selSet、drag（本模組的拖曳物件）、
+-- home（放回原位置）、prev（搬的時候原本在哪，取消用）
+local S = { mode = "none", hidden = false, tool = "draw", sel = {}, selSet = {}, listeners = {} }
+PM.playerNum = 0
+
+local function player() return getSpecificPlayer(PM.playerNum or 0) end
+local function say(text) Messages.toast(player(), text, getText("IGUI_MBLD_PlanTitle")) end
+local function floorZ(p) return math.floor(p:getZ()) end
+local function whyText(code) return getText(WHY[code] or "IGUI_MBLD_PlanTooWide") end
+
+function PM.plan() return S.plan end
+function PM.state() return S.plan and S.mode or "none" end
+function PM.planning() return S.mode == "edit" end
+function PM.hidden() return S.hidden end
+function PM.level() return S.level end
+function PM.tool() return S.tool end
+function PM.selected() return S.sel end
+function PM.isSelected(p) return S.selSet[p] == true end
+function PM.floating() return S.drag end -- PlanGhost：擺放、搬、複製中的拖曳物件（ox／oy／oz 或 dx／dy、lines）
+function PM.home() return S.home end
+
+function PM.origin()
+    local p = S.plan
+    if not p or S.mode == "place" or p.ox == nil then return nil end
+    return p.ox, p.oy, p.oz
+end
+
+function PM.changed(fn) S.listeners[#S.listeners + 1] = fn end
+
+local function setSel(list)
+    S.sel, S.selSet = list or {}, {}
+    for _, p in ipairs(S.sel) do S.selSet[p] = true end
+end
+
+-- 狀態或藍圖變了：通知面板、重排工具列、讓建造游標下一幀重算標籤（上限是照藍圖算的）
+local function fire()
+    for _, fn in ipairs(S.listeners) do
+        local ok, err = pcall(fn)
+        if not ok then print(LOG .. "plan listener failed: " .. tostring(err)) end
+    end
+    local c = Cursor.get(PM.playerNum or 0)
+    if c then c.kgen = nil end
+    if PM.refreshBar then PM.refreshBar() end
+end
+PM.fire = fire
+
+local function checkReset()
+    local C = B.PlanCheck
+    if C and C.reset then pcall(C.reset) end
+end
+
+-- ===== 上限 =====
+
+local function dupOf(plan, x, y, z, d, o, id)
+    for _, q in ipairs(Plan.at(plan, x, y, z)) do
+        local item = plan.items[q.it]
+        if q.d == d and q.o == o and item and item.id == id then return true end
+    end
+    return false
+end
+
+-- 這幾格（世界座標 { x, y, z, d }）加進藍圖會不會超出上限：回 nil 或 FULL／TOO_WIDE／TOO_HIGH。重複的片不算
+function PM.overflow(plan, cells, id, o)
+    local n = plan.n
+    local x0, y0, z0, x1, y1, z1 = Plan.bounds(plan)
+    for _, c in ipairs(cells) do
+        local x, y, z = c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz
+        if not dupOf(plan, x, y, z, c[4], o, id) then
+            n = n + 1
+            if x0 == nil then
+                x0, y0, z0, x1, y1, z1 = x, y, z, x, y, z
+            else
+                x0, y0, z0 = math.min(x0, x), math.min(y0, y), math.min(z0, z)
+                x1, y1, z1 = math.max(x1, x), math.max(y1, y), math.max(z1, z)
+            end
+        end
+    end
+    if n > Plan.MAX_PIECES then return "FULL" end
+    if x0 and (x1 - x0 >= Plan.MAX_SIDE or y1 - y0 >= Plan.MAX_SIDE) then return "TOO_WIDE" end
+    if z0 and z1 - z0 >= Plan.MAX_LEVELS then return "TOO_HIGH" end
+    return nil
+end
+
+-- 記成一步：cells＝世界座標 { x, y, z, d[, w] }（w＝車庫門寬度）。回 加了幾片，或 nil, 原因碼
+local function record(id, cells, o)
+    local plan = S.plan
+    local why = PM.overflow(plan, cells, id, o)
+    if why then return nil, why end
+    local okSrc, src = pcall(PlanFile.source, id)
+    local it = Plan.item(plan, id, okSrc and src or nil)
+    local added = 0
+    Plan.begin(plan)
+    for _, c in ipairs(cells) do
+        local p, code = Plan.add(plan, c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz, c[4], o, it, c[5])
+        if p then
+            added = added + 1
+        elseif code ~= "DUP" then
+            print(LOG .. "plan add refused e=" .. tostring(id) .. ": " .. tostring(code))
+        end
+    end
+    Plan.commit(plan)
+    fire()
+    return added
+end
+
+-- 配方游標（Recipes.lua）放下的格子：規劃開著時記進藍圖。回 true，或 nil, 原因碼（OFF＝規劃沒開）
+function PM.addCells(playerNum, id, cells)
+    if S.mode ~= "edit" or not S.plan then return nil, "OFF" end
+    local n, why = record(id, cells, 0)
+    if not n then
+        say(whyText(why))
+        return nil, why
+    end
+    return true
+end
+
+-- ===== 建造游標的掛鉤（Cursor.hook；規劃開著時才掛） =====
+
+local hook = {}
+
+-- 這次放開會記的錨點：沒有那一面的（NO_FACE）沒有朝向，不記；缺料、被擋這類只影響現在能不能蓋，照記
+local function cursorCells(c)
+    local out = {}
+    for _, r in ipairs(c.res or {}) do
+        local a = r.a
+        if a and a[4] ~= nil then out[#out + 1] = a end
+    end
+    return out
+end
+
+-- 每幀呼叫（Cursor.isValid）：只讀 label 算好的結果，不配置
+function hook.valid(c) return c.planWhy == nil end
+
+function hook.layer(c) return S.level - math.floor(c.character:getZ()) end
+
+function hook.tint() return PM.TINT end
+
+-- 第二行換成「規劃中」那一行，按鍵說明換成規劃的；超出上限時寫原因
+function hook.label(c, src)
+    if not S.plan then return nil end
+    local cells = cursorCells(c)
+    c.planWhy = PM.overflow(S.plan, cells, c.name, c.overlap and 1 or 0)
+    local col = c.colors or {}
+    local out = { src[1], src[2] }
+    if c.planWhy then
+        out[3], out[4] = whyText(c.planWhy), col.warning
+    else
+        out[3], out[4] = getText("IGUI_MBLD_PlanAdd", tostring(#cells)), col.text
+    end
+    local last = #src
+    if c.hint and src[last - 1] == c.hint then last = last - 2 end
+    for i = 3, last do out[#out + 1] = src[i] end
+    if c.hint then
+        out[#out + 1] = getText("IGUI_MBLD_PlanHint")
+        out[#out + 1] = col.textMuted
+    end
+    return out
+end
+
+function hook.commit(c)
+    if S.mode ~= "edit" or not S.plan then return false end
+    local n, why = record(c.name, cursorCells(c), c.overlap and 1 or 0)
+    if not n then say(whyText(why)) end
+    return true
+end
+
+local HOOKS = { "valid", "commit", "label", "tint", "layer" }
+local function hooks(on)
+    local h = Cursor.hook
+    for _, k in ipairs(HOOKS) do
+        if on then
+            h[k] = hook[k]
+        elseif h[k] == hook[k] then
+            h[k] = nil
+        end
+    end
+    local c = Cursor.get(PM.playerNum or 0)
+    if c then c.kgen = nil end
+end
+
+-- ===== 轉向 =====
+
+local DIR_OF = { N = 1, E = 2, S = 3, W = 4 }
+
+local function footprint(entry, spr, w)
+    local set = w and entry.kind == "door" and Entry.doorSet(spr)
+    if set and set.garage then return Entry.groupCells(set, w) end
+    return Entry.cells(spr)
+end
+
+-- 給 Plan.rotate：順時針（北→東→南→西），Plan.rotate 先把錨點 (x, y) 轉到 M＝(minX + maxY − y, minY + x − minX)，
+-- 一格的位移 (dx, dy) 轉成 (−dy, dx)。回 新朝向, 位移修正 dx, dy；這一片沒有那個方向的圖回 nil。
+-- 只佔一條格邊的（牆、柵欄、門框、窗框、門、窗，含車庫門與雙開門）：北邊轉成右邊那格的西邊、西邊轉成北邊；
+-- 整組佔的格子先轉，再照新方向挑錨點（北向取 x 最小、西向取 y 最大，Entry.groupCells 的排法）。
+-- 其他有方向的：照 Facing 換到下一個方向，多格的對齊佔地的左上角。沒有方向的（地板、柱子）朝向不變。
+function PM.turnPiece(p, item)
+    local id = item and item.id
+    if type(id) ~= "string" then return nil end
+    if id:sub(1, 7) == "recipe:" then
+        local R = B.Recipes
+        local f = R and R.faces and R.faces(id)
+        if not f or f.n == 0 then return nil end
+        if f.n == 1 then return p.d, 0, 0 end
+        for i = 1, f.n do
+            if f[i] == p.d then return f[i % f.n + 1], 0, 0 end
+        end
+        return nil
+    end
+    local entry = Entry.resolve(id)
+    if not entry then return nil end
+    local spr = Entry.face(entry, p.d)
+    if not spr then return nil end
+    local offs = footprint(entry, spr, p.w)
+    local n, w = Entry.edges(entry.kind, spr)
+    if n ~= w then
+        local od = Turn.other(entry, p.d)
+        if od == nil then return nil end
+        local bx, by
+        for _, o in ipairs(offs) do
+            local x, y = -o[2] + (n and 1 or 0), o[1]
+            if bx == nil or (n and y > by) or (not n and x < bx) then bx, by = x, y end
+        end
+        return od, bx, by
+    end
+    local cur = p.d
+    if cur == 0 or cur == 5 then cur = DIR_OF[spr:getProperties():get("Facing")] end
+    if not cur or cur < 1 or cur > 4 then return p.d, 0, 0 end
+    local nd = cur % 4 + 1
+    local nspr = Entry.face(entry, nd)
+    if not nspr then return nil end
+    local ax, ay, bx, by
+    for _, o in ipairs(offs) do
+        ax, ay = math.min(ax or -o[2], -o[2]), math.min(ay or o[1], o[1])
+    end
+    for _, o in ipairs(Entry.cells(nspr)) do
+        bx, by = math.min(bx or o[1], o[1]), math.min(by or o[2], o[2])
+    end
+    return nd, ax - bx, ay - by
+end
+
+local function allPieces(plan)
+    local out = {}
+    Plan.each(plan, function(p) out[#out + 1] = p end)
+    return out
+end
+
+-- 轉 90 度（整張或選到的）。回 true；超出上限通知並回 false
+-- 某片查圖出錯（別的 MOD 的配方、圖塊資料）只算這片轉不了，不讓整次轉向中斷
+local function safeTurn(p, item)
+    local ok, d, dx, dy = pcall(PM.turnPiece, p, item)
+    if ok then return d, dx, dy end
+    print(LOG .. "plan turn failed e=" .. tostring(item and item.id) .. ": " .. tostring(d))
+    return nil
+end
+
+local function rotate(list)
+    local stuck, why = Plan.rotate(S.plan, list, safeTurn)
+    if stuck == nil then
+        say(whyText(why))
+        return false
+    end
+    if stuck > 0 then say(getText("IGUI_MBLD_PlanStuck", tostring(stuck))) end
+    fire()
+    return true
+end
+
+-- ===== 存檔 =====
+
+-- 存回藍圖檔（沒存過照名稱取檔名）。回 true，或 nil, 原因
+function PM.save()
+    local plan = S.plan
+    if not plan then return nil, "NO_PLAN" end
+    local file = plan.file or PlanFile.fileName(plan.name)
+    if not file then return nil, "FILE" end
+    local ok, why = PlanFile.save(plan, file)
+    if not ok then
+        print(LOG .. "plan save failed: " .. tostring(why))
+        say(getText("IGUI_MBLD_PlanSaveFail"))
+        return nil, why
+    end
+    return true
+end
+
+-- 這個存檔的地上藍圖：位置記包圍盒的角（藍圖檔讀回來時片是相對這個角，PlanFile 的 pos），隱藏與否；
+-- 材料箱、上次狀態（別的模組寫的）照原樣留著
+local function storeSave()
+    local st = PlanStore.load()
+    local plan = S.plan
+    st.file, st.ox, st.oy, st.oz = nil, nil, nil, nil
+    if plan and plan.file and plan.ox and S.mode ~= "place" then
+        local x0, y0, z0 = Plan.bounds(plan)
+        st.file = plan.file
+        st.ox, st.oy, st.oz = plan.ox + (x0 or 0), plan.oy + (y0 or 0), plan.oz + (z0 or 0)
+    end
+    st.hidden = S.hidden == true
+    return PlanStore.save(st)
+end
+PM.storeSave = storeSave
+
+-- 進遊戲：讀回地上的藍圖。檔案不在或壞了就當沒有，並說一聲
+function PM.restore()
+    S.plan, S.mode, S.drag, S.home, S.prev = nil, "none", nil, nil, nil
+    setSel(nil)
+    local st = PlanStore.load()
+    S.hidden = st.hidden == true
+    if not st.file then return false end
+    local plan, why = PlanFile.load(st.file)
+    if not plan or st.ox == nil then
+        print(LOG .. "ground plan not restored f=" .. tostring(st.file) .. ": " .. tostring(why or "NO_POS"))
+        say(getText("IGUI_MBLD_PlanLost"))
+        storeSave()
+        return false
+    end
+    plan.ox, plan.oy, plan.oz = st.ox, st.oy, st.oz
+    S.plan, S.mode = plan, "fixed"
+    checkReset()
+    fire()
+    return true
+end
+
+-- ===== 規劃開關 =====
+
+function PM.setLevel(z)
+    z = math.floor(tonumber(z) or 0)
+    local plan = S.plan
+    if plan and plan.n > 0 and plan.oz then
+        local _, _, z0, _, _, z1 = Plan.bounds(plan)
+        z = math.max(plan.oz + z1 - (Plan.MAX_LEVELS - 1), math.min(plan.oz + z0 + (Plan.MAX_LEVELS - 1), z))
+    end
+    z = math.max(-32, math.min(31, z))
+    if z == S.level then return end
+    S.level = z
+    fire()
+end
+
+local function stopTool()
+    local c = Cursor.get(PM.playerNum or 0)
+    if c and c.planTool then
+        c.planTool = nil
+        getCell():setDrag(nil, PM.playerNum or 0)
+    end
+    local d = S.drag
+    if d and d.kind ~= "place" then getCell():setDrag(nil, d.player) end
+end
+
+local function leaveEdit()
+    hooks(false)
+    stopTool()
+    S.tool = "draw"
+    setSel(nil)
+end
+
+-- 開關規劃：沒有藍圖就在腳下建一張空的；關掉時存檔（空的、沒存過的直接丟掉）
+function PM.toggle(playerNum)
+    PM.playerNum = playerNum or PM.playerNum or 0
+    if S.mode == "edit" then return PM.stopEdit() end
+    local p = player()
+    if not p then return false end
+    if S.drag then getCell():setDrag(nil, S.drag.player) end
+    -- 手上的牆面油漆、壁紙、灰泥游標（配方游標裡沒有 mbldR 的那種，Recipes.build）放開照樣會刷：先收掉
+    local held = getCell():getDrag(PM.playerNum)
+    if held and held.mbldRecipe and not held.mbldR then getCell():setDrag(nil, PM.playerNum) end
+    if not S.plan then
+        local plan = Plan.new(getText("IGUI_MBLD_PlanUntitled"))
+        plan.ox, plan.oy, plan.oz = math.floor(p:getX()), math.floor(p:getY()), floorZ(p)
+        S.plan = plan
+        checkReset()
+    end
+    if not S.plan.ox then return false end
+    S.mode, S.tool, S.hidden = "edit", "draw", false
+    setSel(nil)
+    S.level = nil
+    hooks(true)
+    PM.setLevel(floorZ(p))
+    fire()
+    return true
+end
+
+function PM.stopEdit()
+    if S.mode ~= "edit" then return false end
+    leaveEdit()
+    local plan = S.plan
+    if plan.n == 0 and not plan.file then
+        S.plan, S.mode = nil, "none"
+        checkReset()
+    else
+        S.mode = "fixed"
+        PM.save()
+    end
+    storeSave()
+    fire()
+    return true
+end
+
+-- 「完成」：收起工具列、存檔、打開藍圖面板
+function PM.finish()
+    local had = S.mode == "edit"
+    PM.stopEdit()
+    local Panel = B.PlanPanel
+    if had and S.plan and Panel and Panel.open then pcall(Panel.open, PM.playerNum or 0) end
+end
+
+function PM.setHidden(on)
+    S.hidden = on == true
+    storeSave()
+    fire()
+end
+
+-- 「收起」：先存檔，再把地上的藍圖拿掉（蓋好的留在世界上）
+function PM.clear()
+    if not S.plan then return false end
+    if S.mode == "edit" then leaveEdit() end
+    if S.drag then
+        S.drag.done = true
+        getCell():setDrag(nil, S.drag.player)
+        S.drag = nil
+    end
+    if S.mode ~= "place" and S.plan.n > 0 then PM.save() end
+    S.plan, S.mode, S.home, S.prev = nil, "none", nil, nil
+    storeSave()
+    checkReset()
+    fire()
+    return true
+end
+
+-- ===== 上一步、選取、擦 =====
+
+function PM.undo()
+    if S.mode ~= "edit" or not S.plan or not Plan.undo(S.plan) then return false end
+    setSel(nil)
+    fire()
+    return true
+end
+
+function PM.redo()
+    if S.mode ~= "edit" or not S.plan or not Plan.redo(S.plan) then return false end
+    setSel(nil)
+    fire()
+    return true
+end
+
+-- 世界座標的長方形裡的片：正在規劃的那一層，all＝全部樓層
+local function inRect(x1, y1, x2, y2, all)
+    local plan, out = S.plan, {}
+    local lx, ly, hx, hy = math.min(x1, x2), math.min(y1, y2), math.max(x1, x2), math.max(y1, y2)
+    local z = S.level - plan.oz
+    Plan.each(plan, function(p)
+        local x, y = p.x + plan.ox, p.y + plan.oy
+        if x >= lx and x <= hx and y >= ly and y <= hy and (all or p.z == z) then out[#out + 1] = p end
+    end)
+    return out
+end
+
+function PM.selectRect(x1, y1, x2, y2, all)
+    if S.mode ~= "edit" then return 0 end
+    setSel(inRect(x1, y1, x2, y2, all))
+    fire()
+    return #S.sel
+end
+
+function PM.eraseRect(x1, y1, x2, y2, all)
+    if S.mode ~= "edit" then return 0 end
+    local n = Plan.remove(S.plan, inRect(x1, y1, x2, y2, all))
+    if n > 0 then
+        setSel(nil)
+        fire()
+    end
+    return n
+end
+
+local function shiftDown() return isShiftKeyDown ~= nil and isShiftKeyDown() == true end
+
+-- 一區框選游標的長方形是玩家那層；換到規劃的那一層（畫面同一點，每差一層 x、y 各差 3 格，同 Cursor.areaValid）
+local function toLevel(x, y, z) local s = 3 * (S.level - z) return x + s, y + s end
+
+local startRect
+
+local function rectPreview(tool, x1, y1, x2, y2, z)
+    local ax, ay = toLevel(x1, y1, z)
+    local bx, by = toLevel(x2, y2, z)
+    local list, plan = inRect(ax, ay, bx, by, shiftDown()), S.plan
+    local cells = {}
+    for i = 1, math.min(#list, SHOW_MAX) do
+        local p = list[i]
+        cells[i] = { p.x + plan.ox, p.y + plan.oy, p.z + plan.oz, false }
+    end
+    return { cells = cells, lines = { getText(tool == "erase" and "IGUI_MBLD_PlanEraseN" or "IGUI_MBLD_PlanSelectN",
+        tostring(#list)), getText("IGUI_MBLD_PlanRectHint") } }
+end
+
+local function rectDone(tool, x1, y1, x2, y2, all)
+    if S.mode ~= "edit" then return end
+    if tool == "erase" then PM.eraseRect(x1, y1, x2, y2, all) else PM.selectRect(x1, y1, x2, y2, all) end
+    if S.tool == tool then startRect(tool) end -- 接著框下一塊，右鍵結束
+end
+
+-- ===== 拖曳物件：擺放、搬、複製；手把的框選（滑鼠框選用 Cursor.startArea） =====
+-- 原版 ISBuildingObject 的子類別（同 Cursor：第一次用到才 derive，server 資料夾在 MP 客戶端比 client 晚載入）。
+-- 引擎每幀呼叫 isValid → render，放開左鍵（手把 A 經 Cursor.padBuild）時 tryBuild；R 轉、右鍵或 B 取消（deactivate）。
+
+local Drag
+
+local function dragLines(o)
+    local k = o.kind
+    if k == "place" then
+        local t = { getText("IGUI_MBLD_PlanPlaceHint", S.plan.name) }
+        if S.home then t[2] = getText(o.joypad and "IGUI_MBLD_PlanHomePad" or "IGUI_MBLD_PlanHomeHint") end
+        return t
+    elseif k == "move" or k == "copy" then
+        return { getText(k == "copy" and "IGUI_MBLD_PlanCopyHint" or "IGUI_MBLD_PlanMoveHint", tostring(#S.sel)) }
+    end
+    return { getText(o.ax and "IGUI_MBLD_PlanRectPad2" or "IGUI_MBLD_PlanRectPad1"),
+        getText(o.tool == "erase" and "IGUI_MBLD_PlanEraseN" or "IGUI_MBLD_PlanSelectN", tostring(o.n or 0)) }
+end
+
+-- 滑鼠那格（玩家那層）換到要對齊的那一層後，更新跟著游標的位置
+function PM.dragMoved(o, x, y, z)
+    local plan = S.plan
+    if not plan then return end
+    if o.kind == "place" then
+        local x0, y0, z0, x1, y1 = Plan.bounds(plan)
+        x0, y0, z0, x1, y1 = x0 or 0, y0 or 0, z0 or 0, x1 or 0, y1 or 0
+        o.ox, o.oy, o.oz = x - math.floor((x0 + x1) / 2), y - math.floor((y0 + y1) / 2), z - z0
+    else
+        local lx, ly = toLevel(x, y, z)
+        if o.kind == "rect" then
+            o.bx, o.by = lx, ly
+            if o.ax then o.n = #inRect(o.ax, o.ay, lx, ly, false) end
+        else
+            o.dx, o.dy = lx - o.cx, ly - o.cy
+        end
+    end
+    o.lines = dragLines(o)
+end
+
+local function endDrag(o)
+    o.done = true
+    if S.drag == o then S.drag = nil end
+    getCell():setDrag(nil, o.player)
+end
+
+-- 定位：原點設好、存檔、記進這個存檔的地上藍圖
+local function settle(ox, oy, oz)
+    local plan = S.plan
+    plan.ox, plan.oy, plan.oz = ox, oy, oz
+    S.mode, S.home, S.prev = "fixed", nil, nil
+    PM.save()
+    storeSave()
+    checkReset()
+    fire()
+end
+
+function PM.dragDrop(o, x, y, z)
+    if o.done or not S.plan then return end
+    if o.kind == "place" then
+        PM.dragMoved(o, x, y, z)
+        endDrag(o)
+        return settle(o.ox, o.oy, o.oz)
+    end
+    if o.kind == "rect" then
+        local lx, ly = toLevel(x, y, z)
+        if not o.ax then
+            o.ax, o.ay = lx, ly
+            PM.dragMoved(o, x, y, z)
+            return
+        end
+        endDrag(o)
+        return rectDone(o.tool, o.ax, o.ay, lx, ly, false)
+    end
+    PM.dragMoved(o, x, y, z)
+    endDrag(o)
+    if o.dx == 0 and o.dy == 0 then return fire() end
+    if o.kind == "copy" then
+        local list, why = Plan.copy(S.plan, S.sel, o.dx, o.dy, 0)
+        if not list then say(whyText(why)) else setSel(list) end
+    else
+        local ok, why = Plan.move(S.plan, S.sel, o.dx, o.dy, 0)
+        if not ok then say(whyText(why)) end
+    end
+    fire()
+end
+
+function PM.dragRotate(o)
+    if o.done or not S.plan then return end
+    if o.kind == "place" then
+        if rotate(allPieces(S.plan)) then o.turns = (o.turns or 0) + 1 end
+    elseif (o.kind == "move" or o.kind == "copy") and #S.sel > 0 then
+        rotate(S.sel)
+    end
+end
+
+-- 右鍵、B、換了別的游標：擺放取消時轉過的撤回、搬的回原位置、從藍圖庫擺的拿掉
+function PM.dragCancel(o)
+    if S.drag == o then S.drag = nil end
+    if o.done then return end
+    o.done = true
+    if o.kind == "rect" then
+        if S.tool == o.tool then S.tool = "draw" end
+        return fire()
+    end
+    if o.kind ~= "place" then return fire() end
+    local plan, prev = S.plan, S.prev
+    for _ = 1, o.turns or 0 do Plan.undo(plan) end
+    S.home, S.prev = nil, nil
+    if prev then
+        plan.ox, plan.oy, plan.oz = prev.ox, prev.oy, prev.oz
+        S.mode = "fixed"
+    else
+        S.plan, S.mode = nil, "none"
+    end
+    checkReset()
+    fire()
+end
+
+local function dragClass()
+    if Drag then return Drag end
+    Drag = ISBuildingObject:derive("MinidoracatBuilderPlanDrag")
+    function Drag:isValid(square)
+        self.overUI = not self.joypad and Cursor.mouseOverUI(nil)
+        local x, y, z = square:getX(), square:getY(), square:getZ()
+        if x ~= self.kx or y ~= self.ky or z ~= self.kz then
+            self.kx, self.ky, self.kz = x, y, z
+            PM.dragMoved(self, x, y, z)
+        end
+        return not self.overUI
+    end
+    function Drag:render() end -- PlanGhost 畫
+    function Drag:getSprite() return nil end
+    function Drag:rotateMouse() end
+    function Drag:rotateKey(key)
+        if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then PM.dragRotate(self) end
+    end
+    function Drag:tryBuild(x, y, z) PM.dragDrop(self, x, y, z) end
+    function Drag:deactivate() PM.dragCancel(self) end
+    function Drag:onJoypadPressButton(joypadIndex, joypadData, button)
+        if button == Joypad.AButton then return Cursor.padBuild(self) end
+        if button == Joypad.RBumper or button == Joypad.LBumper then return PM.dragRotate(self) end
+        if button == Joypad.XButton and self.kind == "place" and S.home then return PM.placeHome() end
+        ISBuildingObject.onJoypadPressButton(self, joypadIndex, joypadData, button)
+    end
+    function Drag:getAPrompt() return getText(self.kind == "rect" and "IGUI_MBLD_PlanSelect" or "IGUI_MBLD_PlanDrop") end
+    function Drag:getXPrompt()
+        if self.kind == "place" and S.home then return getText("IGUI_MBLD_PlanHome") end
+        return nil
+    end
+    function Drag:getRBPrompt()
+        if self.kind ~= "rect" then return getText("IGUI_MBLD_PlanRotate") end
+        return nil
+    end
+    return Drag
+end
+
+local function startDrag(kind, playerNum)
+    local p = getSpecificPlayer(playerNum)
+    if not p then return nil end
+    local cls = dragClass()
+    local o = setmetatable({}, cls)
+    cls.__index = cls
+    o:init()
+    o.character, o.player, o.kind = p, playerNum, kind
+    o.dragNilAfterPlace = false
+    o.isYButtonResetCursor = true
+    o.joypad = JoypadState.players[playerNum + 1] ~= nil
+    if S.drag then
+        local old = S.drag
+        S.drag = nil
+        old.done = true
+    end
+    S.drag = o
+    o.lines = dragLines(o)
+    getCell():setDrag(o, playerNum)
+    return o
+end
+
+startRect = function(tool)
+    local pn = PM.playerNum or 0
+    if JoypadState.players[pn + 1] then
+        local o = startDrag("rect", pn)
+        if o then o.tool = tool end
+        return
+    end
+    local cb = { side = Plan.MAX_SIDE }
+    cb.preview = function(x1, y1, x2, y2, z) return rectPreview(tool, x1, y1, x2, y2, z) end
+    cb.release = function(x1, y1, x2, y2, z)
+        local ax, ay = toLevel(x1, y1, z)
+        local bx, by = toLevel(x2, y2, z)
+        rectDone(tool, ax, ay, bx, by, shiftDown())
+    end
+    cb.cancel = function()
+        if S.tool == tool then
+            S.tool = "draw"
+            fire()
+        end
+    end
+    local c = Cursor.startArea(pn, cb)
+    if c then c.planTool = tool end
+end
+
+function PM.setTool(tool)
+    if S.mode ~= "edit" then return end
+    S.tool = tool
+    fire()
+    if tool == "draw" then
+        stopTool()
+        local W = B.Window
+        if W and W.open and not (W.visible and W.visible()) then W.open(PM.playerNum or 0) end
+    else
+        startRect(tool)
+    end
+end
+
+-- 選到的片：搬、複製跟著游標；轉、刪除當場做
+local function selCenter()
+    local plan, x0, y0, x1, y1 = S.plan, nil, nil, nil, nil
+    for _, p in ipairs(S.sel) do
+        x0, y0 = math.min(x0 or p.x, p.x), math.min(y0 or p.y, p.y)
+        x1, y1 = math.max(x1 or p.x, p.x), math.max(y1 or p.y, p.y)
+    end
+    return plan.ox + math.floor((x0 + x1) / 2), plan.oy + math.floor((y0 + y1) / 2)
+end
+
+function PM.moveSel(copy)
+    if S.mode ~= "edit" or #S.sel == 0 then return false end
+    stopTool()
+    local o = startDrag(copy and "copy" or "move", PM.playerNum or 0)
+    if not o then return false end
+    o.cx, o.cy = selCenter()
+    o.dx, o.dy = 0, 0
+    o.lines = dragLines(o)
+    return true
+end
+
+function PM.rotateSel()
+    if S.mode ~= "edit" or #S.sel == 0 then return false end
+    return rotate(S.sel)
+end
+
+function PM.deleteSel()
+    if S.mode ~= "edit" or #S.sel == 0 then return 0 end
+    local n = Plan.remove(S.plan, S.sel)
+    setSel(nil)
+    fire()
+    return n
+end
+
+-- 選到的片另存成一張藍圖（位置照舊，之後可以放回原位置）。回 檔名，或 nil, 原因
+function PM.saveSelAs(name)
+    local plan = S.plan
+    if S.mode ~= "edit" or #S.sel == 0 then return nil, "EMPTY" end
+    local np = Plan.new(name)
+    np.ox, np.oy, np.oz = plan.ox, plan.oy, plan.oz
+    for _, p in ipairs(S.sel) do
+        local item = plan.items[p.it]
+        if item and #Plan.at(plan, p.x, p.y, p.z) > 0 then
+            Plan.add(np, p.x, p.y, p.z, p.d, p.o, Plan.item(np, item.id, item), p.w)
+        end
+    end
+    Plan.forget(np)
+    local file = PlanFile.fileName(np.name)
+    local ok, why = file and PlanFile.save(np, file)
+    if not ok then
+        print(LOG .. "plan save failed: " .. tostring(why or "FILE"))
+        say(getText("IGUI_MBLD_PlanSaveFail"))
+        return nil, why or "FILE"
+    end
+    say(getText("IGUI_MBLD_PlanSavedAs", np.name))
+    return file
+end
+
+-- 名稱框（框架 Dialog）：預設照地上那張的名稱
+function PM.askSaveSel()
+    local UI = B.Window and B.Window.ui and B.Window.ui({ "dialog" })
+    if not UI then return say(getText("IGUI_MBLD_NeedFramework")) end
+    UI.Dialog.show({ title = getText("IGUI_MBLD_PlanSaveSel"), text = getText("IGUI_MBLD_PlanSaveSelText"),
+        input = { text = S.plan.name }, confirmText = getText("IGUI_MBLD_PlanSave"), cancelText = getText("UI_Cancel"),
+        theme = UI.Theme.create({ variant = "dark" }), opaque = true,
+        onResult = function(ok, text) if ok then PM.saveSelAs(text) end end })
+end
+
+-- ===== 擺放 =====
+
+local function beginPlace(plan, playerNum, prev)
+    local p = getSpecificPlayer(playerNum)
+    if not p then return false end
+    if S.mode == "edit" then leaveEdit() end
+    local home
+    if plan.ox then
+        local dx, dy = plan.ox - p:getX(), plan.oy - p:getY()
+        if dx * dx + dy * dy <= HOME_RANGE * HOME_RANGE then home = { plan.ox, plan.oy, plan.oz } end
+    end
+    S.plan, S.mode, S.home, S.prev = plan, "place", home, prev
+    plan.ox, plan.oy, plan.oz = nil, nil, nil
+    setSel(nil)
+    checkReset()
+    local o = startDrag("place", playerNum)
+    if not o then
+        PM.dragCancel({ kind = "place" })
+        return false
+    end
+    fire()
+    return true
+end
+
+-- 「放回原位置」：擺放中、原位置離玩家 100 格內
+function PM.placeHome()
+    local o, h = S.drag, S.home
+    if not (o and o.kind == "place" and h) then return false end
+    endDrag(o)
+    settle(h[1], h[2], h[3])
+    return true
+end
+
+-- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）
+function PM.pickUp(playerNum)
+    PM.playerNum = playerNum or PM.playerNum or 0
+    local plan = S.plan
+    if not plan or S.mode == "place" or not plan.ox then return false end
+    return beginPlace(plan, PM.playerNum, { ox = plan.ox, oy = plan.oy, oz = plan.oz })
+end
+
+-- 從藍圖庫擺到地上：地上已經有別張時先問（換的話先存檔收起那張）；同一張就是「搬」
+function PM.place(plan, playerNum)
+    PM.playerNum = playerNum or PM.playerNum or 0
+    if not plan then return false end
+    local cur = S.plan
+    if cur and (cur == plan or (plan.file ~= nil and cur.file == plan.file)) then
+        if S.mode == "place" then return true end
+        return PM.pickUp(PM.playerNum)
+    end
+    if not cur then return beginPlace(plan, PM.playerNum, nil) end
+    local UI = B.Window and B.Window.ui and B.Window.ui({ "dialog" })
+    if not UI then
+        say(getText("IGUI_MBLD_NeedFramework"))
+        return false
+    end
+    local untitled = getText("IGUI_MBLD_PlanUntitled")
+    UI.Dialog.show({ title = getText("IGUI_MBLD_PlanTitle"),
+        text = getText("IGUI_MBLD_PlanSwap", cur.name ~= "" and cur.name or untitled, plan.name ~= "" and plan.name or untitled),
+        confirmText = getText("IGUI_MBLD_PlanSwapGo"), cancelText = getText("UI_Cancel"),
+        theme = UI.Theme.create({ variant = "dark" }), opaque = true,
+        onResult = function(ok)
+            if not ok then return end
+            PM.clear()
+            beginPlace(plan, PM.playerNum, nil)
+        end })
+    return true
+end
+
+-- ===== 工具列（家族框架 Window；畫面上方置中，不擋建造視窗與下方的快選列） =====
+
+local Bar = {}
+
+local function barKey()
+    if S.mode == "edit" then return "e" .. S.tool .. (#S.sel > 0 and "s" or "") .. (S.hidden and "h" or "") end
+    if S.mode == "place" and S.drag and S.drag.kind == "place" then return "p" .. (S.home and "h" or "") end
+    return nil
+end
+
+local function buildBar(UI)
+    local GAP, PAD = 6, 8
+    local theme = UI.Theme.create({ variant = "dark" })
+    local col = theme.colors
+    local font = UIFont.Small
+    local tm = getTextManager()
+    local fh = tm:getFontHeight(font)
+    local btnH = fh + 10
+    local rows, row = {}, nil
+    local function newRow() row = {} rows[#rows + 1] = row end
+    local function btn(key, fn, opts)
+        opts = opts or {}
+        row[#row + 1] = UI.Button.new({ title = getText(key), theme = theme, font = font, height = btnH, style = opts.style,
+            active = opts.active, onClick = function() fn() end })
+    end
+    -- 每幀照現況畫的文字（片數、樓層、選了幾片）：寬度照 sample 量
+    local function text(sample, fn, warnFn)
+        local el = ISPanel:new(0, 0, tm:MeasureStringX(font, sample) + 4, btnH)
+        el:initialise()
+        el.background = false
+        el.render = function(self)
+            local c = warnFn and warnFn() and col.warning or col.text
+            self:drawText(fn(), 2, math.floor((btnH - fh) / 2), c.r, c.g, c.b, 1, font)
+        end
+        row[#row + 1] = el
+    end
+    local title
+    if S.mode == "edit" then
+        title = getText("IGUI_MBLD_PlanBarTitle")
+        newRow()
+        btn("IGUI_MBLD_PlanDraw", function() PM.setTool("draw") end, { active = S.tool == "draw" })
+        btn("IGUI_MBLD_PlanSelect", function() PM.setTool("select") end, { active = S.tool == "select" })
+        btn("IGUI_MBLD_PlanErase", function() PM.setTool("erase") end, { active = S.tool == "erase" })
+        btn("IGUI_MBLD_PlanUndo", PM.undo)
+        btn("IGUI_MBLD_PlanRedo", PM.redo)
+        btn("IGUI_MBLD_PlanDown", function() PM.setLevel((S.level or 0) - 1) end)
+        text(getText("IGUI_MBLD_PlanFloor", "-32"), function() return getText("IGUI_MBLD_PlanFloor", tostring((S.level or 0) + 1)) end)
+        btn("IGUI_MBLD_PlanUp", function() PM.setLevel((S.level or 0) + 1) end)
+        newRow()
+        -- 快到單張上限變色（九成）
+        text(getText("IGUI_MBLD_PlanCount", "4,096"), function()
+            return getText("IGUI_MBLD_PlanCount", tostring(S.plan and S.plan.n or 0))
+        end, function() return S.plan and S.plan.n >= Plan.MAX_PIECES * 0.9 end)
+        btn("IGUI_MBLD_PlanLibrary", function()
+            local L = B.PlanLibrary
+            if L and L.open then L.open(PM.playerNum or 0) end
+        end)
+        btn(S.hidden and "IGUI_MBLD_PlanShow" or "IGUI_MBLD_PlanHide", function() PM.setHidden(not S.hidden) end)
+        btn("IGUI_MBLD_PlanDone", PM.finish, { style = "primary" })
+        if #S.sel > 0 then
+            newRow()
+            text(getText("IGUI_MBLD_PlanSelN", "4,096"), function() return getText("IGUI_MBLD_PlanSelN", tostring(#S.sel)) end)
+            btn("IGUI_MBLD_PlanMove", function() PM.moveSel(false) end)
+            btn("IGUI_MBLD_PlanRotate", PM.rotateSel)
+            btn("IGUI_MBLD_PlanCopy", function() PM.moveSel(true) end)
+            btn("IGUI_MBLD_PlanDelete", PM.deleteSel, { style = "danger" })
+            btn("IGUI_MBLD_PlanSaveSel", PM.askSaveSel)
+        end
+    else
+        title = getText("IGUI_MBLD_PlanPlaceTitle")
+        newRow()
+        btn("IGUI_MBLD_PlanRotate", function() if S.drag then PM.dragRotate(S.drag) end end)
+        if S.home then btn("IGUI_MBLD_PlanHome", PM.placeHome) end
+        btn("UI_Cancel", function() if S.drag then getCell():setDrag(nil, S.drag.player) end end)
+    end
+    local w = 0
+    for _, r in ipairs(rows) do
+        local rw = PAD
+        for _, el in ipairs(r) do rw = rw + el.width + GAP end
+        w = math.max(w, rw - GAP + PAD)
+    end
+    local win = UI.Window.new({ x = 0, y = 0, width = w, height = 100, title = title, theme = theme, opaque = true,
+        onClose = function()
+            if S.mode == "edit" then
+                PM.finish()
+            elseif S.drag then
+                getCell():setDrag(nil, S.drag.player)
+            end
+        end })
+    -- 手把 B：焦點還給角色，工具列留著（框架 Focus 先問 onEscape）
+    win.onEscape = function()
+        if UI.Focus and UI.Focus.releaseJoypad then UI.Focus.releaseJoypad(win) end
+        return true
+    end
+    local y = win:contentTop() + PAD
+    for _, r in ipairs(rows) do
+        local x = PAD
+        for _, el in ipairs(r) do
+            el:setX(x)
+            el:setY(y)
+            win:addChild(el)
+            x = x + el.width + GAP
+        end
+        y = y + btnH + GAP
+    end
+    win:setHeight(y - GAP + PAD)
+    local sw = getCore():getScreenWidth()
+    win:setX(Bar.x or math.floor((sw - w) / 2))
+    win:setY(Bar.y or 8)
+    win:addToUIManager()
+    Bar.win = win
+end
+
+function PM.refreshBar()
+    local key = barKey()
+    if key == Bar.key then return end
+    Bar.key = key
+    local old = Bar.win
+    if old then
+        Bar.win = nil
+        Bar.x, Bar.y = old:getX(), old:getY()
+        old.onClose = nil
+        old:setVisible(false)
+        old:removeFromUIManager()
+    end
+    if not key then return end
+    local W = B.Window
+    local UI = W and W.ui and W.ui({ "window", "controls" })
+    if not UI then return end -- 框架缺或太舊：工具列不出，按鍵照樣能用（UI AGENTS 契約 3）
+    local ok, err = pcall(buildBar, UI)
+    if not ok then print(LOG .. "plan toolbar build failed: " .. tostring(err)) end
+end
+
+-- ===== 按鍵（登記與判斷照 Window.initBinds／onKeyPressed；只有玩家 0 有鍵盤） =====
+
+-- 上一步、下一步預設 Ctrl+Z、Ctrl+Y（keyBinding 的 ctrl 欄，MainOptions.lua:3479）；刪除選取 Delete；隱藏預設不綁
+function PM.initBinds()
+    if keyBinding == nil then return end
+    local K = Keyboard or {}
+    table.insert(keyBinding, { value = PM.BIND_UNDO, key = K.KEY_Z or 0, ctrl = true })
+    table.insert(keyBinding, { value = PM.BIND_REDO, key = K.KEY_Y or 0, ctrl = true })
+    table.insert(keyBinding, { value = PM.BIND_DELETE, key = K.KEY_DELETE or 0 })
+    table.insert(keyBinding, { value = PM.BIND_HIDE, key = K.KEY_NONE or 0 })
+end
+
+function PM.onKeyPressed(key)
+    if key == nil or key == 0 or not S.plan then return end
+    local core = getCore()
+    if core:isKey(PM.BIND_HIDE, key) then return PM.setHidden(not S.hidden) end
+    if S.mode ~= "edit" then return end
+    if core:isKey(PM.BIND_UNDO, key) then
+        PM.undo()
+    elseif core:isKey(PM.BIND_REDO, key) then
+        PM.redo()
+    elseif core:isKey(PM.BIND_DELETE, key) then
+        PM.deleteSel()
+    elseif core:isKey("MinidoracatBuilder_LayerUp", key) then -- 規劃時換層鍵換規劃的樓層（Cursor.rotateKey 這時不處理）
+        PM.setLevel(S.level + 1)
+    elseif core:isKey("MinidoracatBuilder_LayerDown", key) then
+        PM.setLevel(S.level - 1)
+    end
+end
+
+if not PM.loaded then
+    PM.loaded = true
+    Events.OnGameBoot.Add(function() MinidoracatBuilder.PlanMode.initBinds() end)
+    Events.OnKeyPressed.Add(function(key) MinidoracatBuilder.PlanMode.onKeyPressed(key) end)
+    Events.OnGameStart.Add(function()
+        local ok, err = pcall(MinidoracatBuilder.PlanMode.restore)
+        if not ok then print(LOG .. "ground plan restore failed: " .. tostring(err)) end
+    end)
+end
+
+return PM

@@ -52,6 +52,8 @@ local function scanSprite(spr, named)
         local grid = spr:getSpriteGrid()
         if grid and grid:getAnchorSprite() ~= spr then return end -- 多格只收原點
         if Rules.BAD_GRID[name] then return end -- 格位拼不起來的不列（Entry.resolve 同一條）
+        -- 車庫門、雙開門只收湊得成整組的頭片、第 1 片（Entry.resolve 同一條）
+        if kind == "door" and Rules.grouped(p) and not MinidoracatBuilder.Entry.doorSet(spr) then return end
         local custom = p:get("CustomName")
         if custom then
             local group = p:get("GroupName")

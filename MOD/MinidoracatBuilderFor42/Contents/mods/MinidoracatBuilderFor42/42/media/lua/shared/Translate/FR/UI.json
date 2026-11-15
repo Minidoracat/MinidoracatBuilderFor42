@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Curseur de construction : pipette (maintenir, puis cliquer sur un objet)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Curseur de construction : basculer Superposer",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Curseur de construction : récent suivant",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Curseur de construction : annuler la pose",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Planification : annuler",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Planification : rétablir",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Planification : supprimer la sélection",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Plan : masquer/afficher",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Afficher le bouton dans la barre",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Le bouton Build Anything de la barre de la famille de mods. Désactivé, ouvrez la fenêtre avec la touche définie dans Configuration des touches > Minidoracat Build Anything.",

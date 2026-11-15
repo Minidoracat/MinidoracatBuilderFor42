@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "建造游標：吸管（按住再點東西，換成它）",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "建造游標：切換疊放",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "建造游標：換成最近用的下一項",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "建造游標：拆掉剛蓋的",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "規劃藍圖：上一步",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "規劃藍圖：下一步",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "規劃藍圖：刪除選到的片",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "藍圖：隱藏／顯示",
   "UI_MinidoracatBuilder_Options": "自由建造",
   "UI_MinidoracatBuilder_ShowDock": "顯示工具列按鈕",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具列上的「建造工坊」按鈕。關掉後仍可用「按鍵綁定 > Minidoracat 自由建造」裡綁的鍵開啟。",

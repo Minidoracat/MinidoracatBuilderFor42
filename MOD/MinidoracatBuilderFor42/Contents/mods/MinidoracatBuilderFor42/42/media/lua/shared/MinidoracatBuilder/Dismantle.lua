@@ -16,11 +16,12 @@ local Materials, Check, Place = MinidoracatBuilder.Materials, MinidoracatBuilder
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
 -- 本 MOD 蓋的片：Place 建的 IsoThumpable，或沒有 buildMaterials 的燈、家電（Place.keyed）、本工具挖的水面（Place.dug：一般
--- IsoObject 的地板，圖還是挖的那張），modData 的 builderEntry 有值。
+-- IsoObject 的地板，圖還是挖的那張），modData 的 builderEntry 有值；車庫門、雙開門（IsoDoor）看整組第一片的記號（Place.ourDoor）。
 -- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
 -- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
 -- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
 local function mine(o)
+    if instanceof(o, "IsoDoor") then return Place.ourDoor(o) end
     if not o:hasModData() then return false end
     local e = o:getModData().builderEntry
     if not e then return false end
@@ -178,6 +179,17 @@ function Dismantle.plan(obj, kind)
         end
         if top then landing = landingOf(top, west) end
         refund[1] = obj
+    elseif kind == "door" then
+        -- 車庫門、雙開門（單扇門 kindOf 不認）：整組拆（原版大錘也整組砸，ISDestroyStuffAction.lua:269-296），退料照第一片
+        -- 那一筆帳本退一次（Place.refundOf）。雙開門少了片（帶拆解材質的圖原版能逐片拆，ISMoveableSpriteProps.lua:3851-3939；
+        -- 第 2、3 片被拆不清帳本，見 Place.onAboutToBeRemoved）不給本工具拆，不然那片會退兩次；車庫門少了片時帳本已經清了
+        local garage = IsoDoor.getGarageDoorIndex(obj) ~= -1
+        local list = garage and buildUtil.getGarageDoorObjects(obj) or buildUtil.getDoubleDoorObjects(obj)
+        foreign = not garage and #list < 4
+        for _, o in ipairs(list) do
+            if mine(o) then remove[#remove + 1] = o else foreign = true end
+        end
+        refund[1] = Place.doorAnchor(obj)
     else
         local list = obj:getSpriteGridObjectsIncludingSelf(ArrayList.new())
         for i = 0, list:size() - 1 do
@@ -195,10 +207,14 @@ function Dismantle.plan(obj, kind)
     return { remove = remove, refund = refund, landing = landing, foreign = foreign }
 end
 
--- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）
+-- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。門照蓋的那張（開著的車庫門
+-- 圖沒有拆解材質，照它算會多要一把鐵鎚）；雙開門第 2、3 片開關過就沒有記號，照現在的圖
 function Dismantle.tools(kind, plan)
     local list = {}
-    for i, o in ipairs(plan.remove) do list[i] = Cost.of(kind, o:getSprite(), 1) end
+    for i, o in ipairs(plan.remove) do
+        local built = kind == "door" and o:hasModData() and Entry.sprite(o:getModData().builderEntry)
+        list[i] = Cost.of(kind, built or o:getSprite(), 1)
+    end
     if plan.overlay then list[#list + 1] = Cost.of(kind, plan.overlay.spr, 1) end
     return Cost.sum(list).tools
 end

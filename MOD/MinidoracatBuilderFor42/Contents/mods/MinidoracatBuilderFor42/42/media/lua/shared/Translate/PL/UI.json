@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Kursor budowania: pipeta (przytrzymaj i kliknij coś)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Kursor budowania: przełącz piętrowanie",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Kursor budowania: następny z ostatnich",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Kursor budowania: cofnij budowę",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Planowanie projektu: cofnij",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Planowanie projektu: ponów",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Planowanie projektu: usuń zaznaczone",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Projekt: ukryj/pokaż",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Pokaż przycisk na pasku narzędzi",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Przycisk Build Anything na wspólnym pasku narzędzi modów Minidoracat. Gdy jest wyłączony, otwieraj okno klawiszem ustawionym w Przypisanie klawiszy > Minidoracat Build Anything.",

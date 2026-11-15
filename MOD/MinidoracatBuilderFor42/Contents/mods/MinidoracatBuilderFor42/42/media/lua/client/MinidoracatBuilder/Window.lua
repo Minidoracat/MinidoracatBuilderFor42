@@ -20,6 +20,8 @@ require "MinidoracatBuilder/Sets"
 require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Recipes"
+require "MinidoracatBuilder/Recent"
+require "MinidoracatBuilder/Hotbar"
 
 local B = MinidoracatBuilder
 local first = B.Window == nil
@@ -27,6 +29,7 @@ local W = B.Window or {}
 B.Window = W
 local Entry, Sources, Cost, Index = B.Entry, B.Sources, B.Cost, B.Index
 local Names, Favorites, Sets, Messages, Recipes = B.Names, B.Favorites, B.Sets, B.Messages, B.Recipes
+local Recent = B.Recent
 
 local LOG = "[MinidoracatBuilderFor42] "
 W.MIN_REV = 22
@@ -38,7 +41,6 @@ local PAD, GAP = 8, 6
 local CATALOG_MS = 500  -- 整理中每 0.5 秒才重設方格（bt-perf §9.2）
 local SUMMARY_MS = 1000 -- 材料摘要每秒最多重算一次
 local BUDGET_MS = 2     -- 每幀補格子、缺料檢查的時間預算
-local RECENT_MAX = 30
 local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的最多約 300 格）
 local DIM_MAX = 1024    -- 缺料快取：滿了整張清掉，要比一個畫面看得到的格子多很多（4K 大視窗約 300 格）
 -- 一排幾格（使用者 2026-10-29：視窗裡的滑桿 2–10、預設 5，存在本機）。檔案一行一個數字。
@@ -487,7 +489,7 @@ function W.filter(st)
 end
 
 -- ===== 子種類（使用者 2026-11-13 選 cat=three）：選了有子種類的種類時，左欄在它下面縮排列子種類 =====
--- 照圖塊屬性算（W.subOf），不在目錄整理時算（目錄迴圈不多呼叫 Java，bt-perf）：選到那個種類才在 W.pump 分批算
+-- 照圖塊屬性或圖塊組名算（W.subOf），不在目錄整理時算（目錄迴圈不多呼叫 Java，bt-perf）：選到那個種類才在 W.pump 分批算
 -- （同「只看能蓋的」），結果 v.subs[種類]＝{ of（名稱 → 子種類）, items（{ id, n }，照顯示順序；不到兩個是空的） }，
 -- 留到目錄重整、沙盒摘要或看得到的配方變了（W.refreshCatalog）、換來源（W.setSource）為止。配方項目照主圖算
 W.SUB_KINDS = {
@@ -495,21 +497,57 @@ W.SUB_KINDS = {
     furniture = { "wallArt", "rug", "table", "rest", "tabletop", "other" },
     plant = { "ornamental", "grass" },
     floorOverlay = { "curb", "marking", "crack", "other" },
+    wall = { "woodWall", "exteriorWall", "interiorWall", "commercial", "gable", "other" },
+    floor = { "indoorFloor", "outdoorFloor", "flatRoof", "other" },
+    door = { "plainDoor", "gate", "commercial", "other" },
+    window = { "woodFrame", "whiteFrame", "metalFrame", "church", "commercial", "other" },
     container = true, -- 照原版容器顯示名分組，項目最多的 W.SUB_TOP 組＋other
 }
 W.SUB_TOP = 8
 local SUB_INDENT = "    " -- NavList 沒有縮排欄位：子種類的名稱前面補空白
--- 地面覆蓋照圖塊組名分（這類圖沒有分得出來的屬性）：{ 子種類, 組名裡的字… }，照順序比，都沒中是 other。
--- 路邊的漆線（street_trafficlines_curb_*）是標線，所以 trafficline 排在 curb 前面；地面交界的邊條（blends_*）歸路緣
-local OVERLAY_SUBS = {
-    { "marking", "trafficline" },
-    { "crack", "overlay", "crack", "grime", "blood", "burnt", "footprint", "tire_mark" },
-    { "curb", "curb", "blend", "edge" },
+-- 只看名稱的種類（這幾類的圖沒有分得出來的屬性）：圖塊組名（圖塊名去掉結尾 _數字、轉小寫）照順序比 { 子種類, 組名裡的字… }，
+-- 先中先算，都沒中是 other。牆、地板、門、窗的關鍵字是 2026-11-16 拿原版加正式服圖塊包的目錄量過才定的；
+-- 「其他」超過一半的種類不分（屋頂照名稱分不出坡度或材質，其他占 57%，所以沒有）
+local NAME_SUBS = {
+    -- 路邊的漆線（street_trafficlines_curb_*）是標線，所以 trafficline 排在 curb 前面；地面交界的邊條（blends_*）歸路緣
+    floorOverlay = {
+        { "marking", "trafficline" },
+        { "crack", "overlay", "crack", "grime", "blood", "burnt", "footprint", "tire_mark" },
+        { "curb", "curb", "blend", "edge" },
+    },
+    -- walls_exterior_roofs_*（原版牆圖的八成）是屋頂下的山牆與斜牆，roof 排第一；穀倉（location_barn_01）是木牆，排在 location_ 前面
+    wall = {
+        { "gable", "roof" },
+        { "interiorWall", "interior", "wallpaper", "bathroom" },
+        { "woodWall", "wood", "log", "barn" },
+        { "exteriorWall", "exterior" },
+        { "commercial", "commercial", "industr", "location_", "garage" },
+    },
+    -- 屋頂組裡的平面片是平屋頂；坡道（ramps_01）另做原型，結論出來前歸其他
+    floor = {
+        { "flatRoof", "roof" },
+        { "indoorFloor", "interior", "carpet" },
+        { "outdoorFloor", "exterior", "street", "natural", "blend", "boulder", "flowerbed" },
+    },
+    door = {
+        { "gate", "gate", "fenc" }, -- 柵欄門（fixtures_doors_fences_01）名稱也有 door
+        { "plainDoor", "door" },
+        { "commercial", "location_", "industr" },
+    },
+    -- fixtures_windows_wood／metal／white 是同一套窗型、框的顏色不同（看過圖）
+    window = {
+        { "woodFrame", "wood" },
+        { "metalFrame", "metal" },
+        { "whiteFrame", "white" },
+        { "church", "church" },
+        { "commercial", "commercial", "location_", "industr" },
+    },
 }
-local OVERLAY_OF = {} -- 圖塊組名 → 子種類：一組只比一次（地面覆蓋幾千項、圖塊組約一百個）
-local function overlaySub(ts)
+local NAME_OF = {} -- [種類][圖塊組名] → 子種類：一組只比一次（地面覆蓋、牆幾千項，圖塊組約一百個）；同一組在不同種類可能不同
+for k in pairs(NAME_SUBS) do NAME_OF[k] = {} end
+local function nameSub(rules, ts)
     local low = ts:lower()
-    for _, g in ipairs(OVERLAY_SUBS) do
+    for _, g in ipairs(rules) do
         for i = 2, #g do
             if low:find(g[i], 1, true) then return g[1] end
         end
@@ -523,7 +561,7 @@ function W.catKind(cat)
     return cat:match("^s:([^:]+):(.+)$")
 end
 
--- 一項的子種類（p＝圖塊屬性，可能是 nil；name＝圖塊名，只有地面覆蓋用）。旗標要 IsoFlagType（bed），其他是字串鍵。
+-- 一項的子種類（p＝圖塊屬性，可能是 nil；name＝圖塊名，只有 NAME_SUBS 的種類用）。旗標要 IsoFlagType（bed），其他是字串鍵。
 -- 容器回 "n:<原版顯示名>"：顯示名相同的型別併成一組，原版沒有翻譯的歸 other
 function W.subOf(kind, p, name)
     if kind == "light" then
@@ -545,16 +583,17 @@ function W.subOf(kind, p, name)
         local t = p and p:get("container")
         local label = t and getTextOrNull("IGUI_ContainerTitle_" .. t)
         return label and ("n:" .. label) or "other"
-    elseif kind == "floorOverlay" then
-        local ts = name and name:match("^(.*)_%d+$") or ""
-        local sub = OVERLAY_OF[ts]
-        if not sub then
-            sub = overlaySub(ts)
-            OVERLAY_OF[ts] = sub
-        end
-        return sub
     end
-    return nil
+    local rules = NAME_SUBS[kind]
+    if not rules then return nil end
+    local ts = name and name:match("^(.*)_%d+$") or ""
+    local of = NAME_OF[kind]
+    local sub = of[ts]
+    if not sub then
+        sub = nameSub(rules, ts)
+        of[ts] = sub
+    end
+    return sub
 end
 
 function W.subLabel(id)
@@ -608,7 +647,7 @@ local function runSubs(v)
         local name = list[i]
         local r = Recipes.byId[name]
         local sn = r and r.sprite or name
-        local spr = k ~= "floorOverlay" and Entry.sprite(sn) or nil -- 地面覆蓋只看名稱，不查圖
+        local spr = not NAME_SUBS[k] and Entry.sprite(sn) or nil -- 只看名稱的種類不查圖
         -- 哪個圖塊的屬性丟錯：歸到沒有屬性時的那一組（每個種類都列得到）、整輪只記一次 log，不要整個分類停住
         local ok, sub = pcall(subOfSprite, k, spr, sn)
         if not ok then
@@ -1016,11 +1055,11 @@ local function prepareVisible(v)
 end
 
 -- 放置時按旋轉鍵換得到別的朝向（或牆、柵欄、門框、窗框的另一面、屋頂的鏡像片）：照游標實際會用的那份算
--- （Cursor.faces、Cursor.mirror）。建造配方項目走原版游標，不標
+-- （Turn.states；只有一個朝向時才換鏡像片，同 Cursor.new 的 mirrorName）。建造配方項目走原版游標，不標
 function W.canTurn(name)
-    local C = B.Cursor
-    local e = C and C.faces and Entry.resolve(name)
-    return e ~= nil and e ~= false and (C.faces(e).n > 1 or C.mirror(e) ~= nil)
+    local C, T = B.Cursor, B.Turn
+    local e = C and T and Entry.resolve(name)
+    return e ~= nil and e ~= false and (T.states(e).n > 1 or C.mirror(e) ~= nil)
 end
 
 -- 「放置時按 R 旋轉」；旋轉鍵沒綁時 nil
@@ -1452,21 +1491,6 @@ local function footprint(spr)
     return grid:getWidth(), grid:getHeight()
 end
 
-local function faceCount(e)
-    local seen = {}
-    for d = 0, 5 do
-        local f = Entry.face(e, d)
-        if f then
-            local dup = false
-            for i = 1, #seen do
-                if seen[i] == f then dup = true break end
-            end
-            if not dup then seen[#seen + 1] = f end
-        end
-    end
-    return #seen
-end
-
 -- 寬、中版：預覽大圖（原比例＋佔地格線）、名稱、來源、佔地與朝向數、材料（圖示＋有／要）、工具、經驗、拆除方式
 local function detailFull(v, ops, e, total, costs, missing, tools)
     local c, fh, s = v.colors, v.fh, v.s
@@ -1478,7 +1502,9 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
     local fw, fd = footprint(e.spr)
     local cell = math.max(6, math.floor(10 * s))
-    add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
+    if fw * fd > 1 then -- 1×1 不畫佔地格線（介面審查 #9）
+        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
+    end
     local y = boxH + GAP
     local fhM = getTextManager():getFontHeight(UIFont.Medium)
     -- 名稱最多三行，第三行接上剩下的字截短（完整 tileset ID 是搜尋要用的字，截掉處要看得出來）
@@ -1497,7 +1523,9 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    local faces = faceCount(e) + (B.Cursor.mirror(e) and 1 or 0)
+    -- 朝向數照游標實際輪流的那份（Turn.states）；只有一個朝向的屋頂另有鏡像片
+    local n = B.Turn.states(e).n
+    local faces = n + (n == 1 and B.Cursor.mirror(e) and 1 or 0)
     local size = getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faces))
     local turn = W.canTurn(e.name) and W.turnHint()
     if turn then size = size .. getText("IGUI_MBLD_Sep") .. turn end
@@ -1693,7 +1721,7 @@ local function recipeFull(v, ops, r, need)
     local tex = texOf(v, r.id)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
     local fw, fd, faces = Recipes.size(r)
-    if r.info then
+    if r.info and fw * fd > 1 then -- 1×1 不畫佔地格線（介面審查 #9）
         local cell = math.max(6, math.floor(10 * s))
         add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
     end
@@ -1803,6 +1831,8 @@ local function prepareDetail(v)
         local why = code and W.whyText(code, arg, name) or getText("IGUI_MBLD_Detail_Gone")
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
         h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning, math.huge)) -- 詳情會捲動，原因不截
+    elseif v.mode ~= "narrow" then -- 沒選：說這一欄會出現什麼（介面審查 #7；窄版的選取列空著就好）
+        h = math.max(h, para(v, ops, getText("IGUI_MBLD_Detail_Pick"), 0, 0, v.detail.width, v.colors.textMuted, math.huge))
     end
     v.detail:setHeight(h)
     -- 換了項目從頭看（拆除方式、材料在最前面）。選取有兩條路會變：方格點選（W.pump）與搜尋、篩選（applyItems
@@ -1902,6 +1932,7 @@ function W.pump(panel)
     if now - (v.syncAt or 0) >= SUMMARY_MS then
         v.syncAt = now
         W.syncSettings(v)
+        W.syncEntry(v)
     end
     local C = B.Catalog
     local cs = C and C.state or "ready"
@@ -2440,15 +2471,168 @@ function W.clearSearch()
     W.refilter(false)
 end
 
+-- 最近用的存在 recent.txt（Recent.lua，重開遊戲還在）；W.st.recent 是同一份（listFor、分類數量讀它）
 function W.addRecent(name)
-    local old, list = W.st.recent, { n = 1, name }
-    for i = 1, old.n do
-        if old[i] ~= name and list.n < RECENT_MAX then
-            list.n = list.n + 1
-            list[list.n] = old[i]
-        end
+    Recent.add(name)
+    W.st.recent = Recent.list()
+end
+
+local function showHotbar(pn)
+    local H = B.Hotbar
+    if not H then return end
+    local ok, err = pcall(H.show, pn)
+    if not ok then print(LOG .. "hotbar failed: " .. tostring(err)) end
+end
+
+-- ===== 放置中：換項目、吸管鍵、換項目鍵、拆掉剛蓋的（快選列與按鍵用）=====
+
+-- 這位玩家正在放的項目（本工具的建造游標，或建造配方開的游標）；沒有回 nil
+local function placing(pn)
+    local H = B.Hotbar
+    return H and H.current(pn)
+end
+W.placing = placing
+
+-- 游標不收，換成 name：朝向照舊游標的（Cursor.pickState 找最近的那一面）、疊放照視窗的設定（疊放鍵會同步它）、同一種的
+-- 上下層照舊。開不了（項目不能蓋，Cursor／Recipes 已發通知）時舊游標照舊、回 nil。
+-- 記進最近用的，但已經在清單裡的不搬到最前面：快選列第一排不會在手指下跳動，換項目鍵也才輪得下去
+function W.swapTo(playerNum, name)
+    local C = B.Cursor
+    local old = C and C.get(playerNum)
+    if old and old.area then old = nil end
+    if C then C.onEnd = W.onCursorEnd end
+    Recipes.onEnd = W.onCursorEnd
+    W.st.picked = nil
+    local ok, o
+    if Recipes.get(name) then
+        ok, o = pcall(Recipes.build, playerNum, name)
+        if ok and o then o.mbldId = name end
+    elseif C then
+        ok, o = pcall(C.start, playerNum, name, old and old.d or 0, W.st.overlap == true)
+        if ok and o and old and old.entry.kind == o.entry.kind then o.up = old.up end
     end
-    W.st.recent = list
+    if ok == false then print(LOG .. "swap failed: " .. tostring(o)) end
+    if not (ok and o) then return nil end
+    local list, seen = Recent.list(), false
+    for i = 1, list.n do
+        if list[i] == name then seen = true break end
+    end
+    if not seen then W.addRecent(name) end
+    showHotbar(playerNum)
+    local v = W.v
+    if v and not seen then
+        W.refreshCats(v)
+        if W.st.cat == "recent" then W.refilter(true) end
+    end
+    return o
+end
+
+-- 吸管鍵（Cursor:pickValid）點到 obj：它自己能蓋（或同一件東西有能蓋的那一項、是看得到的配方的圖）就換成它；不然那一格
+-- 只有一張能蓋就換成那張；好幾張或沒有交給 Menu.pickAt（跳同一份「挑圖塊」清單、選了開視窗，或說這一格沒有可挑的），
+-- 游標照舊
+function W.pickSwap(playerNum, obj)
+    local M = B.Menu
+    if not (M and obj) then return end
+    local function item(name)
+        local code, _, alt = Entry.why(name)
+        if not code then return name end
+        if alt then return alt end
+        local r = Recipes.forSprite(playerNum, name)
+        return r and r.id or nil
+    end
+    local spr = obj:getSprite()
+    local pick = spr and spr:getName() and item(spr:getName())
+    if not pick then
+        local n = 0
+        for _, name in ipairs(M.tiles({ obj })) do
+            local it = item(name)
+            if it and it ~= pick then pick, n = it, n + 1 end
+        end
+        if n ~= 1 then return M.pickAt(playerNum, nil, obj) end
+    end
+    W.swapTo(playerNum, pick)
+end
+
+-- 換項目鍵：換成最近用的清單裡排在目前這一項後面的那一項（到底從頭；目前這一項不在清單裡就從第一項起）
+function W.nextRecent(playerNum)
+    local cur = placing(playerNum)
+    local list = Recent.list()
+    if not cur or list.n == 0 then return end
+    local at = 0
+    for i = 1, list.n do
+        if list[i] == cur then at = i break end
+    end
+    for k = 1, list.n do
+        local name = list[(at + k - 1) % list.n + 1]
+        if name ~= cur and W.swapTo(playerNum, name) then return end
+    end
+end
+
+-- 拆掉剛蓋的（按鍵與視窗按鈕）：最後一次送出的那一批（Queue.undoLast，退料照拆除）；沒有就說一聲
+function W.undoLast(playerNum)
+    local Q, p = B.Queue, getSpecificPlayer(playerNum or W.playerNum or 0)
+    if not (Q and p) then return 0 end
+    local n = Q.last(p) and Q.undoLast(p) or 0
+    if n == 0 then Messages.toast(p, getText("IGUI_MBLD_Undo_None"), getText("IGUI_MBLD_Title")) end
+    if W.v then W.syncEntry(W.v) end
+    return n
+end
+
+-- 疊放鍵：切換目前游標的疊放（這一種能疊、伺服器沒關掉才切；不能時說原因），視窗的「疊放」一起跟著
+function W.toggleCursorOverlap(playerNum)
+    local C, P = B.Cursor, B.Place
+    local c = C and C.get(playerNum)
+    if not c or c.area then return end
+    local p = c.character
+    if P.maxPerSquare() <= 1 then return Messages.toast(p, getText("IGUI_MBLD_Overlap_TipOff"), getText("IGUI_MBLD_Title")) end
+    if P.OVERLAP[c.entry.kind] ~= true then
+        return Messages.toast(p, getText("IGUI_MBLD_Overlap_TipKind"), getText("IGUI_MBLD_Title"))
+    end
+    c.overlap = not c.overlap or nil
+    c.kgen = nil -- 下一幀重算：可蓋格子與標籤（疊放：這一格 n／max）
+    W.st.overlap = c.overlap == true
+    if W.v then W.v.detailDirty = true end
+end
+
+-- ===== 入口列：藍圖、拆除一區、規劃、拆掉剛蓋的 =====
+-- 藍圖與規劃的模組（PlanPanel、PlanLibrary、PlanMode）晚綁：沒載入就不排那顆鈕
+
+function W.openPlans()
+    local pn, M = W.playerNum, B.PlanMode
+    if M and M.plan and M.plan() and B.PlanPanel then return B.PlanPanel.open(pn) end
+    if B.PlanLibrary then B.PlanLibrary.open(pn) end
+end
+
+-- 拆除一區：開長方形游標（Area.start，同右鍵選單），視窗收起
+function W.startArea()
+    local A = B.Area
+    if not A then return end
+    A.start(W.playerNum)
+    local C = B.Cursor
+    local c = C and C.get(W.playerNum)
+    if c and c.area then W.close() end
+end
+
+function W.togglePlan()
+    local M = B.PlanMode
+    if M and M.toggle then M.toggle(W.playerNum) end
+    if W.v then W.syncEntry(W.v) end
+end
+
+-- 規劃開著、有沒有剛蓋的：每秒（W.pump）與按了以後對一次，變了才設
+function W.syncEntry(v)
+    local M, Q = B.PlanMode, B.Queue
+    local on = M ~= nil and M.planning ~= nil and M.planning() == true
+    if on ~= v.planOn then
+        v.planOn = on
+        v.planBtn:setActive(on)
+    end
+    local p = getSpecificPlayer(W.playerNum)
+    local can = Q ~= nil and p ~= nil and Q.last(p) ~= nil
+    if can ~= v.undoOn then
+        v.undoOn = can
+        v.undoBtn:setEnabled(can)
+    end
 end
 
 function W.toggleFavorite()
@@ -2507,6 +2691,10 @@ function W.build()
     if r then
         ok, res = pcall(Recipes.build, W.playerNum, name)
         if not ok then print(LOG .. "Recipes.build failed: " .. tostring(res)) end
+        if ok and res then
+            res.mbldId = name -- 快選列、換項目鍵認得現在放的是哪一項（Hotbar.current）
+            showHotbar(W.playerNum) -- 圖塊游標由 Cursor.start 開快選列
+        end
     else
         local rp = W.st.replace
         -- 換成條件下不帶疊放：玩家要的是換掉那一件
@@ -2525,6 +2713,8 @@ end
 -- 鍵盤滑鼠玩家 getJoypadData 是 nil，takeJoypad 不動作，Focus.lua:1031-1035）。放置中從 Dock 打開過視窗（W.open 清掉
 -- hiddenForBuild）就不再動它。
 function W.onCursorEnd(playerNum)
+    local H = B.Hotbar
+    if H then H.hide() end
     local v = W.v
     if not (v and v.hiddenForBuild) then return end
     v.hiddenForBuild = false
@@ -2722,6 +2912,30 @@ function W.layout()
     md:setX(mdRowS and mx or PAD)
     md:setY(mdRowS and (y - GAP - hS + math.floor((hS - md.height) / 2)) or y)
     if not mdRowS then y = y + md.height + GAP end
+    -- 入口列：藍圖、拆除一區、規劃、拆掉剛蓋的，靠左一列。全部帶標題放得下就帶標題（寬、中版），放不下（窄版）全部只放
+    -- 圖示（方形，標題在提示框）；不混排，免得看起來少了幾顆。模組沒載入、手把不能用的不排（隱藏的不進焦點順序）
+    local eh, need, nOn = 0, 0, 0
+    for _, b in ipairs(v.entry) do
+        b.on = b.avail()
+        b.btn:setVisible(b.on)
+        if b.on then
+            nOn = nOn + 1
+            need = need + b.w + (nOn > 1 and GAP or 0)
+            eh = math.max(eh, b.btn.height)
+        end
+    end
+    local full = need <= inner
+    local ex = PAD
+    for _, b in ipairs(v.entry) do
+        if b.on then
+            b.btn:setTitle(full and b.title or "")
+            b.btn:setWidth(full and b.w or b.btn.height)
+            b.btn:setX(ex)
+            b.btn:setY(y)
+            ex = ex + b.btn.width + GAP
+        end
+    end
+    if nOn > 0 then y = y + eh + GAP end
     local cbPlaced = cbRow1 or cbRowS
     -- 第三列：種類頁籤（＋中窄版的分類下拉）
     v.tabs:setX(PAD)
@@ -2949,6 +3163,29 @@ function W.create(UI)
         format = function(n) return getText("IGUI_MBLD_PerRow_Value", tostring(math.floor(n + 0.5))) end,
         onChange = function(_, n) MinidoracatBuilder.Window.setPerRow(n) end })
     win:addChild(v.rowSlider)
+    -- 入口列（W.layout 排在材料篩選下面）：給了寬度建，setTitle 不會照標題重算寬度；先照標題量一次（w），窄的時候只放圖示
+    local function entry(key, icon, fn, avail, style)
+        local title = getText(key)
+        local b = UI.Button.new({ x = 0, y = 0, width = 100, title = title, icon = icon, style = style, theme = theme,
+            tooltip = getText(key .. "_Tip"), onClick = fn })
+        b:fitWidth()
+        win:addChild(b)
+        return { btn = b, w = b.width, title = title, avail = avail }
+    end
+    local Wn = MinidoracatBuilder.Window
+    v.entry = {
+        entry("IGUI_MBLD_Entry_Plans", "document", function() Wn.openPlans() end,
+            function() return B.PlanPanel ~= nil or B.PlanLibrary ~= nil end),
+        -- 長方形游標只用滑鼠（Cursor.startArea 對手把回 nil），同吸管鈕手把不排
+        entry("IGUI_MBLD_Entry_Area", "zone", function() Wn.startArea() end,
+            function() return B.Area ~= nil and not W.usingPad() end),
+        entry("IGUI_MBLD_Entry_Plan", "clipboardCheck", function() Wn.togglePlan() end,
+            function() return B.PlanMode ~= nil end, "chip"),
+        entry("IGUI_MBLD_Entry_Undo", "reload", function() Wn.undoLast(Wn.playerNum) end, function() return true end),
+    }
+    v.planBtn, v.undoBtn = v.entry[3].btn, v.entry[4].btn
+    v.undoBtn:setEnabled(false)
+    v.undoOn, v.planOn = false, false
     local tabItems = {}
     for i, id in ipairs(W.TABS) do tabItems[i] = { id = id, label = getText("IGUI_MBLD_Tab_" .. id) } end
     -- 視窗裡第一個 Tabs：手把 LB／RB 切它（Widgets/Window.lua:315-325）
@@ -3059,6 +3296,7 @@ function W.open(playerNum)
     end
     W.playerNum = playerNum or 0
     Favorites.ensure()
+    W.st.recent = Recent.list() -- 第一次開窗才讀 recent.txt
     local v = W.v
     if v == nil or v.UI ~= UI then
         discard()
@@ -3142,11 +3380,32 @@ function W.initBinds()
     -- 換層（屋頂、地板的游標；Cursor.rotateKey 讀）：筆電沒有 PgUp／PgDn 的玩家可以改
     table.insert(keyBinding, { value = "MinidoracatBuilder_LayerUp", key = Keyboard and Keyboard.KEY_PRIOR or 0 })
     table.insert(keyBinding, { value = "MinidoracatBuilder_LayerDown", key = Keyboard and Keyboard.KEY_NEXT or 0 })
+    -- 放置中的四個鍵：單鍵都被原版或家族占了（同上），預設用組合鍵。原版綁 Z、O、N 的是不帶修飾鍵的那一項，同一個鍵另有
+    -- 帶修飾鍵的綁定而且按的正好是它時，原版那一項不算按到（Core.invalidBindingShiftCtrl，Core.java:2366-2401）；欄位 shift、
+    -- ctrl 由按鍵設定頁讀進去（MainOptions.lua:3478-3479）
+    if Keyboard then
+        table.insert(keyBinding, { value = "MinidoracatBuilder_Pick", key = Keyboard.KEY_Z, shift = true })
+        table.insert(keyBinding, { value = "MinidoracatBuilder_Overlap", key = Keyboard.KEY_O, shift = true })
+        table.insert(keyBinding, { value = "MinidoracatBuilder_Next", key = Keyboard.KEY_N, shift = true })
+        table.insert(keyBinding, { value = "MinidoracatBuilder_Undo", key = Keyboard.KEY_Z, ctrl = true })
+    end
 end
 
 function W.onKeyPressed(key)
     if key == nil or key == 0 then return end
-    if getCore():isKey(W.BIND, key) then W.toggle(0) end -- isKey 連修飾鍵、替代鍵一起比；沒綁時回 false（Core.java:2405-2408）
+    local core = getCore()
+    if core:isKey(W.BIND, key) then W.toggle(0) end -- isKey 連修飾鍵、替代鍵一起比；沒綁時回 false（Core.java:2405-2408）
+    -- 放置中的鍵只給玩家 0（鍵盤滑鼠；分割畫面的其他玩家用手把）。吸管鍵是按住的，由 Cursor:isValid 讀
+    if not placing(0) then return end
+    if core:isKey("MinidoracatBuilder_Overlap", key) then
+        W.toggleCursorOverlap(0)
+    elseif core:isKey("MinidoracatBuilder_Next", key) then
+        W.nextRecent(0)
+    elseif core:isKey("MinidoracatBuilder_Undo", key) then
+        -- 預設和規劃的「上一步」同一組 Ctrl+Z（PlanMode.initBinds）：規劃開著時交給它，不拆真的東西
+        local M = B.PlanMode
+        if not (M and M.planning and M.planning()) then W.undoLast(0) end
+    end
 end
 
 if first then

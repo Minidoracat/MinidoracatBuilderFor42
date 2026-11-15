@@ -130,6 +130,7 @@ end
 -- 客戶端請求：{ n = nonce, e = 項目 ID, c = { x1, y1, z1, d1, x2, ... }（各項原點與朝向，攤平）, v = Entry.digest() }
 -- 朝向 d：0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面（Entry.face）；每格各帶一個（牆拉長方形圍一圈時四邊不同）。
 -- o = true（選填）：疊放模式（Check.item 的 opts.overlap）；能不能疊、每格幾件在 complete 時照沙盒重算，這裡只記下。
+-- w（車庫門才有、也一定要有）：拖一排的寬度（格數），只能一個錨點（整扇門一個動作，要嘛全蓋要嘛不蓋）；範圍在 Check.item 驗。
 -- 收下回 true；被拒回 false（原因已推給玩家）；洗包回 nil。
 function Server.intent(player, args)
     if type(args) ~= "table" then return end
@@ -160,6 +161,15 @@ function Server.intent(player, args)
     if #anchors == 0 then return Server.refuse(player, n, 0, "BAD_REQUEST") end
     local entry, code = Entry.resolve(args.e)
     if not entry then return Server.refuse(player, n, 0, code) end
+    local garage = entry.kind == "door" and Entry.doorSet(entry.spr)
+    garage = garage and garage.garage
+    if garage then
+        local w = int(args.w, 2, math.max(2, maxItems)) -- 沙盒 MaxCellsPerDrag 最小可設 1，車庫門至少 2 格
+        if not w or #anchors ~= 1 then return Server.refuse(player, n, 0, "BAD_REQUEST") end
+        anchors[1][5] = w
+    elseif args.w ~= nil then
+        return Server.refuse(player, n, 0, "BAD_REQUEST")
+    end
     for _, a in ipairs(anchors) do
         if not Entry.face(entry, a[4]) then return Server.refuse(player, n, 0, "BAD_FACE", { x = a[1], y = a[2], z = a[3] }) end
     end
@@ -490,7 +500,7 @@ function Server.complete(player, n, i)
     for _, c in ipairs(cells) do over = over or c.over == true end
     local head = LOG .. (rep and "REPLACE" or "BUILD") .. " user=" .. who(player) .. " id=" .. tostring(player:getOnlineID())
         .. " e=" .. spr:getName() .. (rep and " old=" .. oldSpr:getName() or "") .. " kind=" .. entry.kind
-        .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3] .. (over and " over=1" or "")
+        .. " at=" .. a[1] .. "," .. a[2] .. "," .. a[3] .. (a[5] and " w=" .. a[5] or "") .. (over and " over=1" or "")
     local used = plan and costLine(total.uses) or ""
     used = used ~= "" and " uses=" .. used or ""
     if rep then

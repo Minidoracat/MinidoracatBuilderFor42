@@ -55,12 +55,11 @@ local function sourceName(src)
     return info and info:getName() or src
 end
 
--- 放在哪個種類的頁籤：牆面油漆、壁紙、灰泥沒有主圖，放牆面疊圖；其他照主圖的屬性（Rules.recipeKind）。車庫門本工具
--- 不蓋（Entry.BUILDABLE 沒有），照門列；分不出種類的（集雨桶、鍛造爐這類）放家具
+-- 放在哪個種類的頁籤：牆面油漆、壁紙、灰泥沒有主圖，放牆面疊圖；其他照主圖的屬性（Rules.recipeKind；車庫門歸門）。
+-- 分不出種類的（集雨桶、鍛造爐這類）放家具
 local function kindOf(spr, cover)
     if cover then return "wallOverlay" end
     local kind = spr and Rules.recipeKind(spr)
-    if kind == "garage" then return "door" end
     return kind and Entry.BUILDABLE[kind] and kind or "furniture"
 end
 
@@ -326,13 +325,31 @@ local function blocked(L, player, row)
     return (not row and L:isCraftActionInProgress()) or not (L:canPerformCurrentRecipe() or player:isBuildCheat())
 end
 
+-- 規劃開著（PlanMode，晚綁定：在別的檔、可能還沒載入）：配方游標放下記進藍圖、不蓋
+local function planning()
+    local PM = MinidoracatBuilder.PlanMode
+    return PM ~= nil and PM.planning ~= nil and PM.planning() == true
+end
+
+-- 游標擋不擋放（blockBuild）。規劃開著時材料、工具、技能、太暗都不擋，只照地形：原版 isValid 先看 blockBuild，再看
+-- haveMaterial 裡的鎚子（noNeedHammer 為假就要有鎚子，ISBuildIsoEntity.lua:444-454、ISBuildingObject.lua:425-430），
+-- 所以兩個一起換，關掉規劃時換回原本的。照圖蓋送的（runCells）不是玩家手上的游標，不經過這裡
+local function gate(o, L, player)
+    if o.mbldRun then return end
+    local plan = planning()
+    if o.mbldHammer == nil then o.mbldHammer = o.noNeedHammer == true end
+    o.noNeedHammer = plan or o.mbldHammer
+    o.blockBuild = not plan and blocked(L, player, o.mbldRow)
+    o.mbldPlan = plan
+end
+
 -- 換容器：東西有變時同原版視窗重填材料（ISBuildPanel.lua:214-221；setContainers 只留還在的那幾件，
 -- BaseCraftingLogic.java:587-624）。o＝游標還在時重算擋不擋（原版 onUpdateContainers → createBuildIsoEntity，
 -- ISBuildPanel.lua:301-308）
 local function sync(o, L, player)
     local c = containersOf(player)
     if c and L:setContainers(c) then L:autoPopulateInputs() end
-    if o then o.blockBuild = blocked(L, player, o.mbldRow) end
+    if o then gate(o, L, player) end
 end
 
 -- 走過去的路上換容器：單機的 create 照 logic 記的容器扣料，離起點旁的箱子超過 2.5 格就整個扣料失敗、什麼都不蓋
@@ -340,8 +357,10 @@ end
 -- 接得到拿起、放下的東西（原版靠背包頁 refreshBackpacks 標 drawDirty，ISInventoryPage.lua:1537-1539）。
 -- 游標不在、動作也不在跑、也沒有拖的一排要接著蓋就不追（isPlayerDoingAction 是保險：走不到、佇列清掉時原版也會經
 -- onActionComplete 清掉進行中，ISBuildingObject.lua:285-290、ISBuildAction.lua:192-197）
-local advance -- 拖一排的下一格（下面「拖一排」那段）
-local rows = {} -- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, action, doneAt, ok, checked }
+local advance, endRow -- 拖一排的下一格、一排結束（下面「拖一排」那段）
+-- playerNum → 拖的一排還沒蓋完的：{ cursor, r, cells, i, placed, parts, action, doneAt, ok, checked,
+-- check／silent／onDone（照圖蓋送的，Recipes.runCells） }
+local rows = {}
 local function follow()
     local keep, t = {}, getTimestampMs()
     for _, a in ipairs(live) do
@@ -351,7 +370,7 @@ local function follow()
         -- 那個座位換了角色（死了重生、分割畫面換人）或角色死了：不再追，它拖的一排放掉，不替舊角色再送動作
         -- （死者 isPlayerDoingAction 回 false，ISTimedActionQueue.lua:269-275，不擋的話會被當成佇列空了）
         if getSpecificPlayer(a.pn) ~= a.player or a.player:isDead() then
-            if mine then rows[a.pn] = nil end
+            if mine then endRow(a.pn, row) end
         elseif held or mine or (a.L:isCraftActionInProgress() and ISTimedActionQueue.isPlayerDoingAction(a.player)) then
             keep[#keep + 1] = a
             local sq = a.player:getCurrentSquare()
@@ -376,7 +395,7 @@ local function onStopCraft(o)
     local c = containersOf(player)
     if c and L:setContainers(c) then L:autoPopulateInputs() end
     L:refresh()
-    o.blockBuild = blocked(L, player, o.mbldRow)
+    gate(o, L, player)
 end
 
 -- 動作開始前要拿在手上的工具，同原版視窗（ISBuildPanel.lua:223-244,323-326）：背包裡第一件能用的完整類型，沒有回 nil
@@ -421,7 +440,8 @@ local function joypadPress(self, joypadIndex, joypadData, button)
     return MinidoracatBuilder.Cursor.padBuild(self)
 end
 
--- ===== 取代前一排的提示（使用者 2026-10-29：排隊中再拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格；ui.md 裁定）=====
+-- ===== 取代前一排的提示（使用者 2026-10-29：配方拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格；ui.md 裁定。
+-- 2026-11-16 起圖塊項目再拖一排改成接在後面蓋（queue=append，Queue.lua），配方拖一排與拆除照舊清佇列、取消排著的）=====
 -- 原版游標沒有本工具的標籤框，配方游標另外在滑鼠右下（手把：游標那格）畫一行同一句（IGUI_MBLD_Replace）。框只顯示、
 -- 不收滑鼠（同 Cursor 的標籤框），放在滑鼠右下 (32, 10)，不會蓋在滑鼠底下（Cursor.mouseOverUI 才不會把它當成介面）
 local hints, HintPanel, hintColors = {}, nil, nil
@@ -484,8 +504,11 @@ Recipes.hideHint = hideHint -- 游標的 deactivate 用（它寫在這段前面�
 -- 都算；不能拖的照原版排在後面，只取消拖的一排還沒送的。字只在格數變了才換
 local function updateHint(o)
     local pn = o.player
+    local plan = planning()
+    -- 規劃開關換了：重算擋不擋（規劃不看材料）；規劃時放下不蓋、不取消什麼，不提示
+    if plan ~= o.mbldPlan then gate(o, o.buildPanelLogic, o.character) end
     local n = 0
-    if o.canBeBuild and not o.blockBuild then
+    if o.canBeBuild and not o.blockBuild and not plan then
         local C = MinidoracatBuilder.Cursor
         n = o.mbldRow and C and C.cancels(o.character) or Recipes.left(pn, false)
     end
@@ -509,8 +532,9 @@ end
 
 -- ===== 拖一排（使用者 2026-11-12：配方項目也能拖一排；先在 9950X3D 實測，單機與專用伺服器都可行）=====
 -- 圖塊同種類能拖的（Cursor.DRAG）而且每一面都只佔一格的配方，游標實例換上 rotateMouse、render、tryBuild 與
--- onActionComplete（只掛在本 MOD 開的實例上，不改原版類別）：按住拖記下拉到哪裡，整排照 Cursor.anchors 排（一排、
--- 長方形、每排上限、沒有那一面都同圖塊項目），每格照原版 isValid 與材料夠做幾次（getPossibleCraftCount）畫白或紅；
+-- onActionComplete（只掛在本 MOD 開的實例上，不改原版類別）：按住拖記下拉到哪裡，整排照 Cursor.anchors 排（一排、長方形、
+-- 沒有那一面都同圖塊項目；超過每排上限的標 OVER_MAX 不送，不像圖塊項目分批），每格照原版 isValid 與材料夠做幾次
+-- （getPossibleCraftCount）畫白或紅；
 -- 放開後一格接一格送原版 tryBuild，每一格都是完整的原版建造動作（材料、技能、工具與伺服器驗證照原版，本 MOD 不送指令）。
 -- 原版每格動作結束（蓋好、打斷、走路途中取消、被伺服器拒絕）都呼叫同一支收尾（setOnComplete／setOnCancel 那一刻游標上的
 -- onActionComplete，ISBuildingObject.lua:207-208、ISBuildAction.lua:156-241），收尾不帶參數；送每格前把游標的 onActionComplete
@@ -539,9 +563,11 @@ local CONFIRM_MS = 5000
 -- nSprite（1..4＝西、北、東、南，ISBuildingObject.lua:486-516）→ 圖塊設定的面（0..3＝北、西、南、東，ISBuildIsoEntity.lua:784-818）
 local FACE_OF = { 1, 0, 3, 2 }
 
--- 那一面左上那格的圖名（只拖每面一格的配方）
+-- 那一面左上那格的圖名（只拖每面一格的配方；多格的那一面左上那格就是錨點那格，ISBuildIsoEntity.lua:463-478）。d 不是 1..4
+-- 或沒有那一面回 nil
 local function tileOf(info, d)
-    local face = info:getFace(FACE_OF[d])
+    local f = FACE_OF[d]
+    local face = f and info:getFace(f)
     local t = face and face:getTileInfo(0, 0, 0)
     return t and t:getSpriteName()
 end
@@ -576,7 +602,8 @@ local function preview(o, ax, ay, az, ex, ey)
     local d = o.nSprite
     local list = MinidoracatBuilder.Cursor.anchors({ canDrag = true, entry = { kind = o.mbldKind }, sides = o.mbldSides,
         d = d, max = o.mbldMax }, ax, ay, az, ex, ey)
-    local left = o.character:isBuildCheat() and math.huge or o.buildPanelLogic:getPossibleCraftCount(false)
+    -- 規劃開著時不照材料扣（只照地形，gate）
+    local left = (o.character:isBuildCheat() or o.mbldPlan) and math.huge or o.buildPanelLogic:getPossibleCraftCount(false)
     local ok = 0
     for _, a in ipairs(list) do
         if a[4] then
@@ -641,19 +668,37 @@ local function cellDone(self, row, i)
     end
 end
 
--- 送第 i＋1 格：換到那格的面再交給原版 tryBuild（它深拷游標，那格的面跟著動作走），送完換回游標原本的面。
--- 走不到時原版當場呼叫 onActionComplete（ISBuildingObject.lua:283-285）。sending＝正在送的那一排，onStartCraft 把動作記到它身上
+-- 照圖蓋送的（row.check）格子沒經過游標的預覽：送前照原版 isValid 驗地形（原版建造動作不再驗，ISBuildAction.lua:38-55）
+local function sendable(o, c)
+    if not c.spr then return false end
+    o:ensureSquaresExist(c[1], c[2], c[3])
+    local sq = getCell():getGridSquare(c[1], c[2], c[3])
+    return sq ~= nil and o:isValid(sq)
+end
+
+-- 送下一格：換到那格的面再交給原版 tryBuild（它深拷游標，那格的面跟著動作走），送完換回游標原本的面。
+-- 走不到時原版當場呼叫 onActionComplete（ISBuildingObject.lua:283-285）。sending＝正在送的那一排，onStartCraft 把動作記到它身上。
+-- 照圖蓋送的格子驗不過時不送，回 false, "missing"：這時前面的格子都蓋好了（不然這排早停了），onDone 的 placed＋1 就是
+-- 被擋住的那格，Runner 照這個對回它送的格子
 local sending
 local function send(row)
-    row.i, row.action, row.doneAt, row.ok, row.checked = row.i + 1, nil, nil, nil, nil
-    local o, c, i = row.cursor, row.cells[row.i], row.i
+    row.action, row.doneAt, row.ok, row.checked = nil, nil, nil, nil
+    local o = row.cursor
     local d = o.nSprite
+    row.i = row.i + 1
+    local c = row.cells[row.i]
     face(o, c[4])
+    if row.check and not sendable(o, c) then
+        face(o, d)
+        return false, "missing"
+    end
+    local i = row.i
     o.onActionComplete = function(self) return cellDone(self, row, i) end
     sending = row
     ISBuildIsoEntity.tryBuild(o, c[1], c[2], c[3])
     sending = nil
     face(o, d)
+    return true
 end
 
 -- 原版 tryBuild 開始一格時 BuildLogic 發的 onStartCraft（BuildLogic.java:214-228）：記下這格的建造動作
@@ -667,9 +712,12 @@ local function ownedBy(req, player)
 end
 
 -- 開始一排：每人只留一個請求（同 Client.build）：這個角色還沒輪完的圖塊建造、拆除請求作廢，清掉角色的動作佇列（正在蓋的
--- 那格當場收尾，實測），舊的一排換成這一排。cells＝{ { x, y, z, d, spr }, … }
-local function startRow(o, cells)
+-- 那格當場收尾，實測），舊的一排換成這一排。cells＝{ { x, y, z, d, spr }, … }；run＝照圖蓋送的（Recipes.runCells）：{ onDone }
+local function startRow(o, cells, run)
     local pn, Client, player = o.player, MinidoracatBuilder.Client, o.character
+    -- 照「停下」處理：圖塊建造排著的全部取消（放開前標籤已寫出格數，Cursor.cancels 讀 Queue）
+    local Q = MinidoracatBuilder.Queue
+    if Q then Q.cancel(player) end
     if ownedBy(Client.pending, player) then Client.pending = nil end
     if ownedBy(Client.pendingUnbuild, player) then Client.pendingUnbuild = nil end
     ISTimedActionQueue.clear(player)
@@ -679,8 +727,20 @@ local function startRow(o, cells)
         if spr then parts[i] = { { c[1], c[2], c[3], spr, 0 } } end
     end
     local row = { cursor = o, r = Recipes.byId[o.mbldR], cells = cells, i = 0, placed = 0, parts = parts }
+    if run then row.check, row.silent, row.onDone = true, true, run.onDone end
+    local old = rows[pn]
     rows[pn] = row
-    send(row)
+    if old then endRow(pn, old) end
+    local sent, why = send(row)
+    if not sent then endRow(pn, row, why) end
+end
+
+-- 規劃開著時放下：格子（世界座標 { x, y, z, 面 }）交給 PlanMode.addCells 記進藍圖，不蓋
+local function record(o, cells)
+    local out = {}
+    for i, c in ipairs(cells) do out[i] = { c[1], c[2], c[3], c[4] } end
+    local ok, err = pcall(MinidoracatBuilder.PlanMode.addCells, o.player, o.mbldR, out)
+    if not ok then print(LOG .. "plan addCells failed: " .. tostring(err)) end
 end
 
 -- 放開左鍵或手把 A，而且可蓋（ISBuildingObject.lua:171-174）：拖曳中送整排可蓋的格子，不然送按下那一格
@@ -694,12 +754,16 @@ local function rowBuild(self, x, y, z)
         cells[1] = { x, y, z, self.nSprite, spr = tileOf(self.objectInfo, self.nSprite) }
     end
     self.lineX, self.lineY, views[self.player] = nil, nil, nil
-    if cells[1] then startRow(self, cells) end
+    if not cells[1] then return end
+    if planning() then return record(self, cells) end
+    startRow(self, cells)
 end
 
--- 不能拖的配方游標放下時：舊的一排剩下的格子不再接著送（它正在蓋的那格照原版跑完）
+-- 不能拖的配方游標放下時：舊的一排剩下的格子不再接著送（它正在蓋的那格照原版跑完）。規劃開著時記進藍圖、不蓋
 local function single(self, x, y, z)
-    rows[self.player] = nil
+    if planning() then return record(self, { { x, y, z, self.nSprite } }) end
+    local row = rows[self.player]
+    if row then endRow(self.player, row) end
     return ISBuildIsoEntity.tryBuild(self, x, y, z)
 end
 
@@ -714,13 +778,27 @@ local function builtAt(c)
     return false
 end
 
+-- 一排結束（蓋完、停下、被取代）：拿掉；照圖蓋送的（runCells）把結果交給它的 onDone，只叫一次
+endRow = function(pn, row, why)
+    if rows[pn] == row then rows[pn] = nil end
+    local f = row.onDone
+    if not f then return end
+    row.onDone = nil
+    local n = #row.cells
+    local ok, err = pcall(f, { count = n, placed = row.placed, stopped = row.placed < n, why = why })
+    if not ok then print(LOG .. "recipe cells onDone failed: " .. tostring(err)) end
+end
+
 -- 停下整排並說原因（why）：short＝沒料、沒工具、技能不夠或太暗（還沒送的格子）；missing＝動作做完、那一格卻沒蓋出來
--- （create 失敗：被車或別的東西擋住、材料被拿走）；nil＝被打斷、走不到、被拒、原版不收這個動作，客戶端分不出來，
--- 照圖塊項目的說法（Cursor.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，ISBuildingObject.lua:291-295）
+-- （create 失敗：被車或別的東西擋住、材料被拿走），或照圖蓋送的那格送前驗地形就不行；nil＝被打斷、走不到、被拒、
+-- 原版不收這個動作，客戶端分不出來，
+-- 照圖塊項目的說法（Queue.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，ISBuildingObject.lua:291-295）。
+-- 照圖蓋送的不通知，結果交給 onDone（Runner 自己總結）
 local function stop(pn, row, why)
-    rows[pn] = nil
+    endRow(pn, row, why)
     local L = row.cursor.buildPanelLogic
     if not row.doneAt and L:isCraftActionInProgress() then L:stopCraftAction() end
+    if row.silent then return end
     local player, n = row.cursor.character, #row.cells
     local title = row.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
     if why == "short" then
@@ -740,10 +818,7 @@ advance = function(pn, row, t)
     local Client, o = MinidoracatBuilder.Client, row.cursor
     local player = o.character
     -- 這個角色的圖塊建造或拆除取代了這一排（它們清了佇列）；別的玩家的不算
-    if ownedBy(Client.pending, player) or ownedBy(Client.pendingUnbuild, player) then
-        rows[pn] = nil
-        return
-    end
+    if ownedBy(Client.pending, player) or ownedBy(Client.pendingUnbuild, player) then return endRow(pn, row) end
     if not row.doneAt then
         -- 原版沒收這格的動作，或它離開佇列卻沒收尾：整排停下，不然一直等
         if not (row.action and ISTimedActionQueue.hasAction(row.action)) then return stop(pn, row) end
@@ -758,10 +833,7 @@ advance = function(pn, row, t)
         end
         row.checked, row.placed, row.parts[row.i] = true, row.placed + 1, nil
     end
-    if row.i >= #row.cells then
-        rows[pn] = nil
-        return
-    end
+    if row.i >= #row.cells then return endRow(pn, row) end
     if ISTimedActionQueue.hasAction(row.action) then return end -- 那格的動作還沒退出佇列（MP 常晚一點）
     -- 那格做完後佇列裡有別的動作：玩家自己插了事情做，照被打斷停下（不等它跑完或被取消後再接著蓋）
     if #ISTimedActionQueue.getTimedActionQueue(player).queue > 0 then return stop(pn, row) end
@@ -769,7 +841,8 @@ advance = function(pn, row, t)
     if ISTimedActionQueue.isPlayerDoingAction(player) then return end
     sync(nil, L, player)
     if blocked(L, player, true) then return stop(pn, row, "short") end
-    send(row)
+    local sent, why = send(row)
+    if not sent then endRow(pn, row, why) end
 end
 
 local function drawRows()
@@ -790,10 +863,102 @@ function Recipes.left(pn, all)
     return #row.cells - (all and row.placed or row.i)
 end
 
+-- ===== 規劃與照圖蓋（第二波契約「追加」：配方項目也能記進藍圖、照圖蓋）=====
+-- 面＝配方游標的 nSprite：1..4＝西、北、東、南（ISBuildingObject.lua:486-516；同 row.cells[i][4]）
+
+-- 這個配方第 d 面左上那格的圖名（PlanCheck 看蓋好沒、PlanGhost 畫虛影）；沒有這個配方、牆面油漆這類、沒有那一面回 nil
+function Recipes.tile(id, d)
+    local r = Recipes.get(id)
+    return r and r.info and tileOf(r.info, d) or nil
+end
+
+-- 這張圖是這個配方的哪一面（Capture）。只認每一面左上那格（錨點那格），多格的其他格回 nil，一件只擷取一次
+function Recipes.faceOf(id, name)
+    local r = Recipes.get(id)
+    if not (r and r.info and name) then return nil end
+    for d = 1, 4 do
+        if tileOf(r.info, d) == name then return d end
+    end
+    return nil
+end
+
+-- 有哪些面：{ n, d… }（照 1..4）；沒有這個配方、牆面油漆這類回 nil（PlanMode.turnPiece）
+function Recipes.faces(id)
+    local r = Recipes.get(id)
+    if not (r and r.info) then return nil end
+    local out = { n = 0 }
+    for d = 1, 4 do
+        if r.info:getFace(FACE_OF[d]) then
+            out.n = out.n + 1
+            out[out.n] = d
+        end
+    end
+    return out
+end
+
+-- 原版的建造游標物件，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，動作開始前要拿在手上的工具。
+-- 放下後不清游標：原版 tryBuild 照 dragNilAfterPlace 會 setDrag(nil)（ISBuildingObject.lua:212-214）
+local function isoCursor(player, r, L, containers)
+    local o = ISBuildIsoEntity:new(player, r.info, 1, containers, L)
+    o.dragNilAfterPlace, o.blockAfterPlace, o.mbldR = false, false, r.id
+    local inv, cr = player:getInventory(), r.recipe
+    o.equipBothHandItem = toolOf(cr:getToolBoth(), inv)
+    o.firstItem = toolOf(cr:getToolRight(), inv)
+    o.secondItem = toolOf(cr:getToolLeft(), inv)
+    return o
+end
+
+-- 追著這個游標換容器、收尾（follow、onStopCraft）；row＝一格一格送（拖一排、照圖蓋）的才記每格的動作（onStartCraft）
+local function track(pn, o, L, player, row)
+    L:addEventListener("onStopCraft", onStopCraft, o)
+    if row then L:addEventListener("onStartCraft", onStartCraft, o) end
+    if #live == 0 then Events.OnTick.Add(follow) end
+    live[#live + 1] = { pn = pn, cursor = o, L = L, player = player, sq = player:getCurrentSquare(), at = getTimestampMs() }
+end
+
+-- 照圖蓋送幾格（Runner）：不開游標、不跳通知，用拖一排的送法一格一格送原版建造動作。游標物件照 Recipes.build 建但不 setDrag：
+-- setDrag 會換掉玩家手上的游標，送格子只要游標的方法與 BuildLogic；player 欄位平常是引擎 setDrag 寫的（IsoCell.java:2572），
+-- 這裡自己寫。開始時照拖一排清掉這個角色的動作佇列與請求（圖塊排程、拆除、拖的一排都取消）。
+-- cells＝{ { x, y, z, 面 }, … }。回 true，或 nil, "UNKNOWN"（沒有這個配方）｜"COVER"（牆面油漆、壁紙、灰泥）｜"SHORT"（材料、
+-- 工具、技能不夠或太暗）。結束時（蓋完、停下、被取代、Recipes.stopCells）叫一次 onDone({ count, placed, stopped＝placed < count,
+-- why＝"short"｜"missing"｜nil })：missing 時被擋住的是第 placed＋1 格；停下的規則同拖一排（advance）
+function Recipes.runCells(player, id, cells, onDone)
+    local r = Recipes.get(id)
+    if not r then return nil, "UNKNOWN" end
+    if not r.info then return nil, "COVER" end
+    local pn = player:getPlayerNum()
+    if not cells[1] then
+        endRow(pn, { cells = cells, placed = 0, onDone = onDone })
+        return true
+    end
+    local L = newLogic(player)
+    local containers = containersOf(player) or ArrayList.new()
+    L:setContainers(containers)
+    L:setRecipe(r.recipe)
+    if blocked(L, player, true) then return nil, "SHORT" end
+    local o = isoCursor(player, r, L, containers)
+    o.player, o.mbldRun, o.mbldRow = pn, true, true
+    track(pn, o, L, player, true)
+    local list = {}
+    for i, c in ipairs(cells) do
+        list[i] = { c[1], c[2], c[3], c[4], spr = tileOf(r.info, c[4]) }
+        if list[i].spr then face(o, c[4]) end -- 補 spriteCache：排隊虛影照它畫（startRow）
+    end
+    startRow(o, list, { onDone = onDone })
+    return true
+end
+
+-- 照圖蓋暫停（Runner）：runCells 送的那一排還沒送的不再送、不通知；正在蓋的那格照原版跑完（不算進 placed）。onDone 照樣叫一次。
+-- 玩家自己拖的一排不管
+function Recipes.stopCells(player)
+    local pn = player:getPlayerNum()
+    local row = rows[pn]
+    if row and row.silent then endRow(pn, row) end
+end
 
 -- 開原版的游標，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，材料、工具、技能或學過不夠時游標擋住
 -- （客戶端的游標本身只擋地形；伺服器 create 再驗一次、不夠就不蓋，ISBuildIsoEntity.lua:543-563）；放完游標留著。
--- 不能拖的照原版動作跑完才再放得下；能拖一排的（Recipes.dragMode）再放一次取代還沒蓋的（同圖塊項目）。
+-- 不能拖的照原版動作跑完才再放得下；能拖一排的（Recipes.dragMode）再放一次取代還沒蓋的（圖塊項目排著的也取消）。
 -- 牆面油漆、壁紙、灰泥開原版的油漆和壁紙游標。回游標，或 nil（沒開）
 function Recipes.build(pn, id)
     local player = getSpecificPlayer(pn)
@@ -805,15 +970,11 @@ function Recipes.build(pn, id)
     L:setRecipe(r.recipe)
     local o
     if r.info then
-        o = ISBuildIsoEntity:new(player, r.info, 1, containers, L)
+        o = isoCursor(player, r, L, containers)
         local mode = not JoypadState.players[pn + 1] and Recipes.dragMode(r)
-        o.dragNilAfterPlace, o.blockAfterPlace = false, not mode
-        local inv, cr = player:getInventory(), r.recipe
-        o.equipBothHandItem = toolOf(cr:getToolBoth(), inv)
-        o.firstItem = toolOf(cr:getToolRight(), inv)
-        o.secondItem = toolOf(cr:getToolLeft(), inv)
+        o.blockAfterPlace = not mode
         if mode then
-            o.mbldRow, o.mbldKind, o.mbldR = true, r.kind, r.id
+            o.mbldRow, o.mbldKind = true, r.kind
             o.mbldMax = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
             -- 圍一圈：北、南兩邊用北面（nSprite 2），西、東兩邊用西面（1）；沒有那一面的邊照圖塊項目標 NO_FACE
             o.mbldSides = { n = r.info:getFace(0) and 2 or nil, w = r.info:getFace(1) and 1 or nil }
@@ -821,13 +982,15 @@ function Recipes.build(pn, id)
         else
             o.render, o.tryBuild = singleRender, single
         end
-        o.blockBuild = blocked(L, player, o.mbldRow)
-        L:addEventListener("onStopCraft", onStopCraft, o)
-        if mode then L:addEventListener("onStartCraft", onStartCraft, o) end
-        if #live == 0 then Events.OnTick.Add(follow) end
-        live[#live + 1] = { pn = pn, cursor = o, L = L, player = player, sq = player:getCurrentSquare(), at = getTimestampMs() }
+        gate(o, L, player)
+        track(pn, o, L, player, mode)
     else
-        -- 牆面油漆、壁紙、灰泥：照原版視窗的建造鈕擋（ISWidgetBuildControl.lua:165-171），不夠就不開，發通知（審查 1109 Codex）；
+        -- 牆面油漆、壁紙、灰泥：放下就直接動手，沒有能記進藍圖的格子，規劃開著時不開
+        if planning() then
+            Messages.toast(player, getText("IGUI_MBLD_Recipe_NoPlan"))
+            return nil
+        end
+        -- 照原版視窗的建造鈕擋（ISWidgetBuildControl.lua:165-171），不夠就不開，發通知（審查 1109 Codex）；
         -- 太暗時原版也擋，通知寫太暗（審查 1109 第 2 輪 Claude）
         if blocked(L, player) then
             Messages.toast(player, getText(Recipes.dark(pn, r) and "IGUI_MBLD_Recipe_TooDark" or "IGUI_MBLD_Recipe_Blocked"))

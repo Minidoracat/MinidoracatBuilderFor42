@@ -6,14 +6,33 @@
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Check"
 require "MinidoracatBuilder/Materials"
-require "MinidoracatBuilder/Client"
+require "MinidoracatBuilder/Queue"
+require "MinidoracatBuilder/Turn"
 require "MinidoracatBuilder/Messages"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local B = MinidoracatBuilder
 local Cursor = B.Cursor or {}
 B.Cursor = Cursor
-local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials, B.Client, B.Messages
+local Entry, Check, Materials, Queue, Turn, Messages = B.Entry, B.Check, B.Materials, B.Queue, B.Turn, B.Messages
+
+-- 給其他模組在游標的固定時機插手（規劃模式從自己的檔案設欄位，不改這個檔；不要整張換掉，Class 建立時複製了這張表的參照）。
+-- 欄位都可以是 nil：valid(cursor) 回 true＝沒有一格可蓋也照樣在放開時呼叫 tryBuild，回 false＝這次不能放（地框變紅）；commit(cursor) 在 tryBuild 算完
+-- self.res 之後、送出之前，回 true＝已處理、不送伺服器；label(cursor, src) 在標籤文字（文字、顏色交錯的陣列）組好後，
+-- 回新的陣列或 nil；tint(cursor) 回 { r, g, b }（或 { r = , g = , b = }）換掉可蓋格子的地框顏色；layer(cursor) 回數字＝
+-- 蓋在滑鼠那格往上幾層（取代 self.up，換層鍵也不處理），nil＝照舊
+Cursor.hook = Cursor.hook or {}
+local LOG = "[MinidoracatBuilderFor42] "
+local function hook(name, ...)
+    local f = Cursor.hook[name]
+    if not f then return nil end
+    local ok, r = pcall(f, ...)
+    if not ok then
+        print(LOG .. "cursor hook " .. name .. " failed: " .. tostring(r))
+        return nil
+    end
+    return r
+end
 
 -- Cursor.onEnd(playerNum)：Window 設定；建造游標離開時（任何原因）呼叫，換成另一個本工具建造游標時不呼叫。
 -- 一區拆除模式（Cursor.startArea）不呼叫：它不是從視窗開的。
@@ -21,7 +40,6 @@ local Entry, Check, Materials, Client, Messages = B.Entry, B.Check, B.Materials,
 -- 方法寫在 Cursor，類別第一次用到才 derive：ISBuildingObject 在 server 資料夾，MP 客戶端比 client 晚載入
 -- （PackThrow ThrowCursor.lua 同做法）。
 local Class, Marks, Panel
-local LOG = "[MinidoracatBuilderFor42] "
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
 -- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘
@@ -31,15 +49,12 @@ Cursor.DRAG = DRAG
 -- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
 -- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
 local LAYERED = { roof = true, floor = true }
-local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64，再遠的都是 OVER_MAX）
-local DRAW_MAX = 512  -- ponytail：一次最多畫 512 格（超過上限的照畫紅），量到卡頓再縮
+local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64）
+local DRAW_MAX = 512  -- ponytail：一次拖曳最多排 512 格（超過 MaxCellsPerDrag 的分批送，Queue.push），量到卡頓再縮
 local AREA_SIDE = 40  -- 一區拆除每邊最多幾格（Area 每次預覽掃整區）
 local AREA_SETTLE_MS = 200 -- 一區拆除：範圍停住這麼久才算預覽，拖曳中只畫外框
 local AREA_MARKS = 128 -- ponytail：一區拆除最多畫幾個警告三角（每個每幀約 6 µs），玩家嫌少再加
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；一區拆除同時再問一次預覽（Area.preview 世界沒變就不重算）
-local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
-local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，算停下（MP 的 placed 比客戶端動作結束晚到）
-local QR, QG, QB = 0.45, 0.75, 1 -- 已送出、還沒蓋好的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
 -- 虛影染色：可蓋白、不能蓋照原版紅（ISBuildingObject.lua:576-580）；多格物件被擋時沒出問題的那幾格地框中性灰
 local WHITE, RED, NEUTRAL = { r = 1, g = 1, b = 1 }, { r = 0.65, g = 0.2, b = 0.2 }, { r = 0.6, g = 0.6, b = 0.6 }
 local MARK_BAD, MARK_SWAP = 1, 2 -- 格子上的記號（不只靠顏色）：警告三角／替換
@@ -98,47 +113,9 @@ function Cursor.shape(ax, ay, az, ex, ey, mode, limit)
     return out
 end
 
--- 圍一圈時北、南兩邊與西、東兩邊各用哪一面（主代理 2026-11-01 定案）：目前那面優先，再照 0..4 找只佔北邊／只佔西邊的；
--- 缺的那條邊用 d＝5（配對面：同一個 tileset 裡相反那條邊的圖，Entry.face）。原版北牆、西牆多半是兩個各只有一面的項目
--- （tiledef：walls_exterior_wooden_01 4,5 是西、6,7 是北）。都沒有＝nil，那兩邊標 NO_FACE。回 { n = d, w = d }
-function Cursor.sides(entry, cur)
-    local out = {}
-    for _, d in ipairs({ cur, 0, 1, 2, 3, 4, 5 }) do
-        local spr = Entry.face(entry, d)
-        if spr then
-            local n, w = Entry.edges(entry.kind, spr)
-            if n and not w and out.n == nil then out.n = d end
-            if w and not n and out.w == nil then out.w = d end
-        end
-    end
-    return out
-end
-
--- 項目有的朝向：1..4（N、E、S、W）裡 Entry.face 有回值、sprite 不重複的；一個都沒有時只有 0（項目本身）。
--- 牆、柵欄、門框、窗框這類只佔一條格邊的，另一條邊是目錄裡的另一項（Entry.face 的 d＝5，配對面）：接在最後，按 R 換過去
--- （2026-11-14 群聊回報：牆只能照挑的那一張蓋，要回視窗找另一面）。伺服器本來就收 d＝5（拖一圈在用）
-function Cursor.faces(entry)
-    local out, seen = { n = 0 }, {}
-    for d = 1, 4 do
-        local spr = Entry.face(entry, d)
-        local name = spr and spr:getName()
-        if name and not seen[name] then
-            seen[name] = true
-            out.n = out.n + 1
-            out[out.n] = d
-        end
-    end
-    if out.n == 0 then
-        out.n, out[1] = 1, 0
-        seen[entry.name] = true
-    end
-    local pair = Entry.face(entry, 5)
-    if pair and not seen[pair:getName()] then
-        out.n = out.n + 1
-        out[out.n] = 5
-    end
-    return out
-end
+-- 圍一圈時北、南兩邊與西、東兩邊各用哪一面（Turn.sides）、項目有的朝向（Turn.faces）：建造視窗的旋轉標記與 E2E 讀
+Cursor.sides = Turn.sides
+Cursor.faces = Turn.faces
 
 -- 屋頂的鏡像片（2026-11-14 群聊 Patty：「原版材質拉出來都只有一個方向」）：屋頂的兩個坡向是目錄裡的兩項，圖塊屬性沒有
 -- 方向，編號排法又每個 tileset 不一樣（同一列 c↔5−c、上下列 c↔5−c、c↔7−c、相鄰兩張、隔一兩列）。所以照這幾種排法
@@ -190,33 +167,27 @@ function Cursor.mirror(entry)
     return nil
 end
 
--- 起始朝向：指定的有就用；否則用項目本身那一面（標籤才寫得出朝向），再不然第一個
-function Cursor.pickFace(entry, faces, d)
-    for i = 1, faces.n do
-        if faces[i] == d then return d end
+-- 起始狀態（Turn.states 的第幾個）：朝向 d 在原處（dx＝dy＝0）的有就用；否則用項目本身那一面（標籤才寫得出朝向），
+-- 再不然第一個
+function Cursor.pickState(entry, states, d)
+    for i = 1, states.n do
+        local s = states[i]
+        if s.d == d and s.dx == 0 and s.dy == 0 then return i end
     end
-    for i = 1, faces.n do
-        local spr = Entry.face(entry, faces[i])
-        if spr and spr:getName() == entry.name then return faces[i] end
+    for i = 1, states.n do
+        local s = states[i]
+        local spr = s.dx == 0 and s.dy == 0 and Entry.face(entry, s.d)
+        if spr and spr:getName() == entry.name then return i end
     end
-    return faces[1]
-end
-
--- 在有的朝向之間循環；step＝1 或 −1
-function Cursor.nextFace(faces, d, step)
-    local n = faces.n
-    for i = 1, n do
-        if faces[i] == d then return faces[(i - 1 + step + n) % n + 1] end
-    end
-    return faces[1]
+    return 1
 end
 
 -- 各格的預覽：照順序每格 Check.item（朝向照錨點的第 4 欄，沒有用 d），可蓋的從摘要副本扣掉成本（Materials.take；替換的
 -- 格子扣要補的 info.pay 與耗材），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
 -- 副本的 items、uses 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂、地板可以靠同一排前面可蓋的撐著（伺服器
 -- 照同一個順序一格一格蓋），所以從有支撐的那一頭拖。walk：Client.build 會先走過去（建造作弊不走），所以距離只照 Server.intent
--- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Cursor.tick 提示）。
--- 錨點已帶 code（游標自己判斷的 NO_FACE、OVER_MAX）的不跑 Check.item，照那個碼。
+-- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Queue.tick 提示）。
+-- 錨點已帶 code（游標自己判斷的 NO_FACE、配方拖一排的 OVER_MAX）的不跑 Check.item，照那個碼。
 -- overlap：疊放模式（Check.item 的 opts.overlap），放開時隨請求送給伺服器。
 -- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
 function Cursor.preview(player, name, d, anchors, S, overlap)
@@ -310,14 +281,20 @@ function Cursor.new(player, entry, d, overlap)
     local P = B.Place
     o.overlap = overlap == true and P.OVERLAP[entry.kind] == true and P.maxPerSquare() > 1 or nil
     o.offsBy = {}
-    o.faces = Cursor.faces(entry)
-    o:setFace(Cursor.pickFace(entry, o.faces, d))
+    o.states = Turn.states(entry) -- 按旋轉鍵輪流的朝向與邊（格邊種類四條邊，Turn）
+    o:setState(Cursor.pickState(entry, o.states, d))
     -- 欄位不能叫 mirror：實例查不到欄位時會拿到 Cursor.mirror 這個函式，判斷永遠成立（roof1 實踩）
-    o.mirrorName = o.faces.n == 1 and Cursor.mirror(entry) or nil
+    o.mirrorName = o.states.n == 1 and Cursor.mirror(entry) or nil
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
     -- 屋頂預設蓋在上一層：站在下面那層往上蓋。屋頂與地板都能用 PgUp／PgDn、手把 X 切換（LAYERED；isValid 照它換算）
     o.up = entry.kind == "roof"
-    o.max = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
+    -- 一次送幾格（MaxCellsPerDrag）：拖得更多的放開後分批接著送（Queue.push 照同一個沙盒值切）
+    o.perBatch = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
+    -- 車庫門：拖一排決定寬度，整扇是一個錨點帶寬度 w（第 5 欄，Check.item 照它排頭、中段、尾）；手把蓋最短的 2 格。
+    -- 雙開門不在 DRAG：點一下放整組四片（Entry.cells）
+    local set = entry.kind == "door" and Entry.doorSet(entry.spr)
+    o.garage = set and set.garage or nil
+    if o.garage then o.canDrag = not o.joypad end
     local key = getCore():getKey(KeybindId.ROTATE_BUILDING)
     o.rotateName = key and key > 0 and getKeyName(key) or nil
     o.sGen = 0
@@ -339,6 +316,11 @@ function Cursor.start(playerNum, name, d, overlap)
     if old then old.replaced = true end
     local o = Cursor.new(player, entry, d or 0, overlap)
     getCell():setDrag(o, playerNum)
+    local H = B.Hotbar -- 快選列（Hotbar.lua）：開著就換內容，沒開就開
+    if H then
+        local ok, err = pcall(H.show, playerNum)
+        if not ok then print(LOG .. "hotbar failed: " .. tostring(err)) end
+    end
     return o
 end
 
@@ -389,15 +371,37 @@ function Cursor:offsOf(d)
     return offs or nil
 end
 
-function Cursor:setFace(d)
-    self.d = d
-    self.spr = Entry.face(self.entry, d)
+-- 這個錨點的佔地：車庫門照它帶的寬度 a[5]（Entry.groupCells），其他照朝向（offsOf）；沒有那一面回 nil
+function Cursor:offsFor(a)
+    local set = a[5] and a[4] and Entry.doorSet(Entry.face(self.entry, a[4]))
+    if set then return Entry.groupCells(set, a[5]) end
+    return a[4] and self:offsOf(a[4]) or nil
+end
+
+-- 車庫門的錨點：拖的那條線只看門的方向那一軸（N 型沿 +x、W 型頭片在 y 最大那格沿 −y，Entry.groupCells），
+-- 寬度夾在 2..一次上限（伺服器 Server.intent、Check.item 照同一個範圍驗）
+function Cursor:garageAnchor(ax, ay, az, ex, ey)
+    local north = Entry.doorSet(self.spr).north
+    local lo, hi = ax, ex
+    if not north then lo, hi = ay, ey end
+    local len = math.min(math.abs(hi - lo) + 1, math.max(2, self.perBatch))
+    local w = math.max(2, len)
+    if north then return { hi < lo and lo - len + 1 or lo, ay, az, self.d, w } end
+    return { ax, hi > lo and lo + len - 1 or lo, az, self.d, w }
+end
+
+-- 換到 Turn.states 的第 i 個：朝向 d，錨點移 dx, dy（格邊種類的東邊、南邊蓋在右邊、下面那格）
+function Cursor:setState(i)
+    local s = self.states[i]
+    self.si, self.d, self.dx, self.dy, self.edge = i, s.d, s.dx, s.dy, s.edge
+    self.spr = Entry.face(self.entry, s.d)
     self.sprName = self.spr:getName()
-    if DRAG[self.entry.kind] == "ring" then self.sides = Cursor.sides(self.entry, d) end
+    if DRAG[self.entry.kind] == "ring" then self.sides = Cursor.sides(self.entry, s.d) end
 end
 
 function Cursor:turn(step)
-    if self.faces.n > 1 then return self:setFace(Cursor.nextFace(self.faces, self.d, step)) end
+    local n = self.states.n
+    if n > 1 then return self:setState((self.si - 1 + step + n) % n + 1) end
     if self.mirrorName then -- 屋頂：換成鏡像的那一項（Cursor.mirror），蓋在哪一層照舊
         local o = Cursor.start(self.character:getPlayerNum(), self.mirrorName, 0, self.overlap)
         if o then o.up = self.up end
@@ -422,7 +426,7 @@ end
 function Cursor:rotateKey(key)
     if self.area then return end
     if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
-    if not LAYERED[self.entry.kind] then return end
+    if not LAYERED[self.entry.kind] or hook("layer", self) ~= nil then return end -- 規劃的樓層由 PlanMode 自己接換層鍵
     -- isKey 連修飾鍵、替代鍵一起比（Core.java:2405-2408），同 R 那一行
     if getCore():isKey("MinidoracatBuilder_LayerUp", key) then
         self.up = true
@@ -435,7 +439,7 @@ end
 -- 能拖的種類記下拉到哪裡畫一排；其他種類照原版往哪邊拖就轉向哪邊（:599-621），只轉到項目有的朝向。
 function Cursor:rotateMouse(x, y)
     -- 在介面上按住不算（見 isValid 的 pressUI）：不擋的話拖過不吃滑鼠的介面會把朝向轉掉
-    if self.joypad or not self.square or self.pressUI then return end
+    if self.joypad or not self.square or self.pressUI or self.picking then return end
     if self.canDrag then
         self.lineX, self.lineY = x, y
         return
@@ -447,8 +451,9 @@ function Cursor:rotateMouse(x, y)
     elseif math.abs(dy) > math.abs(dx) then
         want = dy < 0 and 1 or 3
     end
-    for i = 1, self.faces.n do
-        if self.faces[i] == want and want ~= self.d then self:setFace(want) end
+    for i = 1, self.states.n do
+        local s = self.states[i]
+        if s.d == want and s.dx == 0 and s.dy == 0 and want ~= self.d then self:setState(i) end
     end
 end
 
@@ -479,6 +484,9 @@ function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
         self.up = not self.up
         return
     end
+    -- 右搖桿按下：手把焦點交給快選列（Hotbar.focus；A 換項目、B 回游標）。游標用掉了 A、B、X、Y、LB、RB，十字鍵移游標
+    -- （ISBuildingObject.lua:627-669），拖曳中所有按鍵都先交給游標（JoyPadSetup.lua:363-366）
+    if button == Joypad.RStickButton and B.Hotbar then return B.Hotbar.focus(self.player) end
     ISBuildingObject.onJoypadPressButton(self, joypadIndex, joypadData, button)
 end
 
@@ -489,12 +497,12 @@ function Cursor:getXPrompt()
 end
 
 function Cursor:getLBPrompt()
-    if self.faces and (self.faces.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateLeft") end
+    if self.states and (self.states.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateLeft") end
     return nil
 end
 
 function Cursor:getRBPrompt()
-    if self.faces and (self.faces.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateRight") end
+    if self.states and (self.states.n > 1 or self.mirrorName) then return getText("IGUI_Controller_RotateRight") end
     return nil
 end
 -- getAPrompt 用原版的：canBeBuild（＝isValid）為真才回「建造」（ISBuildingObject.lua:671-676）
@@ -509,6 +517,32 @@ function Cursor.mouseOverUI(c)
     for i = 0, uis:size() - 1 do
         local ui = uis:get(i)
         if ui ~= own1 and ui ~= own2 and ui:isMouseOver() then return true end
+    end
+    return false
+end
+
+-- 吸管鍵（Window.initBinds 登記，預設 Shift+Z）按著。isKeyDown(名稱) 連修飾鍵一起比（LuaManager.java:7052）；
+-- 離線測試沒有 isKeyDown
+function Cursor.pickHeld()
+    return isKeyDown ~= nil and isKeyDown("MinidoracatBuilder_Pick") == true
+end
+
+-- 按著吸管鍵：不蓋、不畫虛影，標籤換成吸管說明。按下左鍵點到的物件（onObjectLeftMouseButtonDown 記的 pickObj）等放開
+-- 左鍵才換（Window.pickSwap）：按著時就換，新游標接著看到建造鍵按著，放開就蓋下去（ISBuildingObject.lua:114-126）；
+-- 放開這一幀 DoTileBuilding 先照上一幀的 canBeBuild（false）設 build，所以舊游標也不蓋
+function Cursor:pickValid()
+    if not self.picking then
+        self.picking = true
+        local col = self.colors
+        self.src = { getText("IGUI_MBLD_Pick_Label"), col.text, getText("IGUI_MBLD_Pick_Many"), col.text,
+            getText("IGUI_MBLD_Pick_HintClick"), col.textMuted }
+        self:layout()
+    end
+    local obj = self.pickObj
+    if obj and not self.isLeftDown then
+        self.pickObj = nil
+        local W = B.Window
+        if W and W.pickSwap then W.pickSwap(self.player, obj) end
     end
     return false
 end
@@ -533,6 +567,8 @@ function Cursor:isValid(square)
     end
     if not self.isLeftDown and not self.build then self.lineX, self.lineY = nil, nil end
     if self.area then return self:areaValid(square) end
+    if not self.joypad and (self.pickObj or Cursor.pickHeld()) then return self:pickValid() end
+    if self.picking then self.picking, self.kgen = nil, nil end -- 放開吸管鍵：下面重算，標籤換回來
     local now = getTimestampMs()
     if now - self.sAt >= SUMMARY_MS then
         self.sAt = now
@@ -543,15 +579,20 @@ function Cursor:isValid(square)
     local ax, ay, az = square:getX(), square:getY(), square:getZ()
     local ex, ey, drag = self.lineX or ax, self.lineY or ay, self.lineX ~= nil
     local px, py, pz = math.floor(p:getX()), math.floor(p:getY()), math.floor(p:getZ())
-    if ax ~= self.kx or ay ~= self.ky or az ~= self.kz or ex ~= self.kex or ey ~= self.key or self.d ~= self.kd
-        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or self.up ~= self.kup
+    -- Cursor.hook.layer(cursor) 回數字＝規劃模式指定的樓層差（蓋在滑鼠那格往上 dz 層），nil＝照 self.up
+    local dz = hook("layer", self)
+    if type(dz) ~= "number" then dz = self.up and 1 or 0 end
+    if ax ~= self.kx or ay ~= self.ky or az ~= self.kz or ex ~= self.kex or ey ~= self.key or self.si ~= self.kd
+        or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or dz ~= self.kdz
         or drag ~= self.kdrag then -- 開始拖：按鍵說明換成「放開 蓋 N 格」
-        self.kx, self.ky, self.kz, self.kex, self.key, self.kd = ax, ay, az, ex, ey, self.d
-        self.kpx, self.kpy, self.kpz, self.kgen, self.kup, self.kdrag = px, py, pz, self.sGen, self.up, drag
+        self.kx, self.ky, self.kz, self.kex, self.key, self.kd = ax, ay, az, ex, ey, self.si
+        self.kpx, self.kpy, self.kpz, self.kgen, self.kdz, self.kdrag = px, py, pz, self.sGen, dz, drag
         -- 上一層：畫面上同一個位置，上一層是 (x+3, y+3)（IsoUtils.XToIso／YToIso 每層加 3 格）
-        local u = self.up and 3 or 0
-        self:refresh(ax + u, ay + u, az + (self.up and 1 or 0), ex + u, ey + u)
+        local u = 3 * dz
+        self:refresh(ax + u, ay + u, az + dz, ex + u, ey + u)
     end
+    local v = hook("valid", self)
+    if v ~= nil then return v == true end
     return self.okN > 0
 end
 
@@ -581,11 +622,15 @@ function Cursor.farFirst(list, px, py)
 end
 
 -- 這次要預覽的錨點 { x, y, z, d }：不能拖的只有按下那格；拖成一直線照目前朝向；兩邊都 ≥2 格照 DRAG 拉長方形
--- （圍一圈時每格的 d 照 self.sides）。沒有那一面的格子帶 code＝NO_FACE，排在上限之後的帶 OVER_MAX（照畫、不送）。
+-- （圍一圈時每格的 d 照 self.sides）。照目前朝向的格子移 self.dx, self.dy（Turn 的東邊、南邊）。沒有那一面的格子帶
+-- code＝NO_FACE。有 self.max 的（配方拖一排，Recipes.lua）排在上限之後的帶 OVER_MAX（照畫、不送）；圖塊游標不設，
+-- 超過的放開後分批送（Queue.push）。
 -- 一次挖好幾格水面而玩家站在範圍裡：整片帶 STAND_OUTSIDE、不送。照走路的排法，四周挖完後玩家會被水圍在中間出不來
 function Cursor:anchors(ax, ay, az, ex, ey)
     self.mode = nil
-    if not self.canDrag then return { { ax, ay, az, self.d } } end
+    local dx, dy = self.dx or 0, self.dy or 0
+    if self.garage then return { self:garageAnchor(ax + dx, ay + dy, az, ex + dx, ey + dy) } end
+    if not self.canDrag then return { { ax + dx, ay + dy, az, self.d } } end
     ex = math.max(ax - SIDE_MAX, math.min(ax + SIDE_MAX, ex))
     ey = math.max(ay - SIDE_MAX, math.min(ay + SIDE_MAX, ey))
     local list
@@ -597,10 +642,14 @@ function Cursor:anchors(ax, ay, az, ex, ey)
     end
     if self.entry.kind == "water" then list = Cursor.farFirst(list, self.character:getX(), self.character:getY()) end
     for i, a in ipairs(list) do
-        if a.side then a[4] = self.sides[a.side] else a[4] = self.d end
+        if a.side then
+            a[4] = self.sides[a.side]
+        else
+            a[1], a[2], a[4] = a[1] + dx, a[2] + dy, self.d
+        end
         if a[4] == nil then
             a.code = "NO_FACE"
-        elseif i > self.max then
+        elseif self.max and i > self.max then
             a.code, a.extra = "OVER_MAX", { max = self.max }
         end
     end
@@ -614,12 +663,14 @@ function Cursor:anchors(ax, ay, az, ex, ey)
 end
 
 -- 重算預覽與要畫的東西（只在 isValid 判斷有變時）。每格攤平成陣列，render 只照陣列畫。
--- ponytail：拖曳時每換一格整片重算（最多 MaxCellsPerDrag 次 Check.item）；量到卡頓再改成只算新增的格子。
+-- ponytail：拖曳時每換一格整片重算（最多 DRAW_MAX 次 Check.item）；量到卡頓再改成只算新增的格子。
 function Cursor:refresh(ax, ay, az, ex, ey)
     local anchors = self:anchors(ax, ay, az, ex, ey)
     self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S, self.overlap)
     local g, scale, warn = newGhosts(), Core.getTileScale(), self.colors.warning
     local good, bad = coreColors()
+    local tint = hook("tint", self) -- 規劃模式換可蓋格子的地框色
+    if type(tint) == "table" then good = { r = tint.r or tint[1], g = tint.g or tint[2], b = tint.b or tint[3] } end
     local swapN = 0
     for _, r in ipairs(self.res) do
         local a, code, e = r.a, r.code, r.extra
@@ -627,7 +678,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         -- 替換格（契約 C7）：黃色虛影與地框＋替換記號，不只靠顏色
         local swap = code == nil and r.info ~= nil and r.info.replace ~= nil
         if swap then swapN = swapN + 1 end
-        for j, o in ipairs(a[4] and self:offsOf(a[4]) or NO_OFFS) do
+        for j, o in ipairs(self:offsFor(a) or NO_OFFS) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
             local spr = Entry.alternate(o[4], x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
@@ -735,12 +786,15 @@ end
 -- 全部畫在跟著滑鼠的標籤框（self.src：文字、顏色交錯）。
 function Cursor:texts()
     local Names, Sep = B.Names, getText("IGUI_MBLD_Sep")
-    -- 配對面是目錄裡的另一項：標籤寫那一項的名稱，不加朝向
-    local name = Names and Names.of(self.d == 5 and self.sprName or self.name) or self.name
+    -- 配對面是目錄裡的另一項、格邊種類轉到另一條邊時也可能是：標籤寫實際用的那一張的名稱
+    local name = (self.d == 5 or self.edge) and self.sprName or self.name
+    name = Names and Names.of(name) or name
     if self.mode then
         local key = self.mode == "ring" and "IGUI_MBLD_ShapeRing" or self.mode == "edge" and "IGUI_MBLD_ShapeEdge"
             or "IGUI_MBLD_Size"
         name = name .. Sep .. getText(key, tostring(self.shapeW), tostring(self.shapeH))
+    elseif self.edge then
+        name = name .. Sep .. getText("IGUI_MBLD_Edge_" .. self.edge)
     elseif self.d ~= 0 and self.d ~= 5 then
         name = name .. Sep .. (Names and Names.face(self.d) or tostring(self.d)) -- 鍵由 Window 定義
     end
@@ -761,16 +815,27 @@ function Cursor:texts()
         label2 = getText("IGUI_MBLD_SwapOld", Names and Names.of(old, rep.kind) or old)
     end
     self.label2 = label2
+    -- 超過一次上限（MaxCellsPerDrag）：放開後分幾批依序送
+    local batches = self.perBatch and math.ceil(ok / self.perBatch) or 1
+    self.batch = batches > 1 and getText("IGUI_MBLD_Batches", tostring(batches), tostring(self.perBatch)) or nil
     local level = n == 1 and ok == 1 and stackLevel(res[1])
     local over, max = nil, nil
     if n == 1 and ok == 1 then over, max = overlapLevel(res[1]) end
     self.stack = level and getText("IGUI_MBLD_StackLevel", tostring(level))
-        or over and getText("IGUI_MBLD_OverlapLevel", tostring(over), tostring(max)) or nil
+        or over and getText("IGUI_MBLD_OverlapLevel", tostring(over), tostring(max))
+        or self.overlap and getText("IGUI_MBLD_OverlapOn") or nil -- 疊放鍵切換時看得出開著；關掉就不寫
     self.swap = self:swapText()
-    -- 前一筆還有格子在排隊：再放一次，Client.build 會清掉角色的動作佇列（redrag＝replace，使用者 2026-10-29），放開前先說。
-    -- 配方項目拖的一排（Recipes.left）也會被清掉，一起算
-    local left = ok > 0 and Cursor.cancels(self.character) or 0
-    self.label3 = left > 0 and getText(left == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(left)) or nil
+    -- 前面還有排著、還沒蓋好的：這一排接在後面蓋（使用者 2026-11-16 選 queue=append，改掉 10-29 的「取代前一排」）。
+    -- 配方項目拖的一排還沒蓋完時，圖塊的請求照舊清掉角色的動作佇列、取代它（Recipes.left），放開前先說
+    local ahead = ok > 0 and Queue.left(self.character) or 0
+    local R = B.Recipes
+    local cut = ok > 0 and ahead == 0 and R and R.left(self.player, true) or 0
+    if ahead > 0 then
+        self.label3, self.label3warn = getText("IGUI_MBLD_Append", tostring(ahead)), false
+    else
+        self.label3, self.label3warn = cut > 0
+            and getText(cut == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(cut)) or nil, true
+    end
     self.tip = self:reasons()
     local hint
     if not self.joypad then -- 手把用原版按鈕提示（getAPrompt 等）
@@ -787,7 +852,7 @@ function Cursor:texts()
             parts[#parts + 1] = getText(swap > 0 and "IGUI_MBLD_HintSwap" or "IGUI_MBLD_HintBuild")
             if self.canDrag then parts[#parts + 1] = getText("IGUI_MBLD_HintDrag") end
         end
-        if (self.faces.n > 1 or self.mirrorName) and self.rotateName then
+        if (self.states.n > 1 or self.mirrorName) and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
         if LAYERED[self.entry.kind] then
@@ -806,11 +871,14 @@ function Cursor:texts()
     end
     add(self.label, col.text)
     add(label2, ok < n and col.warning or col.text)
+    add(self.batch, col.text)
     add(self.stack, col.text)
     add(self.swap, col.text)
-    add(self.label3, col.warning)
+    add(self.label3, self.label3warn and col.warning or col.text)
     add(self.tip, col.text)
     add(hint, col.textMuted)
+    local repl = hook("label", self, src)
+    if type(repl) == "table" then src = repl end
     self.src = src
     self:layout()
 end
@@ -828,8 +896,9 @@ function Cursor:areaValid(square)
     local ax, ay = square:getX() + s, square:getY() + s
     local ex, ey = (self.lineX or square:getX()) + s, (self.lineY or square:getY()) + s
     if self.one then ex, ey = ax, ay end
-    ex = math.max(ax - AREA_SIDE + 1, math.min(ax + AREA_SIDE - 1, ex))
-    ey = math.max(ay - AREA_SIDE + 1, math.min(ay + AREA_SIDE - 1, ey))
+    local side = self.area.side or AREA_SIDE -- cb.side：框選擷取（Capture）每邊 64；一區拆除不傳
+    ex = math.max(ax - side + 1, math.min(ax + side - 1, ex))
+    ey = math.max(ay - side + 1, math.min(ay + side - 1, ey))
     local x1, y1, x2, y2 = math.min(ax, ex), math.min(ay, ey), math.max(ax, ex), math.max(ay, ey)
     local now = getTimestampMs()
     if x1 ~= self.kx or y1 ~= self.ky or x2 ~= self.kex or y2 ~= self.key or z ~= self.kz then
@@ -1003,7 +1072,8 @@ function Cursor:layout()
     end
     self.lines = lines
     o.fh = fh
-    o:setWidth(w + PAD * 2)
+    -- 右邊多留半個字寬：中文句尾的全形句號量出來比畫出來窄，會畫到框外（介面審查第 8 條）
+    o:setWidth(w + PAD * 2 + math.ceil(fh / 2))
     o:setHeight(lines.n * fh + PAD * 2)
     o:setVisible(not self.overUI)
 end
@@ -1029,7 +1099,7 @@ function Cursor:render(x, y, z, square)
     self:showUI()
     local t = self.tooltip
     if t:getIsVisible() == self.overUI then t:setVisible(not self.overUI) end
-    if self.overUI then return end
+    if self.overUI or self.picking then return end
     local floor = self:getFloorCursorSprite()
     local g = self.g
     local gx, gy, gz, gspr, gyoff = g.x, g.y, g.z, g.spr, g.yoff
@@ -1041,8 +1111,10 @@ function Cursor:render(x, y, z, square)
 end
 
 -- 放開左鍵、或按下手把 A，而且至少一格可蓋（ISBuildingObject.lua:171-174）。只送可蓋的格子（含替換格）；缺料、擋住、
--- 沒有那一面、超過上限的跳過。覆寫它就不經過原版 ISBuildAction；角色走過去與排動作在 Client.build（伺服器收下才排）。
--- 送出的每格順便記下各片的虛影（照那一格自己的面，同 refresh 的算法），還沒蓋好前照畫（Cursor.drawQueued）。
+-- 沒有那一面的跳過；超過 MaxCellsPerDrag 的由 Queue.push 切成幾筆依序送。覆寫它就不經過原版 ISBuildAction；角色走過去
+-- 與排動作在 Client.build（伺服器收下才排）。前面還有排著的就接在後面（Queue）。
+-- 送出的每格順便記下各片的虛影（照那一格自己的面，同 refresh 的算法），還沒蓋好前照畫（Queue.draw）。
+-- Cursor.hook.commit 回 true＝規劃模式自己收下這次放開，不送。
 -- 一區拆除模式：先關游標（deactivate 看 released 不呼叫 cancel），再把範圍交給 cb.release。
 function Cursor:tryBuild(x, y, z)
     if self.area then
@@ -1061,33 +1133,38 @@ function Cursor:tryBuild(x, y, z)
         local sq = getCell():getGridSquare(x, y, z)
         if not (sq and self:isValid(sq)) then return end
     end
+    if hook("commit", self) == true then
+        self.lineX, self.lineY, self.kgen = nil, nil, nil
+        return
+    end
     local anchors, parts, scale = {}, {}, Core.getTileScale()
     for _, r in ipairs(self.res) do
         if r.code == nil then
             local a, ps = r.a, {}
-            for j, o in ipairs(self:offsOf(a[4])) do
+            for j, o in ipairs(self:offsFor(a)) do
                 local c = r.cells and r.cells[j]
                 local x, y = a[1] + o[1], a[2] + o[2]
                 ps[j] = { x, y, a[3] + o[3], Entry.alternate(o[4], x, y), (c and c.yoff or 0) * scale }
             end
-            anchors[#anchors + 1] = { a[1], a[2], a[3], a[4] }
+            anchors[#anchors + 1] = { a[1], a[2], a[3], a[4], a[5] } -- a[5]：車庫門的寬度（Client.build 送 w）
             parts[#anchors] = ps
         end
     end
     self.lineX, self.lineY = nil, nil
     if #anchors > 0 then
         Cursor.send(self.character, self.name, anchors, parts, self.overlap)
-        self.kgen = nil -- 下一幀重算：標籤馬上寫出「再放一次會取消剛送出的 N 格」
+        self.kgen = nil -- 下一幀重算：標籤馬上寫出「接在前一排後面」
     end
 end
 
 -- 放置中點到物件時不讓原版處理（開門、開關燈、拉窗簾）。原版只在拖曳物件有這個方法時才擋
 -- （ISObjectClickHandler.lua:315-318），而且是用點號呼叫、第一個參數是被點的物件，不是游標（同 ISMoveableCursor.lua:73）。
 -- 吸管記下這個物件：引擎按下左鍵時照圖挑（UIManager.java:584-586），早於放開時的 tryBuild；放開時照它的格子列圖
--- （Window.startPick）。滑鼠只有玩家 0 用
+-- （Window.startPick）。建造游標按著吸管鍵時記在 pickObj（Cursor:pickValid 放開左鍵才換）。滑鼠只有玩家 0 用
 function Cursor.onObjectLeftMouseButtonDown(object)
     local c = Cursor.get(0)
     if c and c.one then c.picked = object end
+    if c and not c.area and not c.joypad and (c.picking or Cursor.pickHeld()) then c.pickObj = object end
     return true
 end
 
@@ -1101,144 +1178,61 @@ function Cursor:deactivate()
         end
         return
     end
-    if not self.replaced and Cursor.onEnd then
-        local ok, err = pcall(Cursor.onEnd, self.player)
-        if not ok then print(LOG .. "onEnd failed: " .. tostring(err)) end
+    if not self.replaced then
+        if B.Hotbar then B.Hotbar.hide() end
+        if Cursor.onEnd then
+            local ok, err = pcall(Cursor.onEnd, self.player)
+            if not ok then print(LOG .. "onEnd failed: " .. tostring(err)) end
+        end
     end
 end
 
--- ---------------------------------------------------------------- 送出後：被拒與停下的通知
+-- ---------------------------------------------------------------- 送出後（排程、通知、排隊虛影在 Queue.lua）
+-- 下面幾個名稱 Recipes.lua、Menu.lua 與 E2E 在用，照舊保留，轉給 Queue。
 
--- 目前等結果的請求：{ player, n, count, placed, accepted, at, idleAt, parts }。每人只留一個請求（Client.build 會清佇列），
--- 所以只追最近一筆。游標關掉後照樣追，通知照發。watch 清掉（蓋完、被拒、停下、換了別的請求）時排隊虛影一起收。
-local watch
-
--- title 省略＝「無法建造」（Messages.toast）
-local function tell(player, code, extra, title)
-    if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知，不再疊一則
-    Messages.toast(player, Messages.refusal(code, extra), title)
-end
-
--- 送一次建造（游標放開時，契約 C4）。anchors＝{ { x, y, z, d }, ... }（每格自己的朝向 0..5）；parts[i]＝第 i 格各片的虛影
--- { x, y, z, sprite, yoff }，省略就不畫排隊虛影。overlap＝疊放模式（Client.build）。回 nonce，或 nil, 原因碼。
+-- 送一次建造（游標放開時，契約 C4）：交給排程（Queue.push，手拖的），前面有排著的就接在後面。anchors＝{ { x, y, z, d }, ... }
+-- （每格自己的朝向 0..5）；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，省略就不畫排隊虛影。overlap＝疊放模式。
+-- 回 nonce（排在別筆後面、還沒送出時回組的 id），或 nil, 原因碼。
 function Cursor.send(player, name, anchors, parts, overlap)
-    local w = { player = player, count = #anchors, placed = 0, at = getTimestampMs(), parts = parts }
-    watch = w
-    local n, code = Client.build(player, name, anchors, overlap)
-    if not n then
-        if watch == w then watch = nil end
-        if not w.told then tell(player, code) end -- 單機的 intent 當場被拒時 onResult 已經通知過
-        return nil, code
-    end
-    w.n = n
-    return n
+    local id, n = Queue.push(player, name, anchors, parts, overlap)
+    if not id then return nil, n end
+    return n or id
 end
 
--- 還沒蓋好的格子：{ [i] = 各片 }，沒有在等的請求回 nil（E2E 讀）
+-- 還沒蓋好的格子（排著的與正在蓋的）：{ 各片, ... }，都沒有回 nil（E2E 讀）
 function Cursor.queued()
-    return watch and watch.parts
+    return Queue.queued()
 end
 
--- 這個角色排隊中、還沒蓋好的格數（取代前一排的提示：圖塊游標、配方游標、拆除選單）
+-- 這個角色排著、還沒蓋好的格數（圖塊游標的「接在後面」提示）
 function Cursor.left(player)
-    local w = watch
-    if not (w and w.parts and w.player == player) then return 0 end
-    local n = 0
-    for _ in pairs(w.parts) do n = n + 1 end
-    return n
+    return Queue.left(player)
 end
 
--- 這個角色送出會清佇列的請求（圖塊建造、配方拖一排、拆除）時會取消幾格：圖塊排隊中的＋配方拖的一排還沒蓋的（Recipes.left）
+-- 這個角色送出會清佇列的請求（配方拖一排、拆除）時會取消幾格：圖塊排著的（Queue）＋配方拖的一排還沒蓋的（Recipes.left）
 function Cursor.cancels(player)
     local R = B.Recipes
-    return Cursor.left(player) + (R and R.left(player:getPlayerNum(), true) or 0)
+    return Queue.left(player) + (R and R.left(player:getPlayerNum(), true) or 0)
 end
 
--- Client.onServerCommand 收進 results 後呼叫。單機的 intent 在 Client.build 回傳前就答覆，那時 nonce 只在 Client.pending。
-function Cursor.onResult(cmd, args)
-    local w = watch
-    if not w then return end
-    local n = w.n or (Client.pending and Client.pending.n)
-    if args.n ~= n then return end
-    if cmd ~= "accepted" then
-        local c = Cursor.get(w.player:getPlayerNum())
-        if c then c.kgen = nil end -- 剛蓋好或被拒：下一幀重算預覽，不等每秒那一次
-    end
-    if cmd == "accepted" then
-        w.accepted = true
-    elseif cmd == "placed" then
-        w.placed = w.placed + 1
-        if w.parts and args.i then w.parts[args.i] = nil end
-        if w.placed >= w.count then watch = nil end
-    elseif cmd == "refused" then
-        -- 被拒就停整串：MP 的 Reject 與 Client 都清掉了後面的動作
-        w.told = true
-        watch = nil
-        tell(w.player, args.code, args)
-    end
-end
-Client.onResult = Cursor.onResult
-
--- 每 tick：沒有在等的請求就直接回。收下後佇列空了一陣子還沒蓋完＝停下了，提示一次。佇列空了分不出是玩家自己走開、
--- 按 ESC，還是路徑走不通（動作停下一律 resetQueue，不留原因：ISBaseTimedAction.lua:63-64），所以只有排隊時就知道的
--- 「旁邊沒空位」（Client.lua 的 queue 記在 noRoom）另外說；其他照實說蓋好幾格。材料是一格一格在 Server.complete 扣的
--- （Place.build 成功後才 Materials.consume，Server.lua:241-251），停下時沒蓋的格子沒有扣。
-function Cursor.tick()
-    local w = watch
-    if not w or not w.n then return end
-    if not Client.pending or Client.pending.n ~= w.n then -- 有別的請求取代了它
-        watch = nil
-        return
-    end
-    local now = getTimestampMs()
-    if not w.accepted then
-        if now - w.at > ACCEPT_MS then
-            watch = nil
-            tell(w.player, "RATE_LIMITED")
-        end
-        return
-    end
-    if ISTimedActionQueue.isPlayerDoingAction(w.player) then
-        w.idleAt = nil
-        return
-    end
-    w.idleAt = w.idleAt or now
-    if now - w.idleAt < IDLE_MS then return end
-    watch = nil
-    if w.placed >= w.count then return end
-    local stuck, title = Client.pending.noRoom, w.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
-    -- 前面的都蓋好了，停在旁邊沒空位的那一格；一次挖好幾格水面時有一格沒空位就整批沒排（Client 的 noneQueued）
-    if stuck and (w.placed + 1 >= stuck or Client.pending.noneQueued) then
-        tell(w.player, "NO_ROOM", { i = stuck, n = w.count }, title)
-    elseif w.placed > 0 then
-        Messages.toast(w.player, getText("IGUI_MBLD_Stopped", tostring(w.placed), tostring(w.count)), title)
-    else
-        tell(w.player, "WALK")
-    end
-end
-Events.OnTick.Add(Cursor.tick)
-
--- 已送出、還沒蓋好的格子（使用者 2026-10-29：還沒蓋完前要顯示預計要蓋的格子）：淡虛影＋藍框，蓋好一格收一格。
--- 游標關掉後角色照樣在蓋，所以不畫在游標的 render，改在世界畫完時畫（OnPostRender，IngameState.java:1197-1200）：
--- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:316 的 DoBuilding），所以一樣畫在世界最上層。
--- 不能用 OnPostFloorLayerDraw：它只在舊渲染器（IsoCell.java:856-860）觸發，B42 預設的 FBO 渲染器沒有
--- （builder-ui-1029a 截圖一格都沒畫出來）。
--- parts＝{ [i] = { { x, y, z, sprite, yoff }, ... } }（各片的 sprite 是 tryBuild 照那一格自己的面記的，圍一圈時北、西兩種邊
--- 各畫各的）；配方項目拖的一排（Recipes.lua）也用這支
+-- 畫已送出、還沒蓋好的格子（Queue.drawParts）；配方項目拖的一排（Recipes.lua）也用
 function Cursor.drawParts(parts)
-    local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:697-703）
-    for _, ps in pairs(parts) do
-        for _, g in ipairs(ps) do
-            g[4]:RenderGhostTileColor(g[1], g[2], g[3], 0, g[5], 1, 1, 1, 0.35)
-            floor:RenderGhostTileColor(g[1], g[2], g[3], QR, QG, QB, 0.8)
-        end
-    end
+    return Queue.drawParts(parts)
 end
 
-function Cursor.drawQueued()
-    local w = watch
-    if w and w.parts then Cursor.drawParts(w.parts) end
+-- 右鍵取消放置，不跳原版右鍵選單：原版放開右鍵時，按下與放開點到同一個物件才開選單（ISObjectClickHandler.lua:387-401），
+-- 引擎先發 OnRightMouseUp 再發 OnObjectRightMouseButtonUp（UIManager.java:750-756），所以這裡清掉按下時記的物件、自己關
+-- 游標（原版是開選單時順便關，ISWorldObjectContextMenu.lua:180）。沒點到物件時原版本來不開選單，現在一樣關游標。
+-- 只清原版的欄位，不換原版函式。滑鼠只有玩家 0 用；配方項目開的游標一起
+function Cursor.onRightMouseUp()
+    local R = B.Recipes
+    if not (Cursor.get(0) or (R and R.cursor(0))) then return end
+    if ISObjectClickHandler then ISObjectClickHandler.rdownObject = nil end
+    getCell():setDrag(nil, 0)
 end
-Events.OnPostRender.Add(Cursor.drawQueued)
+if not Cursor.rightHooked then
+    Cursor.rightHooked = true
+    Events.OnRightMouseUp.Add(function() MinidoracatBuilder.Cursor.onRightMouseUp() end)
+end
 
 return Cursor

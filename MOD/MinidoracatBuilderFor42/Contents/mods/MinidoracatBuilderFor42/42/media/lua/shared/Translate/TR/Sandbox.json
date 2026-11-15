@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Plana göre inşaya izin ver",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Açıkken oyuncular yerleştirilmiş bir planı karakterlerine parça parça inşa ettirebilir ve seçtikleri sandıklardan malzeme aldırabilir. Her parça, elle inşa ederken olduğu gibi mesafe, sığınak, malzeme ve beceri açısından yine kontrol edilir.\nKapalıyken plana göre inşa başlatılamaz. Plan çizme ve malzeme listesi yine çalışır.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
     "Sandbox_MinidoracatBuilder_Enabled": "İnşaya izin ver",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "Kapalıyken sunucu bu modun tüm inşa isteklerini reddeder. Önceden inşa edilmiş şeyler yerinde kalır.",

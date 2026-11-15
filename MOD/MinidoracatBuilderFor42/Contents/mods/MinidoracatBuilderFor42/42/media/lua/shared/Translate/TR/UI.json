@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "İnşa imleci: damlalık (basılı tut, sonra bir şeye tıkla)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "İnşa imleci: üst üste aç/kapat",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "İnşa imleci: sonraki son kullanılan",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "İnşa imleci: son inşayı geri al",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Planlama: geri al",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Planlama: yinele",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Planlama: seçimi sil",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Plan: gizle/göster",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Araç çubuğu düğmesini göster",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Minidoracat araç çubuğundaki Build Anything düğmesi. Kapalıyken pencereyi Tuş ayarları > Minidoracat Build Anything altında atanan tuşla aç.",

@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild": "開放照圖蓋",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "打開後，玩家可以照地上的藍圖讓角色自己一片片蓋，也能點名材料箱讓角色去拿料。每一片照樣檢查距離、安全屋、材料與技能，和手蓋一樣。\n關掉後照圖蓋不能開始，規劃藍圖與材料表照樣能用。",
     "Sandbox_MinidoracatBuilder": "Minidoracat 自由建造",
     "Sandbox_MinidoracatBuilder_Enabled": "開放建造",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "關掉後，伺服器拒絕本 MOD 的所有建造請求。已經蓋好的東西照常存在。",

@@ -623,8 +623,8 @@ local function kind(o, name) return Rules.classify(sprite(name or "test_01_0", 5
 check(kind({ flags = { "windowW" }, keys = { WindowW = "" } }) == "window", "窗也帶 WindowW：歸窗、不歸窗框")
 check(kind({ keys = { WindowW = "" } }) == "windowFrame", "只有 WindowW：窗框")
 check(kind({ flags = { "HoppableW" }, keys = { WallWTrans = "" } }) == "fence", "低柵欄帶牆鍵：歸柵欄")
-check(kind({ flags = { "doorW" }, keys = { WallW = "", GarageDoor = "" } }) == "garage", "車庫門帶門旗標與牆鍵：歸車庫門")
-check(kind({ flags = { "doorW" }, keys = { DoubleDoor = "3" } }) == nil, "雙開門的單片：不列（要四片一組）")
+check(kind({ flags = { "doorW" }, keys = { WallW = "", GarageDoor = "" } }) == "door", "車庫門的片帶門旗標與牆鍵：歸門（湊不成整組的由 Entry.resolve 擋）")
+check(kind({ flags = { "doorW" }, keys = { DoubleDoor = "3" } }) == "door", "雙開門的單片：歸門（目錄只收湊得成整組的第 1 片）")
 check(kind({ flags = { "doorW", "open" } }) == nil, "開著的門（關著那張 +2，引擎補了門旗標與 open）：不列")
 check(kind({ keys = { container = "", LightRadius = "5", lightR = "1" } }) == "container", "冰箱帶燈：歸容器")
 check(kind({ keys = { LightRadius = "5" } }) == nil, "有 LightRadius、沒有 lightR 的不會亮：不列")
@@ -975,7 +975,7 @@ check(e1 and e1.kind == "wall" and e1.tileset == "walls_test_01" and e1.num == 4
 check(select(2, Entry.resolve("nope_01_0")) == "UNKNOWN", "不存在的圖塊：UNKNOWN（不新增空 sprite）")
 check(select(2, Entry.resolve("tree_01_0")) == "UNKNOWN", "排除的圖塊（樹）：UNKNOWN")
 check(select(2, Entry.resolve("st_01_0")) == "UNKNOWN", "湊不成三格的樓梯底片：UNKNOWN（目錄也不收）")
-check(select(2, Entry.resolve("gd_01_0")) == "UNSUPPORTED", "車庫門第二版才做：UNSUPPORTED")
+check(select(2, Entry.resolve("gd_01_0")) == "UNKNOWN", "湊不成整組的車庫門片：UNKNOWN（目錄也不收）")
 check(select(2, Entry.resolve("bed_01_2")) == "UNKNOWN", "多格的非原點：UNKNOWN")
 check(Entry.resolve("bed_01_1") ~= nil, "多格原點可以")
 check(Entry.resolve("tk_01_9").mod == "UMCTP", "MOD 圖塊帶來源")
@@ -1817,7 +1817,7 @@ do
     do
         local favSrc = W.filter(st({ cat = "fav", query = "UMCTP mod", fav = { n = 2, "furniture_seat_01_0", "umctp_boxes_01_0" } }))
         check(favSrc.n == 1 and favSrc[1] == "umctp_boxes_01_0", "最愛＋搜尋來源 MOD 名：和一般清單搜得到的一樣")
-        W.st.recent = { n = 0 }
+        MinidoracatBuilder.Recent.load() -- 最近用的改存 recent.txt（Recent.lua）：這裡沒有假磁碟，讀不到＝空清單
         W.addRecent("a_1")
         W.addRecent("b_2")
         W.addRecent("c_3")
@@ -2178,10 +2178,15 @@ do
     check(#l3 == 32 and l3[32][1] == 41, "超過上限：只到第 32 格")
     local l4 = Cursor.line(10, 10, 0, 0, 10, 4)
     check(#l4 == 4 and l4[4][1] == 7, "上限 4、往 x 負方向")
-    local faces = { n = 3, 1, 2, 4 }
-    check(Cursor.nextFace(faces, 4, 1) == 1 and Cursor.nextFace(faces, 1, -1) == 4 and Cursor.nextFace(faces, 2, 1) == 4
-        and Cursor.nextFace(faces, 3, 1) == 1 and Cursor.nextFace({ n = 1, 0 }, 0, 1) == 0,
-        "朝向循環：只在有的朝向之間轉，不在清單的回第一個")
+    local st = { n = 4, { d = 5, dx = 0, dy = 0 }, { d = 0, dx = 1, dy = 0 }, { d = 5, dx = 0, dy = 1 }, { d = 0, dx = 0, dy = 0 } }
+    check(Cursor.pickState(nil, st, 0) == 4 and Cursor.pickState(nil, st, 5) == 1,
+        "朝向循環：開游標時挑沒有位移的那一個（西邊，不是東邊）")
+    local fake = { states = st, si = 1, setState = function(o, i) o.si = i end }
+    Cursor.turn(fake, -1)
+    local back = fake.si
+    Cursor.turn(fake, 1)
+    Cursor.turn(fake, 1)
+    check(back == 4 and fake.si == 2, "朝向循環：往回從第一個轉到最後一個，往前照順序")
     local realItem = Check.item
     Check.item = function(_, _, _, a, opts)
         if a[1] == 2 then return "BLOCKED", { x = 2 } end
@@ -2312,6 +2317,8 @@ local function stopNotices()
     local B = MinidoracatBuilder
     local Cursor, Messages, C = B.Cursor, B.Messages, B.Client
     local realBuild, realToast, realGet, realQ, realGetText = C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText
+    local realMax = sb.MaxCellsPerDrag
+    sb.MaxCellsPerDrag = 32 -- 前面的情境設成 4：8 格會分兩筆送（Queue），這裡只測一筆停下的通知
     getText = function(k, ...)
         local a = { ... }
         return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
@@ -2331,11 +2338,12 @@ local function stopNotices()
         for i = 1, count do cells[i] = { i, 0, 0, 0 } end
         local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", cells, nil)
         C.pending.noRoom, C.pending.noneQueued = noRoom, none
-        Cursor.onResult("accepted", { n = n })
-        for i = 1, placed do Cursor.onResult("placed", { n = n, i = i }) end
-        Cursor.tick()
+        local Q = B.Queue
+        Q.onResult("accepted", { n = n })
+        for i = 1, placed do Q.onResult("placed", { n = n, i = i }) end
+        Q.tick()
         nowMs = nowMs + 2000
-        Cursor.tick()
+        Q.tick()
         return told
     end
     check(run(8, 3) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Stopped(3,8)", "蓋了 3 格後停下：報蓋好 3／8，不報走不到")
@@ -2346,6 +2354,7 @@ local function stopNotices()
         "一次挖好幾格水面、第 4 格沒空位所以整批沒排：報第 4 格旁邊沒有空位，不報走不過去")
     check(run(8, 8) == nil and Cursor.queued() == nil, "全部蓋好：不通知")
     C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText = realBuild, realToast, realGet, realQ, realGetText
+    sb.MaxCellsPerDrag = realMax
 end
 stopNotices()
 
@@ -4343,7 +4352,7 @@ do
     check(kind({ flags = { "WallN", "EntityScript" }, keys = { WallN = "" } }) == nil
         and code({ flags = { "WallN", "EntityScript" }, keys = { WallN = "" } }) == "ENTITY", "配方的牆：不列，原因 ENTITY")
     -- 不列的原因碼（每個 nil 都帶原因，建造視窗才說得出為什麼）
-    check(code({ flags = { "doorW", "open" } }) == "DOOR_OPEN" and code({ flags = { "doorW" }, keys = { DoubleDoor = "3" } }) == "DOUBLE_DOOR"
+    check(code({ flags = { "doorW", "open" } }) == "DOOR_OPEN"
         and code({}) == "NO_KIND" and code({ keys = { IsMoveAble = "" } }, "crafted_04_120") == "LUA"
         and code({ keys = { RoofGroup = "1" } }, "e_roof_snow_01_3") == "PREFIX" and code({ type = T.tree }) == "TREE"
         and code({ flags = { "vegitation" } }) == "PLANT" and code({ flags = { "solidfloor" }, keys = { waterAmount = "9999" } }) == "WATER"
@@ -5313,7 +5322,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         function d:getSprite() return spriteMap[name] end
         doors[#doors + 1] = d
         return d
-    end }
+    end, getGarageDoorIndex = function() return -1 end, getDoubleDoorIndex = function() return -1 end }
     sb.ZombieProofDoors = true
     Place.build("door", { { sq = squares["96,91,0"], spr = doorS, cost = {} } }, {})
     sb.ZombieProofDoors = nil
@@ -5602,9 +5611,11 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
         "配對面：兩張一組（4W 5W 6N 7N、8N 9N 10W 11W）改看 ±2")
     check(pair("pf_fence_01_1") == "pf_fence_01_2" and pair("pf_fence_01_2") == "pf_fence_01_1",
         "配對面：xor 1 那張不存在時就近找（1N 2W）")
-    check(pair("pf_house_01_2") == nil and pair("pf_door_01_0") == nil and pair("pf_lone_01_0") == nil
+    check(pair("pf_house_01_2") == nil and pair("pf_lone_01_0") == nil
         and Entry.face(Entry.resolve("pf_house_01_0"), 6) == nil,
-        "配對面：佔兩條邊的角片、門、找不到另一邊的都回 nil；d＝6 不存在")
+        "配對面：佔兩條邊的角片、找不到另一邊的都回 nil；d＝6 不存在")
+    check(pair("pf_door_01_0") == "pf_door_01_1" and pair("pf_door_01_1") == "pf_door_01_0",
+        "配對面：單扇門照編號 xor 1、方向相反、互配（使用者 2026-11-14：有規律的才配）")
     local wallEntry = Entry.resolve("pf_house_01_0")
     check(Entry.face(wallEntry, 5) == Entry.face(wallEntry, 5) and Entry.face(wallEntry, 0) == pf.pf_house_01_0,
         "配對面：同一項目查兩次結果一樣（快取），d＝0 照舊是自己")
@@ -5612,10 +5623,21 @@ print("情境二十八：疊放、放不下的原因碼、原地替換、配對�
     -- 建造視窗的旋轉標記照同一份清單
     local Cur, Win = MinidoracatBuilder.Cursor, MinidoracatBuilder.Window
     local wf, lf = Cur.faces(wallEntry), Cur.faces(Entry.resolve("pf_lone_01_0"))
-    check(wf.n == 2 and wf[1] == 0 and wf[2] == 5 and Cur.nextFace(wf, 0, 1) == 5 and Cur.nextFace(wf, 5, 1) == 0
-        and lf.n == 1 and lf[1] == 0, "朝向清單：只佔一條邊的牆多一個配對面（d＝5），按旋轉鍵在兩張之間換；沒有另一邊的只有自己")
-    check(Win.canTurn("pf_house_01_0") == true and Win.canTurn("pf_lone_01_0") == false and Win.canTurn("gone_99_0") == false,
-        "旋轉標記：放置時轉得動的才標（照游標的朝向清單）；轉不動的、不存在的不標")
+    check(wf.n == 2 and wf[1] == 0 and wf[2] == 5 and lf.n == 1 and lf[1] == 0,
+        "朝向清單：只佔一條邊的牆多一個配對面（d＝5）；沒有另一邊的只有自己")
+    -- 按旋轉鍵照四條邊轉（2026-11-16 rot4=edge）：西牆 pf_house_01_0 的北邊用配對面、東邊＝右邊那格的西邊
+    local Turn = MinidoracatBuilder.Turn
+    local ws, ls = Turn.states(wallEntry), Turn.states(Entry.resolve("pf_lone_01_0"))
+    local function is(s, d, dx, dy, edge) return s and s.d == d and s.dx == dx and s.dy == dy and s.edge == edge end
+    check(ws.n == 4 and is(ws[1], 5, 0, 0, "N") and is(ws[2], 0, 1, 0, "E") and is(ws[3], 5, 0, 1, "S") and is(ws[4], 0, 0, 0, "W"),
+        "四條邊：有配對面的牆轉北、東、南、西，東邊與南邊移到隔壁那格")
+    check(ls.n == 2 and is(ls[1], 0, 1, 0, "E") and is(ls[2], 0, 0, 0, "W"), "四條邊：沒有另一邊的牆只有對邊兩個")
+    local cs, cf = Turn.states(Entry.resolve("pf_house_01_2")), Cur.faces(Entry.resolve("pf_house_01_2"))
+    check(cs.n == cf.n and is(cs[1], cf[1], 0, 0, nil) and Turn.other(wallEntry, 0) == 5 and Turn.other(wallEntry, 5) == 0,
+        "四條邊：佔兩條邊的牆角照舊用朝向清單、不移格；另一條邊的面互相找得到")
+    -- 旋轉標記照游標實際輪流的 Turn.states（2026-11-16 Keys）：沒有另一邊的牆也能在對邊兩個之間轉，所以有標
+    check(Win.canTurn("pf_house_01_0") == true and Win.canTurn("pf_lone_01_0") == true and Win.canTurn("gone_99_0") == false,
+        "旋轉標記：放置時轉得動的才標（照 Turn.states）；不存在的不標")
     local function mir(n) return Cur.mirror(Entry.resolve("rf_01_" .. n)) end
     check(mir(0) == "rf_01_5" and mir(5) == "rf_01_0" and mir(1) == nil and mir(2) == nil and mir(3) == nil
         and Cur.mirror(wallEntry) == nil and Win.canTurn("rf_01_0") == true and Win.canTurn("rf_01_1") == false,
@@ -9205,7 +9227,7 @@ print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）
         "子種類（植物）：能搬的是觀賞植物，其他是草與野花")
     check(W.subOf("container", nil) == "other" and W.subOf("container", P({ keys = { container = "crate" } })) == "n:Crate"
         and W.subOf("container", P({ keys = { container = "woodcrate" } })) == "n:Crate"
-        and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("wall", P({})) == nil,
+        and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("roof", P({})) == nil,
         "子種類（容器）：照原版顯示名（同名的型別同一組），沒有 IGUI_ContainerTitle_ 翻譯的歸其他；別的種類沒有子種類")
     check(W.subOf("floorOverlay", nil, "street_trafficlines_curb_white_full_3") == "marking"
         and W.subOf("floorOverlay", nil, "street_curbs_01_blend_dirt_12") == "curb"
@@ -10833,7 +10855,7 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         function d:getProperties() return spriteMap[name]:getProperties() end
         function d:getType() return T.normal end
         return d
-    end }
+    end, getGarageDoorIndex = function() return -1 end, getDoubleDoorIndex = function() return -1 end }
     local function obj(spr) return { getProperties = function() return spr:getProperties() end,
         getType = function() return spr:getType() end, getSprite = function() return spr end } end
     local FL = obj(sprite("fg_floor_01_0", 9525, { flags = { "solidfloor" } }))
@@ -10855,6 +10877,2916 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         and both("fg_door_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 231) == "ok",
         "Check.item：預覽與伺服器同一個結果（柵欄門空邊可蓋、有柵欄擋；一般的門要門框）")
     world(old)
+end)()
+
+-- ===== 排程與轉向（Queue、Turn）=====
+print("情境（排程與轉向）：再拖一排接在後面、超過上限分批、停下全部取消、照圖蓋讓手拖、復原剛蓋的")
+;(function()
+    local B = MinidoracatBuilder
+    local Q, C, Cur, Messages, E = B.Queue, B.Client, B.Cursor, B.Messages, B.Entry
+    local real = { build = C.build, toast = Messages.toast, get = Cur.get, q = ISTimedActionQueue, max = sb.MaxCellsPerDrag,
+        dm = C.dismantleMany, text = getText, cell = getCell, resolve = E.resolve, face = E.face, cells = E.cells,
+        alt = E.alternate, north = E.north }
+    local busy, sent, toasts, nonce, cleared = false, {}, {}, 7000, 0
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    Messages.toast = function(_, text) toasts[#toasts + 1] = text end
+    Cur.get = function() return nil end
+    ISTimedActionQueue = { isPlayerDoingAction = function() return busy end, clear = function() cleared = cleared + 1 end }
+    C.build = function(p, name, cells)
+        nonce = nonce + 1
+        sent[#sent + 1] = { n = nonce, count = #cells, name = name, first = cells[1] }
+        C.pending = { n = nonce, cells = cells, player = p }
+        return nonce
+    end
+    local P = { getPlayerNum = function() return 3 end }
+    local function cells(k, x0)
+        local t = {}
+        for i = 1, k do t[i] = { (x0 or 0) + i, 0, 0, 0 } end
+        return t
+    end
+    local function placeAll()
+        local s = sent[#sent]
+        Q.onResult("accepted", { n = s.n })
+        for i = 1, s.count do Q.onResult("placed", { n = s.n, i = i }) end
+    end
+    local function stall() -- 收下後動作佇列空了 1.5 秒以上＝停下
+        Q.tick()
+        nowMs = nowMs + 2000
+        Q.tick()
+    end
+    sb.MaxCellsPerDrag = 32
+
+    local _, n1 = Q.push(P, "a_01_0", cells(3))
+    local _, n2 = Q.push(P, "b_01_0", cells(2, 10))
+    check(n1 ~= nil and n2 == nil and #sent == 1 and Q.busy(P) == 2 and Q.left(P) == 5 and Cur.left(P) == 5,
+        "排程：前一排還在蓋時再拖一排，接在後面、先不送")
+    placeAll()
+    busy = true
+    Q.tick()
+    check(#sent == 1 and Q.left(P) == 2, "排程：前一排蓋好但角色的動作還沒做完：下一排不送")
+    busy = false
+    Q.tick()
+    check(#sent == 2 and sent[2].name == "b_01_0", "排程：動作佇列空了才送下一排")
+    placeAll()
+    Q.tick()
+    check(Q.busy(P) == 0 and #toasts == 0 and Q.queued() == nil, "排程：兩排都蓋好：佇列清空、不通知")
+
+    local _, n3 = Q.push(P, "a_01_0", cells(4))
+    Q.push(P, "b_01_0", cells(4, 20))
+    Q.onResult("accepted", { n = n3 })
+    Q.onResult("placed", { n = n3, i = 1 })
+    stall()
+    check(Q.busy(P) == 0 and #sent == 3 and #toasts == 1 and toasts[1] == "IGUI_MBLD_Stopped(1,4)",
+        "排程：前一排停下（走開、Esc）：後面排著的一起取消，只通知停下的那一排一次")
+
+    toasts = {}
+    local sum
+    local _, np = Q.push(P, "a_01_0", cells(5), nil, nil, { owner = "plan", onDone = function(s) sum = s end })
+    Q.onResult("accepted", { n = np })
+    Q.onResult("placed", { n = np, i = 1 })
+    Q.onResult("placed", { n = np, i = 2 })
+    Q.onResult("refused", { n = np, code = "BLOCKED", x = 3 })
+    check(sum and sum.owner == "plan" and sum.placed == 2 and sum.count == 5 and sum.stopped and sum.refused == "BLOCKED"
+        and Q.busy(P) == 0 and #toasts == 0, "照圖蓋：被拒時 onDone 收到蓋好幾格與拒絕碼，不跳通知")
+    sum = nil
+    Q.push(P, "a_01_0", cells(3), nil, nil, { owner = "plan", onDone = function(s) sum = s end })
+    local c0 = cleared
+    local _, nd = Q.push(P, "b_01_0", cells(2))
+    check(sum and sum.stopped and sum.placed == 0 and nd ~= nil and cleared == c0 + 1 and Q.busy(P) == 1,
+        "照圖蓋：玩家手拖一排時先取消照圖蓋的（onDone 收到停下），手拖的立刻送")
+    placeAll()
+    Q.tick()
+
+    local before = #sent
+    Q.push(P, "a_01_0", cells(70))
+    check(#sent == before + 1 and sent[#sent].count == 32 and Q.busy(P) == 3 and Q.left(P) == 70,
+        "分批：上限 32 拖 70 格切成 3 筆，先送 32 格")
+    placeAll()
+    Q.tick()
+    check(sent[#sent].count == 32 and sent[#sent].first[1] == 33, "分批：第二筆從第 33 格接著送")
+    placeAll()
+    Q.tick()
+    check(sent[#sent].count == 6 and sent[#sent].first[1] == 65, "分批：第三筆剩 6 格")
+    Q.onResult("accepted", { n = sent[#sent].n })
+    Q.onResult("placed", { n = sent[#sent].n, i = 1 })
+    stall()
+    check(toasts[1] == "IGUI_MBLD_Stopped(65,70)", "分批：停下時照整排報蓋好幾格（65／70），不是只報最後一筆")
+
+    -- 復原：記下蓋好的那一片（原點那格），只拆蓋好的、後蓋的先拆
+    local spr = { getName = function() return "u_01_0" end }
+    E.resolve = function() return { name = "u_01_0", kind = "wall", spr = spr } end
+    E.face = function() return spr end
+    E.cells = function() return { { 0, 0, 0, spr } } end
+    E.alternate = function(s) return s end
+    E.north = function() return true end
+    local _, nu = Q.push(P, "u_01_0", cells(3, 40))
+    Q.onResult("accepted", { n = nu })
+    Q.onResult("placed", { n = nu, i = 1 })
+    Q.onResult("placed", { n = nu, i = 3 })
+    local got
+    C.dismantleMany = function(_, items) got = items end
+    getCell = function() return { getGridSquare = function(_, x, y, z) return { x, y, z } end } end
+    local k = Q.undoLast(P)
+    check(k == 2 and got and #got == 2 and got[1].x == 43 and got[2].x == 41 and got[1].route == "builder"
+        and got[1].north == true and got[1].name == "u_01_0" and #got[1].own == 1 and Q.last(P) == nil,
+        "復原：只拆蓋好的第 1、3 格，後蓋的先拆；送出後不再記得")
+    check(Q.undoLast(P) == 0, "復原：沒有可復原的回 0")
+    Q.cancel(P)
+    check(Q.busy(P) == 0, "取消：清掉排著的")
+
+    -- 規劃模式接手放開：hook.commit 回 true 就不送
+    local committed
+    Cur.hook.commit = function() committed = true return true end
+    local cur = setmetatable({ kx = 1, ky = 1, kz = 0, res = { { a = { 1, 1, 0, 0 } } }, lineX = 5 }, { __index = Cur })
+    local before2 = #sent
+    cur:tryBuild(1, 1, 0)
+    check(committed and #sent == before2 and cur.lineX == nil, "hook.commit 回 true：游標不送，交給規劃模式")
+    Cur.hook.commit = nil
+
+    C.build, Messages.toast, Cur.get, ISTimedActionQueue, sb.MaxCellsPerDrag = real.build, real.toast, real.get, real.q, real.max
+    C.dismantleMany, getText, getCell = real.dm, real.text, real.cell
+    E.resolve, E.face, E.cells, E.alternate, E.north = real.resolve, real.face, real.cells, real.alt, real.north
+end)()
+
+print("情境（排程與轉向）：配方項目照圖蓋（Recipes.runCells）、規劃開著時放下記進藍圖")
+;(function()
+    local B = MinidoracatBuilder
+    local R, Cl, Msg = B.Recipes, B.Client, B.Messages
+    local real = { spec = getSpecificPlayer, cell = getCell, BL = BuildLogic, ISB = ISBuildIsoEntity, IBO = ISBuildingObject,
+        TAQ = ISTimedActionQueue, ctx = ISInventoryPaneContextMenu, joy = JoypadState, toast = Msg.toast, PM = B.PlanMode,
+        list = R.list, byId = R.byId, text = getText, core = getCore, pend = Cl.pending, unb = Cl.pendingUnbuild }
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local toasts, queue, tried, bad, can, hammer = {}, {}, {}, {}, true, true
+    Msg.toast = function(_, t) toasts[#toasts + 1] = t end
+    Cl.pending, Cl.pendingUnbuild = nil, nil
+    local P = {}
+    function P:getPlayerNum() return 2 end
+    function P:isBuildCheat() return false end
+    function P:getCurrentSquare() return nil end
+    function P:isDead() return false end
+    function P:getInventory() return {} end
+    function P:tooDarkToRead() return false end
+    getSpecificPlayer = function(pn) return pn == 2 and P or nil end
+    local drag = {}
+    getCell = function()
+        local c = real.cell()
+        c.getDrag = function(_, pn) return drag[pn] end
+        c.setDrag = function(_, o, pn)
+            drag[pn] = o
+            if o then o.player = pn end
+        end
+        return c
+    end
+    local col = { getR = function() return 1 end, getG = function() return 1 end, getB = function() return 1 end }
+    getCore = function()
+        local c = real.core()
+        c.getGoodHighlitedColor, c.getBadHighlitedColor = function() return col end, function() return col end
+        return c
+    end
+    local noDraw = { RenderGhostTileColor = function() end }
+    JoypadState = { players = {} }
+    ISInventoryPaneContextMenu = { getContainers = function() return javaList({}) end }
+    BuildLogic = { new = function()
+        local L = { ls = {} }
+        local function emit(self, ev, a)
+            for _, l in ipairs(self.ls) do if l[1] == ev then l[2](l[3], a) end end
+        end
+        function L:getAllBuildableRecipes() return javaList({}) end
+        function L:setManualSelectInputs() end
+        function L:setContainers() return false end
+        function L:setRecipe(cr) self.cr = cr end
+        function L:canPerformCurrentRecipe() return can end
+        function L:isCraftActionInProgress() return self.busy == true end
+        function L:addEventListener(ev, fn, t) self.ls[#self.ls + 1] = { ev, fn, t } end
+        function L:startCraftAction(a) self.busy = true emit(self, "onStartCraft", a) end
+        function L:stopCraftAction() self.busy = false emit(self, "onStopCraft") end
+        function L:autoPopulateInputs() end
+        function L:refresh() end
+        function L:getPossibleCraftCount() return 0 end -- 一份材料都沒有：規劃開著時不看
+        return L
+    end }
+    -- 假原版游標：isValid 看 blockBuild、擋住的格子與鎚子（haveMaterial），tryBuild 先 startCraftAction 再排進佇列
+    ISBuildIsoEntity = {}
+    ISBuildIsoEntity.new = function(_, p, inf, n, _, L)
+        return setmetatable({ character = p, objectInfo = inf, nSprite = n, buildPanelLogic = L, spriteCache = {},
+            dragNilAfterPlace = true, noNeedHammer = false, tileSprite = noDraw }, { __index = ISBuildIsoEntity })
+    end
+    function ISBuildIsoEntity:getSprite() end
+    function ISBuildIsoEntity:getFace()
+        local f = self.objectInfo:getFace(({ 1, 0, 3, 2 })[self.nSprite])
+        local nm = f and f:getTileInfo(0, 0, 0):getSpriteName()
+        if nm then self.spriteCache[nm] = noDraw end
+        return f
+    end
+    function ISBuildIsoEntity:ensureSquaresExist() end
+    function ISBuildIsoEntity:isValid(sq) return not self.blockBuild and not bad[sq] and (self.noNeedHammer or hammer) end
+    function ISBuildIsoEntity:render() end
+    function ISBuildIsoEntity:tryBuild(x, y, z)
+        local act = { cursor = self, onDone = self.onActionComplete, x = x, y = y,
+            spr = self:getFace():getTileInfo(0, 0, 0):getSpriteName() }
+        act.action = { isForceComplete = function() return false end, finished = function() return act.fin == true end }
+        tried[#tried + 1] = { x, y, z, self.nSprite }
+        self.buildPanelLogic:startCraftAction(act)
+        queue[#queue + 1] = act
+    end
+    ISBuildingObject = { onActionComplete = function(self) self.buildPanelLogic:stopCraftAction() end,
+        getFloorCursorSprite = function() return noDraw end }
+    ISTimedActionQueue = {
+        isPlayerDoingAction = function() return #queue > 0 end,
+        hasAction = function(a)
+            for _, x in ipairs(queue) do if x == a then return true end end
+            return false
+        end,
+        getTimedActionQueue = function() return { queue = queue } end,
+        clear = function()
+            local q = queue
+            queue = {}
+            for _, a in ipairs(q) do a.onDone(a.cursor) end
+        end }
+    -- 那格的動作結束：fin＝時間到、物件出現（蓋好），否則＝被打斷
+    local function done(fin)
+        local a = table.remove(queue, 1)
+        if fin then
+            local sq = getCell():getGridSquare(a.x, a.y, 0)
+            sq.objects[#sq.objects + 1] = { getSprite = function() return { getName = function() return a.spr end } end }
+            a.fin = true
+        end
+        a.onDone(a.cursor)
+        fire("OnTick")
+    end
+    local function info(n, w)
+        local function face(name)
+            local tile = { getSpriteName = function() return name end }
+            return { getWidth = function() return 1 end, getHeight = function() return 1 end, getTileInfo = function() return tile end }
+        end
+        local faces = { [0] = face(n), [1] = face(w) }
+        return { getFace = function(_, f) return faces[f] end }
+    end
+    local cr = { getToolBoth = function() end, getToolRight = function() end, getToolLeft = function() end,
+        canBeDoneInDark = function() return true end }
+    local rWall = { id = "recipe:QT.Wall", recipe = cr, info = info("qt_rwall_01_1", "qt_rwall_01_0"), kind = "wall" }
+    local rBox = { id = "recipe:QT.Box", recipe = cr, info = info("qt_rbox_01_0", "qt_rbox_01_1"), kind = "furniture" }
+    local rPaint = { id = "recipe:QT.Paint", recipe = cr, cover = true, kind = "wallOverlay" }
+    R.list = { n = 3, rWall, rBox, rPaint }
+    R.byId = { [rWall.id] = rWall, [rBox.id] = rBox, [rPaint.id] = rPaint }
+
+    local _, cU = R.runCells(P, "recipe:QT.Nope", { { 41, 41, 0, 2 } })
+    local _, cC = R.runCells(P, rPaint.id, { { 41, 41, 0, 2 } })
+    can = false
+    local okS, cS = R.runCells(P, rWall.id, { { 41, 41, 0, 2 } })
+    can = true
+    check(cU == "UNKNOWN" and cC == "COVER" and okS == nil and cS == "SHORT" and #tried == 0,
+        "照圖蓋：沒有這個配方、牆面油漆、材料不夠都當場回碼，不送")
+    local sum
+    local function keep(s) sum = s end
+    local ok1 = R.runCells(P, rWall.id, { { 41, 41, 0, 2 }, { 42, 41, 0, 2 }, { 43, 41, 0, 1 } }, keep)
+    check(ok1 == true and #tried == 1 and tried[1][4] == 2 and R.row(2) ~= nil and drag[2] == nil,
+        "照圖蓋：送第一格（那格的面），不開游標")
+    done(true)
+    check(#tried == 2 and tried[2][1] == 42 and sum == nil, "照圖蓋：那格蓋好、佇列空了才送下一格")
+    done(true)
+    done(true)
+    check(sum and sum.count == 3 and sum.placed == 3 and sum.stopped == false and sum.why == nil and tried[3][4] == 1
+        and #toasts == 0 and R.row(2) == nil, "照圖蓋：三格都蓋好，onDone 收到 3／3，不跳通知")
+    sum = nil
+    R.runCells(P, rWall.id, { { 44, 41, 0, 2 }, { 45, 41, 0, 2 } }, keep)
+    done(false)
+    check(sum and sum.stopped and sum.placed == 0 and sum.why == nil and #tried == 4 and #toasts == 0,
+        "照圖蓋：被打斷回 stopped，不通知、不再送")
+    sum = nil
+    R.runCells(P, rWall.id, { { 46, 41, 0, 2 }, { 47, 41, 0, 2 } }, keep)
+    Cl.pending = { n = 1, player = P }
+    done(true)
+    Cl.pending = nil
+    check(sum and sum.stopped and #tried == 5 and #toasts == 0, "照圖蓋：玩家手拖圖塊（換了建造請求）時停下，回 stopped")
+    sum = nil
+    R.runCells(P, rWall.id, { { 48, 41, 0, 2 }, { 49, 41, 0, 2 } }, keep)
+    R.stopCells(P)
+    done(true)
+    check(sum and sum.stopped and #tried == 6 and R.row(2) == nil and #toasts == 0,
+        "照圖蓋：stopCells 後還沒送的不送，onDone 收到 stopped、不通知")
+    sum = nil
+    bad[getCell():getGridSquare(51, 41, 0)] = true
+    R.runCells(P, rWall.id, { { 50, 41, 0, 2 }, { 51, 41, 0, 2 }, { 52, 41, 0, 2 } }, keep)
+    done(true)
+    check(sum and sum.placed == 1 and sum.stopped and sum.why == "missing" and #tried == 7 and R.row(2) == nil,
+        "照圖蓋：送前驗地形，擋住的那格不送、停下回 missing（被擋的是第 placed＋1 格），後面不再送")
+    sum = nil
+    local okB = R.runCells(P, rWall.id, { { 51, 41, 0, 2 }, { 52, 41, 0, 2 } }, keep)
+    check(okB == true and sum and sum.placed == 0 and sum.why == "missing" and #tried == 7,
+        "照圖蓋：第一格就被擋：當場收尾回 missing，不送")
+    local fs = R.faces(rWall.id)
+    check(R.tile(rWall.id, 2) == "qt_rwall_01_1" and R.tile(rWall.id, 1) == "qt_rwall_01_0" and R.tile(rWall.id, 3) == nil
+        and R.tile(rPaint.id, 1) == nil and R.faceOf(rWall.id, "qt_rwall_01_0") == 1 and R.faceOf(rWall.id, "qt_x") == nil
+        and fs.n == 2 and fs[1] == 1 and fs[2] == 2 and R.faces(rPaint.id) == nil,
+        "配方的面：第 d 面的圖、圖是哪一面、有哪些面；牆面油漆都沒有")
+
+    -- 規劃開著：材料不夠、沒鎚子也不擋，放下（一格、拖一排、不能拖的）交給 PlanMode.addCells，不送原版建造
+    local added, on = {}, true
+    B.PlanMode = { planning = function() return on end,
+        addCells = function(pn, id, cells) added[#added + 1] = { pn = pn, id = id, cells = cells } return true end }
+    can, hammer = false, false
+    local c = R.build(2, rWall.id)
+    check(c and c.blockBuild == false and c.noNeedHammer == true, "規劃開著：材料不夠、沒有鎚子，游標照樣能放")
+    local n0 = #tried
+    c:tryBuild(41, 42, 0)
+    local s43 = getCell():getGridSquare(41, 43, 0)
+    c.square, c.isLeftDown = s43, true
+    c:rotateMouse(43, 43)
+    c:render(41, 43, 0, s43)
+    c.isLeftDown = false
+    c:tryBuild(41, 43, 0)
+    local box = R.build(2, rBox.id)
+    box:tryBuild(44, 44, 0)
+    local a1, a2, a3 = added[1], added[2], added[3]
+    check(#tried == n0 and a1 and a1.pn == 2 and a1.id == rWall.id and a1.cells[1][1] == 41 and a1.cells[1][4] == 1
+        and a2 and #a2.cells == 3 and a2.cells[3][1] == 43 and a3 and a3.id == rBox.id and a3.cells[1][2] == 44,
+        "規劃開著：放一格、拖一排、不能拖的配方都記進藍圖（世界座標＋面），不呼叫原版 tryBuild")
+    local nt = #toasts
+    check(R.build(2, rPaint.id) == nil and #toasts == nt + 1 and toasts[#toasts] == "IGUI_MBLD_Recipe_NoPlan",
+        "規劃開著：牆面油漆不開游標，說不能記進藍圖")
+    on = false
+    c.lineX = nil
+    c:render(41, 45, 0, getCell():getGridSquare(41, 45, 0))
+    check(c.blockBuild == true and c.noNeedHammer == false, "關掉規劃：材料不夠照舊擋、鎚子照舊要")
+    can, hammer = true, true
+    c:render(41, 45, 0, getCell():getGridSquare(41, 45, 0))
+    getCell():setDrag(c, 2)
+    c:tryBuild(41, 45, 0)
+    check(#tried == n0 + 1 and #added == 3 and R.row(2) ~= nil, "關掉規劃：放下照舊送原版建造，不記進藍圖")
+    done(false)
+    check(R.row(2) == nil and toasts[#toasts] == "IGUI_MBLD_Refuse_WALK", "關掉規劃：手放的一排被打斷照舊通知")
+
+    drag[2] = nil
+    getSpecificPlayer, getCell, BuildLogic, ISBuildIsoEntity, ISBuildingObject = real.spec, real.cell, real.BL, real.ISB, real.IBO
+    ISTimedActionQueue, ISInventoryPaneContextMenu, JoypadState, Msg.toast = real.TAQ, real.ctx, real.joy, real.toast
+    B.PlanMode, R.list, R.byId, getText, getCore = real.PM, real.list, real.byId, real.text, real.core
+    Cl.pending, Cl.pendingUnbuild = real.pend, real.unb
+end)()
+
+-- ===== 車庫門與雙開門 =====
+print("情境（車庫門與雙開門）：整組一個項目、拖一排定寬度、整組全蓋或不蓋、整組拆整組退、門窗配對面")
+;(function()
+    local Place, Ledger, Dismantle = MinidoracatBuilder.Place, MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
+    local real = { inst = instanceof, door = IsoDoor, gd = buildUtil.getGarageDoorObjects, dd = buildUtil.getDoubleDoorObjects,
+        max = sb.MaxCellsPerDrag, dist = sb.MaxDistance, roll = HARNESS_ROLL }
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    sb.MaxCellsPerDrag, sb.MaxDistance = 6, 8
+    -- 圖塊：車庫門 hgd_01（西向 0–2、北向 3–5，開著 +8，值 4–6）；雙開門 hdd_01（西向第 1–4 片 8、9、0、1，北向 2、3、10、11；
+    -- 開著照 IsoDoor 的偏移表），照原版 tiledef 的排法（Entry.doorSet）
+    local added = {}
+    local function add(name, id, dir, key, v)
+        local s = sprite(name, id, { flags = { dir }, keys = { [key] = tostring(v) } })
+        spriteMap[name], added[#added + 1] = s, name
+        spriteOrder[#spriteOrder + 1] = s
+        return s
+    end
+    for i = 0, 2 do
+        add("hgd_01_" .. i, 9100 + i, "doorW", "GarageDoor", i + 1)
+        add("hgd_01_" .. (i + 3), 9103 + i, "doorN", "GarageDoor", i + 1)
+        add("hgd_01_" .. (i + 8), 9108 + i, "doorW", "GarageDoor", i + 4)
+        add("hgd_01_" .. (i + 11), 9111 + i, "doorN", "GarageDoor", i + 4)
+    end
+    for _, t in ipairs({ { 8, "doorW", 1 }, { 9, "doorW", 2 }, { 0, "doorW", 3 }, { 1, "doorW", 4 }, { 12, "doorW", 5 },
+        { 13, "doorW", 6 }, { 5, "doorW", 7 }, { 4, "doorW", 8 }, { 2, "doorN", 1 }, { 3, "doorN", 2 }, { 10, "doorN", 3 },
+        { 11, "doorN", 4 }, { 7, "doorN", 5 }, { 6, "doorN", 6 }, { 14, "doorN", 7 }, { 15, "doorN", 8 } }) do
+        add("hdd_01_" .. t[1], 9120 + t[1], t[2], "DoubleDoor", t[3])
+    end
+    add("hbad_01_0", 9140, "doorN", "GarageDoor", 1) -- 湊不成整組的頭片（沒有中、尾）
+    -- 假 IsoDoor：照引擎認整組（IsoDoor.java:2756-2843,3035-3161），格子上只放門
+    local function doorAt(x, y, z, north)
+        local sq = squares[x .. "," .. y .. "," .. z]
+        for _, o in ipairs(sq and sq.objects or {}) do if o.class == "IsoDoor" and o.north == north then return o end end
+        return nil
+    end
+    local function val(o, key) return tonumber(o.spr:getProperties():get(key)) end
+    IsoDoor = { new = function(_, sq, name, north)
+        local d = { class = "IsoDoor", spr = spriteMap[name], north = north, md = {}, hp = 500, sq = sq }
+        function d:getSprite() return self.spr end
+        function d:getProperties() return self.spr:getProperties() end
+        function d:getTextureName() return self.spr:getName() end
+        function d:getType() return T.normal end
+        function d:getSquare() return self.sq end
+        function d:getModData() return self.md end
+        function d:hasModData() return next(self.md) ~= nil end
+        function d:setHealth(v) self.hp = v end
+        function d:getHealth() return self.hp end
+        function d:getMaxHealth() return 500 end
+        function d:setExplored() end
+        function d:transmitCompleteItemToClients() end
+        function d:getContainerCount() return 0 end
+        function d:isNorth() return self.north end
+        function d:isFloor() return false end
+        function d:isBarricaded() return false end
+        function d:isObjectNoContainerOrEmpty() return true end
+        function d:getObjectIndex() return 0 end
+        function d:getAttachedAnimSprite() return nil end
+        return d
+    end }
+    function IsoDoor.getGarageDoorIndex(o)
+        local v = o.spr and o.spr:getProperties():has("GarageDoor") and val(o, "GarageDoor")
+        if not v then return -1 end
+        return v > 3 and v - 3 or v
+    end
+    function IsoDoor.getDoubleDoorIndex(o)
+        local v = o.spr and o.spr:getProperties():has("DoubleDoor") and val(o, "DoubleDoor")
+        if not v then return -1 end
+        return v > 4 and v - 4 or v
+    end
+    -- getGarageDoorPrev（s＝−1）／Next（s＝1）：北向沿 x、西向沿 −y 找相鄰格同方向的門（IsoDoor.java:3064-3144）
+    local function step(o, s, cmp)
+        local i = IsoDoor.getGarageDoorIndex(o)
+        if i == -1 or i == (s < 0 and 1 or 3) then return nil end
+        local sq = o.sq
+        local n = doorAt(sq:getX() + (o.north and s or 0), sq:getY() - (o.north and 0 or s), sq:getZ(), o.north)
+        if n and IsoDoor.getGarageDoorIndex(n) ~= -1 and cmp(IsoDoor.getGarageDoorIndex(n), i) then return n end
+        return nil
+    end
+    function IsoDoor.getGarageDoorPrev(o) return step(o, -1, function(a, b) return a <= b end) end
+    function IsoDoor.getGarageDoorNext(o) return step(o, 1, function(a, b) return a >= b end) end
+    function IsoDoor.getGarageDoorFirst(o)
+        if IsoDoor.getGarageDoorIndex(o) == 1 then return o end
+        local p = IsoDoor.getGarageDoorPrev(o)
+        while p do
+            if IsoDoor.getGarageDoorIndex(p) == 1 then return p end
+            p = IsoDoor.getGarageDoorPrev(p)
+        end
+        return o
+    end
+    function IsoDoor.getDoubleDoorObject(o, i)
+        local j = IsoDoor.getDoubleDoorIndex(o)
+        if j == -1 then return nil end
+        local sq, d = o.sq, i - j
+        local t = doorAt(sq:getX() + (o.north and d or 0), sq:getY() - (o.north and 0 or d), sq:getZ(), o.north)
+        return t and IsoDoor.getDoubleDoorIndex(t) == i and t or nil
+    end
+    -- 原版 ISBuildUtil.lua:543-570 照抄
+    buildUtil.getDoubleDoorObjects = function(object)
+        local objects = {}
+        for i = 1, 4 do
+            local dd = IsoDoor.getDoubleDoorObject(object, i)
+            if dd then table.insert(objects, dd) end
+        end
+        return objects
+    end
+    buildUtil.getGarageDoorObjects = function(object)
+        local objects = {}
+        if IsoDoor.getGarageDoorIndex(object) ~= -1 then
+            table.insert(objects, object)
+            local prev = IsoDoor.getGarageDoorPrev(object)
+            while prev do table.insert(objects, prev); prev = IsoDoor.getGarageDoorPrev(prev) end
+            local nxt = IsoDoor.getGarageDoorNext(object)
+            while nxt do table.insert(objects, nxt); nxt = IsoDoor.getGarageDoorNext(nxt) end
+        end
+        return objects
+    end
+    -- 格子：移除時照引擎先觸發 OnObjectAboutToBeRemoved；退料掉在格上
+    local function engineSq(x, y, o)
+        local sq = square(x, y, 0, o)
+        local orig = sq.transmitRemoveItemFromSquare
+        sq.dropped = {}
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        return sq
+    end
+    for x = 300, 312 do for y = 300, 312 do engineSq(x, y) end end
+    local function at(x, y) return squares[x .. "," .. y .. ",0"] end
+    local function doorsAt(list)
+        local out = {}
+        for k, c in ipairs(list) do
+            local d = doorAt(c[1], c[2], 0, c[3])
+            out[k] = d and d.spr:getName() or "-"
+        end
+        return table.concat(out, " ")
+    end
+    local function stock(p)
+        return p.inv:count("Base.Plank") .. "/" .. p.inv:count("Base.Nails") .. "/" .. p.inv:count("Base.Hinge") .. "/"
+            .. p.inv:count("Base.Doorknob")
+    end
+    local function builder(id, x, y)
+        local p = player({ id = id, x = x, y = y, woodwork = 10, here = at(math.floor(x), math.floor(y)) })
+        p.inv:add(item("Base.Hammer", { HAMMER = true }))
+        for _, ft in ipairs({ "Base.Plank", "Base.Nails", "Base.Hinge", "Base.Doorknob" }) do
+            for _ = 1, 80 do p.inv:add(item(ft)) end
+        end
+        return p
+    end
+    local function intentCode(p, n, e, c, w)
+        sent = {}
+        Server.intent(p, { n = n, e = e, c = c, v = Entry.digest(), w = w })
+        return sent[1] and sent[1].cmd == "refused" and sent[1].args.code or nil
+    end
+    local function build(p, n, e, c, w)
+        local code = intentCode(p, n, e, c, w)
+        if code then return false, code end
+        sent = {}
+        local ok = Server.complete(p, n, 1)
+        return ok, sent[1] and sent[1].args.code
+    end
+    local P = builder(9101, 303.5, 303.5)
+
+    -- 目錄：只有湊得成整組的頭片、第 1 片
+    check(Entry.resolve("hgd_01_3") and Entry.resolve("hgd_01_0") and Entry.resolve("hdd_01_2") and Entry.resolve("hdd_01_8")
+        and not Entry.resolve("hgd_01_4") and not Entry.resolve("hdd_01_3") and not Entry.resolve("hgd_01_11")
+        and not Entry.resolve("hbad_01_0"), "目錄：車庫門頭片、雙開門第 1 片各一項；其他片、開著的、湊不成整組的不收")
+    check(Entry.why("hgd_01_4") == "PART" and select(3, Entry.why("hgd_01_4")) == "hgd_01_3"
+        and select(3, Entry.why("hdd_01_15")) == "hdd_01_2" and Entry.why("hbad_01_0") == "DOOR_SET",
+        "原因：其他片（含開著的）說 PART、指回第一片；湊不成整組的說 DOOR_SET")
+    -- 配對面：車庫門 ±3、雙開門 ±6
+    local function face5(name) local s = Entry.face(Entry.resolve(name), 5) return s and s:getName() end
+    check(face5("hgd_01_3") == "hgd_01_0" and face5("hgd_01_0") == "hgd_01_3" and face5("hdd_01_2") == "hdd_01_8"
+        and face5("hdd_01_8") == "hdd_01_2", "配對面：車庫門頭片 ±3、雙開門第 1 片 ±6，方向相反")
+
+    -- 車庫門片順序：北向沿 +x（頭、中…、尾），西向沿 −y
+    local function roles(e, w)
+        local out = {}
+        for k, o in ipairs(Entry.groupCells(Entry.doorSet(Entry.sprite(e)), w)) do
+            out[k] = o[1] .. "," .. o[2] .. ":" .. o[4]:getName()
+        end
+        return table.concat(out, " ")
+    end
+    check(roles("hgd_01_3", 2) == "0,0:hgd_01_3 1,0:hgd_01_5"
+        and roles("hgd_01_3", 5) == "0,0:hgd_01_3 1,0:hgd_01_4 2,0:hgd_01_4 3,0:hgd_01_4 4,0:hgd_01_5"
+        and roles("hgd_01_0", 3) == "0,0:hgd_01_0 0,-1:hgd_01_1 0,-2:hgd_01_2"
+        and roles("hdd_01_8", 9) == "0,0:hdd_01_8 0,-1:hdd_01_9 0,-2:hdd_01_0 0,-3:hdd_01_1",
+        "片順序：車庫門 2 格頭尾、5 格頭＋中×3＋尾；西向沿 −y；雙開門固定四片")
+
+    -- 蓋 5 格北向車庫門：整組放好、扣料一次、帳本整組一筆
+    local before = stock(P)
+    local okG = build(P, 1, "hgd_01_3", { 301, 302, 0, 0 }, 5)
+    local row = { { 301, 302, true }, { 302, 302, true }, { 303, 302, true }, { 304, 302, true }, { 305, 302, true } }
+    local head = doorAt(301, 302, 0, true)
+    check(okG == true and doorsAt(row) == "hgd_01_3 hgd_01_4 hgd_01_4 hgd_01_4 hgd_01_5" and stock(P) ~= before
+        and head.md.builderEntry == "hgd_01_3", "車庫門 5 格：頭、中×3、尾照順序蓋好，扣料")
+    local rec = Ledger.getDoor(head)
+    check(rec and rec["Base.Plank"] == 20 and Place.refundOf(doorAt(303, 302, 0, true)) == rec,
+        "帳本：整組一筆記在頭片（5 片的料加總），哪一片查都回同一筆")
+    local g = Place.doorGroup(doorAt(304, 302, 0, true))
+    check(g and g.e == "hgd_01_3" and g.x == 301 and g.y == 302 and g.w == 5 and g.garage and g.north
+        and Entry.doorItem("hgd_01_12") == "hgd_01_3" and Entry.doorItem("hdd_01_14") == "hdd_01_2"
+        and Entry.doorItem("hdd_01_8") == "hdd_01_8" and Entry.doorItem("hbad_01_0") == nil,
+        "擷取：任一片認回項目 ID、錨點（頭片那格）與寬度；開著的片也認得")
+    -- 預覽與伺服器同一份
+    local function preview(e, a) return (Check.item(P, e, a[4], a, { preview = true, walk = true })) end
+    check(preview("hgd_01_0", { 308, 306, 0, 0, 3 }) == nil and preview("hgd_01_0", { 308, 306, 0, 0, 99 }) == "BAD_REQUEST"
+        and preview("hgd_01_0", { 308, 306, 0, 0 }) == "BAD_REQUEST", "預覽：合法寬度可蓋；超過上限、沒帶寬度 BAD_REQUEST（同伺服器）")
+
+    -- 中間一格被擋：整組不蓋、不扣料
+    engineSq(304, 309, { doors = { [GridSquareEdgeFacingDirection.NORTH_SOUTH] = {} } })
+    before = stock(P)
+    local pv = preview("hgd_01_3", { 302, 309, 0, 0, 4 })
+    local okB, codeB = build(P, 2, "hgd_01_3", { 302, 309, 0, 0 }, 4)
+    check(okB == false and codeB == pv and pv ~= nil and stock(P) == before
+        and doorsAt({ { 302, 309, true }, { 303, 309, true }, { 305, 309, true } }) == "- - -",
+        "中間一格被擋：整組不蓋、沒扣料；預覽同一個原因碼（" .. tostring(codeB) .. "）")
+
+    -- 游標：拖的那一軸定寬度與頭片位置，夾在 2..一次上限
+    local Cur = MinidoracatBuilder.Cursor
+    local function ga(e, ax, ay, ex, ey)
+        local a = Cur.garageAnchor({ spr = Entry.sprite(e), d = 0, perBatch = 6 }, ax, ay, 0, ex, ey)
+        return a[1] .. "," .. a[2] .. " w=" .. a[5]
+    end
+    check(ga("hgd_01_3", 305, 302, 305, 302) == "305,302 w=2" and ga("hgd_01_3", 305, 302, 301, 309) == "301,302 w=5"
+        and ga("hgd_01_3", 301, 302, 320, 302) == "301,302 w=6" and ga("hgd_01_0", 302, 305, 302, 307) == "302,307 w=3"
+        and ga("hgd_01_0", 302, 305, 302, 303) == "302,305 w=3",
+        "游標：北向往左拖頭片移到最左、西向往南拖頭片在最南；不拖 2 格；超過一次上限夾住")
+    -- 偽造請求
+    check(intentCode(P, 3, "hgd_01_3", { 301, 305, 0, 0 }, 7) == "BAD_REQUEST"
+        and intentCode(P, 4, "hgd_01_3", { 301, 305, 0, 0 }, 1) == "BAD_REQUEST"
+        and intentCode(P, 5, "hgd_01_3", { 301, 305, 0, 0 }, 2.5) == "BAD_REQUEST"
+        and intentCode(P, 6, "hgd_01_3", { 301, 305, 0, 0 }) == "BAD_REQUEST"
+        and intentCode(P, 7, "hgd_01_3", { 301, 305, 0, 0, 301, 306, 0, 0 }, 2) == "BAD_REQUEST"
+        and intentCode(P, 8, "hdd_01_2", { 301, 305, 0, 0 }, 3) == "BAD_REQUEST"
+        and intentCode(P, 9, "hgd_01_4", { 301, 305, 0, 0 }, 3) == "UNKNOWN",
+        "偽造：超過上限、少於 2、不是整數、沒帶寬度、兩個錨點、不是車庫門帶寬度都 BAD_REQUEST；直接送中段片 UNKNOWN")
+    sb.MaxCellsPerDrag = 1
+    check(intentCode(P, 10, "hgd_01_3", { 301, 305, 0, 0 }, 2) == nil, "上限設成 1：車庫門照樣能蓋最短的 2 格")
+    sb.MaxCellsPerDrag = 6
+
+    -- 拆任何一片：整組拆、退一次（每項 1..v）
+    HARNESS_ROLL = "max"
+    local here = P:getCurrentSquare()
+    here.dropped = {}
+    sent = {}
+    Server.dismantleIntent(P, { n = 11, t = { 303, 302, 0, "hgd_01_4" } })
+    local accepted = sent[#sent] and sent[#sent].cmd
+    sent = {}
+    local okD = Server.dismantle(P, 11, 1)
+    check(accepted == "dismantleAccepted" and okD == true and doorsAt(row) == "- - - - -" and here.dropped["Base.Plank"] == 20
+        and Ledger.getDoor(head) == nil, "拆中間一片：整組 5 片都拆、照帳本退一次（最多全退）、帳本清掉")
+
+    -- 雙開門：點一下四片齊放；拆一片整組拆
+    local okDD = build(P, 12, "hdd_01_2", { 301, 307, 0, 0 })
+    local quad = { { 301, 307, true }, { 302, 307, true }, { 303, 307, true }, { 304, 307, true } }
+    check(okDD == true and doorsAt(quad) == "hdd_01_2 hdd_01_3 hdd_01_10 hdd_01_11"
+        and Ledger.getDoor(doorAt(301, 307, 0, true))["Base.Plank"] == 8, "雙開門：一個錨點四片齊放，帳本整組一筆（每片半扇）")
+    before = stock(P)
+    local okDB, codeDB = build(P, 13, "hdd_01_2", { 302, 309, 0, 0 }) -- 第 3 片在被擋的那格
+    check(okDB == false and codeDB ~= nil and stock(P) == before
+        and doorsAt({ { 302, 309, true }, { 303, 309, true }, { 305, 309, true } }) == "- - -", "雙開門缺一格：整組不蓋、沒扣料")
+    -- 第 2、3 片開關時引擎移除再重建（IsoDoor.java:2650-2754）：不清帳本
+    local d2 = doorAt(302, 307, 0, true)
+    at(302, 307):transmitRemoveItemFromSquare(d2)
+    local d1 = doorAt(301, 307, 0, true)
+    check(Ledger.getDoor(d1) ~= nil, "雙開門第 2 片被移除（開關）：帳本留著")
+    check(Dismantle.plan(d1, "door").foreign == true, "雙開門少了一片：不給本工具拆（避免逐片拆後再退一次）")
+    at(302, 307).objects[#at(302, 307).objects + 1] = d2
+    here.dropped = {}
+    sent = {}
+    Server.dismantleIntent(P, { n = 14, t = { 304, 307, 0, "hdd_01_11" } })
+    sent = {}
+    check(Server.dismantle(P, 14, 1) == true and doorsAt(quad) == "- - - -" and here.dropped["Base.Plank"] == 8
+        and Ledger.getDoor(d1) == nil, "雙開門拆第 4 片：四片都拆、退一次、帳本清掉")
+
+    -- 沙盒關掉門：車庫門、雙開門一起擋
+    sb.KindDoor = false
+    check(intentCode(P, 15, "hgd_01_3", { 301, 311, 0, 0 }, 2) ~= nil and intentCode(P, 16, "hdd_01_2", { 301, 311, 0, 0 }) ~= nil
+        and Entry.why("hgd_01_3") == "DISABLED_KIND", "沙盒關掉門：車庫門、雙開門都被拒（DISABLED_KIND）")
+    sb.KindDoor = nil
+
+    instanceof, IsoDoor, buildUtil.getGarageDoorObjects, buildUtil.getDoubleDoorObjects = real.inst, real.door, real.gd, real.dd
+    sb.MaxCellsPerDrag, sb.MaxDistance, HARNESS_ROLL = real.max, real.dist, real.roll
+    local gone = {}
+    for _, name in ipairs(added) do spriteMap[name], gone[name] = nil, true end
+    for i = #spriteOrder, 1, -1 do if gone[spriteOrder[i].name] then table.remove(spriteOrder, i) end end
+end)()
+
+-- ===== 子種類 =====
+print("情境（子種類）：牆、地板、門、窗照圖塊組名分子種類；屋頂不分（其他占 57%）")
+;(function()
+    local W = MinidoracatBuilder.Window
+    local function all(kind, cases)
+        local bad = {}
+        for name, want in pairs(cases) do
+            local got = W.subOf(kind, nil, name)
+            if got ~= want then bad[#bad + 1] = name .. "→" .. tostring(got) end
+        end
+        return #bad == 0, table.concat(bad, ", ")
+    end
+    local ok, why = all("wall", {
+        walls_exterior_roofs_30_05_12 = "gable", Spoon_Pack1_Roofs_01_1 = "gable", -- 大小寫不分
+        walls_interior_house_01_5 = "interiorWall", pert_walls_wallpaper_2_3 = "interiorWall",
+        walls_logs_3 = "woodWall", location_barn_01_7 = "woodWall", walls_exterior_wooden_01_2 = "woodWall",
+        walls_exterior_house_02_4 = "exteriorWall",
+        location_restaurant_bar_01_3 = "commercial", industry_tk_01_2 = "commercial", walls_garage_01_2 = "commercial",
+        pert_walls_01_0 = "other", fencing_01_5 = "other", ["recipe:Base.Thing"] = "other",
+    })
+    check(ok, "子種類（牆）：山牆（組名有 roof）先比；穀倉、木造外牆歸木牆不歸商用或外牆；認不出的歸其他 " .. why)
+    ok, why = all("floor", {
+        roofs_01_22 = "flatRoof", pineville_roofs_09_3 = "flatRoof",
+        floors_interior_carpet_01_3 = "indoorFloor", floor_carpet_motif_2 = "indoorFloor",
+        floors_exterior_tilesandstone_01_9 = "outdoorFloor", blends_natural_01_8 = "outdoorFloor",
+        ramps_01_0 = "other", industry_01_4 = "other", location_restaurant_bar_01_3 = "other",
+    })
+    check(ok, "子種類（地板）：平屋頂、室內、戶外；坡道與店面的地板歸其他（同一組在牆是商用，快取照種類分開）" .. why)
+    ok, why = all("door", {
+        fixtures_doors_fences_01_2 = "gate", pert_gates_01_1 = "gate",
+        fixtures_doors_01_3 = "plainDoor", d_doors_02_5 = "plainDoor",
+        location_shop_gas2go_01_1 = "commercial", industry_railroad_ddd_01_0 = "commercial",
+        fixtures_bathroom_01_4 = "other", pert_Christmas_01_2 = "other",
+    })
+    check(ok, "子種類（門）：柵門先比（組名也有 door）、一般門、商用與工業，其他 " .. why)
+    ok, why = all("window", {
+        fixtures_windows_wood_3 = "woodFrame", fixtures_windows_metal_3 = "metalFrame", fixtures_windows_white_3 = "whiteFrame",
+        fixtures_windows_church_1 = "church", location_community_church_small_01_2 = "church",
+        walls_commercial_02_5 = "commercial", location_shop_greenes_01_4 = "commercial",
+        fixtures_windows_01_8 = "other", fixtures_windows_ddd_01_3 = "other",
+    })
+    check(ok, "子種類（窗）：木框、金屬框、白框、教堂（教堂的店面窗也算）、商用與工業，其他 " .. why)
+    check(W.SUB_KINDS.roof == nil and W.subOf("roof", nil, "roofs_30_01_3") == nil and W.subOf("roof", nil, "roofs_burnt_01_1") == nil,
+        "屋頂不分子種類（照名稱分，其他超過一半）")
+    local labels = true
+    for _, k in ipairs({ "wall", "floor", "door", "window" }) do
+        local list = W.SUB_KINDS[k]
+        labels = labels and type(list) == "table" and list[#list] == "other"
+    end
+    check(labels, "牆、地板、門、窗的子種類都以其他收尾（翻譯 key 由「每個 W.SUB_KINDS 都有 CH、EN」那項檢查）")
+
+    -- runSubs：只看名稱，不查圖；照 W.SUB_KINDS 的順序列，合計等於種類的項目數
+    local Entry = MinidoracatBuilder.Entry
+    local realSprite, realRefilter, realV, realSt = Entry.sprite, W.refilter, W.v, W.st
+    local looked = 0
+    Entry.sprite = function(...) looked = looked + 1 return realSprite(...) end
+    W.st = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+    W.refilter = function() end
+    local v = { nav = { setGroups = function() end, setSelected = function() end },
+        cat = { setOptions = function() end, setSelected = function() end }, subs = {} }
+    W.v = v
+    local names = { n = 7, "walls_exterior_roofs_01_3", "walls_exterior_roofs_01_4", "walls_interior_house_01_1",
+        "walls_logs_2", "location_shop_mall_01_0", "pert_walls_01_9", "walls_exterior_house_01_0" }
+    v.subJob = { kind = "wall", src = "all", list = names, i = 0, of = {} }
+    local okRun = pcall(W.runSubs, v)
+    Entry.sprite = realSprite
+    local ids, total = {}, 0
+    for i, it in ipairs(v.subs.wall and v.subs.wall.items or {}) do
+        ids[i] = it.id .. "=" .. it.n
+        total = total + it.n
+    end
+    check(okRun and looked == 0 and table.concat(ids, ",") == "woodWall=1,exteriorWall=1,interiorWall=1,commercial=1,gable=2,other=1"
+        and total == names.n, "牆的子種類：不查圖、照 W.SUB_KINDS 的順序列、合計等於項目數 " .. table.concat(ids, ","))
+    W.refilter, W.v, W.st = realRefilter, realV, realSt
+end)()
+
+-- ===== 訊息與接線、選單、管理面板 =====
+;(function()
+    print("訊息與接線、選單、管理面板（介面審查 1116）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Messages"
+    require "MinidoracatBuilder/Wiring"
+    require "MinidoracatBuilder/Menu"
+    require "MinidoracatBuilder/Admin"
+    local Messages, Wiring, Menu, Admin = B.Messages, B.Wiring, B.Menu, B.Admin
+    local function json(lang)
+        local f = assert(io.open(MEDIA .. "/shared/Translate/" .. lang .. "/IG_UI.json", "rb"))
+        local t = {}
+        for k, v in f:read("*a"):gmatch('"(IGUI_MBLD_[%w_]+)"%s*:%s*"(.-)",?%s*\n') do t[k] = v end
+        f:close()
+        return t
+    end
+    local CH, EN = json("CH"), json("EN")
+
+    -- 第 1 條：11 句錯誤訊息都補了下一步（繁中、英文）
+    local NEXT = {
+        Refuse_SAME_TILE = { "換一格", "Pick another tile" },
+        Refuse_STACK_FULL = { "拆掉上面那件", "dismantle the top piece" },
+        Recipe_NotBuilt = { "再拖一次", "drag again" },
+        WireRefuse_INTERNAL = { "再試一次", "Try again" },
+        WireRefuse_FULL = { "先拔掉一盞", "Unwire a light first" },
+        WireRefuse_OUT_OF_RANGE = { "把燈蓋近一點", "Build the light closer" },
+        WireRefuse_STATE = { "下車後再試", "Get out of the vehicle" },
+        WireRefuse_NOT_SWITCH = { "蓋一個電燈開關", "Build a light switch" },
+        Wire_Unloaded = { "走近之後再切一次", "Move closer and switch again" },
+        Admin_Error = { "再試一次", "Try again" },
+        Admin_LedgersNoReply = { "關掉面板再開一次", "Close the panel and open it again" },
+    }
+    local lacking = {}
+    for k, want in pairs(NEXT) do
+        local ch, en = CH["IGUI_MBLD_" .. k], EN["IGUI_MBLD_" .. k]
+        if not (ch and ch:find(want[1], 1, true)) then lacking[#lacking + 1] = "CH:" .. k end
+        if not (en and en:find(want[2], 1, true)) then lacking[#lacking + 1] = "EN:" .. k end
+    end
+    check(#lacking == 0, "11 句錯誤訊息都寫了下一步能做什麼（繁中、英文）" .. table.concat(lacking, " "))
+    local newKeys = {}
+    for _, k in ipairs({ "ReasonCountOne", "Wire_ClearConfirm", "Wire_ClearText", "Menu_NoDismantle", "Menu_NoBuild",
+        "Menu_NoUse" }) do
+        if not (CH["IGUI_MBLD_" .. k] and EN["IGUI_MBLD_" .. k]) then newKeys[#newKeys + 1] = k end
+    end
+    check(#newKeys == 0, "這次新增的鍵 EN、CH 都有 " .. table.concat(newKeys, " "))
+
+    -- 第 10 條：英文數量是 1 時不寫成複數
+    local realGetText = getText
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local one = Messages.reasons({ SAME_TILE = 1, OCCUPIED = 2 })
+    check(one[1] == "IGUI_MBLD_ReasonCount(2,IGUI_MBLD_Refuse_OCCUPIED)"
+        and one[2] == "IGUI_MBLD_ReasonCountOne(1,IGUI_MBLD_Refuse_SAME_TILE)"
+        and EN.IGUI_MBLD_ReasonCountOne == "1 tile: %2" and not EN.IGUI_MBLD_Source_Disabled:find("%1 sources", 1, true)
+        and EN.IGUI_MBLD_Source_Disabled:find("%1", 1, true) and EN.IGUI_MBLD_Source_Disabled:find("%2", 1, true),
+        "英文單數：1 格用 ReasonCountOne（「1 tile」）；停用來源的數量改成標籤形式，不會出現「1 sources」")
+
+    -- 第 2 條：「全部拔掉」先確認、寫出盞數；確認前不送
+    local realUI, realJoy, realClient, realSCC = MinidoracatUI, JoypadState, isClient, sendClientCommand
+    local realCell, realInst, realSpecific, realCore = getCell, instanceof, getSpecificPlayer, getCore
+    local realCM, realWOCM, realJoyData = ISContextMenu, ISWorldObjectContextMenu, getJoypadData
+    JoypadState = { players = {} }
+    local shown, closed
+    MinidoracatUI = { v1 = { CAPABILITIES = { dialog = true }, Dialog = {
+        show = function(o) shown = o return o end,
+        close = function(d, ok)
+            closed = true
+            d.onResult(ok)
+        end } } }
+    local sent, sentQ = {}, nil
+    isClient = function() return true end
+    sendClientCommand = function(_, _, _, a)
+        sent[#sent + 1] = a.op or "query"
+        sentQ = a.q
+    end
+    local m = { player = {}, pn = 0, sw = { x = 1, y = 2, z = 0, e = "sw_0" }, nL = 3, marked = {}, cand = {}, pick = {} }
+    Wiring.mode = m
+    local d = Wiring.confirmClear()
+    check(d ~= nil and #sent == 0 and shown.danger == true and shown.modal == false and shown.anchor == "mouse"
+        and shown.title == "IGUI_MBLD_Wire_ClearConfirm(3)" and shown.confirmText == "IGUI_MBLD_Wire_Clear",
+        "全部拔掉：先跳危險樣式、不擋操作、開在游標旁的確認框，標題寫出 3 盞；確認前不送拔線請求")
+    check(Wiring.confirmClear() == nil and #sent == 0, "確認框開著時再按一次：不開第二個、不送")
+    shown.onResult(false)
+    check(#sent == 0 and m.confirm == nil, "按取消：不送")
+    Wiring.confirmClear()
+    shown.onResult(true)
+    check(#sent == 1 and sent[1] == "clear", "按確認：送一次 clear")
+    m.busy = nil
+    Wiring.confirmClear()
+    Wiring.close()
+    check(closed and #sent == 1 and Wiring.mode == nil, "確認框開著時離開接線模式：框跟著關、不送")
+    local m2 = { player = {}, pn = 0, sw = m.sw, nL = 2, marked = {}, cand = {}, pick = {} }
+    Wiring.mode = m2
+    Wiring.confirmClear()
+    Wiring.mode = nil
+    shown.onResult(true)
+    check(#sent == 1, "接線模式已經換掉才按確認：不送（不會拔到別條線路）")
+
+    -- 第 3 條：世界上的標記每種都有圖示（同一格兩個時往右排開；找不到物件的不畫）
+    local function lsw(name, lit)
+        local props = { has = function(_, k) return lit and (k == "lightR" or k == "IsMoveAble") end }
+        return { getSprite = function() return { getName = function() return name end, getProperties = function() return props end } end,
+            setHighlighted = function() end, setHighlightColor = function() end, setOutlineHighlight = function() end,
+            setOutlineHighlightCol = function() end, hasModData = function() return false end }
+    end
+    local objs = { ["1,2,0"] = { lsw("sw_0") }, ["3,2,0"] = { lsw("la_0"), lsw("lb_0") }, ["4,2,0"] = { lsw("lc_0", true) } }
+    local function sqAt(x, y, z)
+        local l = objs[x .. "," .. y .. "," .. z]
+        return l and { getObjects = function() return { size = function() return #l end, get = function(_, i) return l[i + 1] end } end,
+            getX = function() return x end, getY = function() return y end, getZ = function() return z end }
+    end
+    getCell = function() return { getGridSquare = function(_, x, y, z) return sqAt(x, y, z) end } end
+    instanceof = function(_, c) return c == "IsoLightSwitch" end
+    local m3 = { player = {}, pn = 0, sw = m.sw, marked = {}, cand = {}, pick = {} }
+    Wiring.mode = m3
+    Wiring.apply(m3, { id = 1, s = { m.sw }, l = { { x = 3, y = 2, z = 0, e = "la_0" } }, cand = {
+        { x = 3, y = 2, z = 0, e = "la_0", k = "l", c = 1 }, { x = 3, y = 2, z = 0, e = "lb_0", k = "l" },
+        { x = 4, y = 2, z = 0, e = "lc_0", k = "l", c = 9 }, { x = 9, y = 9, z = 0, e = "gone_0", k = "l" } } })
+    local ic = m3.icons or { n = 0 }
+    local kinds = {}
+    for i = 1, ic.n do kinds[#kinds + 1] = ic[i].k .. "@" .. ic[i].x .. "+" .. ic[i].dx end
+    check(table.concat(kinds, " ") == "this@1+0 wired@3+0 free@3+20 other@4+0",
+        "接線標記：這個開關、已接、可接、別條線路各一個圖示；同一格兩個往右排開，沒載入的不畫（" .. table.concat(kinds, " ") .. "）")
+    Wiring.mode = nil
+
+    -- 第 4 條：右鍵選單不能選的列，標籤後面加狀態字
+    local function fakeMenu()
+        local mn = { options = {} }
+        function mn:addOption(name, target, fn, p1, p2)
+            local o = { name = name, target = target, onSelect = fn, param1 = p1, param2 = p2 }
+            self.options[#self.options + 1] = o
+            return o
+        end
+        function mn:addSubMenu(o, s) o.subOption = s end
+        function mn:calcWidth() return 100 end
+        function mn:setWidth(w) self.width = w end
+        return mn
+    end
+    ISContextMenu = { getNew = function() return fakeMenu() end }
+    ISWorldObjectContextMenu = { addToolTip = function() return {} end, setTest = function() end, onToggleLight = function() end }
+    getSpecificPlayer = function() return { getVehicle = function() return nil end } end
+    local color = { getR = function() return 1 end, getG = function() return 0 end, getB = function() return 0 end }
+    getCore = function() return { getGoodHighlitedColor = function() return color end,
+        getBadHighlitedColor = function() return color end } end
+    getJoypadData = function() return nil end
+    local realTargets, realTiles, realCheck = Menu.targets, Menu.tiles, B.Dismantle.check
+    local realOf, realRepl, realCancels = B.Names.of, B.Dismantle.replaceableOld, B.Cursor.cancels
+    Menu.targets = function()
+        return { { obj = {}, kind = "wall", name = "ok_0" }, { obj = {}, kind = "fence", name = "bad_0" } },
+            { { obj = {}, kind = "furniture", name = "chair_0", route = "pickup" } }
+    end
+    Menu.tiles = function() return {} end
+    B.Dismantle.check = function(_, kind) if kind == "fence" then return "NOT_EMPTY" end return nil end
+    B.Names.of = function(n) return n end
+    B.Dismantle.replaceableOld = function() return false end
+    B.Cursor.cancels = function() return 0 end
+    local ctx = fakeMenu()
+    local okFill, errFill = pcall(Menu.fill, 0, ctx, {}, false)
+    local sub = ctx.options[1] and ctx.options[1].subOption
+    local so = sub and sub.options or {}
+    check(okFill and #so == 3 and so[1].name == "ok_0" and not so[1].notAvailable
+        and so[2].name == "IGUI_MBLD_Menu_NoDismantle(bad_0)" and so[2].notAvailable
+        and so[3].name == "IGUI_MBLD_Menu_NoDismantle(chair_0)" and so[3].notAvailable,
+        "拆除選單：能拆的照舊，不能拆與不歸本工具拆的標籤後面加「（不能拆）」（" .. tostring(errFill) .. "）")
+    Menu.targets, Menu.tiles, B.Dismantle.check = realTargets, realTiles, realCheck
+    B.Names.of, B.Dismantle.replaceableOld, B.Cursor.cancels = realOf, realRepl, realCancels
+    -- 燈的「線路」子選單：回覆前拔線、打開接線模式標「（不能選）」，接著開關後拿掉
+    local lampObjs = { { getSquare = function() return sqAt(4, 2, 0) end } }
+    objs["4,2,0"][1].getSquare = lampObjs[1].getSquare
+    local function lampSub()
+        local c = fakeMenu()
+        Wiring.fill(0, c, lampObjs, false)
+        return c.options[1] and c.options[1].subOption
+    end
+    local ls = lampSub()
+    local before = ls and ls.options[2].name == "IGUI_MBLD_Menu_NoUse(IGUI_MBLD_Menu_Unplug)"
+        and ls.options[3].name == "IGUI_MBLD_Menu_NoUse(IGUI_MBLD_Menu_OpenWiring)"
+    Wiring.onServerCommand("circuit", { q = sentQ, s = {}, l = {} })
+    local notWired = ls and ls.options[2].name == "IGUI_MBLD_Menu_NoUse(IGUI_MBLD_Menu_Unplug)" and ls.options[2].notAvailable
+    ls = lampSub()
+    Wiring.onServerCommand("circuit", { q = sentQ, s = { m.sw }, l = {} })
+    check(before and notWired and ls.options[2].name == "IGUI_MBLD_Menu_Unplug" and ls.options[2].notAvailable == false
+        and ls.options[3].name == "IGUI_MBLD_Menu_OpenWiring",
+        "燈的線路子選單：回覆前與沒接線時標「（不能選）」，接著開關後拿掉")
+
+    MinidoracatUI, JoypadState, isClient, sendClientCommand = realUI, realJoy, realClient, realSCC
+    getCell, instanceof, getSpecificPlayer, getCore = realCell, realInst, realSpecific, realCore
+    ISContextMenu, ISWorldObjectContextMenu, getJoypadData = realCM, realWOCM, realJoyData
+    getText = realGetText
+
+    -- 第 6 條：管理面板關掉再開，草稿留著（reload(true)）；「還原」仍是丟掉草稿的地方
+    local W = B.Window
+    local realWui, realCan, realAsk, realWin = W.ui, Admin.canManage, Admin.askLedgers, Admin.win
+    local fakeUI = {}
+    W.ui = function() return fakeUI end
+    Admin.canManage = function() return true end
+    Admin.askLedgers = function() end
+    local kept = "none"
+    Admin.win = { UI = fakeUI, playerNum = 0, reload = function(_, keep) kept = keep end, setStatus = function() end,
+        win = { getIsVisible = function() return false end, setVisible = function() end, bringToTop = function() end } }
+    local opened = Admin.open(0)
+    W.ui, Admin.canManage, Admin.askLedgers, Admin.win = realWui, realCan, realAsk, realWin
+    local f = assert(io.open(MEDIA .. "/client/MinidoracatBuilder/Admin.lua", "rb"))
+    local src = f:read("*a")
+    f:close()
+    check(opened == true and kept == true and src:find("onClick = function(t) t:reload() end", 1, true) ~= nil,
+        "管理面板關掉再開：重讀時保留沒套用的草稿；「還原」鈕照舊丟掉草稿")
+end)()
+
+-- ===== 藍圖資料（Plan、PlanFile、PlanStore）=====
+;(function()
+    print("藍圖資料：Plan（片、上限、搬、轉、撤銷）、PlanFile（檔案、分享碼、存檔）、PlanStore")
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanFile"
+    require "MinidoracatBuilder/PlanStore"
+    local B = MinidoracatBuilder
+    local Plan, PF, PS = B.Plan, B.PlanFile, B.PlanStore
+
+    -- Plan.lua 不呼叫引擎：列出所有「名稱(」的全域呼叫，只准檔裡宣告的與 Lua 標準函式
+    local function engineCalls(src)
+        src = src:gsub("%-%-[^\n]*", ""):gsub('"[^"\n]*"', '""')
+        local known = { select = 1, tostring = 1, pairs = 1, ipairs = 1, type = 1, error = 1, pcall = 1, ["function"] = 1,
+            ["if"] = 1, ["while"] = 1, ["and"] = 1, ["or"] = 1, ["not"] = 1, ["return"] = 1, ["elseif"] = 1, ["in"] = 1 }
+        for name in src:gmatch("local%s+function%s+([%a_][%w_]*)") do known[name] = 1 end
+        for params in src:gmatch("function[^(\n]*%(([^)]*)%)") do
+            for name in params:gmatch("[%a_][%w_]*") do known[name] = 1 end
+        end
+        local bad = {}
+        for pre, name in src:gmatch("([^%w_%.:])([%a_][%w_]*)%s*%(") do
+            if not known[name] then bad[#bad + 1] = name end
+        end
+        return bad
+    end
+    local fh = io.open(MEDIA .. "/client/MinidoracatBuilder/Plan.lua", "r")
+    local planSrc = fh:read("a")
+    fh:close()
+    local calls = engineCalls(planSrc)
+    check(#calls == 0, "Plan.lua 沒有任何引擎全域函式呼叫（" .. table.concat(calls, ",") .. "）")
+    check(#engineCalls(planSrc .. "\nlocal x = getCore()\n") == 1, "植入：加一個 getCore() 會被抓到")
+
+    -- 片的簽名（相對包圍盒的角），排序後比對兩張藍圖一不一樣
+    local function sig(plan)
+        local x0, y0, z0 = Plan.bounds(plan)
+        local out = {}
+        Plan.each(plan, function(p)
+            out[#out + 1] = (p.x - x0) .. "," .. (p.y - y0) .. "," .. (p.z - z0) .. "," .. p.d .. "," .. p.o .. ","
+                .. plan.items[p.it].id .. "," .. tostring(p.w)
+        end)
+        table.sort(out)
+        return table.concat(out, "|")
+    end
+
+    do -- 加片、重複、上限
+        local pl = Plan.new("  我的\t小屋  ")
+        check(pl.name == "我的 小屋", "名稱：Tab 換空白、去頭尾空白")
+        check(Plan.nameLen(Plan.cleanName(string.rep("字", 50))) == 40 and Plan.nameLen("ab字") == 3, "名稱超過 40 字截掉、中文一字算一字")
+        local a = Plan.item(pl, "walls_01_4")
+        check(Plan.item(pl, "walls_01_4", nil) == a and pl.nItems == 1, "同一個項目 ID 只有一個編號")
+        local p1 = Plan.add(pl, 0, 0, 0, 1, 0, a)
+        local _, why = Plan.add(pl, 0, 0, 0, 1, 0, a)
+        check(p1 and why == "DUP", "同格、同項目、同朝向、同疊放：DUP")
+        check(Plan.add(pl, 0, 0, 0, 1, 1, a) and Plan.add(pl, 0, 0, 0, 2, 0, a) and #Plan.at(pl, 0, 0, 0) == 3
+            and #Plan.at(pl, 5, 5, 0) == 0 and pl.items[a].n == 3, "疊放或朝向不同不算重複；Plan.at 回那一格的片")
+        check(Plan.add(pl, 63, 0, 0, 0, 0, a) ~= nil and select(2, Plan.add(pl, 64, 0, 0, 0, 0, a)) == "TOO_WIDE"
+            and select(2, Plan.add(pl, -1, 0, 0, 0, 0, a)) == "TOO_WIDE" and select(2, Plan.add(pl, 0, 64, 0, 0, 0, a)) == "TOO_WIDE",
+            "每邊 64 格：第 65 格 TOO_WIDE（兩個方向、往負的也算）")
+        check(Plan.add(pl, 0, 0, 3, 0, 0, a) ~= nil and select(2, Plan.add(pl, 0, 0, 4, 0, 0, a)) == "TOO_HIGH"
+            and select(2, Plan.add(pl, 0, 0, -1, 0, 0, a)) == "TOO_HIGH", "4 層：第 5 層 TOO_HIGH")
+        local full = Plan.new("full")
+        local f = Plan.item(full, "floor_01_0")
+        for y = 0, 63 do for x = 0, 63 do Plan.add(full, x, y, 0, 0, 0, f) end end
+        local more = Plan.item(full, "floor_01_1")
+        check(full.n == 4096 and select(2, Plan.add(full, 0, 0, 0, 0, 0, more)) == "FULL", "4,096 片後再加：FULL")
+        check(#Plan.at(full, 40, 40, 0) == 1 and Plan.at(full, 40, 40, 0)[1].x == 40, "滿的藍圖照格子查得到")
+        local cp, cwhy = Plan.copy(full, { Plan.at(full, 0, 0, 0)[1] }, 0, 0, 1)
+        check(cp == nil and cwhy == "FULL" and full.n == 4096, "滿了再複製：整個不做、回 FULL")
+    end
+
+    do -- 搬、複製、轉向
+        local pl = Plan.new("move")
+        local a = Plan.item(pl, "walls_01_4")
+        local p1, p2, p3 = Plan.add(pl, 0, 0, 0, 1, 0, a), Plan.add(pl, 1, 0, 0, 1, 0, a), Plan.add(pl, 2, 0, 0, 1, 0, a)
+        local rev = pl.rev
+        check(Plan.move(pl, { p1, p2 }, 0, 5, 0) == true and p1.y == 5 and p2.y == 5 and #Plan.at(pl, 0, 0, 0) == 0
+            and Plan.at(pl, 0, 5, 0)[1] == p1 and pl.rev > rev, "搬兩片：位置與格子索引一起變、rev 加一")
+        rev = pl.rev
+        local ok, why = Plan.move(pl, { p1 }, 70, 0, 0)
+        check(ok == nil and why == "TOO_WIDE" and p1.x == 0 and Plan.at(pl, 0, 5, 0)[1] == p1 and pl.rev == rev,
+            "搬出每邊 64 格：整個不做、位置不變、rev 不變")
+        ok, why = Plan.move(pl, { p1 }, 0, 0, 4)
+        check(ok == nil and why == "TOO_HIGH" and p1.z == 0, "搬出 4 層：TOO_HIGH")
+        check(Plan.move(pl, { p1, p2, p3 }, 1000, 0, 0) == true and p3.x == 1002, "整張一起搬多遠都可以")
+        Plan.move(pl, { p1, p2, p3 }, -1000, 0, 0)
+        local cp = Plan.copy(pl, { p1, p2, p3 }, 0, 1, 0)
+        check(cp and #cp == 3 and pl.n == 6 and #Plan.at(pl, 2, 1, 0) == 1, "複製三片到下一格")
+        check(#Plan.copy(pl, { p1 }, 0, 0, 0) == 0 and pl.n == 6, "複製到原地：一模一样的略過")
+        -- 搬到和別片完全一樣的位置：合成一片
+        local n0 = pl.n
+        Plan.move(pl, { p3 }, 0, 1, 0)
+        check(pl.n == n0 - 1 and #Plan.at(pl, 2, 1, 0) == 1, "搬到一模一樣的片上：合成一片")
+
+        local r = Plan.new("rot")
+        local w, chair = Plan.item(r, "walls_01_4"), Plan.item(r, "chair")
+        local q1, q2, q3 = Plan.add(r, 0, 0, 0, 1, 0, w), Plan.add(r, 2, 0, 0, 4, 0, w), Plan.add(r, 0, 1, 0, 2, 0, chair)
+        local function turn(p, item)
+            if item.id == "chair" then return nil end
+            return p.d % 4 + 1, p.d == 4 and 1 or 0, 0
+        end
+        local stuck = Plan.rotate(r, { q1, q2, q3 }, turn)
+        check(stuck == 1 and q1.x == 1 and q1.y == 0 and q1.d == 2 and q2.x == 2 and q2.y == 2 and q2.d == 1
+            and q3.x == 0 and q3.y == 0 and q3.d == 2, "轉 90 度：位置繞包圍盒轉、朝向照 turnPiece、回 nil 的片朝向不換並計數")
+        check(Plan.undo(r) and q1.x == 0 and q1.d == 1 and q2.x == 2 and q2.y == 0 and q2.d == 4 and q3.y == 1,
+            "撤銷轉向：全部回原位")
+    end
+
+    do -- 撤銷、重做：50 步、只記差異、begin／commit
+        local pl = Plan.new("undo")
+        local a = Plan.item(pl, "floor_01_0")
+        for i = 0, 59 do Plan.add(pl, i % 60 % 64, math.floor(i / 60), 0, 0, 0, a) end
+        check(#pl._undo == 50, "60 步只留最近 50 步")
+        local n = 0
+        while Plan.undo(pl) do n = n + 1 end
+        check(n == 50 and pl.n == 10, "撤銷 50 次、第 51 次回 false")
+        n = 0
+        while Plan.redo(pl) do n = n + 1 end
+        check(n == 50 and pl.n == 60, "重做 50 次回到 60 片")
+        local list = {}
+        Plan.each(pl, function(p) if #list < 2 then list[#list + 1] = p end end)
+        Plan.move(pl, list, 0, 1, 0)
+        local step = pl._undo[#pl._undo]
+        check(#step == 2 and step[1].k == 0 and step[1].a[2] == 0 and step[1].b[2] == 1, "一步只記動到的 2 片（改前、改後）")
+        local rev = pl.rev
+        Plan.begin(pl)
+        for i = 0, 4 do Plan.add(pl, i, 5, 0, 0, 0, a) end
+        check(Plan.undo(pl) == false, "拖到一半不能撤銷")
+        Plan.commit(pl)
+        check(pl.n == 65 and pl.rev > rev, "begin／commit 之間加了 5 片")
+        Plan.undo(pl)
+        check(pl.n == 60 and #Plan.at(pl, 0, 5, 0) == 0, "一次撤銷拿掉整次拖曳的 5 片")
+        Plan.add(pl, 9, 9, 0, 0, 0, a)
+        check(Plan.redo(pl) == false, "撤銷後做了新的修改：重做清空")
+        local cnt = Plan.remove(pl, { Plan.at(pl, 9, 9, 0)[1] })
+        check(cnt == 1 and Plan.undo(pl) and #Plan.at(pl, 9, 9, 0) == 1 and pl.items[a].n == 61, "拿掉再撤銷：片與項目片數回來")
+
+        local rp = Plan.new("replace")
+        local x, y = Plan.item(rp, "walls_a_1"), Plan.item(rp, "walls_b_1")
+        Plan.add(rp, 0, 0, 0, 1, 0, x)
+        Plan.add(rp, 1, 0, 0, 1, 0, x)
+        Plan.add(rp, 1, 0, 0, 1, 0, y)
+        local changed = Plan.replace(rp, x, "walls_b_1", { mod = "M" })
+        check(changed == 2 and rp.n == 2 and rp.items[x].n == 0 and rp.items[y].n == 2, "全部換成：改指新項目，換完重複的合成一片")
+        local z = select(1, Plan.replace(rp, y, "walls_c_1", { mod = "M", modName = "Mod C" }))
+        check(z == 2 and rp.items[rp.nItems].id == "walls_c_1" and rp.items[rp.nItems].modName == "Mod C", "換成新的項目 ID：新增項目並帶來源")
+        Plan.undo(rp)
+        Plan.undo(rp)
+        check(rp.n == 3 and rp.items[x].n == 2 and rp.items[y].n == 1, "撤銷兩次換成：回到原本三片")
+    end
+
+    -- 測試用的藍圖：帶空白的圖塊名、中文名稱、配方項目、疊放、兩層、負的相對座標、一排與一列
+    local function sample()
+        local pl = Plan.new("海邊 小屋")
+        local w = Plan.item(pl, "edit_ddd_RUS_Forest Survival_01_64",
+            { mod = "FSMod", modName = "Forest Survival", workshop = "123456", version = "1.2" })
+        local rc = Plan.item(pl, "recipe:Base.RainCollector_Tarp")
+        local f = Plan.item(pl, "floors_01_40")
+        for x = -2, 7 do Plan.add(pl, x, 0, 0, 0, 0, f) end
+        for y = 1, 5 do Plan.add(pl, -2, y, 0, 4, 0, w) end
+        Plan.add(pl, 3, 3, 1, 0, 1, rc)
+        Plan.add(pl, 3, 3, 1, 0, 0, rc)
+        pl.ox, pl.oy, pl.oz = 100, 200, 0
+        return pl
+    end
+
+    do -- 檔案來回
+        local pl = sample()
+        local text = PF.encode(pl)
+        local back, why, ln = PF.decode(text)
+        check(back ~= nil, "藍圖檔讀回（" .. tostring(why) .. " 第 " .. tostring(ln) .. " 行）")
+        if back then
+            check(PF.encode(back) == text and sig(back) == sig(pl) and back.name == "海邊 小屋" and back.n == 17,
+                "存了再讀：內容與再存的文字完全一樣（帶空白的圖塊名、中文名稱、配方項目）")
+            local fs = back.items[back._byId["edit_ddd_RUS_Forest Survival_01_64"]]
+            check(fs.mod == "FSMod" and fs.modName == "Forest Survival" and fs.workshop == "123456" and fs.version == "1.2"
+                and back.items[back._byId["floors_01_40"]].mod == nil, "項目的 MOD 來源讀回；原版的寫 - 讀回 nil")
+            check(back.ox == 98 and back.oy == 200 and back.oz == 0 and Plan.bounds(back) == 0, "位置寫成包圍盒角的世界座標、片從 0 起算")
+            check(#back._undo == 0 and back.rev == 0 and Plan.undo(back) == false, "讀回的藍圖沒有撤銷紀錄")
+        end
+        local empty = PF.decode(PF.encode(Plan.new("")))
+        check(empty ~= nil and empty.n == 0, "空的藍圖也能存了再讀")
+    end
+
+    do -- 壞檔：每一種都整張拒收、回原因碼與行號、不丟 Lua 錯誤
+        local good = table.concat({ "MBLDPLAN\t1", "name\tgood", "size\t2\t2\t1", "count\t3",
+            "i\t1\t2\t-\t-\t-\t-\twalls_01_4", "i\t2\t1\t-\t-\t-\t-\trecipe:Base.RainCollector_Tarp",
+            "p\t0\t0\t0\t1\t0\t1", "p\t1\t0\t0\t1\t0\t1", "p\t0\t1\t0\t0\t0\t2", "END" }, "\n") .. "\n"
+        check(PF.decode(good) ~= nil, "範本檔讀得進來")
+        local function with(n, line)
+            local lines = {}
+            for l in good:gmatch("[^\n]+") do lines[#lines + 1] = l end
+            lines[n] = line
+            local out = {}
+            for i = 1, 10 do if lines[i] then out[#out + 1] = lines[i] end end
+            return table.concat(out, "\n") .. "\n"
+        end
+        local function bad(text, code, line, label)
+            local ok, plan, c, l = pcall(PF.decode, text)
+            check(ok and plan == nil and c == code and l == line,
+                "壞檔拒收：" .. label .. "（" .. tostring(c) .. "，第 " .. tostring(l) .. " 行）")
+        end
+        bad(with(10, false), "NO_END", 10, "缺 END")
+        bad(good:gsub("\nEND\n$", "\n"):sub(1, -20), "FORMAT", 8, "寫到一半斷掉（最後一行只剩半行）")
+        bad(with(1, "MBLDPLAN\t2"), "VERSION", 1, "版本不認得")
+        bad(with(7, "p\t0\t0\t0\t1\t0"), "FORMAT", 7, "片行欄位少一個")
+        bad(with(5, "i\t1\t2\t-\t-\t-\twalls_01_4"), "FORMAT", 5, "項目行欄位少一個")
+        bad(with(8, "p\t2\t0\t0\t1\t0\t1"), "RANGE", 8, "座標超出 size")
+        bad(with(3, "size\t65\t2\t1"), "RANGE", 3, "寬超過 64")
+        bad(with(3, "size\t2\t2\t5"), "RANGE", 3, "超過 4 層")
+        bad(with(9, "p\t0\t1\t1\t0\t0\t2"), "RANGE", 9, "層超出 size")
+        bad(with(7, "p\t0\t0\t0\t6\t0\t1"), "RANGE", 7, "朝向超出 0..5")
+        bad(with(4, "count\t4"), "COUNT", 10, "count 比片多")
+        bad(with(4, "count\t2"), "COUNT", 9, "片比 count 多")
+        bad(with(5, "i\t1\t3\t-\t-\t-\t-\twalls_01_4"), "COUNT", 5, "項目行的片數不符")
+        bad(with(9, "p\t0\t1\t0\t0\t0\t3"), "ITEM", 9, "項目編號不存在")
+        bad(with(6, "i\t3\t1\t-\t-\t-\t-\tx_1"), "ITEM", 6, "項目編號跳號")
+        bad(with(6, "i\t2\t1\t-\t-\t-\t-\twalls_01_4"), "ITEM", 6, "同一個項目 ID 寫兩次")
+        bad(with(4, "count\t4097"), "FULL", 4, "超過 4,096 片")
+        bad(with(2, "name\t" .. string.rep("字", 41)), "NAME", 2, "名稱超過 40 字")
+        bad(with(8, "p\t0\t0\t0\t1\t0\t1"), "DUP", 8, "重複的片")
+        bad(with(7, "p\t0\tx\t0\t1\t0\t1"), "FORMAT", 7, "座標不是整數")
+        bad(with(7, "hello"), "FORMAT", 7, "看不懂的行")
+        bad(with(5, "i\t1\t2\t-\tabc\t-\t-\twalls_01_4"), "FORMAT", 5, "工作坊編號不是數字")
+        bad(good .. "x\n", "FORMAT", 11, "END 後面還有東西")
+        bad("MBLDPLAN\tdeleted\nEND\n", "DELETED", 1, "已刪除的檔")
+        bad("", "NO_END", 1, "空字串")
+        bad("PK\3\4\0\0garbage", "FORMAT", 1, "不是藍圖檔")
+        bad(nil, "FORMAT", 0, "不是字串")
+        local manyLines = { "MBLDPLAN\t1", "name\tbig", "size\t64\t64\t2", "count\t4096", "i\t1\t4097\t-\t-\t-\t-\tf_1" }
+        check(select(2, PF.decode(table.concat(manyLines, "\n"))) == "RANGE", "壞檔拒收：項目片數超過 4,096")
+        local junkOk = true
+        for i = 1, 200 do
+            local s = {}
+            for k = 1, (i * 7) % 90 do s[k] = string.char((i * 31 + k * 17) % 256) end
+            if not pcall(PF.decode, "MBLDPLAN\t1\n" .. table.concat(s)) then junkOk = false end
+        end
+        check(junkOk, "亂碼不會讓 decode 丟 Lua 錯誤")
+    end
+
+    do -- 分享碼
+        local pl = sample()
+        local code = PF.share(pl, true)
+        check(code:match("^[A-Za-z0-9:%-/()%.%+=,;]+$") ~= nil, "分享碼只用英數與 :-/().+=,; （剪貼簿、聊天室貼得過去）")
+        local back, why, at = PF.unshare(code)
+        check(back ~= nil and sig(back) == sig(pl) and back.name == pl.name and back.ox == 98 and back.oy == 200,
+            "分享碼來回一致、帶位置（" .. tostring(why) .. " " .. tostring(at) .. "）")
+        check(back and back.items[back._byId["edit_ddd_RUS_Forest Survival_01_64"]].workshop == "123456", "分享碼帶項目的來源 MOD")
+        local noPos = PF.unshare(PF.share(pl, false))
+        check(noPos and noPos.ox == nil and sig(noPos) == sig(pl), "不帶位置的分享碼")
+        check(PF.share(pl) == PF.share(pl, false), "省略 withPos＝不帶位置")
+        check(code:find("0,0,10", 1, true) and code:find("0,1,-5", 1, true), "連續的一排與一列各寫成一段")
+        local full = Plan.new("full")
+        local f = Plan.item(full, "floor_01_0")
+        for y = 0, 63 do for x = 0, 63 do Plan.add(full, x, y, 0, 0, 0, f) end end
+        local big = PF.share(full, false)
+        local fb = PF.unshare(big)
+        check(#big < 1000 and fb and fb.n == 4096, "4,096 片的地板分享碼壓到 1,000 字以內並能還原（" .. #big .. " 字）")
+        check(PF.unshare("  " .. code .. "\n") ~= nil, "前後多的空白、換行照收")
+        local function rechk(s) -- 改內容後重算檢查碼（模擬故意改的人）
+            local body = s:match("^(.*;)K%d+$")
+            local h = 0
+            for i = 1, #body do h = (h * 31 + body:byte(i)) % 9999991 end
+            return body .. "K" .. h
+        end
+        local function rejects(s, want, label)
+            local ok, p, c = pcall(PF.unshare, s)
+            check(ok and p == nil and c == want, "壞分享碼拒收：" .. label .. "（" .. tostring(c) .. "）")
+        end
+        rejects(code:gsub("C17", "C18", 1), "CHECKSUM", "改了一個字")
+        rejects(code:sub(1, #code - 20), "NO_END", "被截斷")
+        rejects(rechk(code:gsub("C17", "C18", 1)), "COUNT", "改了片數並重算檢查碼")
+        rejects(rechk(code:gsub(";0,0,10;", ";0,0,70;", 1)), "RANGE", "一排超出 64 格")
+        rejects(rechk(code:gsub(";G(%d+),", ";G9,", 1)), "ITEM", "項目編號不存在")
+        rejects(rechk(code:gsub("^MBLD1", "MBLD2")), "VERSION", "版本不認得")
+        rejects(rechk(code:gsub(";N[^;]*", ";N<x>", 1)), "FORMAT", "名稱有不認得的字元")
+        rejects(rechk(code:gsub(";N[^;]*", ";N" .. string.rep("A", 41), 1)), "NAME", "名稱超過 40 字")
+        rejects(rechk(code:gsub(";0,0,10;", ";0,0,10;0,0,10;", 1)), "DUP", "同一排寫兩次")
+        rejects("hello", "FORMAT", "不是分享碼")
+        rejects(nil, "FORMAT", "不是字串")
+    end
+
+    do -- 車庫門的寬度 w：片、檔案、分享碼
+        local pl = Plan.new("garage")
+        local g, f = Plan.item(pl, "garage_01_0"), Plan.item(pl, "floors_01_40")
+        local d1 = Plan.add(pl, 0, 0, 0, 1, 0, g, 5)
+        check(d1 and d1.w == 5 and select(2, Plan.add(pl, 0, 0, 0, 1, 0, g, 7)) == "DUP", "車庫門帶寬度；同格同門不同寬度也算重複")
+        local badW = true
+        for _, w in ipairs({ 0, 1, 65, 2.5, "3", -4 }) do
+            local p, why = Plan.add(pl, 9, 9, 0, 1, 0, g, w)
+            if p or why ~= "RANGE" then badW = false end
+        end
+        check(badW and #Plan.at(pl, 9, 9, 0) == 0, "不合格的寬度（0、1、65、2.5、字串、負數）：RANGE")
+        local d2, d3 = Plan.add(pl, 1, 0, 0, 1, 0, g, 5), Plan.add(pl, 2, 0, 0, 1, 0, g, 3)
+        for x = 0, 3 do Plan.add(pl, x, 1, 0, 0, 0, f) end
+        check(Plan.add(pl, 5, 5, 0, 0, 0, f, nil).w == nil and Plan.at(pl, 0, 1, 0)[1].w == nil, "沒給寬度的片是 nil")
+        Plan.remove(pl, { Plan.at(pl, 5, 5, 0)[1] })
+        local cp = Plan.copy(pl, { d1 }, 0, 3, 0)
+        Plan.move(pl, { d2 }, 0, 4, 0)
+        check(cp[1].w == 5 and d2.w == 5 and d2.y == 4, "複製、搬：寬度跟著")
+        Plan.rotate(pl, { d1, d3 }, function(p) return p.d % 4 + 1, 0, 0 end)
+        check(d1.w == 5 and d3.w == 3, "轉向：寬度不變")
+        Plan.undo(pl)
+        Plan.undo(pl)
+        Plan.undo(pl)
+        check(d1.w == 5 and d2.w == 5 and d2.y == 0 and #Plan.at(pl, 0, 3, 0) == 0, "撤銷：寬度不變、片回原位")
+        local rp = Plan.new("rp")
+        local a = Plan.item(rp, "garage_01_0")
+        local rd = Plan.add(rp, 0, 0, 0, 1, 0, a, 6)
+        Plan.replace(rp, a, "garage_02_0")
+        check(rd.w == 6 and rp.items[rd.it].id == "garage_02_0", "全部換成：寬度保留")
+
+        local text = PF.encode(pl)
+        local fieldsOk, doors, floors = true, 0, 0
+        for line in text:gmatch("[^\n]+") do
+            if line:sub(1, 2) == "p\t" then
+                local tabs, it = select(2, line:gsub("\t", "")), line:match("^p\t%d+\t%d+\t%d+\t%d+\t%d+\t(%d+)")
+                if it == "1" then doors = doors + 1 elseif it == "2" then floors = floors + 1 end
+                if (it == "1" and tabs ~= 7) or (it == "2" and tabs ~= 6) then fieldsOk = false end
+            end
+        end
+        check(fieldsOk and doors == 3 and floors == 4 and text:find("\np\t0\t0\t0\t1\t0\t1\t5\n", 1, true) ~= nil,
+            "存檔：車庫門的 p 行多第 7 欄寬度，其他片不多欄")
+        local back = PF.decode(text)
+        check(back and sig(back) == sig(pl) and PF.encode(back) == text, "帶寬度的藍圖存了再讀：寬度相同")
+        local code = PF.share(pl, false)
+        check(code:find(";G1,1,0,0,5;", 1, true) ~= nil and code:find(";G1,1,0,0,3;", 1, true) ~= nil, "分享碼：寬度寫在組頭，不同寬度分組")
+        local sb = PF.unshare(code)
+        check(sb and sig(sb) == sig(pl), "帶寬度的分享碼來回：寬度相同")
+
+        local one = Plan.new("one")
+        Plan.add(one, 0, 0, 0, 1, 0, Plan.item(one, "garage_01_0"), 5)
+        local good = PF.encode(one)
+        local function badFile(wtxt, want)
+            local ok, p, c, l = pcall(PF.decode, (good:gsub("(p\t[^\n]*)\t5\n", "%1\t" .. wtxt .. "\n")))
+            check(ok and p == nil and c == want and l == 6, "壞檔拒收：寬度 " .. wtxt .. "（" .. tostring(c) .. "，第 " .. tostring(l) .. " 行）")
+        end
+        badFile("0", "RANGE")
+        badFile("65", "RANGE")
+        badFile("x", "FORMAT")
+        local sc = PF.share(one, false)
+        local function rechk(s)
+            local body = s:match("^(.*;)K%d+$")
+            local h = 0
+            for i = 1, #body do h = (h * 31 + body:byte(i)) % 9999991 end
+            return body .. "K" .. h
+        end
+        local function badCode(wtxt, want)
+            local ok, p, c = pcall(PF.unshare, rechk((sc:gsub(";G1,1,0,0,5;", ";G1,1,0,0," .. wtxt .. ";", 1))))
+            check(ok and p == nil and c == want, "壞分享碼拒收：寬度 " .. wtxt .. "（" .. tostring(c) .. "）")
+        end
+        badCode("0", "RANGE")
+        badCode("65", "RANGE")
+        badCode("x", "FORMAT")
+    end
+
+    -- 假磁碟：照引擎語意（getFileReader 打不開回 nil、寫入失敗不丟錯；listFiles 只列檔名）
+    local realReader, realWriter, realList = getFileReader, getFileWriter, listFilesInZomboidLuaDirectory
+    local realWorld, realCore, realInfo, realByFile = getWorld, getCore, getModInfoByID, Sources.byFile
+    local disk, dropWrites = {}, false
+    getFileWriter = function(p, _, append)
+        local buf = append and (disk[p] or "") or ""
+        return { write = function(_, s) buf = buf .. s end, close = function() if not dropWrites then disk[p] = buf end end }
+    end
+    getFileReader = function(p)
+        if disk[p] == nil then return nil end
+        local lines, i = {}, 0
+        for l in disk[p]:gmatch("[^\n]+") do lines[#lines + 1] = l end
+        return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
+    end
+    listFilesInZomboidLuaDirectory = function(dir)
+        local names = {}
+        for p in pairs(disk) do
+            local name = p:sub(#dir + 2)
+            if p:sub(1, #dir + 1) == dir .. "/" and not name:find("/", 1, true) then names[#names + 1] = name end
+        end
+        table.sort(names)
+        return javaList(names)
+    end
+    local function has(list, x)
+        for _, v in ipairs(list) do if v == x then return true end end
+        return false
+    end
+
+    do -- 存檔、讀回比對、刪除、改名、複製
+        local pl = sample()
+        check(PF.fileName("我的小屋 Big House!") == "bighouse.txt" and PF.fileName("我的小屋") == "plan.txt", "檔名只留英數、轉小寫；沒有英數用 plan")
+        check(PF.save(pl, "bighouse.txt") == true and pl.file == "bighouse.txt"
+            and disk["MinidoracatBuilder/plans/bighouse.txt"] == PF.encode(pl), "存檔：寫進 plans 資料夾、記住檔名")
+        disk["MinidoracatBuilder/plans/notes.md"] = "x"
+        disk["MinidoracatBuilder/plans/a b.txt"] = "x"
+        check(#PF.list() == 1 and PF.list()[1] == "bighouse.txt", "列清單只列英數檔名的 .txt")
+        local h = PF.head("bighouse.txt")
+        check(h and h.name == "海邊 小屋" and h.n == 17 and h.w == 10 and h.h == 6 and h.levels == 2 and #h.items == 3
+            and h.items[1].modName == "Forest Survival" and h.items[1].n == 5, "讀檔頭：名稱、大小、片數、各項目與來源")
+        local back = PF.load("bighouse.txt")
+        check(back and back.file == "bighouse.txt" and sig(back) == sig(pl), "讀整份")
+        check(PF.fileName("Big House") == "bighouse2.txt", "撞名加編號")
+        dropWrites = true
+        local ok, why = PF.save(pl, "other.txt")
+        dropWrites = false
+        check(ok == nil and why == "WRITE" and disk["MinidoracatBuilder/plans/other.txt"] == nil, "寫入沒進檔（引擎不丟錯）：讀回比對，回 WRITE")
+        disk["MinidoracatBuilder/plans/cut.txt"] = PF.encode(pl):gsub("END\n$", "")
+        check(select(2, PF.load("cut.txt")) == "NO_END", "沒有 END 的檔不用")
+        check(select(2, PF.load("../x.txt")) == "FILE" and select(2, PF.save(pl, "a b.txt")) == "FILE"
+            and select(2, PF.load("none.txt")) == "NO_FILE", "檔名不合格、檔案不存在：拒絕")
+        check(PF.remove("bighouse.txt") == true and not has(PF.list(), "bighouse.txt")
+            and select(2, PF.load("bighouse.txt")) == "DELETED" and PF.head("bighouse.txt") == nil,
+            "刪除：列清單看不到、讀不到")
+        check(PF.fileName("Big House") == "bighouse.txt", "刪掉的檔名可以再用")
+        PF.save(pl, "bighouse.txt")
+        local nf = PF.rename("bighouse.txt", "Small Hut")
+        local list = PF.list()
+        check(nf == "smallhut.txt" and has(list, "smallhut.txt") and not has(list, "bighouse.txt")
+            and PF.load("smallhut.txt").name == "Small Hut", "改名：寫新檔、舊檔標成刪除")
+        check(PF.rename("smallhut.txt", "small hut") == "smallhut.txt" and PF.load("smallhut.txt").name == "small hut",
+            "改名後檔名一樣：直接改寫同一個檔")
+        local dup = PF.duplicate("smallhut.txt")
+        check(dup == "smallhut2.txt" and has(PF.list(), "smallhut.txt") and PF.load(dup).name == "small hut", "複製一份：新檔名、同名稱")
+        check(PF.duplicate("smallhut.txt", "Copy") == "copy.txt", "複製時給新名稱")
+    end
+
+    do -- 圖塊的來源 MOD
+        local oldMap, oldOrder = spriteMap, spriteOrder
+        world({ sprite("fs_tiles_01_3", MOD_ID_BASE + 3), sprite("walls_01_4", 10) })
+        Sources.byFile = { [7001] = "FSMod" }
+        getModInfoByID = function(id)
+            if id ~= "FSMod" then return nil end
+            return { getName = function() return "Forest Survival" end, getWorkshopID = function() return "123456" end,
+                getModVersion = function() return "" end }
+        end
+        local s = PF.source("fs_tiles_01_3")
+        check(s and s.mod == "FSMod" and s.modName == "Forest Survival" and s.workshop == "123456" and s.version == nil,
+            "圖塊屬於哪個 MOD：ID、名稱、工作坊編號（版本空的回 nil）")
+        check(PF.source("walls_01_4") == nil and PF.source("recipe:Base.RainCollector_Tarp") == nil and PF.source("none_01_1") == nil,
+            "原版的圖、配方項目、沒有的圖：nil")
+        spriteMap, spriteOrder = oldMap, oldOrder
+    end
+
+    do -- PlanStore
+        local worldName, mode = "16-11-2026_10-00-00", "Sandbox"
+        getWorld = function() return { getWorld = function() return worldName end } end
+        getCore = function() return { getGameMode = function() return { toString = function() return mode end } end } end
+        local sp = PS.worldId()
+        worldName = "16-11-2026_10-00-01"
+        local sp2 = PS.worldId()
+        worldName, mode = "1.2.3.4_16261_abc", "Multiplayer"
+        local mp = PS.worldId()
+        worldName = "a_b"
+        local u1 = PS.worldId()
+        worldName = "a-b"
+        local u2 = PS.worldId()
+        check(sp:match("^[A-Za-z0-9_%-]+$") and mp:match("^[A-Za-z0-9_%-]+$") and sp ~= sp2 and sp ~= mp and u1 ~= u2,
+            "worldId 只含英數與 - _，不同存檔、伺服器分得開（" .. sp .. "）")
+        worldName, mode = "我的世界", "Sandbox"
+        check(PS.worldId():match("^[A-Za-z0-9_%-]+$") ~= nil, "中文存檔名也只含英數與 - _")
+        worldName = ".."
+        check(not PS.worldId():find("..", 1, true), "存檔名是 .. 也不會變成路徑的 ..")
+        worldName = string.rep("長", 30) .. "a"
+        local long1 = PS.worldId()
+        worldName = string.rep("長", 30) .. "b"
+        local long2 = PS.worldId()
+        check(#long1 <= 100 and long1:match("^[A-Za-z0-9_%-]+$") and long1 ~= long2, "很長的存檔名截到 100 字以內、接雜湊仍分得開")
+        worldName = "我的世界"
+        check(next(PS.load()) == nil, "沒有存過：空表")
+        local st = { file = "smallhut.txt", ox = 98, oy = 200, oz = 0, hidden = true,
+            boxes = { { x = 1, y = 2, z = 0, index = 3 } }, seen = { ["edit_ddd_RUS_Forest Survival_01_64"] = "MISSING" } }
+        check(PS.save(st) == true, "存地上的藍圖")
+        local got = PS.load()
+        check(got.file == "smallhut.txt" and got.ox == 98 and got.oy == 200 and got.oz == 0 and got.hidden == true
+            and got.boxes[1].index == 3 and got.seen["edit_ddd_RUS_Forest Survival_01_64"] == "MISSING", "讀回地上的藍圖")
+        worldName = "other"
+        check(next(PS.load()) == nil, "別的存檔看不到")
+        worldName = "我的世界"
+        local p = "MinidoracatBuilder/worlds/" .. PS.worldId() .. ".txt"
+        disk[p] = disk[p]:gsub("END\n$", "")
+        check(next(PS.load()) == nil, "沒有 END 的紀錄當成沒有")
+        dropWrites = true
+        check(PS.save(st) == nil, "寫入沒進檔：讀回比對，回 nil")
+        dropWrites = false
+    end
+
+    getFileReader, getFileWriter, listFilesInZomboidLuaDirectory = realReader, realWriter, realList
+    getWorld, getCore, getModInfoByID, Sources.byFile = realWorld, realCore, realInfo, realByFile
+end)()
+
+-- ===== 放置中的按鍵、快選列、最近用的 =====
+;(function()
+    print("放置中的按鍵、快選列、最近用的（recent.txt、拆掉剛蓋的、吸管鍵、疊放鍵、換項目鍵、快選列跟著游標、右鍵取消）")
+    local B = MinidoracatBuilder
+    local W, R, H, C, Q, P = B.Window, B.Recent, B.Hotbar, B.Cursor, B.Queue, B.Place
+    local real = { reader = getFileReader, writer = getFileWriter, cell = getCell, specific = getSpecificPlayer,
+        ui = MinidoracatUI, panel = ISPanel, toast = B.Messages.toast, last = Q.last, undo = Q.undoLast,
+        och = ISObjectClickHandler, current = H.current, get = C.get, setOf = W.setOf, swapTo = W.swapTo,
+        pickSwap = W.pickSwap, v = W.v, tm = getTextManager, font = UIFont, top = getPlayerScreenTop,
+        left = getPlayerScreenLeft, sw = getPlayerScreenWidth, sh = getPlayerScreenHeight, max = P.maxPerSquare,
+        overlap = W.st.overlap, onEnd = C.onEnd }
+    W.v = nil -- 這段不建視窗（syncEntry、refreshCats 只在視窗開著時動）
+
+    -- 假磁碟：照引擎語意，打不開回 nil；寫入照覆寫／附加
+    local disk
+    getFileWriter = function(_, _, append)
+        local buf = append and (disk or "") or ""
+        return { write = function(_, s) buf = buf .. s end, close = function() disk = buf end }
+    end
+    getFileReader = function()
+        if disk == nil then return nil end
+        local lines, i = {}, 0
+        for l in disk:gmatch("[^\n]+") do lines[#lines + 1] = l end
+        return { readLine = function() i = i + 1 return lines[i] end, close = function() end }
+    end
+    disk = "a_1\nb_2\n#end\n"
+    R.load()
+    local l = R.list()
+    check(l.n == 2 and l[1] == "a_1" and l[2] == "b_2", "最近用的：讀完整的 recent.txt，照檔案順序（新的在前）")
+    R.add("b_2")
+    check(disk == "b_2\na_1\n#end\n" and R.list()[1] == "b_2", "最近用的：用過的搬到最前面、馬上寫檔")
+    for i = 1, 35 do R.add("x_" .. i) end
+    l = R.list()
+    check(l.n == 30 and l[1] == "x_35" and l[30] == "x_6", "最近用的：最多 30 項，舊的丟掉")
+    disk = "a_1\nb_2\n" -- 寫到一半當掉：沒有結尾記號
+    R.load()
+    local f = W.filter({ query = "", tab = "all", cat = "recent", source = "all", recent = R.list() })
+    check(R.list().n == 0 and f.n == 0, "壞掉的 recent.txt：當空清單，「最近使用」分類照常列（空的）")
+    W.addRecent("c_3")
+    check(W.st.recent.n == 1 and W.st.recent[1] == "c_3" and disk == "c_3\n#end\n", "壞檔之後照常記，整份重寫成完整的檔")
+    getFileReader = function() error("boom") end
+    check(pcall(R.load) and R.list().n == 0, "讀檔丟錯：不往外丟、當空清單")
+    disk = nil
+    getFileReader = function() return nil end
+    R.load()
+    check(R.list().n == 0, "沒有 recent.txt：空清單")
+
+    -- 拆掉剛蓋的：沒有就說一聲、不送拆除請求
+    local toasts, undos = {}, 0
+    B.Messages.toast = function(_, text) toasts[#toasts + 1] = text end
+    local PL = { getPlayerNum = function() return 0 end }
+    getSpecificPlayer = function() return PL end
+    Q.last = function() return nil end
+    Q.undoLast = function() undos = undos + 1 return 3 end
+    check(W.undoLast(0) == 0 and undos == 0 and toasts[#toasts] == "IGUI_MBLD_Undo_None",
+        "拆掉剛蓋的：沒有剛蓋的就說一聲，不送拆除請求")
+    Q.last = function() return { n = 1 } end
+    check(W.undoLast(0) == 3 and undos == 1, "拆掉剛蓋的：有就照 Queue.undoLast 拆最後一批")
+
+    -- 換項目鍵：照最近用的往下一個，到底從頭；不重排清單
+    disk = "a_1\nb_2\nc_3\n#end\n"
+    getFileReader = function()
+        local lines, i = {}, 0
+        for ln in disk:gmatch("[^\n]+") do lines[#lines + 1] = ln end
+        return { readLine = function() i = i + 1 return lines[i] end, close = function() end }
+    end
+    R.load()
+    local cur, went = "b_2", {}
+    H.current = function() return cur end
+    W.swapTo = function(_, name) went[#went + 1] = name return {} end
+    W.nextRecent(0)
+    cur = "c_3"
+    W.nextRecent(0)
+    check(went[1] == "c_3" and went[2] == "a_1" and R.list()[1] == "a_1", "換項目鍵：往下一項、到底從頭，清單順序不動")
+    cur = nil
+    W.nextRecent(0)
+    check(#went == 2, "換項目鍵：沒在放置就不動")
+    W.swapTo = real.swapTo
+
+    -- 疊放鍵：能疊的種類才切，標籤下一幀重算，視窗的疊放跟著
+    local cursor = { entry = { kind = "furniture" }, character = PL, kgen = 3 }
+    C.get = function() return cursor end
+    P.maxPerSquare = function() return 4 end
+    W.toggleCursorOverlap(0)
+    check(cursor.overlap == true and cursor.kgen == nil and W.st.overlap == true, "疊放鍵：打開、標籤重算、視窗的疊放跟著開")
+    W.toggleCursorOverlap(0)
+    check(cursor.overlap == nil and W.st.overlap == false, "疊放鍵：再按關掉")
+    cursor.entry.kind = "wall"
+    W.toggleCursorOverlap(0)
+    check(cursor.overlap == nil and toasts[#toasts] == "IGUI_MBLD_Overlap_TipKind", "疊放鍵：不能疊的種類不切、說原因")
+    P.maxPerSquare = real.max
+
+    -- 吸管鍵：按著不蓋；點到的物件等放開左鍵才換（按著就換，新游標放開會蓋下去）
+    local picked
+    W.pickSwap = function(_, obj) picked = obj end
+    local pc = { colors = { text = {}, textMuted = {} }, layout = function() end, player = 0, isLeftDown = true, pickObj = "door" }
+    check(C.pickValid(pc) == false and picked == nil and pc.picking == true, "吸管鍵：按著不蓋；左鍵還按著不換")
+    pc.isLeftDown = false
+    check(C.pickValid(pc) == false and picked == "door" and pc.pickObj == nil, "吸管鍵：放開左鍵才換成點到的那件")
+    W.pickSwap = real.pickSwap
+
+    -- 右鍵：放置中清掉原版按下時記的物件（原版就不開右鍵選單）、關游標；沒在放置不動原版
+    local dragSet
+    getCell = function()
+        return { getDrag = function() return nil end, setDrag = function(_, o, pn) dragSet = { o = o, pn = pn } end }
+    end
+    ISObjectClickHandler = { rdownObject = "obj" }
+    C.get = function() return nil end
+    C.onRightMouseUp()
+    check(ISObjectClickHandler.rdownObject == "obj" and dragSet == nil, "右鍵：沒在放置時不動原版")
+    C.get = function() return cursor end
+    C.onRightMouseUp()
+    check(ISObjectClickHandler.rdownObject == nil and dragSet and dragSet.o == nil and dragSet.pn == 0,
+        "右鍵：放置中清掉原版按下時記的物件（不跳右鍵選單）、關游標")
+
+    -- 快選列：有游標才建；游標關了（deactivate 或下一幀發現沒有）就收
+    local made, under = 0, nil
+    local function el(o)
+        o.children = {}
+        o.visible = true
+        function o.addChild(self, c) self.children[#self.children + 1] = c end
+        function o.setVisible(self, v) self.visible = v end
+        function o.setY(self, y) self.y = y end
+        function o.getY(self) return self.y or 0 end
+        function o.setHeight(self, h) self.height = h end
+        function o.initialise() end
+        function o.addToUIManager(self) self.added = true end
+        function o.removeFromUIManager(self) self.added = false end
+        return o
+    end
+    ISPanel = { new = function(_, x, y, w, h)
+        under = el({ x = x, y = y, width = w, height = h })
+        return under
+    end }
+    ISPanel.setVisible = function(self, v) self.visible = v end
+    ISPanel.addToUIManager = function(self) self.added = true end
+    MinidoracatUI = { v1 = { API_MAJOR = 1, API_REVISION = 30,
+        CAPABILITIES = { window = true, tileGrid = true, textWrap = true },
+        Theme = { create = function() return { colors = { text = { r = 1, g = 1, b = 1 }, textMuted = { r = 1, g = 1, b = 1 } } } end },
+        Text = { fit = function(s) return s end },
+        Window = { new = function(opts)
+            made = made + 1
+            local w = el({ width = opts.width, height = opts.height })
+            function w.contentTop() return 24 end
+            return w
+        end },
+        TileGrid = { new = function(opts)
+            local g = el({ height = opts.height, items = {} })
+            function g.setItems(self, items) self.items = items end
+            function g.getItems(self) return self.items end
+            function g.setSelectedIndex(self, i) self.sel = i end
+            function g.scrollToIndex() end
+            return g
+        end } } }
+    UIFont = UIFont or { Small = 0, Medium = 1 }
+    getTextManager = function() return { getFontHeight = function() return 16 end } end
+    getPlayerScreenTop, getPlayerScreenLeft = function() return 0 end, function() return 0 end
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 1920 end, function() return 1080 end
+    W.setOf = function() return { list = { n = 1, "a_1" }, chip = "set" } end
+    cur = nil
+    H.show(0)
+    check(not H.visible() and made == 0, "快選列：沒有游標時不建元件")
+    cur = "a_1"
+    H.show(0)
+    check(H.visible() and made == 1 and under and under.prerender ~= nil, "快選列：放置中開（一個視窗）")
+    cur = nil
+    under.prerender(under)
+    check(not H.visible(), "快選列：游標關了，下一幀自己收掉")
+    cur = "a_1"
+    H.show(0)
+    H.show(0)
+    check(H.visible() and made == 2, "快選列：開著時再開只換內容，不多建")
+    C.onEnd = nil
+    C.deactivate({ hideUI = function() end, player = 0 })
+    check(not H.visible(), "快選列：游標結束（deactivate，不是換成另一個本工具游標）就收")
+
+    getFileReader, getFileWriter, getCell, getSpecificPlayer = real.reader, real.writer, real.cell, real.specific
+    MinidoracatUI, ISPanel, B.Messages.toast, Q.last, Q.undoLast = real.ui, real.panel, real.toast, real.last, real.undo
+    ISObjectClickHandler, H.current, C.get, W.setOf, W.v = real.och, real.current, real.get, real.setOf, real.v
+    getTextManager, UIFont, getPlayerScreenTop, getPlayerScreenLeft = real.tm, real.font, real.top, real.left
+    getPlayerScreenWidth, getPlayerScreenHeight, W.st.overlap, C.onEnd = real.sw, real.sh, real.overlap, real.onEnd
+    R.load()
+end)()
+
+-- ===== 藍圖：檢查與擷取（PlanCheck、Capture）=====
+;(function()
+    print("藍圖：檢查與擷取（PlanCheck 每片狀態、分幀、由近到遠；Capture 讀現成房子、存檔）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanFile"
+    require "MinidoracatBuilder/Messages"
+    require "MinidoracatBuilder/PlanCheck"
+    require "MinidoracatBuilder/Capture"
+    local Plan, PF, PC, Cap = B.Plan, B.PlanFile, B.PlanCheck, B.Capture
+    local real = { PM = B.PlanMode, specific = getSpecificPlayer, inst = instanceof, step = clockStep, ui = MinidoracatUI,
+        reader = getFileReader, writer = getFileWriter, list = listFilesInZomboidLuaDirectory, tilesets = sb.DisabledTilesets,
+        maxDrag = sb.MaxCellsPerDrag, recipes = B.Recipes }
+    clockStep = 0
+    B.Recipes = { get = function() return nil end, all = function() end, bySprite = {} } -- 沒有配方：不觸發掃描
+    -- 本段自己的圖（名稱不和別段重複）
+    world({ sprite("pcw_01_0", 1301, { flags = { "WallN" }, keys = { WallN = "" } }),
+        sprite("pcf_01_0", 1302, { flags = { "solidfloor" } }),
+        sprite("pcd_01_0", 1303, { flags = { "doorN" } }),
+        sprite("pcd_01_2", 1304, { flags = { "doorN", "open" } }),
+        sprite("pct_01_0", 1305, { type = T.tree }),
+        sprite("pcx_01_0", 1306, { flags = { "WallN" }, keys = { WallN = "" } }),
+        sprite("blends_natural_01_0", 1307, { flags = { "solidfloor" } }) })
+    sb.DisabledTilesets = "pcx_01"
+    local function obj(name, o)
+        o = o or {}
+        o.name = name
+        function o:getSprite() return Entry.sprite(self.name) end
+        function o:getAttachedAnimSprite() return nil end -- 引擎：沒有附加圖時是 null
+        function o:getOverlaySprite() return nil end
+        function o:getProperties() return self:getSprite():getProperties() end
+        function o:hasModData() return false end
+        function o:getModData() return {} end
+        return o
+    end
+    -- 一塊 8×8（200..207）讀進來，每格重建（不沿用別段留下的格子）；(204,204) 是別人的安全屋。(240,200) 那塊沒讀進來
+    for i = 0, 63 do
+        local x, y = 200 + i % 8, 200 + math.floor(i / 8)
+        square(x, y, 0, x == 204 and y == 204 and { owner = "someone" } or nil)
+        squares[(240 + i % 8) .. "," .. y .. ",0"] = nil
+    end
+    local K = player({ id = 90, x = 205.5, y = 205.5, here = squares["205,205,0"] })
+    getSpecificPlayer = function() return K end
+    local pl = Plan.new("check")
+    local function put(id, x, y, z)
+        return Plan.add(pl, x, y, z, 0, 0, Plan.item(pl, id))
+    end
+    local pDone = put("pcw_01_0", 1, 1, 0)
+    squares["201,201,0"].objects[1] = obj("pcw_01_0") -- 誰蓋的都算：沒有 modData
+    local pDoor = put("pcd_01_0", 2, 1, 0)
+    squares["202,201,0"].objects[1] = obj("pcd_01_2") -- 門開著
+    local pShort = put("pcw_01_0", 3, 3, 0)
+    local pBlock = put("pcw_01_0", 4, 4, 0)
+    local pMiss = put("gone_01_0", 5, 1, 0)
+    local pRecipe = put("recipe:Base.NoSuchThing", 5, 2, 0)
+    local pOff = put("pcx_01_0", 6, 1, 0)
+    local pTree = put("pct_01_0", 6, 2, 0)
+    local pFar = put("pcw_01_0", 40, 0, 0)
+    local ox, oy = 200, 200
+    B.PlanMode = { plan = function() return pl end, origin = function() return ox, oy, 0 end, playerNum = 0 }
+    PC.reset()
+    local t0 = getTimestampMs()
+    PC.tick(K)
+    local function st(p) return (PC.state(p)) end
+    local c = PC.counts()
+    check(st(pDone) == "done" and st(pDoor) == "done" and st(pShort) == "short" and select(2, PC.state(pBlock)) == "SAFEHOUSE"
+        and st(pBlock) == "blocked" and st(pMiss) == "missing" and st(pRecipe) == "missing" and st(pOff) == "off"
+        and st(pTree) == "closed" and select(2, PC.state(pFar)) == "NOT_LOADED" and st(pFar) == "far",
+        "PlanCheck：每種狀態各一（蓋好、開著的門算蓋好、缺料、被擋、沒有、關掉、不開放、沒載入）")
+    check(c.n == 9 and c.done == 2 and c.short == 1 and c.blocked == 1 and c.missing == 2 and c.off == 1 and c.closed == 1
+        and c.far == 1 and c.pending == 0 and c.byCode.SAFEHOUSE == 1 and c.byCode.TREE == 1 and c.byCode.DONE == nil,
+        "PlanCheck.counts：各狀態片數與細節碼")
+    check(PC.item("pcx_01_0") == "off" and select(2, PC.item("pcx_01_0")) == "DISABLED_TILESET"
+        and PC.item("pct_01_0") == "closed" and PC.item("gone_01_0") == "missing" and PC.item("pcw_01_0") == "ok",
+        "PlanCheck.item：ok／missing／off／closed")
+    sb.DisabledTilesets = ""
+    local reopened = PC.item("pcx_01_0")
+    sb.DisabledTilesets = "pcx_01"
+    check(reopened == "ok" and PC.item("pcx_01_0") == "off", "PlanCheck.item：沙盒改了（打開、再關掉圖塊組）立刻照新的回，不卡快取")
+    -- 材料合計：沒蓋好的牆（缺料、被擋、沒載入的都算）× 每片的成本
+    local _, _, info = Check.item(K, "pcw_01_0", 0, { 203, 203, 0, 0 }, { preview = true })
+    local m = PC.materials(K)
+    local plank = info.total.items["Base.Plank"]
+    check(plank and plank > 0 and m.need["Base.Plank"] == 3 * plank and m.have["Base.Plank"] == 0
+        and m.tools[1] and m.tools[1].tag == "HAMMER" and m.tools[1].has == false, "PlanCheck.materials：沒蓋好的 3 片牆合計、現有、工具")
+    -- 補齊材料：每秒重拿一次摘要，不同就重查缺料的片
+    K.inv:add(item("Base.Hammer", { HAMMER = true }))
+    for ft, n in pairs(info.total.items) do for _ = 1, n do K.inv:add(item(ft)) end end
+    PC.tick(K)
+    local sameSecond = st(pShort)
+    clockStep = PC.SUMMARY_MS
+    getTimestampMs()
+    clockStep = 0
+    PC.tick(K)
+    check(sameSecond == "short" and st(pShort) == "ok", "材料夠了：下一次比摘要時缺料的片變成能蓋（同一秒內不重算）")
+    -- 搬了位置：算的結果不再算數（植入：原點動了還回舊狀態就抓得到）
+    ox = 201
+    check(PC.state(pDone) == nil and PC.counts().pending == 9, "原點變了：沒重算前 state 回 nil、counts 算 pending")
+    ox = 200
+    PC.tick(K)
+    -- 看世界不看紀錄：拿掉那面牆後 touch，變成沒蓋好；放回去不 touch，靠身邊輪流比也認回來
+    local wall = table.remove(squares["201,201,0"].objects, 1)
+    PC.touch(201, 201, 0)
+    PC.tick(K)
+    local gone = st(pDone)
+    squares["201,201,0"].objects[1] = wall
+    PC.tick(K)
+    check(gone == "ok" and st(pDone) == "done", "牆拆掉：touch 後不算蓋好；放回去：身邊的片比物件數就認回來")
+    -- 車庫門太寬：照這裡的上限標成蓋不了
+    sb.MaxCellsPerDrag = 4
+    local wide = Plan.add(pl, 7, 7, 0, 0, 0, Plan.item(pl, "pcw_01_0"), 9)
+    PC.tick(K)
+    check(wide and select(2, PC.state(wide)) == "DOOR_WIDE" and st(wide) == "blocked", "比上限寬的車庫門：blocked、DOOR_WIDE")
+    Plan.remove(pl, { wide })
+    -- 配方片：照 Recipes.tile 那一面的圖認蓋好；換了面（植入：另一面也算就抓得到）不算
+    local noRecipes = B.Recipes
+    B.Recipes = { get = function(id) return id == "recipe:Base.PcWall" and { id = id } or nil end, all = function() end,
+        bySprite = {}, tile = function(_, d) return d == 1 and "pcw_01_0" or "pcx_01_0" end,
+        state = function() return true, true end, dark = function() return false end }
+    local rIt = Plan.item(pl, "recipe:Base.PcWall")
+    local rDone, rTurned = Plan.add(pl, 1, 1, 0, 1, 0, rIt), Plan.add(pl, 1, 1, 0, 2, 0, rIt)
+    PC.tick(K)
+    check(st(rDone) == "done" and st(rTurned) == "ok", "配方片：那一面的圖在就算蓋好；換了面不算（照 Recipes.tile）")
+    Plan.remove(pl, { rDone, rTurned })
+    B.Recipes = noRecipes
+    -- 沒有地上的藍圖：tick 第一行就離開（不看時鐘）
+    B.PlanMode = { plan = function() return nil end }
+    clockStep = 1
+    local a1 = getTimestampMs()
+    PC.tick(K)
+    PC.onTick()
+    local a2 = getTimestampMs()
+    B.PlanMode = { plan = function() return pl end, origin = function() return ox, oy, 0 end, playerNum = 0 }
+    PC.tick(K)
+    local a3 = getTimestampMs()
+    check(a2 - a1 == 1 and a3 - a2 > 1, "沒有藍圖時 tick 什麼都不做；有藍圖時才看時鐘")
+    -- 時間預算：4,096 片一幀掃不完，由近到遠。放在沒人用的 (800..863)：只有 800..807 那一塊讀進來
+    for i = 0, 4095 do squares[(800 + i % 64) .. "," .. (800 + math.floor(i / 64)) .. ",0"] = nil end
+    for i = 0, 63 do square(800 + i % 8, 800 + math.floor(i / 8), 0) end
+    ox, oy, K.pos.x, K.pos.y = 800, 800, 805.5, 805.5
+    local big = Plan.new("big")
+    local fl = Plan.item(big, "pcf_01_0")
+    for i = 0, 4095 do Plan.add(big, i % 64, math.floor(i / 64), 0, 0, 0, fl) end
+    B.PlanMode.plan = function() return big end
+    PC.reset()
+    PC.tick(K) -- 每看一次時鐘過 1 毫秒：一幀只算得了一兩片
+    local c1 = PC.counts()
+    local near, farP = Plan.at(big, 5, 5, 0)[1], Plan.at(big, 63, 63, 0)[1]
+    local nearDone, farDone = PC.state(near) ~= nil, PC.state(farP) ~= nil
+    clockStep = 0
+    PC.tick(K)
+    local c2 = PC.counts()
+    check(big.n == 4096 and c1.pending >= 4090 and c1.pending < 4096 and nearDone and not farDone,
+        "4,096 片：一幀只算預算內的幾片，先算玩家腳下的（" .. c1.pending .. " 片待算）")
+    check(c2.pending == 0 and c2.far == 4096 - 64 and c2.ok + c2.short + c2.blocked == 64 and c2.byCode.INTERNAL == nil,
+        "預算用不完時一幀算完；沒讀進來的塊算太遠；沒有算到出錯的片")
+
+    -- ===== Capture =====
+    local toasts = {}
+    MinidoracatUI = { v1 = { Toast = { show = function(o) toasts[#toasts + 1] = o.message end } } }
+    instanceof = function(o, cls) return cls == "IsoWorldInventoryObject" and o.worldItem == true end
+    -- 208..215 × 200..207：牆、開著的門、樹、天然草地、地上物品（圖也是牆，不能收）；上一層一塊地板；框外 (216,200) 的牆
+    square(209, 201, 0).objects[1] = obj("pcw_01_0")
+    square(210, 201, 0).objects[1] = obj("pcd_01_2")
+    square(211, 202, 0).objects[1] = obj("blends_natural_01_0")
+    square(212, 202, 0).objects[1] = obj("pct_01_0")
+    square(213, 203, 0).objects[1] = obj("pcw_01_0", { worldItem = true })
+    square(209, 202, 1).objects[1] = obj("pcf_01_0")
+    square(216, 200, 0).objects[1] = obj("pcw_01_0")
+    local tooWide = { Cap.scan(208, 200, 208 + 64, 207, 0) }
+    check(tooWide[1] == nil and tooWide[2] == "TOO_WIDE" and Cap.scan(208, 200, 208 + 63, 207, 0) ~= nil, "擷取：每邊最多 64 格")
+    local job = Cap.scan(215, 207, 208, 200, 0)
+    clockStep = 1
+    local first = Cap.step(job)
+    clockStep = 0
+    local finished = Cap.step(job)
+    check(first == false and finished == true, "擷取分幀：時間到就停，下一幀接著掃")
+    local out = Cap.build(job, "cap")
+    local ids = {}
+    Plan.each(out.plan, function(p) ids[#ids + 1] = out.plan.items[p.it].id .. "@" .. p.x .. "," .. p.y .. "," .. p.z end)
+    local list = "," .. table.concat(ids, ",") .. ","
+    check(out.plan.n == 3 and list:find(",pcw_01_0@1,1,0,", 1, true) and list:find(",pcd_01_0@2,1,0,", 1, true)
+        and list:find(",pcf_01_0@1,2,1,", 1, true) and out.kinds == 3,
+        "擷取：牆、門（開著的記成關著）、上一層的地板；原點是框的西北角 " .. list)
+    check(not list:find("pcd_01_2", 1, true) and not list:find("@5,3,0", 1, true) and not list:find("@8,0,0", 1, true),
+        "擷取不收：開著的門圖、地上物品、框外的牆")
+    local groups = {}
+    for _, g in ipairs(Cap.groups(out.skip)) do groups[g.group] = g.n end
+    check(out.skipped == 2 and groups.Terrain == 1 and groups.Plant == 1 and out.over == 0 and out.wide == 0,
+        "不收的分組：天然地面 1、樹 1")
+    -- 存檔、讀回片數相同（假磁碟）
+    local disk = {}
+    getFileWriter = function(p)
+        local buf = ""
+        return { write = function(_, s) buf = buf .. s end, close = function() disk[p] = buf end }
+    end
+    getFileReader = function(p)
+        if disk[p] == nil then return nil end
+        local lines, i = {}, 0
+        for l in disk[p]:gmatch("[^\n]+") do lines[#lines + 1] = l end
+        return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
+    end
+    listFilesInZomboidLuaDirectory = function() return javaList({}) end
+    local okSave, file = Cap.save(out.plan, "  ", "Cap House")
+    local back = okSave and PF.load(file)
+    check(okSave == true and file == "caphouse.txt" and out.plan.name == "Cap House" and back and back.n == 3
+        and back.nItems == 3, "存成藍圖：空白名稱用預設名稱，讀回片數、種類相同")
+    -- 一片都沒收到：只說一聲、不開框
+    local empty = Cap.scan(300, 300, 301, 301, 0)
+    Cap.step(empty)
+    check(Cap.show(0, Cap.build(empty, "x"), 2, 2, "x") == false and toasts[#toasts] == "IGUI_MBLD_Cap_Empty",
+        "空範圍：通知、不開結果框")
+
+    B.PlanMode, getSpecificPlayer, instanceof, clockStep, MinidoracatUI = real.PM, real.specific, real.inst, real.step, real.ui
+    B.Recipes = real.recipes
+    getFileReader, getFileWriter, listFilesInZomboidLuaDirectory = real.reader, real.writer, real.list
+    sb.DisabledTilesets, sb.MaxCellsPerDrag = real.tilesets, real.maxDrag
+    PC.reset()
+end)()
+
+-- ===== 藍圖：規劃與擺放（PlanMode、PlanGhost）=====
+;(function()
+    print("藍圖：規劃與擺放（游標放開記進藍圖、上限、上一步、選取與擦、擺放與轉向、重新載入、虛影上限）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanFile"
+    require "MinidoracatBuilder/PlanStore"
+    require "MinidoracatBuilder/Cursor"
+    require "MinidoracatBuilder/Client"
+    local Plan, PF, PS, Cur, Msg = B.Plan, B.PlanFile, B.PlanStore, B.Cursor, B.Messages
+    local real = { spec = getSpecificPlayer, cell = getCell, text = getText, core = getCore, world = getWorld,
+        reader = getFileReader, writer = getFileWriter, list = listFilesInZomboidLuaDirectory, joy = JoypadState,
+        IBO = ISBuildingObject, toast = Msg.toast, PC = B.PlanCheck, build = B.Client.build, kb = Keyboard, kid = KeybindId,
+        binding = keyBinding, ui = MinidoracatUI, um = UIManager, recipes = B.Recipes, el = ISUIElement,
+        map = spriteMap, order = spriteOrder, hook = {} }
+    for k, v in pairs(Cur.hook) do real.hook[k] = v end
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    local toasts, sent, specCalls = {}, 0, 0
+    Msg.toast = function(_, t) toasts[#toasts + 1] = t end
+    B.Client.build = function() sent = sent + 1 return sent end
+    MinidoracatBuilder.Recipes = { faces = function() return nil end } -- 配方片查不到面：轉向時算轉不了（不碰別段的假配方資料）
+    MinidoracatUI, ISUIElement = nil, nil -- 沒有框架：工具列不出、換張要確認時只通知
+    JoypadState = { players = {} }
+    UIManager = { getUI = function() return javaList({}) end }
+    local P = player({ x = 50.5, y = 50.5, z = 0 })
+    getSpecificPlayer = function(pn)
+        specCalls = specCalls + 1
+        return pn == 0 and P or nil
+    end
+    -- 照引擎：setDrag 換掉（或清掉）舊的拖曳物件時呼叫它的 deactivate
+    local drags = {}
+    getCell = function()
+        local c = real.cell()
+        c.getDrag = function(_, pn) return drags[pn] end
+        c.setDrag = function(_, o, pn)
+            local old = drags[pn]
+            drags[pn] = o
+            if old and old ~= o and old.deactivate then old:deactivate() end
+        end
+        return c
+    end
+    local binds = { RotateBuilding = 19, MinidoracatBuilder_PlanUndo = 44, MinidoracatBuilder_PlanRedo = 21,
+        MinidoracatBuilder_PlanDelete = 211, MinidoracatBuilder_LayerUp = 201 }
+    KeybindId = { ROTATE_BUILDING = "RotateBuilding" }
+    getCore = function()
+        return { isKey = function(_, id, key) return binds[id] == key end, getScreenWidth = function() return 1920 end,
+            getGameMode = function() return { toString = function() return "Sandbox" end } end }
+    end
+    getWorld = function() return { getWorld = function() return "pm_world" end } end
+    local disk = {}
+    getFileWriter = function(p, _, append)
+        local buf = append and (disk[p] or "") or ""
+        return { write = function(_, s) buf = buf .. s end, close = function() disk[p] = buf end }
+    end
+    getFileReader = function(p)
+        if disk[p] == nil then return nil end
+        local lines, i = {}, 0
+        for l in disk[p]:gmatch("[^\n]+") do lines[#lines + 1] = l end
+        return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
+    end
+    listFilesInZomboidLuaDirectory = function() return javaList({}) end
+    -- 虛影：每張圖記畫了幾次、畫在哪
+    local ghostN, ghostAt = 0, {}
+    local function ghostly(s)
+        s.RenderGhostTileColor = function(_, x, y, z)
+            ghostN = ghostN + 1
+            ghostAt[x .. "," .. y .. "," .. z] = true
+        end
+        return s
+    end
+    local floorCursor = { RenderGhostTileColor = function() end }
+    ISBuildingObject = { init = function() end, onJoypadPressButton = function() end,
+        getFloorCursorSprite = function() return floorCursor end }
+    ISBuildingObject.derive = function(self, name) return setmetatable({ Type = name }, { __index = self }) end
+    local function sp(name, id, flags)
+        local keys = {}
+        for _, f in ipairs(flags) do if f:match("^[A-Z]") then keys[f] = "" end end
+        return ghostly(sprite(name, id, { flags = flags, keys = keys }))
+    end
+    world({ sp("pm_wall_01_0", 3101, { "WallW" }), sp("pm_wall_01_1", 3102, { "WallN" }), sp("pm_lone_01_0", 3103, { "WallW" }),
+        sp("pm_floor_01_0", 3104, { "solidfloor" }) })
+    local fakeCheck, resets = nil, 0
+    B.PlanCheck = { reset = function() resets = resets + 1 end, state = function(p) return fakeCheck and fakeCheck(p) end }
+
+    require "MinidoracatBuilder/PlanMode"
+    require "MinidoracatBuilder/PlanGhost"
+    local PM, PG = B.PlanMode, B.PlanGhost
+    local function at(plan, x, y, z) return Plan.at(plan, x, y, z)[1] end
+    local function sq(x, y, z) return { getX = function() return x end, getY = function() return y end, getZ = function() return z end } end
+
+    -- 沒有藍圖：虛影第一行就離開（不問玩家、不畫）
+    PG.draw()
+    check(PM.state() == "none" and specCalls == 0 and ghostN == 0 and PG.lastDrawn == 0, "沒有藍圖：虛影不問玩家、不畫")
+
+    -- 打開規劃：腳下建一張空的，掛上游標掛鉤
+    check(PM.toggle(0) == true and PM.planning() and PM.state() == "edit" and Cur.hook.commit ~= nil and PM.level() == 0,
+        "打開規劃：狀態 edit、游標掛鉤掛上、樓層是玩家那層")
+    local ox, oy, oz = PM.origin()
+    check(ox == 50 and oy == 50 and oz == 0, "空藍圖的原點在玩家腳下")
+    local plan = PM.plan()
+    local colors = { text = "T", warning = "W", textMuted = "M" }
+    local function cursor(res, name)
+        return setmetatable({ kx = 1, ky = 1, kz = 0, res = res, name = name or "pm_wall_01_1", character = P, colors = colors,
+            lineX = 5, hint = "HINT" }, { __index = Cur })
+    end
+    local cur = cursor({ { a = { 52, 50, 0, 0 } }, { a = { 53, 50, 0, 0 }, code = "NO_MATERIAL" },
+        { a = { 54, 50, 0, nil }, code = "NO_FACE" }, { a = { 55, 50, 0, 5 }, code = "BLOCKED" }, { a = { 56, 50, 0, 0, 3 } } })
+    local lbl = Cur.hook.label(cur, { "L1", "T", "L2", "T", "HINT", "M" })
+    check(lbl[3] == "IGUI_MBLD_PlanAdd(4)" and lbl[5] == "L2" and lbl[#lbl - 1] == "IGUI_MBLD_PlanHint" and lbl[#lbl] == "M"
+        and Cur.hook.valid(cur) == true, "規劃中的標籤：插一行「放開會記 4 片」（沒有那一面的不算），按鍵說明換成規劃的")
+    local commit = Cur.hook.commit
+    cur:tryBuild(1, 1, 0)
+    check(sent == 0 and plan.n == 4 and cur.lineX == nil, "規劃中放開：不送伺服器，缺料、被擋的照記，沒有那一面的不記")
+    check(at(plan, 2, 0, 0).d == 0 and at(plan, 5, 0, 0).d == 5 and at(plan, 4, 0, 0) == nil and at(plan, 6, 0, 0).w == 3
+        and plan.items[at(plan, 2, 0, 0).it].id == "pm_wall_01_1", "記進藍圖的片：相對原點、朝向、車庫門寬度照游標")
+    cursor({ { a = { 52, 51, 0, 0 } }, { a = { 53, 51, 0, 0 } } }):tryBuild(1, 1, 0)
+    check(plan.n == 6 and PM.undo() and plan.n == 4 and PM.undo() and plan.n == 0 and PM.redo() and plan.n == 4,
+        "上一步：一次放開整步拿掉（兩次放開兩步），下一步拿回來")
+    check(PM.redo() and plan.n == 6 and not PM.redo(), "下一步到底回 false")
+
+    -- 上限：超出的那次放開不記、標籤寫原因
+    local wide = cursor({ { a = { 50 + 70, 50, 0, 0 } } })
+    local wl = Cur.hook.label(wide, { "L1", "T", "HINT", "M" })
+    check(Cur.hook.valid(wide) == false and wl[3] == "IGUI_MBLD_PlanTooWide" and wl[4] == "W", "超出每邊 64 格：標籤寫原因、不可放")
+    local before = #toasts
+    wide:tryBuild(1, 1, 0)
+    check(plan.n == 6 and sent == 0 and toasts[before + 1] == "IGUI_MBLD_PlanTooWide", "超出每邊 64 格：放開不記、跳原因")
+    local high = cursor({ { a = { 52, 50, 4, 0 } } })
+    Cur.hook.label(high, { "L1", "T" })
+    check(Cur.hook.valid(high) == false and high.planWhy == "TOO_HIGH", "超出 4 層：TOO_HIGH")
+    local full = Plan.new("full")
+    local fi = Plan.item(full, "pm_floor_01_0")
+    for y = 0, 63 do for x = 0, 63 do Plan.add(full, x, y, 0, 0, 0, fi) end end
+    full.ox, full.oy, full.oz = 0, 0, 0
+    check(PM.overflow(full, { { 5, 5, 0, 0 } }, "pm_floor_01_0", 0) == nil
+        and PM.overflow(full, { { 5, 5, 0, 1 } }, "pm_floor_01_0", 0) == "FULL",
+        "4,096 片：重複的片不算數，多一片新的 FULL")
+
+    -- 配方游標交來的格子
+    check(PM.addCells(0, "recipe:Base.Tarp", { { 51, 51, 0, 2 } }) == true and at(plan, 1, 1, 0).d == 2
+        and plan.items[at(plan, 1, 1, 0).it].id == "recipe:Base.Tarp" and plan.n == 7, "配方的格子記進藍圖（面編號照收）")
+
+    -- 樓層：hook.layer 回規劃層和玩家那層的差，夾在藍圖 4 層的範圍內
+    PM.setLevel(2)
+    check(Cur.hook.layer(cur) == 2, "換到 3 樓規劃：游標往上 2 層")
+    PM.setLevel(9)
+    check(PM.level() == 3, "樓層夾在藍圖能到的 4 層內（全部片在 1 樓：最多到 4 樓）")
+    PM.onKeyPressed(44)
+    check(plan.n == 6, "Ctrl+Z（假綁定 44）：上一步")
+    PM.onKeyPressed(21)
+    check(plan.n == 7, "Ctrl+Y：下一步")
+    PM.setLevel(0)
+
+    -- 選取、擦：只算規劃那一層
+    check(PM.selectRect(52, 50, 53, 51) == 4 and #PM.selected() == 4 and PM.isSelected(at(plan, 2, 0, 0)), "框選 2×2：選到 4 片")
+    PM.setLevel(1)
+    check(PM.selectRect(52, 50, 53, 51) == 0 and PM.selectRect(52, 50, 53, 51, true) == 4, "別層框不到；按住 Shift 全部樓層")
+    PM.setLevel(0)
+    check(PM.eraseRect(55, 50, 56, 50) == 2 and plan.n == 5 and #PM.selected() == 0, "擦：拿掉框到的片、清掉選取")
+    PM.selectRect(52, 51, 53, 51)
+    PM.onKeyPressed(211)
+    check(plan.n == 3 and at(plan, 2, 1, 0) == nil, "Delete：刪掉選到的 2 片")
+
+    -- 關掉規劃：存檔、記進這個存檔的地上藍圖，掛鉤拿掉
+    check(PM.toggle(0) == true and PM.state() == "fixed" and Cur.hook.commit == nil, "關掉規劃：狀態 fixed、掛鉤拿掉")
+    check(commit(cur) == false, "植入：規劃關掉後還留著的掛鉤也不收（回 false，游標照常送）")
+    local file = "MinidoracatBuilder/plans/" .. plan.file
+    local st = PS.load()
+    check(disk[file] ~= nil and st.file == plan.file and st.ox == 51 and st.oy == 50 and st.oz == 0,
+        "存檔：藍圖檔寫進磁碟；位置記包圍盒的角（51, 50, 0）")
+
+    -- 重新載入（模組重跑＝遊戲重開）：讀回原處
+    local function reload()
+        loadfile(MEDIA .. "/client/MinidoracatBuilder/PlanMode.lua")()
+        PM = B.PlanMode
+    end
+    reload()
+    check(PM.plan() == nil and PM.restore() == true and PM.state() == "fixed", "重新載入：讀回地上的藍圖")
+    plan = PM.plan()
+    ox, oy, oz = PM.origin()
+    local w1 = at(plan, 52 - ox, 50 - oy, 0)
+    check(ox == 51 and oy == 50 and w1 and w1.d == 0 and plan.items[w1.it].id == "pm_wall_01_1"
+        and at(plan, 51 - ox, 51 - oy, 0) ~= nil, "重新載入：每片在世界上的位置不變")
+    local good = disk[file]
+    disk[file] = "壞掉的內容\n"
+    reload()
+    before = #toasts
+    local fine, res = pcall(PM.restore)
+    check(fine and res == false and PM.plan() == nil and toasts[before + 1] == "IGUI_MBLD_PlanLost" and PS.load().file == nil,
+        "壞檔：不丟錯、通知一次、地上的藍圖記錄清掉")
+    disk[file] = good
+    PS.save(st)
+    reload()
+    check(PM.restore() == true, "檔案修好、記錄寫回：照常讀回（對照組）")
+    plan = PM.plan()
+
+    -- 搬：跟著游標、取消回原位置；放回原位置
+    check(PM.pickUp(0) == true and PM.state() == "place" and PM.origin() == nil and drags[0] ~= nil, "搬：整張跟著游標，原點暫時沒有")
+    local o = drags[0]
+    o:isValid(sq(80, 80, 0))
+    o:rotateKey(19)
+    getCell():setDrag(nil, 0) -- 右鍵
+    ox, oy = PM.origin()
+    check(PM.state() == "fixed" and ox == 51 and oy == 50 and at(plan, 52 - 51, 0, 0) and at(plan, 1, 0, 0).d == 0,
+        "搬到一半取消：轉過的撤回，回原位置")
+    PM.pickUp(0)
+    check(PM.home() ~= nil and PM.placeHome() == true and select(1, PM.origin()) == 51 and PM.state() == "fixed", "放回原位置")
+
+    -- 地上已經有一張，沒有框架時不換、說一聲
+    before = #toasts
+    check(PM.place(Plan.new("別張"), 0) == false and PM.plan() == plan and toasts[before + 1] == "IGUI_MBLD_NeedFramework",
+        "地上已經有藍圖、沒有框架：不換、通知")
+    check(PM.clear() == true and PM.state() == "none" and PS.load().file == nil, "收起：地上沒有藍圖、記錄清掉")
+
+    -- 從藍圖庫擺：轉 90 度（北牆換成右邊那格的西牆；沒有另一面的照原朝向），點一下定位
+    local np = Plan.new("小屋")
+    local fl, wn, lone = Plan.item(np, "pm_floor_01_0"), Plan.item(np, "pm_wall_01_1"), Plan.item(np, "pm_lone_01_0")
+    Plan.add(np, 0, 0, 0, 0, 0, fl)
+    Plan.add(np, 1, 0, 0, 0, 0, fl)
+    Plan.add(np, 0, 0, 0, 0, 0, wn)
+    Plan.add(np, 2, 0, 0, 0, 0, lone)
+    check(PM.place(np, 0) == true and PM.state() == "place" and PM.home() == nil, "擺放：沒有原位置的不給「放回原位置」")
+    o = drags[0]
+    o:isValid(sq(70, 70, 0))
+    check(o.ox == 69 and o.oy == 70 and o.oz == 0, "跟著游標：藍圖中心對準滑鼠那格")
+    before = #toasts
+    o:rotateKey(19)
+    check(toasts[before + 1] == "IGUI_MBLD_PlanStuck(1)", "轉 90 度：沒有另一面的牆朝向不變、說一聲")
+    o:tryBuild(70, 70, 0)
+    ox, oy, oz = PM.origin()
+    local fA, fB = at(np, 0, 0, 0), at(np, 0, 1, 0)
+    local wall = nil
+    for _, p in ipairs(Plan.at(np, 1, 0, 0)) do if np.items[p.it].id == "pm_wall_01_1" then wall = p end end
+    check(PM.state() == "fixed" and ox == 70 and oy == 69 and oz == 0, "點一下定位：原點照轉過的包圍盒對準滑鼠")
+    check(fA and fB and wall and wall.d == 5 and at(np, 0, 2, 0) and at(np, 0, 2, 0).d == 0,
+        "轉 90 度：橫的兩格地板變直的，左格北邊的牆到右邊那格的西邊（配對面 d＝5）")
+    check(disk["MinidoracatBuilder/plans/" .. tostring(np.file)] ~= nil and PS.load().file == np.file, "定位後存檔並記進地上藍圖")
+    check(PM.turnPiece({ d = 5 }, { id = "pm_wall_01_1" }) == 0 and select(2, PM.turnPiece({ d = 5 }, { id = "pm_wall_01_1" })) == 0
+        and select(2, PM.turnPiece({ d = 0 }, { id = "pm_wall_01_1" })) == 1, "轉向：西牆轉北牆不移格；北牆轉東邊移到右邊那格")
+    B.Recipes = { faces = function() return { n = 2, 1, 3 } end }
+    check(PM.turnPiece({ d = 1 }, { id = "recipe:x" }) == 3 and PM.turnPiece({ d = 3 }, { id = "recipe:x" }) == 1
+        and PM.turnPiece({ d = 2 }, { id = "recipe:x" }) == nil, "配方片照 Recipes.faces 循環；沒有的面回 nil")
+    B.Recipes = { faces = function() return nil end }
+
+    -- 虛影：一幀最多 512 片、近的先；完成的不畫；隱藏時只畫閃的
+    PM.clear()
+    local big = Plan.new("大")
+    local bf = Plan.item(big, "pm_floor_01_0")
+    for y = 0, 63 do for x = 0, 63 do Plan.add(big, x, y, 0, 0, 0, bf) end end
+    PM.place(big, 0)
+    drags[0]:isValid(sq(50, 50, 0))
+    drags[0]:tryBuild(50, 50, 0)
+    ghostN, ghostAt = 0, {}
+    PG.draw()
+    check(PG.lastDrawn == 512 and ghostN == 512 and ghostAt["50,50,0"], "4,096 片：一幀只畫 512 片，玩家腳下那片有畫")
+    PG.DRAW_MAX = 10
+    PG.draw()
+    check(PG.lastDrawn == 10, "植入：上限改 10 就只畫 10 片（上限確實在管）")
+    PG.DRAW_MAX = 512
+    fakeCheck = function(p) return p.x + big.ox == 50 and p.y + big.oy == 50 and "done" or nil end
+    ghostN, ghostAt = 0, {}
+    PG.draw()
+    check(not ghostAt["50,50,0"] and ghostAt["51,50,0"] and PG.lastDrawn == 512, "蓋好的片（done）不畫，換下一片補上")
+    fakeCheck = nil
+    PM.setHidden(true)
+    ghostN = 0
+    PG.draw()
+    check(ghostN == 0 and PS.load().hidden == true, "隱藏：不畫，記進存檔")
+    PG.flash(at(big, 0, 0, 0))
+    PG.flash(at(big, 1, 0, 0))
+    PG.draw()
+    check(ghostN == 2 and PG.lastDrawn == 2, "隱藏時「在哪」照閃：一秒內叫的片一起閃")
+    PM.setHidden(false)
+
+    -- 按鍵登記：接在本工具那一節後面，上一步、下一步帶 Ctrl
+    keyBinding, Keyboard = {}, { KEY_Z = 44, KEY_Y = 21, KEY_DELETE = 211 }
+    PM.initBinds()
+    check(#keyBinding == 4 and keyBinding[1].value == PM.BIND_UNDO and keyBinding[1].ctrl == true and keyBinding[2].key == 21
+        and keyBinding[3].key == 211 and keyBinding[4].key == 0, "按鍵：上一步 Ctrl+Z、下一步 Ctrl+Y、刪除 Delete、隱藏預設不綁")
+
+    PM.clear()
+    PM.playerNum = 0
+    for k in pairs(Cur.hook) do Cur.hook[k] = nil end
+    for k, v in pairs(real.hook) do Cur.hook[k] = v end
+    getSpecificPlayer, getCell, getText, getCore, getWorld = real.spec, real.cell, real.text, real.core, real.world
+    getFileReader, getFileWriter, listFilesInZomboidLuaDirectory = real.reader, real.writer, real.list
+    JoypadState, ISBuildingObject, Msg.toast, B.PlanCheck, B.Client.build = real.joy, real.IBO, real.toast, real.PC, real.build
+    Keyboard, KeybindId, keyBinding, MinidoracatUI, UIManager = real.kb, real.kid, real.binding, real.ui, real.um
+    ISUIElement, spriteMap, spriteOrder, B.Recipes = real.el, real.map, real.order, real.recipes
+end)()
+
+-- ===== 藍圖：面板與藍圖庫 =====
+;(function()
+    print("藍圖：面板與藍圖庫（匯入四種狀態、換項目、刪除確認、改名、三種排序、分幀檔頭、告知只一次、沙盒關照圖蓋）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanFile"
+    require "MinidoracatBuilder/PlanStore"
+    require "MinidoracatBuilder/PlanLibrary"
+    require "MinidoracatBuilder/PlanPanel"
+    local Plan, PF, L, P = B.Plan, B.PlanFile, B.PlanLibrary, B.PlanPanel
+    local real = { reader = getFileReader, writer = getFileWriter, list = listFilesInZomboidLuaDirectory, ui = MinidoracatUI,
+        panel = ISPanel, tm = getTextManager, font = UIFont, joy = JoypadState, kb = Keyboard, item = getItemName,
+        top = getPlayerScreenTop, left = getPlayerScreenLeft, sw = getPlayerScreenWidth, sh = getPlayerScreenHeight,
+        world = getWorld, core = getCore, wui = B.Window and B.Window.ui, PM = B.PlanMode, PC = B.PlanCheck, R = B.Runner,
+        PG = B.PlanGhost, cap = B.Capture, toast = B.Messages.toast, head = PF.head,
+        auto = SandboxVars.MinidoracatBuilder.AllowAutoBuild, step = clockStep, ontick = handlers.OnTick }
+    clockStep = 0
+    handlers.OnTick = {}
+    getWorld = function() return { getWorld = function() return "PlanUI" end } end
+    getCore = function() return { getGameMode = function() return { toString = function() return "Sandbox" end } end } end
+    getItemName = function(ft) return ft end
+    Keyboard = { KEY_LEFT = 203, KEY_RIGHT = 205, KEY_UP = 200, KEY_DOWN = 208, KEY_RETURN = 28 }
+    JoypadState = { players = {} }
+
+    -- 假磁碟（同藍圖資料那段）
+    local disk = {}
+    getFileWriter = function(p, _, append)
+        local buf = append and (disk[p] or "") or ""
+        return { write = function(_, s) buf = buf .. s end, close = function() disk[p] = buf end }
+    end
+    getFileReader = function(p)
+        if disk[p] == nil then return nil end
+        local lines, i = {}, 0
+        for l in disk[p]:gmatch("[^\n]+") do lines[#lines + 1] = l end
+        return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
+    end
+    listFilesInZomboidLuaDirectory = function(dir)
+        local names = {}
+        for p in pairs(disk) do
+            local name = p:sub(#dir + 2)
+            if p:sub(1, #dir + 1) == dir .. "/" and not name:find("/", 1, true) then names[#names + 1] = name end
+        end
+        table.sort(names)
+        return javaList(names)
+    end
+    local function wipePlans()
+        for p in pairs(disk) do
+            if p:sub(1, 25) == "MinidoracatBuilder/plans/" then disk[p] = nil end
+        end
+    end
+    local function has(list, x)
+        for _, v in ipairs(list) do if v == x then return true end end
+        return false
+    end
+
+    -- 假框架：只記狀態，不畫
+    local noop = function() end
+    local E = { initialise = noop, addToUIManager = noop, removeFromUIManager = noop, bringToTop = noop, setYScroll = noop,
+        drawText = noop, drawTextRight = noop, drawRect = noop, drawRectBorder = noop }
+    function E.addChild(s, c) s.children[#s.children + 1] = c end
+    function E.clearChildren(s) s.children = {} end
+    function E.setX(s, v) s.x = v end
+    function E.setY(s, v) s.y = v end
+    function E.setWidth(s, v) s.width = v end
+    function E.setHeight(s, v) s.height = v end
+    function E.getIsVisible(s) return s.visible end
+    function E.setVisible(s, v) s.visible = v end
+    function E.close(s)
+        s.visible = false
+        if s.onClose then s.onClose(s) end
+    end
+    function E.setEnabled(s, v) s.enabled = v end
+    function E.setTitle(s, t) s.title = t end
+    function E.getText(s) return s.text end
+    function E.setText(s, t) s.text = t end
+    function E.contentWidth(s) return s.width - 12 end
+    function E.contentTop() return 24 end
+    function E.setItems(s, items) s.items = items end
+    function E.setSelectedIndex(s, i) s.sel = i end
+    function E.getSelected(s) return s.selected end
+    function E.setSelected(s, id) s.selected = id end
+    local function el(o)
+        o.x, o.y, o.width, o.height = o.x or 0, o.y or 0, o.width or 60, o.height or 20
+        o.children, o.visible, o.enabled = {}, true, true
+        return setmetatable(o, { __index = E })
+    end
+    local dialogs = {}
+    local col = { r = 1, g = 1, b = 1 }
+    local UI = { CAPABILITIES = { dialog = true },
+        Theme = { create = function() return { colors = { text = col, textMuted = col, warning = col, success = col } } end },
+        Text = { fit = function(s) return s end, wrap = function(s) return { s } end },
+        Window = { new = function(o) return el({ width = o.width, height = o.height, title = o.title, onClose = o.onClose }) end },
+        Button = { new = function(o) return el({ title = o.title, style = o.style, target = o.target, onClick = o.onClick }) end },
+        TextField = { new = function(o) return el({ width = o.width, text = o.text or "", onChange = o.onChange }) end },
+        Dropdown = { new = function(o) return el({ options = o.options, selected = o.selected, onChange = o.onChange }) end,
+            close = noop },
+        ScrollPanel = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height }) end },
+        Table = { new = function(o)
+            return el({ x = o.x, y = o.y, width = o.width, height = o.height, items = {}, onSelect = o.onSelect })
+        end },
+        Tabs = { new = function(o) return el({ width = 100, selected = o.selected, onSelect = o.onSelect }) end },
+        Dialog = { show = function(o)
+            dialogs[#dialogs + 1] = o
+            return o
+        end } }
+    MinidoracatUI = { v1 = UI }
+    if B.Window then B.Window.ui = function() return UI end end
+    ISPanel = { new = function(_, x, y, w, h) return el({ x = x, y = y, width = w, height = h }) end }
+    UIFont = UIFont or { Small = 0, Medium = 1 }
+    getTextManager = function()
+        return { getFontHeight = function() return 16 end, MeasureStringX = function(_, _, s) return #s * 7 end }
+    end
+    getPlayerScreenTop, getPlayerScreenLeft = function() return 0 end, function() return 0 end
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 1280 end, function() return 720 end
+
+    -- 假的藍圖模組
+    local states, pieceState = {}, {}
+    B.PlanCheck = { item = function(id) return states[id] or "ok", nil, nil end,
+        state = function(p)
+            local s = pieceState[p]
+            if s then return s[1], s[2] end
+            return "ok"
+        end,
+        counts = function() return { n = 0, done = 0 } end,
+        materials = function()
+            return { need = { ["Base.Plank"] = 4, ["Base.Nails"] = 2 }, have = { ["Base.Plank"] = 1, ["Base.Nails"] = 5 },
+                tools = { { tag = "Hammer", has = false } }, recipes = {} }
+        end }
+    local ground, placed = nil, 0
+    B.PlanMode = { plan = function() return ground end,
+        place = function(p)
+            ground, placed = p, placed + 1
+            return true
+        end,
+        clear = function() ground = nil end, changed = noop, origin = function() return 100, 100, 0 end,
+        level = function() return 0 end, toggle = noop, pickUp = noop, save = function() return true end }
+    local started = 0
+    B.Runner = { state = function() return "idle" end,
+        start = function()
+            started = started + 1
+            return nil, "NOTHING"
+        end,
+        pause = noop, reason = function() return nil end, progress = function() return { done = 0, total = 0 } end,
+        changed = noop, boxes = function() return {} end, summary = function() return nil end, removeBox = noop,
+        codeText = function(c) return "code:" .. c end }
+    local flashed = 0
+    B.PlanGhost = { flash = function() flashed = flashed + 1 end }
+    B.Capture = nil
+    local toasts = {}
+    B.Messages.toast = function(_, text) toasts[#toasts + 1] = text end
+    L.v, L.st, L.imp, L.pick, P.v, P.hooked = nil, nil, nil, nil, nil, nil
+
+    -- 一張四種狀態都有的藍圖：能蓋 3 片、缺圖 2 片（Mod X）、關掉 1 片、不開放 4 片
+    local function sample(name)
+        local pl = Plan.new(name)
+        local a = Plan.item(pl, "okay_01_0")
+        local b = Plan.item(pl, "gone_01_0", { mod = "ModX", modName = "Mod X", workshop = "123", version = "1.0" })
+        local c = Plan.item(pl, "off_01_0")
+        local d = Plan.item(pl, "shut_01_0")
+        for i = 0, 2 do Plan.add(pl, i, 0, 0, 0, 0, a) end
+        for i = 0, 1 do Plan.add(pl, i, 1, 0, 0, 0, b) end
+        Plan.add(pl, 0, 2, 0, 0, 0, c)
+        for i = 0, 3 do Plan.add(pl, i, 3, 0, 0, 0, d) end
+        return pl, a, b, c, d
+    end
+    local BAD = { gone_01_0 = "missing", off_01_0 = "off", shut_01_0 = "closed" }
+    local function setStates(t)
+        states = {}
+        for k, v in pairs(t) do states[k] = v end
+        L.resetStates()
+    end
+    setStates(BAD)
+
+    do -- 壞的分享碼、壞檔：一句原因、不當掉
+        local plan, err = L.parseCode("MBLD1;junk")
+        check(plan == nil and type(err) == "string" and err:find("IGUI_MBLD_PlanErr_", 1, true) == 1, "壞的分享碼：回一句原因、不當掉")
+        check(L.errText("CHECKSUM", 3) == "IGUI_MBLD_PlanErr_CHECKSUMIGUI_MBLD_PlanErr_At"
+            and L.errText("CHECKSUM", 0) == "IGUI_MBLD_PlanErr_CHECKSUM" and L.errText("WHAT", 0) == "IGUI_MBLD_PlanErr_Other",
+            "原因碼：認得的用自己的句子、有位置才加位置；不認得的歸其他")
+        local good = PF.share((sample("Share")), false)
+        check(L.parseCode(good) ~= nil and L.parseCode(good).n == 10, "反面：好的分享碼讀得回來")
+        disk["MinidoracatBuilder/plans/bad.txt"] = "junk\n"
+        local p2, e2 = L.loadFile("bad.txt")
+        local p3, e3 = L.loadFile("none.txt")
+        check(p2 == nil and e2 ~= nil and p3 == nil and e3 == "IGUI_MBLD_PlanErr_NO_FILE", "壞檔、沒有的檔：回原因")
+        check(L.import(0) and L.imp ~= nil, "匯入框：打得開")
+        local imp = L.imp
+        imp.code:setText("junk")
+        imp:check()
+        check(imp.plan == nil and imp.err ~= nil and imp.storeBtn.enabled == false, "匯入框：壞的碼寫出原因、不能存")
+        imp.code:setText(good)
+        imp:check()
+        check(imp.plan ~= nil and imp.err == nil and imp.storeBtn.enabled == true and #imp.box.children > 0,
+            "反面：好的碼列出結果、可以存")
+        L.closeImport()
+        disk["MinidoracatBuilder/plans/bad.txt"] = nil
+    end
+
+    do -- 匯入結果：四種狀態的片數
+        local pl = sample("Four")
+        local s = L.summary(pl.items)
+        check(s.n == 10 and s.ok == 3 and s.missing == 2 and s.off == 1 and s.closed == 4, "四種狀態：能蓋 3、缺 2、關掉 1、不開放 4")
+        check(#s.mods == 1 and s.mods[1].workshop == "123" and s.mods[1].n == 2, "缺的照 MOD 分組：名稱、工作坊 ID、片數")
+        local ws = false
+        for _, ln in ipairs(L.describe(s, true)) do if ln.ws == "123" then ws = true end end
+        check(ws, "沒啟用的 MOD 那行附工作坊 ID（給「開工作坊頁」）")
+        setStates({ off_01_0 = "off", shut_01_0 = "closed" })
+        local s2 = L.summary(pl.items)
+        check(s2.missing == 0 and s2.ok == 5 and #s2.mods == 0, "反面：MOD 回來後缺的變能蓋")
+        setStates(BAD)
+    end
+
+    do -- 把缺的換成這裡有的
+        local pl, _, b, _, d = sample("Swap")
+        local n = L.swap(pl, b, "fresh_01_0")
+        local s = L.summary(pl.items)
+        check(n == 2 and s.missing == 0 and s.ok == 5 and s.n == 10, "換掉缺的一款：2 片改成能蓋，總數不變")
+        states.shut2_01_0 = "closed"
+        local n2, err = L.swap(pl, d, "shut2_01_0")
+        check(n2 == nil and err == "IGUI_MBLD_Imp_SwapBad" and pl.items[d].n == 4, "反面：換成這裡也不能蓋的：不換、說原因")
+        check(L.guessKind("walls_exterior_01_0") == "wall" and L.guessKind("fixtures_doors_01_0") == "door"
+            and L.guessKind("x_01_0") == "furniture", "換項目：照圖塊名猜種類")
+        setStates(BAD)
+    end
+
+    do -- 刪除要確認
+        wipePlans()
+        local pl = sample("Gone")
+        local file = L.store(pl)
+        dialogs = {}
+        local done
+        local d = L.askRemove(file, pl.name, pl.n, 0, function(ok) done = ok end)
+        check(file == "gone.txt" and d ~= nil and d.danger == true and has(PF.list(), file), "刪除：先跳危險確認框，還沒刪")
+        d.onResult(false)
+        check(has(PF.list(), file) and done == nil, "反面：按取消不刪")
+        L.askRemove(file, pl.name, pl.n, 0, function(ok) done = ok end)
+        dialogs[#dialogs].onResult(true)
+        check(not has(PF.list(), file) and done == true, "按確認才刪")
+    end
+
+    local USED = "MinidoracatBuilder/plans-used.txt"
+    local function three()
+        wipePlans()
+        local function mk(name, n)
+            local pl = Plan.new(name)
+            local it = Plan.item(pl, "okay_01_0")
+            for i = 1, n do Plan.add(pl, i, 0, 0, 0, 0, it) end
+            PF.save(pl, PF.fileName(name))
+        end
+        mk("Bravo", 1)
+        mk("Alpha", 3)
+        mk("Charlie", 2)
+        disk[USED] = "alpha.txt\t100\ncharlie.txt\t300\n#end\n"
+    end
+    local function order(sort)
+        L.st.sort = sort
+        local t = {}
+        for i, e in ipairs(L.view()) do t[i] = e.file end
+        return table.concat(t, ",")
+    end
+
+    do -- 三種排序、搜尋
+        three()
+        check(L.open(0) and L.visible(), "藍圖庫：打得開")
+        while L.pending() > 0 do L.pump(1000) end
+        check(order("used") == "charlie.txt,alpha.txt,bravo.txt", "排序：最近用過（沒用過的排後面）")
+        check(order("name") == "alpha.txt,bravo.txt,charlie.txt", "排序：名稱")
+        check(order("pieces") == "alpha.txt,charlie.txt,bravo.txt", "排序：片數多的在前")
+        L.st.query = "char"
+        check(order("name") == "charlie.txt", "搜尋：名稱不分大小寫")
+        L.st.query = ""
+        disk[USED] = "alpha.txt\t100\ncharlie.txt\t300\n"
+        check(L.loadUsed() == false and order("used") == "alpha.txt,bravo.txt,charlie.txt" and L.markUsed("bravo.txt", nil) == false
+            and disk[USED] == "alpha.txt\t100\ncharlie.txt\t300\n", "反面：沒有 #end 的紀錄不載入也不覆寫（最近用過退回名稱順序）")
+        local list = {}
+        for i = 1, 2000 do list[i] = 2001 - i end
+        L.sort(list, function(a, b) return a < b end)
+        local sorted = true
+        for i = 1, 2000 do if list[i] ~= i then sorted = false end end
+        check(sorted, "合併排序：2,000 筆倒序排對（不遞迴）")
+    end
+
+    do -- 改名更新清單、用過的時間跟著搬
+        three()
+        L.open(0)
+        while L.pending() > 0 do L.pump(1000) end
+        L.markUsed("bravo.txt", nil)
+        local nf = L.rename("bravo.txt", "Delta")
+        L.v:reload(nf)
+        while L.pending() > 0 do L.pump(1000) end
+        L.v:refreshRows()
+        local shown = false
+        for _, row in ipairs(L.v.list.items) do
+            if row.e.file == "delta.txt" and row.cells[1] == "Delta" then shown = true end
+        end
+        check(nf == "delta.txt" and shown and L.st.byFile["bravo.txt"] == nil and L.v.selected == L.st.byFile["delta.txt"],
+            "改名：清單換成新名稱與檔名、選著它")
+        check(L.usedAt("delta.txt") ~= nil and L.usedAt("bravo.txt") == nil, "改名：上次用的時間搬到新檔名")
+        dialogs = {}
+        L.v:act("delete")
+        dialogs[#dialogs].onResult(true)
+        check(L.st.byFile["delta.txt"] == nil and #L.v.list.items == 2 and L.usedAt("delta.txt") == nil, "清單上刪除：確認後清單少一列")
+    end
+
+    do -- 1,000 個檔：打開時不讀檔頭，之後每幀最多 HEAD_MAX 個
+        wipePlans()
+        local text = PF.encode((sample("Many")))
+        for i = 1, 1000 do disk["MinidoracatBuilder/plans/m" .. i .. ".txt"] = text end
+        local heads = 0
+        PF.head = function(f)
+            heads = heads + 1
+            return real.head(f)
+        end
+        L.open(0)
+        check(heads == 0 and #L.st.files == 1000 and #L.v.list.items == 1000, "1,000 個檔：打開時只列檔名、不讀檔頭")
+        L.v:pump()
+        check(heads > 0 and heads <= L.HEAD_MAX, "一幀最多讀 " .. L.HEAD_MAX .. " 個檔頭（讀了 " .. heads .. "）")
+        local frames = 1
+        while L.pending() > 0 and frames < 100 do
+            L.v:pump()
+            frames = frames + 1
+        end
+        check(heads == 1000 and frames == 40 and L.v.list.items[1].cells[3] == "10" and L.v.list.items[1].cells[4] == "7",
+            "補完 1,000 個檔頭（40 幀），列出片數與這裡不能蓋的片數")
+        PF.head = real.head
+        L.close()
+    end
+
+    do -- MOD 更新或下架的告知：多了不能蓋的才通知，同樣的只通知一次
+        local pl = sample("Ground")
+        ground = pl
+        setStates({})
+        toasts = {}
+        check(L.notices() == false and #toasts == 0, "告知：都能蓋時不通知")
+        states.gone_01_0 = "missing"
+        check(L.notices() == true and #toasts == 1, "告知：變成不能蓋時通知一則")
+        check(L.notices() == false and #toasts == 1, "反面：狀態沒再變，下次進遊戲不再通知")
+        states.off_01_0 = "off"
+        check(L.notices() == true and #toasts == 2, "告知：又多一種不能蓋的，再通知")
+        states.shut_01_0 = "closed"
+        L.baseline(pl)
+        check(L.notices() == false and #toasts == 2, "擺上時記基準：匯入時就缺的不再通知")
+        ground = nil
+        L.startNotices()
+        for _ = 1, 3 do fire("OnTick") end
+        local waiting = count("OnTick")
+        ground = pl
+        states.okay_01_0 = "missing"
+        fire("OnTick")
+        check(waiting == 1 and #toasts == 3 and count("OnTick") == 0, "進遊戲：等到地上的藍圖才檢查一次，然後摘掉自己")
+        L.startNotices()
+        ground = nil
+        for _ = 1, L.WAIT_TICKS + 1 do fire("OnTick") end
+        check(count("OnTick") == 0 and #toasts == 3, "反面：一直沒有藍圖，等滿就放棄、不通知")
+    end
+
+    do -- 面板：分組、閃、平面圖、手把、照圖蓋按鈕
+        local pl, a, b, _, d = sample("Panel")
+        ground = nil
+        check(P.open(0) and L.visible() and not P.visible(), "面板：地上沒有藍圖時改開藍圖庫")
+        L.close()
+        ground = pl
+        setStates(BAD)
+        Plan.each(pl, function(p)
+            local id = pl.items[p.it].id
+            if id == "shut_01_0" then pieceState[p] = { "closed", "DISABLED_TILESET" }
+            elseif id == "gone_01_0" then pieceState[p] = { "missing", "UNKNOWN" }
+            elseif id == "off_01_0" then pieceState[p] = { "off", "DISABLED_KIND" }
+            elseif p.x == 0 then pieceState[p] = { "short", "NO_MATERIAL" }
+            elseif p.x == 1 then pieceState[p] = { "done" } end
+        end)
+        local mat = P.materials(nil)
+        local groups = P.groups(mat)
+        check(#groups == 4 and groups[1].code == "closed" and groups[1].n == 4 and groups[2].code == "missing"
+            and mat.short["Base.Plank"] == 3 and mat.short["Base.Nails"] == nil and mat.missTools[1] == "Hammer",
+            "蓋不了的片照原因分組（片多的在前）；缺料只算缺的")
+        check(P.flash(groups[1].pieces) == 4 and flashed == 4, "點一組：那幾片都閃")
+        local g = P.grid(pl, 0)
+        check(#g.fine == 30 and g.counts.blocked == 7 and g.counts.short == 1 and g.counts.done == 1 and g.counts.ok == 1,
+            "平面圖：一格一塊，圖例每種狀態有片數")
+        SandboxVars.MinidoracatBuilder.AllowAutoBuild = false
+        check(P.open(0) and P.visible() and P.v.goBtn.enabled == false and P.statusLines()[2][1] == "IGUI_MBLD_Plan_AutoOff",
+            "沙盒關照圖蓋：按鈕停用、寫出原因")
+        SandboxVars.MinidoracatBuilder.AllowAutoBuild = nil
+        P.v:refresh()
+        check(P.v.goBtn.enabled == true, "反面：沙盒沒關時能按")
+        check(P.onGo(0) == "IGUI_MBLD_Plan_Start_NOTHING" and started == 1, "照圖蓋開不了：原因碼寫成句子")
+        local v = P.v
+        v:show("map")
+        v:refreshMap()
+        local cv = v.canvas
+        cv.render(cv)
+        v.cx, v.cy = 0, 0
+        check(cv.onFocusKey(cv, Keyboard.KEY_LEFT) == false and cv.onFocusKey(cv, Keyboard.KEY_RIGHT) == true and v.cx == 1,
+            "手把：方向鍵移格子，到邊才讓焦點離開")
+        flashed = 0
+        cv.forceClick(cv)
+        check(flashed == #Plan.at(pl, 1, 0, 0) and flashed > 0, "手把 A：閃游標那格的片")
+        v.coarse, v.drawMs, v.frames = false, 0, 0
+        for _ = 1, P.SAMPLE do cv.render(cv) end
+        check(v.coarse == false, "反面：畫得快時不改粗格")
+        clockStep = 2
+        for _ = 1, P.SAMPLE do cv.render(cv) end
+        clockStep = 0
+        check(v.coarse == true, "平面圖：32 幀平均超過 1 毫秒改成 2×2 一塊")
+        P.close()
+        pieceState = {}
+    end
+
+    getFileReader, getFileWriter, listFilesInZomboidLuaDirectory = real.reader, real.writer, real.list
+    MinidoracatUI, ISPanel, getTextManager, UIFont, JoypadState, Keyboard = real.ui, real.panel, real.tm, real.font, real.joy, real.kb
+    getPlayerScreenTop, getPlayerScreenLeft, getPlayerScreenWidth, getPlayerScreenHeight = real.top, real.left, real.sw, real.sh
+    getWorld, getCore, getItemName = real.world, real.core, real.item
+    if B.Window then B.Window.ui = real.wui end
+    B.PlanMode, B.PlanCheck, B.Runner, B.PlanGhost, B.Capture = real.PM, real.PC, real.R, real.PG, real.cap
+    B.Messages.toast, PF.head, clockStep, handlers.OnTick = real.toast, real.head, real.step, real.ontick
+    SandboxVars.MinidoracatBuilder.AllowAutoBuild = real.auto
+    L.v, L.st, L.imp, L.pick, P.v, P.hooked = nil, nil, nil, nil, nil, nil
+end)()
+
+-- ===== 藍圖：照圖蓋與材料箱 =====
+;(function()
+    print("藍圖：照圖蓋與材料箱（Runner 六段順序、一批上限、跳過與總結、暫停、材料箱；選單）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/Queue"
+    require "MinidoracatBuilder/PlanStore"
+    require "MinidoracatBuilder/Messages"
+    require "MinidoracatBuilder/Runner"
+    require "MinidoracatBuilder/Menu"
+    local Plan, R, Q, PS, Menu = B.Plan, B.Runner, B.Queue, B.PlanStore, B.Menu
+    local real = { PM = B.PlanMode, PC = B.PlanCheck, rec = B.Recipes, push = Q.push, cancel = Q.cancel, busy = Q.busy,
+        item = Check.item, summary = Materials.summary, resolve = Entry.resolve, face = Entry.face, cells = Entry.cells,
+        doorSet = Entry.doorSet, group = Entry.groupCells, alt = Entry.alternate, load = PS.load, save = PS.save,
+        step = clockStep, q = ISTimedActionQueue, lu = luautils, xfer = ISInventoryTransferAction, ui = MinidoracatUI,
+        core = Core, kb = Keyboard, specific = getSpecificPlayer, auto = sb.AllowAutoBuild, max = sb.MaxCellsPerDrag }
+    clockStep = 0
+    sb.MaxCellsPerDrag, sb.AllowAutoBuild = 3, nil -- 缺鍵當開
+    Core = { getTileScale = function() return 1 end }
+    Keyboard = { KEY_ESCAPE = 1 }
+    B.Recipes = nil
+    local toasts = {}
+    MinidoracatUI = { v1 = { Toast = { show = function(o) toasts[#toasts + 1] = o.message end } } }
+
+    -- 本段自己的項目：每種一個代表（車庫門帶寬度，一扇一次）
+    local ENT = {}
+    for _, k in ipairs({ "floor", "wall", "stairs", "door", "roof", "furniture" }) do ENT["rn_" .. k] = { kind = k, spr = "rn_" .. k } end
+    ENT.rn_garage = { kind = "door", spr = "rn_garage", garage = true }
+    Entry.resolve = function(id) return ENT[id] end
+    Entry.face = function(e) return e.spr end
+    Entry.cells = function(spr) return { { 0, 0, 0, spr } } end
+    Entry.doorSet = function(spr) return ENT[spr] and ENT[spr].garage and { garage = true } or nil end
+    Entry.groupCells = function(_, w)
+        local o = {}
+        for i = 1, w do o[i] = { i - 1, 0, 0, "rn_garage" } end
+        return o
+    end
+    Entry.alternate = function(s) return s end
+    -- Check.item：CODE["x,y,z"]＝{ code, extra, need }；沒列的能蓋
+    local CODE = {}
+    Check.item = function(_, id, _, a)
+        local c = CODE[a[1] .. "," .. a[2] .. "," .. a[3]]
+        local info = { entry = ENT[id], cells = { { x = a[1], y = a[2], z = a[3] } },
+            total = { items = c and c.need or {}, uses = {}, tools = {} } }
+        if c then return c.code, c.extra, info end
+        return nil, nil, info
+    end
+    local zero = function() return 0 end
+    Materials.summary = function()
+        return { items = setmetatable({}, { __index = zero }), uses = setmetatable({}, { __index = zero }), tools = {}, levels = {} }
+    end
+    -- 假的 PlanMode、PlanCheck：狀態照 S 表
+    local OX, OY = 100, 100
+    local S, at, touched, cleared = {}, {}, 0, 0
+    local pl
+    B.PlanCheck = {
+        resolve = function(p) local it = pl.items[p.it]; return it and it.id, p.x + OX, p.y + OY, p.z, p.d, p.o, p.w end,
+        state = function(p) return S[p] end,
+        touch = function() touched = touched + 1 end,
+        counts = function()
+            local n, d = 0, 0
+            Plan.each(pl, function(p) n = n + 1; if S[p] == "done" then d = d + 1 end end)
+            return { n = n, done = d }
+        end,
+        materials = function() return { need = { ["Base.Plank"] = 4 }, have = { ["Base.Plank"] = 1 }, tools = {} } end,
+    }
+    local PM = { plan = function() return pl end, origin = function() return OX, OY, 0 end, clear = function() cleared = cleared + 1 end }
+    -- 假的 Queue：記下每次送的；cancel 照 Queue 同步叫 onDone（stopped）
+    local pushes, busy = {}, 0
+    Q.push = function(_, id, anchors, parts, overlap, opts)
+        pushes[#pushes + 1] = { id = id, anchors = anchors, parts = parts, overlap = overlap, opts = opts }
+        return #pushes
+    end
+    Q.cancel = function()
+        local j = pushes[#pushes]
+        if j and not j.done then
+            j.done = true
+            j.opts.onDone({ count = #j.anchors, placed = 0, stopped = true })
+        end
+    end
+    Q.busy = function() return busy end
+    local function finish(sum)
+        local j = pushes[#pushes]
+        j.done = true
+        sum.count = sum.count or #j.anchors
+        j.opts.onDone(sum)
+    end
+    local function buildAll() -- 最後一批全部蓋好：那幾片變成 done
+        local j = pushes[#pushes]
+        for _, a in ipairs(j.anchors) do S[at[a[1] .. "," .. a[2] .. "," .. a[3]]] = "done" end
+        finish({ placed = #j.anchors, stopped = false })
+    end
+    -- 假玩家與動作佇列
+    local K = player({ id = 77, x = OX + 0.5, y = OY + 0.5 })
+    K.chase, K.moving, K.vehicle = 0, false, nil
+    function K:isAsleep() return false end
+    function K:getVehicle() return self.vehicle end
+    function K:getStats() local me = self; return { getNumChasingZombies = function() return me.chase end } end
+    function K:isAttackStarted() return false end
+    function K:isAiming() return false end
+    function K:isJustMoved() return self.moving end
+    function K:getMaxWeight() return 3 end
+    function K.inv:getCapacityWeight() return 0 end
+    function K.inv:getCountTypeRecurse(ft) return self:count(ft) end
+    getSpecificPlayer = function() return K end
+    local doing, actions, walks = false, {}, {}
+    ISTimedActionQueue = { isPlayerDoingAction = function() return doing end, clear = function() end,
+        add = function(a) actions[#actions + 1] = a end }
+    luautils = { walkToContainer = function(c) walks[#walks + 1] = c; return true end }
+    ISInventoryTransferAction = { new = function(_, _, it, src, dst) return { item = it, src = src, dst = dst } end }
+    local store = { boxes = {} }
+    PS.load = function() return store end
+    PS.save = function(s) store = s; return true end
+
+    local function run(n)
+        for _ = 1, n or 1 do
+            nowMs = nowMs + 100
+            R.tick()
+        end
+    end
+    local function drive() -- 每送一批就整批蓋好，直到停下
+        for _ = 1, 200 do
+            run(1)
+            local j = pushes[#pushes]
+            if j and not j.done then buildAll() end
+            local s = R.state()
+            if s == "done" or s == "paused" then return end
+        end
+    end
+    local function newPlan()
+        pl, S, at, CODE, pushes, busy = Plan.new("run"), {}, {}, {}, {}, 0
+        R.stop()
+    end
+    local function put(id, x, y, z, w)
+        local p = Plan.add(pl, x, y, z, 0, 0, Plan.item(pl, id), w)
+        at[(x + OX) .. "," .. (y + OY) .. "," .. z] = p
+        S[p] = "ok"
+        return p
+    end
+    -- 一串批次的（段, 層）有沒有倒退
+    local function ordered(list)
+        for i = 2, #list do
+            local a, b = list[i - 1], list[i]
+            local sa, sb2 = R.SEGMENT[ENT[a.id].kind], R.SEGMENT[ENT[b.id].kind]
+            if sb2 < sa or (sb2 == sa and b.anchors[1][3] < a.anchors[1][3]) then return false end
+        end
+        return true
+    end
+
+    -- 每個種類都有段（植入：拿掉一種就抓得到）
+    local function uncovered()
+        local n = 0
+        for _, k in ipairs(Entry.KINDS) do if not R.SEGMENT[k] then n = n + 1 end end
+        return n
+    end
+    local keep = R.SEGMENT.light
+    R.SEGMENT.light = nil
+    local planted = uncovered()
+    R.SEGMENT.light = keep
+    check(uncovered() == 0 and planted == 1 and R.SEGMENT.floor == 1 and R.SEGMENT.roof == 5 and R.SEGMENT.furniture == 6,
+        "Runner.SEGMENT：每個種類都有段，少一種會被抓到")
+
+    -- 沒有藍圖、沙盒關掉
+    newPlan()
+    B.PlanMode = nil
+    local s1, c1 = R.start(K)
+    B.PlanMode = PM
+    put("rn_floor", 0, 2, 0)
+    sb.AllowAutoBuild = false
+    local s2, c2 = R.start(K)
+    sb.AllowAutoBuild = true
+    local s3 = R.start(K)
+    local s4, c4 = R.start(K)
+    check(s1 == nil and c1 == "NO_PLAN" and s2 == nil and c2 == "OFF" and #pushes == 0 and s3 == true and s4 == nil and c4 == "BUSY",
+        "start：沒有藍圖 NO_PLAN、沙盒關掉 OFF 且不送；開著能開始，再按回 BUSY")
+
+    -- 六段順序、一批上限、車庫門一扇一次、缺料跳過並列進總結
+    newPlan()
+    put("rn_roof", 0, 0, 1)
+    put("rn_furniture", 1, 0, 0)
+    put("rn_door", 2, 0, 0)
+    put("rn_stairs", 3, 0, 0)
+    for x = 0, 4 do put("rn_wall", x, 1, 0) end
+    put("rn_floor", 0, 2, 0)
+    put("rn_floor", 1, 2, 0)
+    put("rn_floor", 0, 3, 1)
+    put("rn_garage", 5, 5, 0, 2)
+    put("rn_garage", 8, 5, 0, 2)
+    local shortWall = put("rn_wall", 6, 1, 0)
+    S[shortWall] = "short"
+    toasts = {}
+    check(R.start(K) == true, "照圖蓋開始")
+    drive()
+    local ids, maxN, garageOk = {}, 0, true
+    for i, j in ipairs(pushes) do
+        ids[i] = j.id .. "@" .. #j.anchors
+        if #j.anchors > maxN then maxN = #j.anchors end
+        if j.id == "rn_garage" and (#j.anchors ~= 1 or j.anchors[1][5] ~= 2 or #j.parts[1] ~= 2) then garageOk = false end
+        if j.opts.owner ~= "plan" then garageOk = false end
+    end
+    local seq = table.concat(ids, ",")
+    check(seq == "rn_floor@2,rn_floor@1,rn_wall@3,rn_wall@2,rn_stairs@1,rn_door@1,rn_garage@1,rn_garage@1,rn_roof@1,rn_furniture@1",
+        "六段順序：地板（先低層）→ 牆 → 樓梯 → 門與車庫門（近的先）→ 屋頂 → 家具：" .. seq)
+    check(ordered(pushes) and maxN == 3 and garageOk, "一批不超過一次最多幾格（3）；車庫門一批一扇、帶寬度與整扇虛影；owner＝plan")
+    local swapped = { pushes[3], pushes[1] }
+    check(not ordered(swapped), "反面：牆排在地板前面會被順序檢查抓到")
+    local sum = R.summary()
+    check(R.state() == "done" and (R.reason()) == "LEFT" and sum.left == 1 and sum.short.n == 1
+        and sum.short.need["Base.Plank"] == 3 and cleared == 0 and touched > 0,
+        "缺料的片跳過；這一輪結束 LEFT，總結列 1 片缺料、還差 3 塊木板；沒全蓋好不收藍圖")
+    check(toasts[#toasts] and toasts[#toasts]:find("IGUI_MBLD_Run_LEFT", 1, true)
+        and toasts[#toasts]:find("IGUI_MBLD_Run_Short", 1, true), "結束時跳一則總結通知")
+    -- 補齊後再按：只蓋剩下那片，全部蓋好就收起藍圖
+    S[shortWall] = "ok"
+    local before = #pushes
+    R.start(K)
+    drive()
+    check(#pushes == before + 1 and (R.reason()) == "DONE" and cleared == 1, "再按照圖蓋：只送剩下的 1 片；全蓋好 DONE、收起藍圖")
+
+    -- 手動拖曳取消照圖蓋的批次 → 暫停 MANUAL；沒有玩家的請求時（走不過去）跳過那一片接著蓋
+    newPlan()
+    put("rn_floor", 0, 2, 0)
+    put("rn_floor", 1, 2, 0)
+    R.start(K)
+    run(1)
+    busy = 1
+    Q.cancel()
+    run(1)
+    check(#pushes == 1 and R.state() == "paused" and (R.reason()) == "MANUAL", "手拖時（Queue 取消照圖蓋那一批、排著玩家的）：暫停 MANUAL")
+    busy = 0
+    R.start(K)
+    run(1)
+    Q.cancel()
+    run(2)
+    check(R.state() ~= "paused" and #pushes == 3 and #pushes[3].anchors == 1, "反面：沒有玩家的請求（走不過去）不算手動，跳過那一片接著蓋")
+
+    -- 伺服器拒絕整批：暫停且不再送；只拒一片：跳過那片繼續
+    newPlan()
+    put("rn_floor", 0, 2, 0)
+    put("rn_floor", 1, 2, 0)
+    R.start(K)
+    run(1)
+    finish({ placed = 0, refused = "NOT_ALLOWED", extra = { i = 0 }, stopped = true })
+    local n0 = #pushes
+    run(5)
+    local code, text = R.reason()
+    check(R.state() == "paused" and code == "REFUSED" and text and text:find("IGUI_MBLD_Run_REFUSED", 1, true) and #pushes == n0,
+        "整批被拒（i＝0）：暫停 REFUSED、不再送")
+    R.start(K)
+    run(1)
+    finish({ placed = 0, refused = "BLOCKED", extra = { i = 1 }, stopped = true })
+    run(1)
+    check(R.state() ~= "paused" and #pushes == n0 + 2 and #pushes[#pushes].anchors == 1, "只拒一片（i＞0）：那片跳過，其他接著送")
+
+    -- 暫停條件：殭屍在追、自己走、Esc；藍圖收起就停止
+    newPlan()
+    put("rn_floor", 0, 2, 0)
+    R.start(K)
+    K.chase = 1
+    run(1)
+    local zombie = R.reason()
+    K.chase = 0
+    R.start(K)
+    K.moving, doing = true, true
+    run(3)
+    local walkingAction = R.state()
+    doing = false
+    run(2)
+    local moved = R.reason()
+    K.moving = false
+    R.start(K)
+    for _, f in ipairs(handlers.OnKeyPressed or {}) do pcall(f, 1) end -- 別的模組的按鍵處理在假環境可能出錯：各自包 pcall
+    local esc = R.reason()
+    check(zombie == "ZOMBIE" and walkingAction ~= "paused" and moved == "MOVED" and esc == "ESC",
+        "殭屍在追 → ZOMBIE；佇列走路不算自己走；佇列空著還在動 → MOVED；Esc → ESC")
+    R.stop()
+    R.start(K)
+    B.PlanMode = { plan = function() return Plan.new("other") end, origin = PM.origin }
+    run(1)
+    B.PlanMode = PM
+    check(R.state() == "done" and (R.reason()) == "PLAN_GONE", "地上的藍圖換掉：停止 PLAN_GONE")
+
+    -- 材料箱：點名、只拿點名的、拿這一批缺的；選單只在有藍圖時列
+    local function crate(sq, items)
+        local c, obj = { items = items }, {}
+        function c:getParent() return obj end
+        function c:getItems() return javaList(self.items) end
+        function c:getType() return "crate" end
+        function c:getCustomName() return nil end
+        function c:getDisplayType() return "crate" end
+        function obj:getSquare() return sq end
+        function obj:getContainerCount() return 1 end
+        function obj:getContainerByIndex(i) return i == 0 and c or nil end
+        sq.objects[#sq.objects + 1] = obj
+        return c, obj
+    end
+    local function planks(n, ft)
+        local out = {}
+        for k = 1, n do
+            out[k] = item(ft or "Base.Plank")
+            out[k].getUnequippedWeight = function() return 1 end
+        end
+        return out
+    end
+    local boxA, objA = crate(square(130, 100, 0), planks(3))
+    local boxB = crate(square(131, 100, 0), planks(5))
+    newPlan()
+    store = { boxes = {} }
+    local menuOff = #Menu.planBoxes({ objA })
+    B.PlanMode = PM
+    put("rn_wall", 20, 0, 0)
+    local i1, i2 = R.addBox(boxA), R.addBox(boxA)
+    local listed = Menu.planBoxes({ objA })
+    check(i1 == 1 and i2 == 1 and #store.boxes == 1 and R.boxOf(boxA) == 1 and R.boxOf(boxB) == nil
+        and #listed == 1 and listed[1].i == 1 and listed[1].title == "crate",
+        "點名材料箱：同一個不重複記；選單列出已點名的那個")
+    B.PlanMode = nil
+    check(#Menu.planBoxes({ objA }) == 0, "反面：地上沒有藍圖時選單不列材料箱")
+    B.PlanMode = PM
+    local wallAt = (20 + OX) .. "," .. OY .. ",0"
+    S[at[wallAt]] = "short"
+    CODE[wallAt] = { code = "NO_MATERIAL", extra = {}, need = { ["Base.Plank"] = 2 } }
+    actions, walks = {}, {}
+    check(R.start(K) == true, "缺料但有材料箱：照圖蓋開始")
+    run(1)
+    local took = #actions == 2 and actions[1].item.ft == "Base.Plank" and actions[1].src == boxA and actions[2].src == boxA
+    check(R.state() == "fetch" and walks[1] == boxA and #walks == 1 and took, "缺料：走去點名的箱子，只拿這一批缺的 2 塊（沒點名的箱子不碰）")
+    for _, a in ipairs(actions) do K.inv:add(a.item) end
+    CODE[wallAt] = nil
+    run(6)
+    check(#pushes == 1 and pushes[1].id == "rn_wall", "拿到料後接著送那一批")
+    -- 箱子不見、在沒載入的地方：跳過、列進總結，不會出錯
+    newPlan()
+    store = { boxes = { { x = 132, y = 100, z = 0, index = 0 }, { x = 999, y = 999, z = 0, index = 0 } } }
+    square(132, 100, 0)
+    put("rn_wall", 21, 0, 0)
+    local w2 = (21 + OX) .. "," .. OY .. ",0"
+    S[at[w2]] = "short"
+    CODE[w2] = { code = "NO_MATERIAL", extra = {}, need = { ["Base.Plank"] = 2 } }
+    walks = {}
+    R.start(K)
+    local okRun = pcall(run, 30)
+    local s5 = R.summary()
+    check(okRun and #walks == 0 and R.state() == "done" and s5.boxes[1] == "GONE" and s5.boxes[2] == "FAR" and s5.short.n == 1,
+        "材料箱不見、沒載入：不走過去、不出錯，總結列出兩個箱子的原因")
+
+    -- 配方片：交給 Recipes.runCells（段照配方的 kind）；沒有 runCells 時跳過、列 RECIPE
+    newPlan()
+    store = { boxes = {} }
+    local rc = {}
+    B.Recipes = { get = function() return { kind = "wall", name = "W" } end, stopCells = function() end,
+        runCells = function(_, id, cells, onDone) rc[#rc + 1] = { id = id, cells = cells, onDone = onDone }; return true end }
+    local rp = put("recipe:Base.X", 2, 2, 0)
+    put("rn_floor", 0, 2, 0)
+    R.start(K)
+    drive() -- 先送地板（第 1 段），再送配方牆（第 2 段）
+    run(1)
+    local recOk = #pushes == 1 and pushes[1].id == "rn_floor" and #rc == 1 and #rc[1].cells == 1 and rc[1].cells[1][1] == 102
+    S[rp] = "done"
+    rc[1].onDone({ count = 1, placed = 1, stopped = false })
+    run(30)
+    check(recOk and (R.reason()) == "DONE", "配方片：照 kind 排進牆那一段，交給 Recipes.runCells；蓋好後完成")
+    newPlan()
+    B.Recipes = { get = function() return { kind = "furniture", name = "F" } end }
+    put("recipe:Base.Y", 2, 2, 0)
+    R.start(K)
+    run(30)
+    check(R.state() == "done" and R.summary().blocked.RECIPE == 1, "反面：沒有 Recipes.runCells 時配方片跳過，總結列 RECIPE")
+
+    B.PlanMode, B.PlanCheck, B.Recipes = real.PM, real.PC, real.rec
+    Q.push, Q.cancel, Q.busy = real.push, real.cancel, real.busy
+    Check.item, Materials.summary = real.item, real.summary
+    Entry.resolve, Entry.face, Entry.cells, Entry.doorSet, Entry.groupCells, Entry.alternate =
+        real.resolve, real.face, real.cells, real.doorSet, real.group, real.alt
+    PS.load, PS.save = real.load, real.save
+    clockStep, ISTimedActionQueue, luautils, ISInventoryTransferAction = real.step, real.q, real.lu, real.xfer
+    MinidoracatUI, Core, Keyboard, getSpecificPlayer = real.ui, real.core, real.kb, real.specific
+    sb.AllowAutoBuild, sb.MaxCellsPerDrag = real.auto, real.max
 end)()
 
 print()

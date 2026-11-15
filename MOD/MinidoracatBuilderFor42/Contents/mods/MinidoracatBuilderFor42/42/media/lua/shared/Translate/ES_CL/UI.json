@@ -1,4 +1,12 @@
 {
+  "UI_optionscreen_binding_MinidoracatBuilder_Pick": "Cursor de construcción: cuentagotas (mantén y haz clic en algo)",
+  "UI_optionscreen_binding_MinidoracatBuilder_Overlap": "Cursor de construcción: superponer sí/no",
+  "UI_optionscreen_binding_MinidoracatBuilder_Next": "Cursor de construcción: siguiente reciente",
+  "UI_optionscreen_binding_MinidoracatBuilder_Undo": "Cursor de construcción: deshacer lo último",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanUndo": "Trazar plano: deshacer",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanRedo": "Trazar plano: rehacer",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanDelete": "Trazar plano: eliminar selección",
+  "UI_optionscreen_binding_MinidoracatBuilder_PlanHide": "Plano: ocultar/mostrar",
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Mostrar botón en la barra",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "El botón de Build Anything en la barra de herramientas de la familia. Si está desactivado, abre la ventana con la tecla asignada en Configuración de teclas > Minidoracat Build Anything.",
