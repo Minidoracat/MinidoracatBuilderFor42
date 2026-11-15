@@ -13454,8 +13454,15 @@ end)()
         for _, f in ipairs(flags) do if f:match("^[A-Z]") then keys[f] = "" end end
         return ghostly(sprite(name, id, { flags = flags, keys = keys }))
     end
+    -- 四面椅子（0..3＝朝南、東、北、西）：引擎替每一面寫其他面的偏移，自己那面不寫
+    local chairDirs, chairs = { "S", "E", "N", "W" }, {}
+    for i = 0, 3 do
+        local keys = { IsMoveAble = "", GroupName = "Pm", CustomName = "Chair", Facing = chairDirs[i + 1] }
+        for j = 0, 3 do if j ~= i then keys[chairDirs[j + 1] .. "offset"] = tostring(j - i) end end
+        chairs[i + 1] = ghostly(sprite("pm_chair_01_" .. i, 3110 + i, { keys = keys }))
+    end
     world({ sp("pm_wall_01_0", 3101, { "WallW" }), sp("pm_wall_01_1", 3102, { "WallN" }), sp("pm_lone_01_0", 3103, { "WallW" }),
-        sp("pm_floor_01_0", 3104, { "solidfloor" }) })
+        sp("pm_floor_01_0", 3104, { "solidfloor" }), chairs[1], chairs[2], chairs[3], chairs[4] })
     local fakeCheck, resets = nil, 0
     B.PlanCheck = { reset = function() resets = resets + 1 end, state = function(p) return fakeCheck and fakeCheck(p) end }
 
@@ -13512,6 +13519,14 @@ end)()
     check(PM.overflow(full, { { 5, 5, 0, 0 } }, "pm_floor_01_0", 0) == nil
         and PM.overflow(full, { { 5, 5, 0, 1 } }, "pm_floor_01_0", 0) == "FULL",
         "4,096 片：重複的片不算數，多一片新的 FULL")
+    -- 朝向只有一種寫法：椅子自己那張圖朝南，游標轉一圈回到南（d＝3）和剛開的 0 是同一片
+    local cf = Plan.new("cf")
+    for y = 0, 63 do for x = 0, 63 do if x + y > 0 then Plan.add(cf, x, y, 0, 0, 0, Plan.item(cf, "pm_floor_01_0")) end end end
+    Plan.add(cf, 0, 0, 0, 0, 0, Plan.item(cf, "pm_chair_01_0"))
+    cf.ox, cf.oy, cf.oz = 0, 0, 0
+    check(cf.n == 4096 and PM.overflow(cf, { { 0, 0, 0, 3 } }, "pm_chair_01_0", 0) == nil
+        and PM.overflow(cf, { { 0, 0, 0, 4 } }, "pm_chair_01_0", 0) == "FULL",
+        "朝向同一種寫法：轉一圈回到自己那張圖（d＝3）和 0 算同一片；別的朝向是新的一片")
 
     -- 配方游標交來的格子
     check(PM.addCells(0, "recipe:Base.Tarp", { { 51, 51, 0, 2 } }) == true and at(plan, 1, 1, 0).d == 2
@@ -13873,6 +13888,11 @@ end)()
     check(disk["MinidoracatBuilder/plans/" .. tostring(np.file)] ~= nil and PS.load().file == np.file, "定位後存檔並記進地上藍圖")
     check(PM.turnPiece({ d = 5 }, { id = "pm_wall_01_1" }) == 0 and select(2, PM.turnPiece({ d = 5 }, { id = "pm_wall_01_1" })) == 0
         and select(2, PM.turnPiece({ d = 0 }, { id = "pm_wall_01_1" })) == 1, "轉向：西牆轉北牆不移格；北牆轉東邊移到右邊那格")
+    local cd = { PM.turnPiece({ d = 0 }, { id = "pm_chair_01_0" }) }
+    local c2 = PM.turnPiece({ d = cd[1] }, { id = "pm_chair_01_0" })
+    local c3 = PM.turnPiece({ d = c2 }, { id = "pm_chair_01_0" })
+    local c4 = PM.turnPiece({ d = c3 }, { id = "pm_chair_01_0" })
+    check(cd[1] == 4 and c2 == 1 and c3 == 2 and c4 == 0, "轉向：四面家具南→西→北→東，轉四次回到 0（和原來一模一樣）")
     B.Recipes = { faces = function() return { n = 2, 1, 3 } end }
     check(PM.turnPiece({ d = 1 }, { id = "recipe:x" }) == 3 and PM.turnPiece({ d = 3 }, { id = "recipe:x" }) == 1
         and PM.turnPiece({ d = 2 }, { id = "recipe:x" }) == nil, "配方片照 Recipes.faces 循環；沒有的面回 nil")

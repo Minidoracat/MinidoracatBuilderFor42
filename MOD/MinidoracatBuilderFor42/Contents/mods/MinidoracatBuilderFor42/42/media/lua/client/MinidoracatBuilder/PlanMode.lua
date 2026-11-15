@@ -90,13 +90,29 @@ local function dupOf(plan, x, y, z, d, o, id)
     return false
 end
 
+-- 朝向記成同一種寫法：游標剛開是 0（項目自己那張圖），按 R 轉一圈回來是 1..4 的其中一個，兩種是同一張圖。
+-- 那一面就是自己那張圖時一律記 0：同一格同一張圖才認得出重複，整張轉四次也才回到原樣。配方片的面編號不動
+local function tileEntry(id)
+    if type(id) ~= "string" or id:sub(1, 7) == "recipe:" then return nil end
+    return Entry.resolve(id) or nil
+end
+local function canon(entry, d)
+    if entry and d and d >= 1 and d <= 4 then
+        local spr = Entry.face(entry, d)
+        if spr and spr:getName() == entry.name then return 0 end
+    end
+    return d
+end
+
 -- 這幾格（世界座標 { x, y, z, d }）加進藍圖會不會超出上限：回 nil 或 FULL／TOO_WIDE／TOO_HIGH。重複的片不算
 function PM.overflow(plan, cells, id, o)
     local n = plan.n
     local x0, y0, z0, x1, y1, z1 = Plan.bounds(plan)
+    local entry, last, d = tileEntry(id), nil, nil -- 一排的朝向多半相同：換了才重查
     for _, c in ipairs(cells) do
         local x, y, z = c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz
-        if not dupOf(plan, x, y, z, c[4], o, id) then
+        if c[4] ~= last then last, d = c[4], canon(entry, c[4]) end
+        if not dupOf(plan, x, y, z, d, o, id) then
             n = n + 1
             if x0 == nil then
                 x0, y0, z0, x1, y1, z1 = x, y, z, x, y, z
@@ -119,10 +135,12 @@ local function record(id, cells, o)
     if why then return nil, why end
     local okSrc, src = pcall(PlanFile.source, id)
     local it = Plan.item(plan, id, okSrc and src or nil)
+    local entry, last, d = tileEntry(id), nil, nil
     local added = 0
     Plan.begin(plan)
     for _, c in ipairs(cells) do
-        local p, code = Plan.add(plan, c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz, c[4], o, it, c[5])
+        if c[4] ~= last then last, d = c[4], canon(entry, c[4]) end
+        local p, code = Plan.add(plan, c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz, d, o, it, c[5])
         if p then
             added = added + 1
         elseif code ~= "DUP" then
@@ -266,7 +284,7 @@ function PM.turnPiece(p, item)
     for _, o in ipairs(Entry.cells(nspr)) do
         bx, by = math.min(bx or o[1], o[1]), math.min(by or o[2], o[2])
     end
-    return nd, ax - bx, ay - by
+    return canon(entry, nd), ax - bx, ay - by
 end
 
 local function allPieces(plan)
