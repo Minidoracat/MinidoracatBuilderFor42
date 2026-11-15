@@ -49,10 +49,11 @@ local function computeParts(item, p)
     local cells
     if id:sub(1, 7) == "recipe:" then
         local R = B.Recipes
-        local name = R and R.tile and R.tile(id, p.d)
+        local name, dx, dy
+        if R and R.tile then name, dx, dy = R.tile(id, p.d) end
         local spr = name and Entry.sprite(name)
         if not spr then return nil end
-        cells = { { 0, 0, 0, spr } }
+        cells = { { dx or 0, dy or 0, 0, spr } }
     else
         local entry = Entry.resolve(id)
         local spr = entry and Entry.face(entry, p.d)

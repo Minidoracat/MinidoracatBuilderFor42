@@ -563,13 +563,20 @@ local CONFIRM_MS = 5000
 -- nSprite（1..4＝西、北、東、南，ISBuildingObject.lua:486-516）→ 圖塊設定的面（0..3＝北、西、南、東，ISBuildIsoEntity.lua:784-818）
 local FACE_OF = { 1, 0, 3, 2 }
 
--- 那一面左上那格的圖名（只拖每面一格的配方；多格的那一面左上那格就是錨點那格，ISBuildIsoEntity.lua:463-478）。d 不是 1..4
--- 或沒有那一面回 nil
+-- 那一面第一格有圖的（先列後行）：圖名, 離錨點幾格 dx, dy。多半就是左上那格（錨點那格，ISBuildIsoEntity.lua:463-478）；
+-- 曬架、木炭窯這幾種原版設施有的面左上那格是空的（設定檔寫 false，TileInfo 沒有圖名）。d 不是 1..4 或沒有那一面回 nil
 local function tileOf(info, d)
     local f = FACE_OF[d]
     local face = f and info:getFace(f)
-    local t = face and face:getTileInfo(0, 0, 0)
-    return t and t:getSpriteName()
+    if not face then return nil end
+    for y = 0, face:getHeight() - 1 do
+        for x = 0, face:getWidth() - 1 do
+            local t = face:getTileInfo(x, y, 0)
+            local name = t and t:getSpriteName()
+            if name then return name, x, y end
+        end
+    end
+    return nil
 end
 
 -- 這個配方怎麼拖（Cursor.DRAG 的 fill／ring／edge），不能拖回 nil：種類不在 DRAG，或有一面不只一格（多格的那幾格要一起
@@ -724,7 +731,7 @@ local function startRow(o, cells, run)
     local parts = {}
     for i, c in ipairs(cells) do
         local spr = c.spr and o.spriteCache[c.spr]
-        if spr then parts[i] = { { c[1], c[2], c[3], spr, 0 } } end
+        if spr then parts[i] = { { c[1] + (c.sx or 0), c[2] + (c.sy or 0), c[3], spr, 0 } } end
     end
     local row = { cursor = o, r = Recipes.byId[o.mbldR], cells = cells, i = 0, placed = 0, parts = parts }
     if run then row.check, row.silent, row.onDone = true, true, run.onDone end
@@ -778,9 +785,9 @@ local function single(self, x, y, z)
     return ISBuildIsoEntity.tryBuild(self, x, y, z)
 end
 
--- 那格有沒有這一面的圖（蓋好了）
+-- 那格有沒有這一面的圖（蓋好了）；圖在離錨點 sx, sy 的那格（tileOf）
 local function builtAt(c)
-    local sq = getCell():getGridSquare(c[1], c[2], c[3])
+    local sq = getCell():getGridSquare(c[1] + (c.sx or 0), c[2] + (c.sy or 0), c[3])
     local list = sq and sq:getObjects()
     for i = 0, (list and list:size() or 0) - 1 do
         local spr = list:get(i):getSprite()
@@ -877,18 +884,22 @@ end
 -- ===== 規劃與照圖蓋（第二波契約「追加」：配方項目也能記進藍圖、照圖蓋）=====
 -- 面＝配方游標的 nSprite：1..4＝西、北、東、南（ISBuildingObject.lua:486-516；同 row.cells[i][4]）
 
--- 這個配方第 d 面左上那格的圖名（PlanCheck 看蓋好沒、PlanGhost 畫虛影）；沒有這個配方、牆面油漆這類、沒有那一面回 nil
+-- 這個配方第 d 面第一格有圖的：圖名, 離錨點幾格 dx, dy（PlanCheck 看蓋好沒、PlanGhost 畫虛影）；
+-- 沒有這個配方、牆面油漆這類、沒有那一面回 nil
 function Recipes.tile(id, d)
     local r = Recipes.get(id)
-    return r and r.info and tileOf(r.info, d) or nil
+    if not (r and r.info) then return nil end
+    return tileOf(r.info, d)
 end
 
--- 這張圖是這個配方的哪一面（Capture）。只認每一面左上那格（錨點那格），多格的其他格回 nil，一件只擷取一次
+-- 這張圖是這個配方的哪一面（Capture）：回 面, 這張圖離錨點幾格 dx, dy。只認每一面第一格有圖的，多格的其他格回 nil，
+-- 一件只擷取一次
 function Recipes.faceOf(id, name)
     local r = Recipes.get(id)
     if not (r and r.info and name) then return nil end
     for d = 1, 4 do
-        if tileOf(r.info, d) == name then return d end
+        local n, dx, dy = tileOf(r.info, d)
+        if n == name then return d, dx, dy end
     end
     return nil
 end
@@ -952,7 +963,8 @@ function Recipes.runCells(player, id, cells, onDone)
     track(pn, o, L, player, true)
     local list = {}
     for i, c in ipairs(cells) do
-        list[i] = { c[1], c[2], c[3], c[4], spr = tileOf(r.info, c[4]) }
+        local name, sx, sy = tileOf(r.info, c[4])
+        list[i] = { c[1], c[2], c[3], c[4], spr = name, sx = sx, sy = sy }
         if list[i].spr then face(o, c[4]) end -- 補 spriteCache：排隊虛影照它畫（startRow）
     end
     startRow(o, list, { onDone = onDone })

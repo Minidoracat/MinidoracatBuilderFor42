@@ -62,9 +62,9 @@ local function recipeTile(res, name, x, y, z)
     local r = R.bySprite and R.bySprite[name]
     if not r then return false end
     if R.faceOf then
-        -- 只認每一面左上那格；多格的其他格、牆面油漆這類回 nil，不另外記
-        local d = R.faceOf(r.id, name)
-        if d then add(res, r.id, x, y, z, d, nil) end
+        -- 只認每一面第一格有圖的（記在錨點那格）；多格的其他格、牆面油漆這類回 nil，不另外記
+        local d, dx, dy = R.faceOf(r.id, name)
+        if d then add(res, r.id, x - (dx or 0), y - (dy or 0), z, d, nil) end
     elseif name == r.sprite then
         add(res, r.id, x, y, z, 0, nil)
     end

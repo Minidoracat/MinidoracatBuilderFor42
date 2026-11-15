@@ -141,10 +141,14 @@ end
 local function built(id, x, y, z, d, w, sq)
     local cell = getCell()
     if isRecipe(id) then
-        -- 照這一面左上那格的圖（Recipes.tile）：換了面的配方片不算蓋好
+        -- 照這一面第一格有圖的（Recipes.tile，可能不在錨點那格）：換了面的配方片不算蓋好
         local R = recipesOf()
-        local want = R and R.tile and R.tile(id, d)
-        return want ~= nil and sq ~= nil and eachTile(sq, function(name) return name == want end)
+        if not (R and R.tile) then return false end
+        local want, dx, dy = R.tile(id, d)
+        if want == nil then return false end
+        dx, dy = dx or 0, dy or 0
+        local s = (dx == 0 and dy == 0) and sq or cell:getGridSquare(x + dx, y + dy, z)
+        return s ~= nil and eachTile(s, function(name) return name == want end)
     end
     local entry = Entry.resolve(id)
     if not entry then return hasTile(sq, id) end -- 這裡關掉了，世界上照樣可能有

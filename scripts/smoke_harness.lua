@@ -11478,6 +11478,21 @@ print("情境（排程與轉向）：配方項目照圖蓋（Recipes.runCells）
         and R.tile(rPaint.id, 1) == nil and R.faceOf(rWall.id, "qt_rwall_01_0") == 1 and R.faceOf(rWall.id, "qt_x") == nil
         and fs.n == 2 and fs[1] == 1 and fs[2] == 2 and R.faces(rPaint.id) == nil,
         "配方的面：第 d 面的圖、圖是哪一面、有哪些面；牆面油漆都沒有")
+    -- 左上那格空著的面（原版曬架、木炭窯）：取第一格有圖的，並回它離錨點幾格
+    local rackFace = { getWidth = function() return 2 end, getHeight = function() return 2 end,
+        getTileInfo = function(_, x, y)
+            local name = (y == 0 and x == 1) and "qt_rack_01_1" or y == 1 and "qt_rack_01_" .. (2 + x) or nil
+            return { getSpriteName = function() return name end }
+        end }
+    local rRack = { id = "recipe:QT.Rack", recipe = cr, kind = "furniture",
+        info = { getFace = function(_, f) return f == 0 and rackFace or nil end } }
+    R.byId[rRack.id] = rRack
+    local tn, tx, ty = R.tile(rRack.id, 2)
+    local fd, fx, fy = R.faceOf(rRack.id, "qt_rack_01_1")
+    check(tn == "qt_rack_01_1" and tx == 1 and ty == 0 and fd == 2 and fx == 1 and fy == 0
+        and R.faceOf(rRack.id, "qt_rack_01_2") == nil and R.tile(rRack.id, 1) == nil,
+        "配方的面：左上那格空著時取第一格有圖的、回它離錨點幾格；同一面的其他格不算")
+    R.byId[rRack.id] = nil
 
     -- 規劃開著：材料不夠、沒鎚子也不擋，放下（一格、拖一排、不能拖的）交給 PlanMode.addCells，不送原版建造
     local added, on = {}, true
@@ -13202,12 +13217,20 @@ end)()
     -- 配方片：照 Recipes.tile 那一面的圖認蓋好；換了面（植入：另一面也算就抓得到）不算
     local noRecipes = B.Recipes
     B.Recipes = { get = function(id) return id == "recipe:Base.PcWall" and { id = id } or nil end, all = function() end,
-        bySprite = {}, tile = function(_, d) return d == 1 and "pcw_01_0" or "pcx_01_0" end,
+        bySprite = {}, tile = function(_, d)
+            if d == 3 then return "pcw_01_0", 1, 0 end -- 左上那格空著的面：圖在錨點東邊一格
+            if d == 4 then return "pcw_01_0", 40, 40 end
+            return d == 1 and "pcw_01_0" or "pcx_01_0"
+        end,
         state = function() return true, true end, dark = function() return false end }
     local rIt = Plan.item(pl, "recipe:Base.PcWall")
     local rDone, rTurned = Plan.add(pl, 1, 1, 0, 1, 0, rIt), Plan.add(pl, 1, 1, 0, 2, 0, rIt)
     PC.tick(K)
     check(st(rDone) == "done" and st(rTurned) == "ok", "配方片：那一面的圖在就算蓋好；換了面不算（照 Recipes.tile）")
+    local rOff, rFar = Plan.add(pl, 0, 1, 0, 3, 0, rIt), Plan.add(pl, 1, 1, 0, 4, 0, rIt)
+    PC.tick(K)
+    check(st(rOff) == "done" and st(rFar) ~= "done", "配方片：左上那格空著的面照有圖的那格認蓋好（錨點格沒有圖也算；那格沒有就不算）")
+    Plan.remove(pl, { rOff, rFar })
     Plan.remove(pl, { rDone, rTurned })
     B.Recipes = noRecipes
     -- 沒有地上的藍圖：tick 第一行就離開（不看時鐘）
