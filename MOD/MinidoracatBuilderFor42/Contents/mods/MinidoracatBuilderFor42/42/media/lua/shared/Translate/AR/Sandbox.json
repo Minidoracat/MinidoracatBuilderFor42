@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "Alcance de construcción (casillas)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 a 8 casillas desde el jugador hasta la casilla más cercana del objeto. El objeto puede estar como máximo un nivel por encima o por debajo.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Máximo de objetos a la vez",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Cuántos objetos puede abarcar una construcción o un desarmado, por ejemplo al arrastrar un área de suelo o al desarmar una zona.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Máximo de objetos por cada solicitud de construcción o desarmado. Si arrastras más, se construyen en tandas una tras otra, y Deshacer lo último también quita por tandas; desarmar una zona sigue abarcando como máximo esta cantidad a la vez.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "Máximo de piezas por casilla",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "De 1 a 5. Con Superponer activado, cuántos objetos que bloquean el paso y contenedores puede tener una casilla; tres cajas apiladas del juego original también son 3. Con 1, Superponer queda desactivado.\nSolo afecta a lo que se construya después; lo ya construido se queda.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicador de materiales",

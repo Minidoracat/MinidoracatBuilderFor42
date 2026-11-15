@@ -164,6 +164,16 @@ function PG.draw()
         return
     end
 
+    -- 搬、複製：跟著游標的那份先畫（PlanMode 轉過的預覽片，沒轉就是選到的片本身）
+    if moving then
+        local pv = drag.preview or PM.selected()
+        local k = math.max(0, math.min(#pv, max - drawn))
+        for i = 1, k do
+            local p = pv[i]
+            drawPiece(plan, p, p.x + ox + drag.dx, p.y + oy + drag.dy, p.z + oz, SEL, 0.6, floorSpr, false)
+        end
+        drawn = drawn + k
+    end
     local cx, cy
     if placing then
         cx, cy = (drag.kx or ox) - ox, (drag.ky or oy) - oy
@@ -194,11 +204,7 @@ function PG.draw()
                                 end
                                 if PM.isSelected(p) then
                                     col = SEL
-                                    if moving then
-                                        drawPiece(plan, p, p.x + ox + drag.dx, p.y + oy + drag.dy, wz, SEL, 0.6, floorSpr, false)
-                                        drawn = drawn + 1
-                                        col, a = PLAN, drag.kind == "copy" and a or 0.12
-                                    end
+                                    if moving then col, a = PLAN, drag.kind == "copy" and a or 0.12 end
                                 end
                                 drawPiece(plan, p, p.x + ox, p.y + oy, wz, col, a, floorSpr, warn)
                                 drawn = drawn + 1

@@ -20,25 +20,31 @@ local Entry, Check, Materials, Queue, Turn, Messages = B.Entry, B.Check, B.Mater
 -- 欄位都可以是 nil：valid(cursor) 回 true＝沒有一格可蓋也照樣在放開時呼叫 tryBuild，回 false＝這次不能放（地框變紅）；commit(cursor) 在 tryBuild 算完
 -- self.res 之後、送出之前，回 true＝已處理、不送伺服器；label(cursor, src) 在標籤文字（文字、顏色交錯的陣列）組好後，
 -- 回新的陣列或 nil；tint(cursor) 回 { r, g, b }（或 { r = , g = , b = }）換掉可蓋格子的地框顏色；layer(cursor) 回數字＝
--- 蓋在滑鼠那格往上幾層（取代 self.up，換層鍵也不處理），nil＝照舊
+-- 蓋在滑鼠那格往上幾層（取代 self.up，換層鍵也不處理），nil＝照舊。
+-- 掛鉤丟錯時：commit 這次放開取消、不送（掛了就是要接手，落到真的建造會扣料）；valid 回不能放；其他照沒掛
 Cursor.hook = Cursor.hook or {}
 local LOG = "[MinidoracatBuilderFor42] "
+local hookErr = {} -- 掛鉤名 → 上次的錯誤：每幀呼叫的掛鉤一直錯時 log 只印一次
+-- 回 結果, failed（true＝掛了但丟錯）；沒掛回 nil, false
 local function hook(name, ...)
     local f = Cursor.hook[name]
-    if not f then return nil end
+    if not f then return nil, false end
     local ok, r = pcall(f, ...)
     if not ok then
-        print(LOG .. "cursor hook " .. name .. " failed: " .. tostring(r))
-        return nil
+        local msg = tostring(r)
+        if hookErr[name] ~= msg then
+            hookErr[name] = msg
+            print(LOG .. "cursor hook " .. name .. " failed: " .. msg)
+        end
+        return nil, true
     end
-    return r
+    return r, false
 end
 
 -- Cursor.onEnd(playerNum)：Window 設定；建造游標離開時（任何原因）呼叫，換成另一個本工具建造游標時不呼叫。
 -- 一區拆除模式（Cursor.startArea）不呼叫：它不是從視窗開的。
 
--- 方法寫在 Cursor，類別第一次用到才 derive：ISBuildingObject 在 server 資料夾，MP 客戶端比 client 晚載入
--- （PackThrow ThrowCursor.lua 同做法）。
+-- 方法寫在 Cursor，類別第一次用到才 derive：ISBuildingObject 在 server 資料夾，MP 客戶端比 client 晚載入。
 local Class, Marks, Panel
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
@@ -591,7 +597,8 @@ function Cursor:isValid(square)
         local u = 3 * dz
         self:refresh(ax + u, ay + u, az + dz, ex + u, ey + u)
     end
-    local v = hook("valid", self)
+    local v, bad = hook("valid", self)
+    if bad then return false end
     if v ~= nil then return v == true end
     return self.okN > 0
 end
@@ -825,12 +832,20 @@ function Cursor:texts()
         or over and getText("IGUI_MBLD_OverlapLevel", tostring(over), tostring(max))
         or self.overlap and getText("IGUI_MBLD_OverlapOn") or nil -- 疊放鍵切換時看得出開著；關掉就不寫
     self.swap = self:swapText()
-    -- 前面還有排著、還沒蓋好的：這一排接在後面蓋（使用者 2026-11-16 選 queue=append，改掉 10-29 的「取代前一排」）。
-    -- 配方項目拖的一排還沒蓋完時，圖塊的請求照舊清掉角色的動作佇列、取代它（Recipes.left），放開前先說
-    local ahead = ok > 0 and Queue.left(self.character) or 0
-    local R = B.Recipes
-    local cut = ok > 0 and ahead == 0 and R and R.left(self.player, true) or 0
-    if ahead > 0 then
+    -- 前面還有手拖排著、還沒蓋好的：這一排接在後面蓋（使用者 2026-11-16 選 queue=append，改掉 10-29 的「取代前一排」）。
+    -- 照圖蓋排著的（Queue 的 owner＝plan、配方的 runCells）放開就取消（Queue.push、Recipes 的 advance），先警告；
+    -- 玩家自己拖的配方一排還沒蓋完時，圖塊的請求照舊清掉角色的動作佇列、取代它（Recipes.left），放開前先說
+    local ahead, run, cut = 0, 0, 0
+    if ok > 0 then
+        ahead, run = Queue.left(self.character, "drag"), Queue.left(self.character, "plan")
+        local R = B.Recipes
+        local row = R and R.row and R.row(self.player)
+        local rl = row and R.left(self.player, true) or 0
+        if row and row.silent then run = run + rl else cut = rl end
+    end
+    if run > 0 then
+        self.label3, self.label3warn = getText("IGUI_MBLD_PausesRun", tostring(run)), true
+    elseif ahead > 0 then
         self.label3, self.label3warn = getText("IGUI_MBLD_Append", tostring(ahead)), false
     else
         self.label3, self.label3warn = cut > 0
@@ -1133,7 +1148,13 @@ function Cursor:tryBuild(x, y, z)
         local sq = getCell():getGridSquare(x, y, z)
         if not (sq and self:isValid(sq)) then return end
     end
-    if hook("commit", self) == true then
+    local done, bad = hook("commit", self)
+    if bad then -- 掛鉤接手卻出錯：這次不放、不送，說一聲
+        self.lineX, self.lineY, self.kgen = nil, nil, nil
+        Messages.toast(self.character, getText("IGUI_MBLD_CommitFailed"))
+        return
+    end
+    if done == true then
         self.lineX, self.lineY, self.kgen = nil, nil, nil
         return
     end

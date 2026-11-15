@@ -1,10 +1,13 @@
 -- 每個存檔、每個伺服器各記各的「地上的藍圖」：哪個檔、擺在哪、隱藏沒有、點名的材料箱、上次各項目的狀態。
 -- 存本機檔 Zomboid/Lua/MinidoracatBuilder/worlds/<worldId>.txt，不用 modData（多人的玩家 modData 會送到伺服器）。
--- 讀寫照 Favorites.lua：引擎會吞掉讀寫錯誤，讀要看到 END，寫完讀回比對。
+-- 讀寫照 Favorites.lua：引擎會吞掉讀寫錯誤，讀要看到 END，寫完讀回比對；存檔先寫備份（PlanFile.writeSafe）。
 -- 檔案（欄位用 Tab）：MBLDWORLD 1 / file 檔名 / pos x y z / hidden 0|1 / box x y z 編號 / seen 狀態 項目ID / END
+require "MinidoracatBuilder/PlanFile"
+
 MinidoracatBuilder = MinidoracatBuilder or {}
 local PlanStore = MinidoracatBuilder.PlanStore or {}
 MinidoracatBuilder.PlanStore = PlanStore
+local PlanFile = MinidoracatBuilder.PlanFile
 
 PlanStore.DIR = "MinidoracatBuilder/worlds"
 local MAGIC = "MBLDWORLD\t1"
@@ -56,15 +59,14 @@ local function path()
     return PlanStore.DIR .. "/" .. PlanStore.worldId() .. ".txt"
 end
 
-local function readLines(file)
-    local r = getFileReader(file, false)
-    if not r then return nil end
-    local lines, line = {}, r:readLine()
+-- PlanFile.readSafe 的讀法：收齊各行（超過上限回 false）
+local function collect(nextLine)
+    local lines, line = {}, nextLine()
     while line do
         lines[#lines + 1] = line
-        line = r:readLine()
+        line = nextLine()
     end
-    r:close()
+    if line == false then return nil end
     return lines
 end
 
@@ -112,10 +114,13 @@ end
 
 -- 回 { file, ox, oy, oz, hidden, boxes＝{ { x, y, z, index }… }, seen＝{ [項目 ID]＝上次的狀態 } }；沒有回空表
 function PlanStore.load()
-    local ok, lines = pcall(readLines, path())
-    local st = ok and parse(lines)
+    local st, why = PlanFile.readSafe(path(), function(nextLine)
+        local s = parse(collect(nextLine))
+        if s then return s end
+        return nil, "FORMAT"
+    end)
     if st then return st end
-    if ok and lines and #lines > 0 then print(LOG .. "plan store not loaded: the file is incomplete or unreadable") end
+    if why ~= "NO_FILE" then print(LOG .. "plan store not loaded: the file is incomplete or unreadable") end
     return {}
 end
 
@@ -139,23 +144,12 @@ local function serialize(st)
     return table.concat(out, "\n") .. "\n"
 end
 
-local function writeText(file, text)
-    local w = getFileWriter(file, true, false)
-    if not w then return false end
-    w:write(text)
-    w:close()
-    return true
-end
-
 -- 狀態是英數與 _ 的原因碼；項目 ID 不能有 Tab、換行。回 true，或 nil, "WRITE"（讀回和寫的不一樣）
 function PlanStore.save(state)
-    local file = path()
-    local text = serialize(state)
-    local ok, wrote = pcall(writeText, file, text)
-    local okRead, lines = pcall(readLines, file)
-    if ok and wrote and okRead and lines and table.concat(lines, "\n") .. "\n" == text then return true end
+    local ok, why = PlanFile.writeSafe(path(), serialize(state))
+    if ok then return true end
     print(LOG .. "plan store save failed: the file does not hold what was written")
-    return nil, "WRITE"
+    return nil, why
 end
 
 return PlanStore

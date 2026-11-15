@@ -19,12 +19,16 @@ local IDLE_MS = 1500    -- 收下後動作佇列空了這麼久還沒蓋完，�
 local QR, QG, QB = 0.45, 0.75, 1 -- 排著與正在蓋的格子外框（藍）；游標預覽用原版的可蓋綠／不可蓋紅，排隊的要分得出來
 
 -- playerNum → { player, list＝{ 筆, ... }（第一筆有 n＝已送出、正在跑；沒有 n＝前一筆剛做完、等動作佇列空了才送）,
--- last＝上一組手拖的蓋好的片 }。
+-- last＝上一組手拖的蓋好的片, undo＝正在跑的復原 }。
 -- 筆＝{ group, slot, anchors, parts, base（組裡前面有幾格）, count, placed, n, req（送出時的 Client.pending）, accepted,
 -- at, idleAt }；組＝{ id, owner, onDone, name, entry, overlap, count, placed, built, done }
 local slots = {}
 local lastId = 0
 local sending -- 正在 Client.build 裡的那一筆：單機的 intent 在 Client.build 回傳前就答覆，那時 n 還沒記到筆上
+
+local function perBatch()
+    return math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
+end
 
 -- title 省略＝「無法建造」（Messages.toast）
 local function tell(player, code, extra, title)
@@ -89,10 +93,14 @@ function Queue.push(player, name, anchors, parts, overlap, opts)
     end
     s.player = player
     if owner == "drag" then Queue.cancel(player, "plan") end
-    local max = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
     lastId = lastId + 1
     local g = { id = lastId, owner = owner, onDone = opts.onDone, name = name, overlap = overlap, count = #anchors,
         placed = 0, built = {} }
+    if #anchors == 0 then -- 沒有格子：排進去就永遠等不到 placed，onDone 不會被叫
+        finish(g)
+        return g.id
+    end
+    local max = perBatch()
     local idle = s.list[1] == nil
     for base = 0, #anchors - 1, max do
         local j = { group = g, slot = s, anchors = {}, parts = parts and {} or nil, base = base, placed = 0 }
@@ -102,10 +110,6 @@ function Queue.push(player, name, anchors, parts, overlap, opts)
         end
         j.count = #j.anchors
         s.list[#s.list + 1] = j
-    end
-    if not s.list[1] then -- 沒有格子
-        finish(g)
-        return g.id
     end
     if not idle then return g.id end
     local n, code = send(s, s.list[1])
@@ -140,12 +144,14 @@ function Queue.busy(player)
     return s and #s.list or 0
 end
 
--- 還沒蓋好的格數（含排著的）
-function Queue.left(player)
+-- 還沒蓋好的格數（含排著的）；owner＝"drag"｜"plan" 只算那一種，省略＝全部
+function Queue.left(player, owner)
     local s = slots[player:getPlayerNum()]
     if not s then return 0 end
     local n = 0
-    for _, j in ipairs(s.list) do n = n + j.count - j.placed end
+    for _, j in ipairs(s.list) do
+        if owner == nil or j.group.owner == owner then n = n + j.count - j.placed end
+    end
     return n
 end
 
@@ -158,37 +164,153 @@ function Queue.last(player)
     return l
 end
 
--- 拆掉剛蓋的：Queue.last 那幾片後蓋的先拆，送一筆拆除（Client.dismantleMany，會取消還沒蓋完的）；回送出幾件
+-- 那一格上這張圖的物件；沒有回 nil
+local function objAt(sq, name)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local spr = o:getSprite()
+        if spr and spr:getName() == name then return o end
+    end
+    return nil
+end
+
+-- 復原前這一片的現況：回 obj（當初蓋的那件還在），或 nil, why。why＝"GONE"（那件不在了、同一格有同圖的別件：別人拆了
+-- 重蓋，不能拆）｜"VANISHED"（不在了，不提）｜nil（格子沒載入：照記下的送，伺服器會說）。
+-- 格子物件沒換過（沒重新載入）才比得出是不是同一件（IsoGridSquare、IsoObject 沒有覆寫 equals，比的是同一個 Java 物件）；
+-- 重新載入過、或 placed 時物件還沒同步到（MP）就照圖名找
+local function locate(p)
+    local sq = getCell():getGridSquare(p.x, p.y, p.z)
+    if not sq then return nil, nil end
+    if p.obj and p.sq == sq then
+        if sq:getObjects():contains(p.obj) then return p.obj end
+        return nil, objAt(sq, p.name) and "GONE" or "VANISHED"
+    end
+    local o = objAt(sq, p.name)
+    if o then return o end
+    return nil, "VANISHED"
+end
+
+-- 復原輪完（或停下、被拒）：跳一則總結。全部輪完就清掉紀錄（拆不了的原因已經說了）；停下、被拒時只留送了、
+-- 還站著（或格子沒載入、看不出來）的，再按一次接著拆
+local function undoEnd(run)
+    local s = run.slot
+    if s.undo ~= run then return end
+    s.undo = nil
+    if s.last == run.kept then
+        local keep = {}
+        if run.stopped then
+            for _, p in ipairs(run.kept) do
+                local obj, why = locate(p)
+                if obj or why == nil then keep[#keep + 1] = p end
+            end
+        end
+        s.last = keep[1] and keep or nil
+    end
+    local total = #run.items
+    for _, n in pairs(run.pre) do total = total + n end
+    local skipped = {}
+    for code, n in pairs(run.pre) do skipped[code] = n end
+    for code, n in pairs(run.skipped) do skipped[code] = (skipped[code] or 0) + n end
+    local text, title
+    -- 一件都還沒拆就整筆被拒：Client 收到 dismantleRefused 時已經說了原因（同 Area.send）
+    if total > 0 and not (run.refused and run.done == 0) then
+        local one = total == 1 and run.items[1]
+        local name = one and B.Names and B.Names.of(one.name, one.kind) or nil
+        text, title = Messages.unbuildSummary({ done = run.done, total = total, skipped = skipped, refund = run.refund,
+            stopped = run.stopped }, name)
+        if run.stopped then text = text .. " " .. getText("IGUI_MBLD_Undo_Again") end
+    end
+    for route, n in pairs(run.manual) do
+        local line = getText("IGUI_MBLD_Undo_Manual", tostring(n), getText("IGUI_MBLD_Refund_" .. route))
+        text = text and (text .. " " .. line) or line
+        title = title or getText("IGUI_MBLD_NotRemoved")
+    end
+    if text then Messages.toast(run.player, text, title) end
+end
+
+-- 送下一筆（每筆最多 MaxCellsPerDrag 件，同伺服器 Server.dismantleIntent 的上限）；上一筆輪完才送，停下、被拒就收尾
+local function undoNext(run)
+    local chunk, from = {}, run.at
+    for k = from, math.min(from + perBatch() - 1, #run.items) do chunk[#chunk + 1] = run.items[k] end
+    run.at = from + #chunk
+    Client.dismantleMany(run.player, chunk, function(sum)
+        if run.slot.undo ~= run then return end
+        run.done = run.done + (sum.done or 0)
+        for code, n in pairs(sum.skipped or {}) do run.skipped[code] = (run.skipped[code] or 0) + n end
+        for ft, n in pairs(sum.refund or {}) do run.refund[ft] = (run.refund[ft] or 0) + n end
+        if sum.refused or sum.stopped then
+            run.refused, run.stopped = sum.refused, true
+            return undoEnd(run)
+        end
+        if run.at <= #run.items then return undoNext(run) end
+        undoEnd(run)
+    end)
+end
+
+-- 拆掉剛蓋的：Queue.last 那幾片後蓋的先拆，照原本的拆法分流（同一區拆除，Area.route）：本工具拆的、原版拆解的送去拆，
+-- 一筆最多 MaxCellsPerDrag 件、上一筆輪完接著送（Client.dismantleMany，會取消還沒蓋完的）；能搬、只能砸、窗簾不送，
+-- 通知裡說用原版哪個動作。當初那件已經不在的跳過（別人拆了重蓋的同圖不拆）。停下、被拒時沒拆到的留在紀錄裡，再按一次接著拆。
+-- 回這次處理的件數（送去拆的＋要自己拆的＋跳過的），沒有可處理的回 0
 function Queue.undoLast(player)
     local list = Queue.last(player)
     if not list then return 0 end
-    slots[player:getPlayerNum()].last = nil
-    local cell, items = getCell(), {}
+    local s = slots[player:getPlayerNum()]
+    require "MinidoracatBuilder/Area"
+    require "MinidoracatBuilder/Names"
+    local Area, Dismantle = B.Area, B.Dismantle
+    local run = { player = player, slot = s, items = {}, kept = {}, manual = {}, pre = {}, skipped = {}, refund = {},
+        done = 0, at = 1 }
+    local sent = {}
     for i = #list, 1, -1 do
         local p = list[i]
-        local own = {} -- 同一件的各格：走路時不站上去（Client 的 walkNear）
-        for _, c in ipairs(p.cells) do
-            local sq = cell:getGridSquare(p.a[1] + c[1], p.a[2] + c[2], p.a[3] + c[3])
-            if sq then own[#own + 1] = sq end
+        local obj, why = locate(p)
+        local it
+        if obj then
+            local route, kind = Area.route(obj)
+            if route == "builder" or route == "scrap" then
+                it = Area.item({ obj = obj, kind = kind, route = route, name = obj:getSprite():getName(),
+                    plan = route == "builder" and Dismantle.plan(obj, kind) or nil })
+            elseif route then
+                run.manual[route] = (run.manual[route] or 0) + 1
+            else
+                why = "NOT_OURS"
+            end
+        elseif why == nil then
+            it = { x = p.x, y = p.y, z = p.z, name = p.name, kind = p.kind, north = p.north, own = {}, route = "builder" }
         end
-        items[#items + 1] = { x = p.x, y = p.y, z = p.z, name = p.name, kind = p.kind, north = p.north, own = own,
-            route = "builder" }
+        if it then
+            run.items[#run.items + 1] = it
+            sent[#sent + 1] = p
+        elseif why == "GONE" or why == "NOT_OURS" then
+            run.pre[why] = (run.pre[why] or 0) + 1
+        end
     end
-    Client.dismantleMany(player, items)
-    return #items
+    for i = #sent, 1, -1 do run.kept[#run.kept + 1] = sent[i] end -- 照蓋好的順序
+    local handled = #run.items
+    for _, n in pairs(run.manual) do handled = handled + n end
+    for _, n in pairs(run.pre) do handled = handled + n end
+    s.last = run.kept[1] and run.kept or nil
+    if handled == 0 then return 0 end
+    s.undo = run
+    if run.items[1] then undoNext(run) else undoEnd(run) end
+    return handled
 end
 
--- 蓋好的那一格放下的是哪一片：原點那格（Entry.cells 第一個）、交替柵欄照座標（Entry.alternate，同伺服器）
+-- 蓋好的那一格放下的是哪一片：原點那格（Entry.cells 第一個）、交替柵欄照座標（Entry.alternate，同伺服器）。
+-- 順便記下那一格與那件物件，復原時認得是不是同一件（locate）
 local function piece(g, a)
     if g.entry == nil then g.entry = Entry.resolve(g.name) or false end
     local spr = g.entry and Entry.face(g.entry, a[4])
     local cells = spr and Entry.cells(spr)
     local c = cells and cells[1]
     if not c then return nil end
-    local x, y = a[1] + c[1], a[2] + c[2]
+    local x, y, z = a[1] + c[1], a[2] + c[2], a[3] + c[3]
     local put = Entry.alternate(c[4], x, y)
-    return { x = x, y = y, z = a[3] + c[3], name = put:getName(), e = g.name, kind = g.entry.kind,
-        north = Entry.north(g.entry.kind, put), a = a, cells = cells }
+    local name = put:getName()
+    local sq = getCell():getGridSquare(x, y, z)
+    return { x = x, y = y, z = z, name = name, e = g.name, kind = g.entry.kind, north = Entry.north(g.entry.kind, put),
+        a = a, cells = cells, sq = sq, obj = sq and objAt(sq, name) }
 end
 
 local function find(n)
@@ -235,13 +357,40 @@ function Queue.onResult(cmd, args)
 end
 Client.onResult = Queue.onResult
 
+-- 停下：這位玩家排著的全部取消，手拖的說一次（蓋好幾格、或卡在哪一格）。noRoom＝停在旁邊沒空位的第幾格；
+-- byUser＝確定是玩家自己取消的，一格都沒蓋也說「停了 0／N」，不說走不過去
+local function halt(s, g, noRoom, byUser)
+    stopAll(s, g, { noRoom = noRoom })
+    if g.owner ~= "drag" then return end
+    local p = s.player
+    local title = g.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
+    if noRoom then
+        tell(p, "NO_ROOM", { i = noRoom, n = g.count }, title)
+    elseif g.placed > 0 or byUser then
+        Messages.toast(p, getText("IGUI_MBLD_Stopped", tostring(g.placed), tostring(g.count)),
+            title or getText("IGUI_MBLD_Interrupted"))
+    else
+        tell(p, "WALK")
+    end
+end
+
+-- 玩家正按著取消動作鍵（Esc、手把 B）或方向鍵：IsoPlayer.pressedCancelAction 照按鍵綁定與手把讀「按著」
+-- （CharacterInputComponent.java:505-511、GameKeyboard.java:122-129，原版吃掉按鍵只擋事件、不改按著的狀態）。
+-- 游標開著時取消鍵是收游標、不停動作（MainScreen.lua:1683、1694），照原版不算
+local function interrupted(p)
+    if p:pressedMovement(false) then return true end
+    return p:pressedCancelAction() and not getCell():getDrag(p:getPlayerNum())
+end
+
 -- 一位玩家的第一筆：還沒送的等動作佇列空了送；送出的收下後佇列空了一陣子還沒蓋完＝停下了，取消全部、提示一次。
 -- 佇列空了分不出是玩家自己走開、按 ESC，還是路徑走不通（動作停下一律 resetQueue，不留原因：ISBaseTimedAction.lua:63-64），
 -- 所以只有排隊時就知道的「旁邊沒空位」（Client.lua 的 queue 記在 noRoom）另外說；其他照實說蓋好幾格。材料是一格一格在
 -- Server.complete 扣的（Place.build 成功後才 Materials.consume），停下時沒蓋的格子沒有扣。
+-- 兩筆之間（上一筆最後一格的 placed 到了、動作還在跑）按取消或走開：原版清掉動作後佇列也是空的，要先看按鍵，不然下一筆照送
 local function step(s, j)
     local p, g = s.player, j.group
     if not j.n then
+        if interrupted(p) then return halt(s, g, nil, true) end
         if not ISTimedActionQueue.isPlayerDoingAction(p) then send(s, j) end
         return
     end
@@ -265,17 +414,7 @@ local function step(s, j)
     -- 前面的都蓋好了，停在旁邊沒空位的那一格；一次挖好幾格水面時有一格沒空位就整批沒排（Client 的 noneQueued）
     local req = j.req
     local stuck = req.noRoom
-    local noRoom = stuck and (j.placed + 1 >= stuck or req.noneQueued) and j.base + stuck or nil
-    stopAll(s, g, { noRoom = noRoom })
-    if g.owner ~= "drag" then return end
-    local title = g.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
-    if noRoom then
-        tell(p, "NO_ROOM", { i = noRoom, n = g.count }, title)
-    elseif g.placed > 0 then
-        Messages.toast(p, getText("IGUI_MBLD_Stopped", tostring(g.placed), tostring(g.count)), title)
-    else
-        tell(p, "WALK")
-    end
+    halt(s, g, stuck and (j.placed + 1 >= stuck or req.noneQueued) and j.base + stuck or nil)
 end
 
 function Queue.tick()

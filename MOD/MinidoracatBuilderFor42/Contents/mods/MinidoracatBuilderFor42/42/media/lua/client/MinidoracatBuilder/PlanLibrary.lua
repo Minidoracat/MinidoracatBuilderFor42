@@ -29,6 +29,7 @@ L.ERRORS = { FORMAT = true, VERSION = true, NO_END = true, NAME = true, RANGE = 
     FULL = true, DUP = true, TOO_BIG = true, CHECKSUM = true, DELETED = true, FILE = true, NO_FILE = true, WRITE = true,
     READ = true }
 L.SORTS = { "used", "name", "pieces" }
+L.LIST_MAX = 30 -- 匯入結果最多列幾種缺的項目、幾個 MOD：每種一列加一顆鈕，陌生藍圖可能有上千種
 local PAD, GAP = 8, 6
 local END = "#end"
 local MAX_USED = 5000
@@ -242,6 +243,14 @@ function L.paste()
     return nil
 end
 
+-- 這段文字放進可複製的文字框安不安全：原生複製在 render 執行緒轉 UTF-8，超過 SHARE_MAX 位元組整個遊戲當掉。
+-- 有非 ASCII 字時一字最多算 3 位元組
+function L.fits(s)
+    local n = #s
+    if n > PlanFile.SHARE_MAX then return false end
+    return n * 3 <= PlanFile.SHARE_MAX or not s:find("[^\1-\127]")
+end
+
 function L.modVersion(mod)
     if type(getModInfoByID) ~= "function" then return nil end
     local ok, info = pcall(getModInfoByID, mod)
@@ -314,6 +323,10 @@ function L.summary(items)
         if a.item.n ~= b.item.n then return (a.item.n or 0) > (b.item.n or 0) end
         return a.item.id < b.item.id
     end)
+    L.sort(s.mods, function(a, b)
+        if a.n ~= b.n then return a.n > b.n end
+        return a.mod < b.mod
+    end)
     return s
 end
 
@@ -323,7 +336,11 @@ function L.describe(s, all)
     local function add(t, tok, ws) out[#out + 1] = { t, tok, ws = ws } end
     if all or s.ok < s.n then add(getText("IGUI_MBLD_Imp_Ok", tostring(s.ok)), s.ok == s.n and "success" or "text") end
     if all or s.missing > 0 then add(getText("IGUI_MBLD_Imp_Missing", tostring(s.missing)), s.missing > 0 and "warning" or "textMuted") end
-    for _, g in ipairs(s.mods) do
+    for i, g in ipairs(s.mods) do
+        if i > L.LIST_MAX then
+            add(getText("IGUI_MBLD_Imp_More", tostring(#s.mods - L.LIST_MAX)), "textMuted")
+            break
+        end
         local name = g.modName or g.mod
         local active = L.modActive(g.mod)
         if active then
@@ -393,16 +410,17 @@ local function now()
     return math.floor(os.time()) -- Kahlua 的 os.time＝currentTimeMillis／1000（OsLib.java:71）
 end
 
--- 讀不完整時不載入、也不准寫（免得蓋掉檔裡的紀錄）
+-- 讀不到檔就不載入、也不准寫（免得蓋掉檔裡的紀錄）；少了 #end（寫到一半當掉）就收讀得出來的行，下次寫入時補齊
 function L.loadUsed()
     local ok, lines = pcall(readLines, L.USED_FILE)
-    usedOk = ok and lines ~= nil and (#lines == 0 or lines[#lines] == END)
+    usedOk = ok and lines ~= nil
     used = {}
     if not usedOk then
-        print(LOG .. "plan usage times not loaded: the file could not be read completely")
+        print(LOG .. "plan usage times not loaded: the file could not be read")
         return false
     end
-    for i = 1, #lines - 1 do
+    if #lines > 0 and lines[#lines] ~= END then print(LOG .. "plan usage times incomplete: kept the readable lines") end
+    for i = 1, #lines do
         local f, t = lines[i]:match("^([%w]+%.txt)\t(%d+)$")
         if f then used[f] = tonumber(t) end
     end
@@ -459,7 +477,9 @@ function L.scan()
     L.st = st
     local old = st.byFile or {}
     st.files, st.byFile, st.next, st.dirty = {}, {}, 1, true
-    for i, f in ipairs(PlanFile.list()) do
+    local files, skipped = PlanFile.list()
+    st.skipped = skipped or 0
+    for i, f in ipairs(files) do
         local e = old[f] or { file = f }
         st.files[i], st.byFile[f] = e, e
     end
@@ -619,8 +639,8 @@ end
 
 function L.doPlace(plan, pn)
     local PM = B.PlanMode
-    -- 先收起地上那張（PlanMode.clear 會先存檔），PlanMode.place 就不會再問一次；問過才記用過與基準
-    if other(PM.plan and PM.plan(), plan) and PM.clear then PM.clear() end
+    -- 先收起地上那張（PlanMode.clear 會先存檔），PlanMode.place 就不會再問一次；存不了就停在這裡，地上那張照留
+    if other(PM.plan and PM.plan(), plan) and PM.clear and not PM.clear() then return false end
     if PM.place(plan, pn) == false then return false end
     if plan.file then
         L.markUsed(plan.file, nil)
@@ -693,10 +713,17 @@ function L.shareFile(file, pn)
     return L.share(plan, false, pn)
 end
 
+-- 地上那張是這個檔時跟著改：不然之後存檔會寫回舊檔名（刪掉的復活、或蓋掉重用這個檔名的新藍圖）
+local function retarget(file, nf, name)
+    local PM = B.PlanMode
+    if PM and PM.retarget then PM.retarget(file, nf, name) end
+end
+
 -- 改名：回 新檔名，或 nil, 句子。檔名跟著改（PlanFile.rename：寫新檔、舊檔標成刪除）
 function L.rename(file, name)
     local nf, why = PlanFile.rename(file, name)
     if not nf then return nil, L.errText(why, 0) end
+    retarget(file, nf, Plan.cleanName(name))
     if used[file] then L.markUsed(nf, file) end
     if why == "OLD_LEFT" then L.tell(getText("IGUI_MBLD_Lib_OldLeft", file)) end
     L.touch(nf)
@@ -712,11 +739,30 @@ end
 function L.remove(file)
     local ok, why = PlanFile.remove(file)
     if not ok then return nil, L.errText(why, 0) end
+    retarget(file, nil, nil)
     if used[file] then
         used[file] = nil
         saveUsed()
     end
     return true
+end
+
+-- 新的空白藍圖：地上已經有一張時先問，收起（先存檔）成功才開新的；存不了就停，地上那張照留
+function L.newBlank(pn)
+    local PM = B.PlanMode
+    if not (PM and PM.blank) then
+        L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
+        return false
+    end
+    local function go()
+        if PM.plan() and not PM.clear() then return false end
+        closeAll()
+        return PM.blank(pn) ~= false
+    end
+    local cur = PM.plan()
+    if not cur then return go() end
+    return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""), text = getText("IGUI_MBLD_Lib_NewText"),
+        ok = getText("IGUI_MBLD_Lib_New"), onYes = go }) ~= nil
 end
 
 -- 刪除先確認（危險樣式，寫出名稱與片數）；按確認才刪。onDone(ok, 句子)
@@ -732,9 +778,11 @@ end
 
 -- 存進藍圖庫（匯入的、換過項目的）：從檔案讀的存回同一個檔，分享碼照名稱取新檔名。回 檔名，或 nil, 句子
 function L.store(plan)
-    local file = plan.file or PlanFile.fileName(plan.name)
-    if not file then return nil, L.errText("FILE", 0) end
-    local ok, why = PlanFile.save(plan, file)
+    local file, why = plan.file, nil
+    if not file then file, why = PlanFile.fileName(plan.name) end
+    if not file then return nil, L.errText(why or "FILE", 0) end
+    local ok
+    ok, why = PlanFile.save(plan, file)
     if not ok then return nil, L.errText(why, 0) end
     L.markUsed(file, nil)
     L.touch(file)
@@ -848,6 +896,7 @@ function Lib:headerRender(el)
     local left = L.pending()
     local count = left > 0 and getText("IGUI_MBLD_Lib_CountReading", tostring(#st.files), tostring(left))
         or getText("IGUI_MBLD_Lib_Count", tostring(#st.files))
+    if (st.skipped or 0) > 0 then count = count .. "  " .. getText("IGUI_MBLD_Lib_Skipped", tostring(st.skipped)) end
     el:drawText(count, 0, 0, mu.r, mu.g, mu.b, mu.a or 1, f)
     local y = self.fh
     for i = 1, self.ncols do
@@ -920,11 +969,8 @@ function Lib.new(UI, pn)
             B.Capture.start(t.pn)
         end)
     end
-    if B.PlanMode and B.PlanMode.toggle then
-        globals[#globals + 1] = button("IGUI_MBLD_Lib_New", nil, function(t)
-            closeAll()
-            B.PlanMode.toggle(t.pn)
-        end)
+    if B.PlanMode and B.PlanMode.blank then
+        globals[#globals + 1] = button("IGUI_MBLD_Lib_New", nil, function(t) L.newBlank(t.pn) end)
     end
     local gy = h - PAD - L.flowHeight(globals, innerW)
     L.flow(globals, PAD, gy, innerW)
@@ -1120,8 +1166,12 @@ function Imp.new(UI, pn)
     -- 第一列：分享碼＋從剪貼簿貼上
     local pasteBtn = (Clipboard and Clipboard.getClipboard) and button("IGUI_MBLD_Imp_Paste", nil, function(t) t:paste() end)
     local codeW = innerW - (pasteBtn and pasteBtn.width + GAP or 0)
+    -- 欄位設長度上限：原生 Ctrl+V 貼進來的超長文字下一幀就被截掉（UITextBox2.java:398-401），中文另由 onChange 清掉
     self.code = UI.TextField.new({ x = PAD, y = y, width = codeW, placeholder = getText("IGUI_MBLD_Imp_CodeHint"),
-        clearButton = true, theme = theme })
+        clearButton = true, theme = theme, maxLength = PlanFile.SHARE_MAX,
+        onChange = function(_, text)
+            if not L.fits(text or "") then self:tooLong() end
+        end })
     win:addChild(self.code)
     if pasteBtn then
         pasteBtn:setX(PAD + codeW + GAP)
@@ -1131,7 +1181,9 @@ function Imp.new(UI, pn)
     -- 第二列：資料夾裡的檔＋檢查
     local checkBtn = button("IGUI_MBLD_Imp_Check", "primary", function(t) t:check() end)
     local opts = {}
-    for i, f in ipairs(PlanFile.list()) do
+    local files, skipped = PlanFile.list()
+    self.skipped = skipped or 0
+    for i, f in ipairs(files) do
         local e = L.st and L.st.byFile and L.st.byFile[f]
         opts[i] = { id = f, label = e and e.head and e.head.name ~= "" and (e.head.name .. " (" .. f .. ")") or f }
     end
@@ -1159,6 +1211,13 @@ function Imp.new(UI, pn)
     return self
 end
 
+-- 太長的文字不留在可複製的文字框（L.fits），改請玩家用藍圖檔匯入
+function Imp:tooLong()
+    self.code:setText("")
+    self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_TooLong"), false
+    self:render()
+end
+
 -- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦
 function Imp:paste()
     local s = L.paste()
@@ -1166,6 +1225,7 @@ function Imp:paste()
         self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_ClipEmpty"), true
         return self:render()
     end
+    if not L.fits(s) then return self:tooLong() end
     self.code:setText(s)
     self:check(true)
 end
@@ -1206,6 +1266,7 @@ function Imp:render()
     local plan = self.plan
     self.storeBtn:setEnabled(plan ~= nil)
     self.placeBtn:setEnabled(plan ~= nil)
+    if (self.skipped or 0) > 0 then text({ { getText("IGUI_MBLD_Lib_Skipped", tostring(self.skipped)), "textMuted" } }) end
     if not plan then
         text({ { self.err or getText("IGUI_MBLD_Imp_Intro"), self.err and "warning" or "textMuted" } })
         if self.err and self.pasted then text({ { getText("IGUI_MBLD_Imp_ClipHint"), "textMuted" } }) end
@@ -1224,7 +1285,11 @@ function Imp:render()
     if #s.list > 0 then
         y = y + GAP
         text({ { getText("IGUI_MBLD_Imp_SwapIntro"), "textMuted" } })
-        for _, r in ipairs(s.list) do
+        for i, r in ipairs(s.list) do
+            if i > L.LIST_MAX then
+                text({ { getText("IGUI_MBLD_Imp_More", tostring(#s.list - L.LIST_MAX)), "textMuted" } })
+                break
+            end
             text({ { getText("IGUI_MBLD_Imp_SwapRow", L.itemName(r.item.id), tostring(r.item.n or 0)), "text" } })
             local it = r.it
             button(getText("IGUI_MBLD_Imp_Swap"), function(t)

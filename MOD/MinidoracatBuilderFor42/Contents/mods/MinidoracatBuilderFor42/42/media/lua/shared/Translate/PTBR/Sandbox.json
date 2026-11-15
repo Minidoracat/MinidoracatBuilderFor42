@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "Alcance de construção (quadrados)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 a 8 quadrados do jogador até o quadrado mais próximo do item. O item pode estar no máximo um andar acima ou abaixo.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Máximo de itens por vez",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. Quantos itens uma construção ou desmontagem pode abranger, por exemplo ao arrastar uma área de piso ou desmontar uma área.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 a 64. O máximo de itens por pedido de construção ou desmontagem. Ao arrastar mais do que isso, a construção é feita em lotes, um após o outro, e Desfazer também remove em lotes; desmontar uma área continua limitado a esse número de itens por vez.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "Máximo de peças por quadrado",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "De 1 a 5. Com Sobrepor ativado, quantos objetos que bloqueiam a passagem e recipientes um quadrado pode ter; três caixas empilhadas do jogo original também são 3. Use 1 para desativar Sobrepor.\nSó vale para construções novas; o que já foi construído permanece.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicador de custo de materiais",

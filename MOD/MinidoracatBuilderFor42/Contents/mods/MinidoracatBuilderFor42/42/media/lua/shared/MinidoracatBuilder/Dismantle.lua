@@ -156,9 +156,49 @@ local function landingOf(top, west)
     return nil
 end
 
+-- 雙開門第 1–4 片離第 1 片的格數 { x 偏移, y 偏移 }，[北向][開著]（IsoDoor.java:141-148，引擎是 private，照抄）
+local DOUBLE_POS = {
+    [true] = { [false] = { { 0, 1, 2, 3 }, { 0, 0, 0, 0 } }, [true] = { { 0, 0, 3, 3 }, { 0, 1, 1, 0 } } },
+    [false] = { [false] = { { 0, 0, 0, 0 }, { 0, -1, -2, -3 } }, [true] = { { 0, 1, 1, 0 }, { 0, 0, -3, -3 } } },
+}
+
+-- 整組門收到的片（buildUtil.getGarageDoorObjects／getDoubleDoorObjects）不是完整一組時回拒絕碼，完整回 nil。
+-- 引擎找相鄰片時那一格沒載入就回 null（IsoDoor.java:2814-2816,3076-3078,3117-3119），收到的只是載入中的那幾片：
+-- 斷掉那一頭的下一格沒載入回 NOT_LOADED，有載入（真的少了片）回 NOT_OURS。車庫門完整＝頭片（值 1）與尾片（值 3）都在
+-- （中間缺片時從 obj 走不到另一頭）；雙開門完整＝四片都在
+local function doorGap(obj, list, garage)
+    local cell = getCell()
+    if garage then
+        local head, tail = false, false
+        for _, o in ipairs(list) do
+            local i = IsoDoor.getGarageDoorIndex(o)
+            head, tail = head or i == 1, tail or i == 3
+        end
+        if head and tail then return nil end
+        for _, o in ipairs(list) do
+            local i, sq, n = IsoDoor.getGarageDoorIndex(o), o:getSquare(), o:isNorth() and 1 or 0
+            for _, s in ipairs({ -1, 1 }) do -- 照 getGarageDoorPrev（−1）／Next（+1）找的那一格
+                local cut = (s < 0 and i ~= 1 and not IsoDoor.getGarageDoorPrev(o)) or (s > 0 and i ~= 3 and not IsoDoor.getGarageDoorNext(o))
+                if cut and not cell:getGridSquare(sq:getX() + s * n, sq:getY() - s * (1 - n), sq:getZ()) then return "NOT_LOADED" end
+            end
+        end
+        return "NOT_OURS"
+    end
+    if #list >= 4 then return nil end
+    -- 雙開門：缺的那幾片照 getDoubleDoorObject 找的格子（IsoDoor.java:2811-2816）
+    local have, sq = {}, obj:getSquare()
+    for _, o in ipairs(list) do have[IsoDoor.getDoubleDoorIndex(o)] = true end
+    local pos, j = DOUBLE_POS[obj:isNorth()][obj:isOpen()], IsoDoor.getDoubleDoorIndex(obj)
+    for i = 1, 4 do
+        local x, y = sq:getX() - pos[1][j] + pos[1][i], sq:getY() - pos[2][j] + pos[2][i]
+        if not have[i] and not cell:getGridSquare(x, y, sq:getZ()) then return "NOT_LOADED" end
+    end
+    return "NOT_OURS"
+end
+
 -- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = 平台或 nil,
--- foreign = true（同一組裡有不是本 MOD 蓋的片）}。同一組的片照「本 MOD 蓋的」收，不照各片自己的種類（建造時整組
--- 用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
+-- foreign = true（同一組裡有不是本 MOD 蓋的片）, incomplete = 拒絕碼（整組門不完整，doorGap）}。同一組的片照「本 MOD 蓋的」
+-- 收，不照各片自己的種類（建造時整組用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
 --   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:76-80），只照被點的那片退一次（三片的退料表都寫
 --     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
 --     平台照 landingOf 找。
@@ -166,7 +206,7 @@ end
 --     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5410-5444），另用 isConnectedSpriteGridObject 對原點。
 --   其他：自己。
 function Dismantle.plan(obj, kind)
-    local remove, refund, landing, foreign = {}, {}, nil, false
+    local remove, refund, landing, foreign, incomplete = {}, {}, nil, false, nil
     if kind == "stairs" then
         local west, top = Rules.westStairs(obj:getSprite():getType()), nil
         for _, o in ipairs(buildUtil.getStairObjects(obj, true)) do
@@ -181,11 +221,12 @@ function Dismantle.plan(obj, kind)
         refund[1] = obj
     elseif kind == "door" then
         -- 車庫門、雙開門（單扇門 kindOf 不認）：整組拆（原版大錘也整組砸，ISDestroyStuffAction.lua:269-296），退料照第一片
-        -- 那一筆帳本退一次（Place.refundOf）。雙開門少了片（帶拆解材質的圖原版能逐片拆，ISMoveableSpriteProps.lua:3851-3939；
-        -- 第 2、3 片被拆不清帳本，見 Place.onAboutToBeRemoved）不給本工具拆，不然那片會退兩次；車庫門少了片時帳本已經清了
+        -- 那一筆帳本退一次（Place.refundOf）。不完整的一組不拆（doorGap）：一部分沒載入時只拆得到載入的那幾片、卻退整組；
+        -- 雙開門少了片（帶拆解材質的圖原版能逐片拆，ISMoveableSpriteProps.lua:3851-3939；第 2、3 片被拆不清帳本，見
+        -- Place.onAboutToBeRemoved）那片會退兩次
         local garage = IsoDoor.getGarageDoorIndex(obj) ~= -1
         local list = garage and buildUtil.getGarageDoorObjects(obj) or buildUtil.getDoubleDoorObjects(obj)
-        foreign = not garage and #list < 4
+        incomplete = doorGap(obj, list, garage)
         for _, o in ipairs(list) do
             if mine(o) then remove[#remove + 1] = o else foreign = true end
         end
@@ -204,16 +245,18 @@ function Dismantle.plan(obj, kind)
             end
         end
     end
-    return { remove = remove, refund = refund, landing = landing, foreign = foreign }
+    return { remove = remove, refund = refund, landing = landing, foreign = foreign, incomplete = incomplete }
 end
 
--- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。門照蓋的那張（開著的車庫門
--- 圖沒有拆解材質，照它算會多要一把鐵鎚）；雙開門第 2、3 片開關過就沒有記號，照現在的圖
+-- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。整組門照現在的圖對回那一組
+-- 關著的各片（Entry.doorItem、Entry.doorSet；開著的車庫門圖沒有拆解材質，照它算工具會不一樣）。不看 modData（客戶端改得到）
 function Dismantle.tools(kind, plan)
     local list = {}
-    for i, o in ipairs(plan.remove) do
-        local built = kind == "door" and o:hasModData() and Entry.sprite(o:getModData().builderEntry)
-        list[i] = Cost.of(kind, built or o:getSprite(), 1)
+    for _, o in ipairs(plan.remove) do
+        local spr = o:getSprite()
+        local first = kind == "door" and Entry.doorItem(spr:getName())
+        local set = first and Entry.doorSet(Entry.sprite(first))
+        for _, s in ipairs(set and set.parts or { spr }) do list[#list + 1] = Cost.of(kind, s, 1) end
     end
     if plan.overlay then list[#list + 1] = Cost.of(kind, plan.overlay.spr, 1) end
     return Cost.sum(list).tools
@@ -266,7 +309,7 @@ local function missingTools(player, kind, plan, memo)
 end
 
 -- 能不能拆，回 code, extra 或 nil。順序：
---   同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
+--   整組門不完整（plan.incomplete：有片沒載入 NOT_LOADED、少了片 NOT_OURS）；同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
 --   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆；建造作弊不查）。
 --     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
@@ -287,6 +330,7 @@ function Dismantle.check(player, kind, plan, preview, toolMemo)
         cells[1] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), sq = sq }
     end
     if #cells == 0 then return "GONE", nil end
+    if plan.incomplete then return plan.incomplete, { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if plan.foreign then return "NOT_OURS", { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if not preview then
         local code, extra = Check.near(player, cells, Entry.EDGE[kind], false)

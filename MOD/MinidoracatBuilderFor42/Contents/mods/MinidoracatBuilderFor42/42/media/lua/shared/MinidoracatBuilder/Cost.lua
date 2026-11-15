@@ -344,6 +344,11 @@ local function usesOf(fam, kind, mt)
     return glass and glass.uses or USES[fam] and USES[fam][kind] or EMPTY
 end
 
+-- 門（車庫門以外）被打壞時每片各掉門把 1、鉸鏈 0–2，三個材質都沒寫的另掉木板 1–2（IsoDoor.destroy，IsoDoor.java:1199-1234；
+-- 雙開門壞一片整側兩片一起壞，destroyDoubleDoor :3010-3030）。每片至少收這麼多，預設倍率下打壞拿到的不比付的多
+local DOOR_DROPS = { ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1 }
+local DOOR_DROPS_BARE = { ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1, [PLANK] = 2 }
+
 -- 一格的成本。multiplier＝沙盒 CostMultiplier（0＝免材料，工具照樣要）。數量、耗材次數都無條件進位。
 function Cost.of(kind, spr, multiplier)
     local fx = fixedPrice(kind, spr)
@@ -406,6 +411,7 @@ function Cost.of(kind, spr, multiplier)
         if kind == "curtain" and m < 1 then m = 1 end
         copyInto(base, items)
         -- 雙開門一組四片＝兩扇門（原版 entity_wood_doubledoor.txt：木板 8、釘子 8、鉸鏈 4、門把 2）：每片收半扇、進位
+        -- （五金另照下面的 DOOR_DROPS 補）
         if kind == "door" and p:has("DoubleDoor") then
             for ft, n in pairs(items) do items[ft] = n / 2 end
         end
@@ -418,6 +424,13 @@ function Cost.of(kind, spr, multiplier)
         if kind == "light" and not p:has("IsMoveAble") and STREET_LIGHT[(spr:getName() or ""):match("^(.*)_%d+$") or ""] then
             items[PIPE] = 2
             perkOf[PIPE] = false
+        end
+    end
+    if kind == "door" and not p:has("GarageDoor") then
+        local bare = (p:get("Material") or "") == "" and (p:get("Material2") or "") == "" and (p:get("Material3") or "") == ""
+        for ft, n in pairs(bare and DOOR_DROPS_BARE or DOOR_DROPS) do
+            if (items[ft] or 0) < n then items[ft] = n end
+            if perkOf[ft] == nil then perkOf[ft] = false end
         end
     end
     -- 電器費（照拆解價或基本價都收）：照倍率算進 items，另記在 fee，Place 不寫進 buildMaterials（拆了不退）

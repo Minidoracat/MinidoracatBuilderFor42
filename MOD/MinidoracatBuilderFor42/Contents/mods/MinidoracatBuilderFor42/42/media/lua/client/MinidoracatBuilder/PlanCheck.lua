@@ -514,6 +514,10 @@ function PlanCheck.materials(player)
     return out
 end
 
-Events.OnTick.Add(PlanCheck.onTick)
+-- 除錯重新載入 Lua 時不再掛一次（同 PlanMode）；包一層才會叫到重新載入後的函式
+if not PlanCheck.loaded then
+    PlanCheck.loaded = true
+    Events.OnTick.Add(function() MinidoracatBuilder.PlanCheck.onTick() end)
+end
 
 return PlanCheck

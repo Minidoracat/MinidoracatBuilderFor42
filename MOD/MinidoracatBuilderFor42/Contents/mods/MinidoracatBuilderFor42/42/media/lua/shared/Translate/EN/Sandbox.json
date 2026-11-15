@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "Maximum build distance (tiles)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "2 to 8 tiles from the player to the nearest square of the item. The item can be at most one floor above or below.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Most items at once",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 to 64. How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 to 64. The most items one build or dismantle request can take. Dragging more than this builds them in batches one after another, and Undo last build also removes in batches; dismantling an area still takes at most this many items at once.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "Most pieces per tile",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1 to 5. With Overlap on, how many blocking objects and containers one tile can hold; three stacked vanilla crates are also 3. Set to 1 to turn Overlap off.\nOnly affects new builds; pieces already built stay.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Material cost multiplier",

@@ -1,7 +1,7 @@
 -- 藍圖檔與分享碼。前半是純文字轉換（encode／decode／share／unshare，不碰引擎）；後半是存在
 -- Zomboid/Lua/MinidoracatBuilder/plans/ 的檔案（列資料夾、讀、存、刪、改名、複製）與圖塊的來源 MOD。
 --
--- 檔案格式（欄位用 Tab 分隔，圖塊名可能帶空白；i 行全在 p 行前面；沒有 END＝不完整，不用）：
+-- 檔案格式（欄位用 Tab 分隔，圖塊名可能帶空白；i 行全在 p 行前面；沒有 END＝不完整，不用；END 之後不讀）：
 --   MBLDPLAN 1 / name 顯示名稱 / size 寬 深 層數 / count 片數 / pos x y z（選填）/
 --   i 編號 片數 MOD-ID 工作坊編號 MOD版本 MOD名稱 項目ID（沒有的寫 -）/ p x y z 朝向 疊放 項目編號 [寬度] / END
 -- 寬度只有車庫門有（2..64，一扇門＝一片），其他片不寫這一欄；沒有這一欄的舊檔照讀。
@@ -23,9 +23,12 @@ local Plan = B.Plan
 PlanFile.DIR = "MinidoracatBuilder/plans"
 local MAGIC = "MBLDPLAN"
 local TOMB = MAGIC .. "\tdeleted" -- 刪除＝整檔改寫成這一行加 END（Lua 沒有刪檔函式，見 PlanFile.remove）
-local MAX_TEXT = 2000000 -- 4,096 片加 4,096 種項目的檔遠小於這個
+-- 讀檔與分享碼共用的上限（bounded）。存檔時先確認寫出來的內容在上限內（readable），存得進去就讀得回來。
+-- 每行：i 行最長 2+4+4+20+4×128+7 個 Tab＝549 字 < MAX_LINE；總字數：4,096 個 i 行＋4,096 個 p 行（約 25 字）約 2.35 M。
+local MAX_LINES = 8400 -- 檔頭 5 行＋項目、片各 4,096 行＋END；地上藍圖的紀錄（PlanStore，最多約 8,300 行）共用
+local MAX_TEXT = 2400000
 local MAX_LINE = 600
-local MAX_FIELD = 160
+local MAX_FIELD = 128 -- 同 Entry 的圖塊名上限
 local MAX_SHARE = 400000
 
 local function opt(...)
@@ -117,33 +120,36 @@ function PlanFile.encode(plan)
     return table.concat(out, "\n") .. "\n"
 end
 
--- 逐行讀進來檢查。nextLine() 回下一行（沒有了回 nil）。headOnly：讀到第一個 p 行（或 END）就停，回檔頭
+-- 逐行讀進來檢查。nextLine() 回下一行（沒有了回 nil；超過 bounded 的上限回 false）。
+-- headOnly：讀到第一個 p 行（或 END）就停，回檔頭。讀到 END 就停，後面不讀
 local function parse(nextLine, headOnly)
-    local ln, line, f, n = 0, nil, nil, 0
+    local ln, line, f, n, over = 0, nil, nil, 0, false
     local function row()
         ln = ln + 1
         line = nextLine()
+        if line == false then over, line = true, nil end
         if line == nil then
             f, n = nil, 0
-        elseif #line > MAX_LINE then
-            f, n = { "" }, 1 -- 太長的行當成不認得的行
         else
             f, n = split(line, "\t")
         end
         return line ~= nil
     end
+    local function stop()
+        return nil, over and "TOO_BIG" or "NO_END", ln
+    end
     local why
-    if not row() then return nil, "NO_END", ln end
+    if not row() then return stop() end
     if f[1] ~= MAGIC or n ~= 2 then return nil, "FORMAT", ln end
     if line == TOMB then return nil, "DELETED", ln end
     if f[2] ~= "1" then return nil, "VERSION", ln end
 
-    if not row() then return nil, "NO_END", ln end
+    if not row() then return stop() end
     if f[1] ~= "name" or n ~= 2 then return nil, "FORMAT", ln end
     local name = f[2]
     if name ~= Plan.cleanName(name) then return nil, "NAME", ln end
 
-    if not row() then return nil, "NO_END", ln end
+    if not row() then return stop() end
     if f[1] ~= "size" or n ~= 4 then return nil, "FORMAT", ln end
     local w, h, lv
     w, why = num(f[2], 0, Plan.MAX_SIDE)
@@ -154,7 +160,7 @@ local function parse(nextLine, headOnly)
     if not lv then return nil, why, ln end
     local sizeLine = ln
 
-    if not row() then return nil, "NO_END", ln end
+    if not row() then return stop() end
     if f[1] ~= "count" or n ~= 2 then return nil, "FORMAT", ln end
     local count
     count, why = num(f[2], 0, 999999999)
@@ -162,7 +168,7 @@ local function parse(nextLine, headOnly)
     if count > Plan.MAX_PIECES then return nil, "FULL", ln end
     if count > 0 and (w < 1 or h < 1 or lv < 1) then return nil, "RANGE", sizeLine end
 
-    if not row() then return nil, "NO_END", ln end
+    if not row() then return stop() end
     local pos
     if f[1] == "pos" then
         if n ~= 4 then return nil, "FORMAT", ln end
@@ -174,7 +180,7 @@ local function parse(nextLine, headOnly)
         z, why = num(f[4], -32, 31)
         if not z then return nil, why, ln end
         pos = { x, y, z }
-        if not row() then return nil, "NO_END", ln end
+        if not row() then return stop() end
     end
 
     local items, ids, itemLine = {}, {}, {}
@@ -196,7 +202,7 @@ local function parse(nextLine, headOnly)
         items[idx] = { id = id, n = cnt, mod = undash(f[4]), workshop = undash(f[5]), version = undash(f[6]),
             modName = undash(f[7]) }
         itemLine[idx] = ln
-        if not row() then return nil, "NO_END", ln end
+        if not row() then return stop() end
     end
 
     if headOnly then
@@ -233,15 +239,12 @@ local function parse(nextLine, headOnly)
         ok, why = Plan.add(plan, x, y, z, d, o, it, pw)
         if not ok then return nil, why, ln end
         seen[it] = (seen[it] or 0) + 1
-        if not row() then return nil, "NO_END", ln end
+        if not row() then return stop() end
     end
     if line ~= "END" then return nil, "FORMAT", ln end
     if pc ~= count then return nil, "COUNT", ln end
     for idx, item in ipairs(items) do
         if seen[idx] ~= item.n then return nil, "COUNT", itemLine[idx] end
-    end
-    while row() do
-        if line ~= "" then return nil, "FORMAT", ln end
     end
     Plan.commit(plan)
     Plan.forget(plan)
@@ -274,11 +277,27 @@ local function arrayLines(lines)
     end
 end
 
+-- 套上讀檔上限：超過行數、總字數或單行長度時回 false，之後一直回 false
+local function bounded(nextLine)
+    local lines, size, over = 0, 0, false
+    return function()
+        if over then return false end
+        local line = nextLine()
+        if line == nil then return nil end
+        lines, size = lines + 1, size + #line + 1
+        if lines > MAX_LINES or size > MAX_TEXT or #line > MAX_LINE then
+            over = true
+            return false
+        end
+        return line
+    end
+end
+
 -- 回 plan，或 nil, 原因碼, 第幾行
 function PlanFile.decode(text)
     if type(text) ~= "string" then return nil, "FORMAT", 0 end
     if #text > MAX_TEXT then return nil, "TOO_BIG", 0 end
-    return parse(textLines(text), false)
+    return parse(bounded(textLines(text)), false)
 end
 
 -- ===== 分享碼 =====
@@ -324,9 +343,14 @@ local function esc(s)
     return table.concat(out)
 end
 
--- 還原；有不認得的字元回 nil
+-- 還原；有不認得的字元回 nil。=uXXXX 的代理對要成對：單獨一半在存檔時會被換成 ?，讀回比對不合
 local function unesc(s)
     local out, i, len = {}, 1, #s
+    local function code(at, digits)
+        local h = s:sub(at, at + digits - 1)
+        if #h ~= digits or not h:match("^[0-9A-F]+$") then return nil end
+        return tonumber(h, 16)
+    end
     while i <= len do
         local ch = s:sub(i, i)
         if ch == "." then
@@ -338,12 +362,20 @@ local function unesc(s)
         elseif ch == "=" then
             local digits = s:sub(i + 1, i + 1) == "u" and 4 or 2
             local start = i + (digits == 4 and 2 or 1)
-            local h = s:sub(start, start + digits - 1)
-            if #h ~= digits or not h:match("^[0-9A-F]+$") then return nil end
-            local ok, c = pcall(string.char, tonumber(h, 16)) -- 標準 Lua 收不了 > 255；Kahlua 是 UTF-16 字
-            if not ok then return nil end
-            out[#out + 1] = c
+            local c = code(start, digits)
+            if not c then return nil end
             i = start + digits
+            local ok, text
+            if c >= 55296 and c <= 57343 then -- D800..DFFF
+                local lo = c <= 56319 and s:sub(i, i + 1) == "=u" and code(i + 2, 4)
+                if not lo or lo < 56320 or lo > 57343 then return nil end
+                ok, text = pcall(string.char, c, lo)
+                i = i + 6
+            else
+                ok, text = pcall(string.char, c) -- 標準 Lua 收不了 > 255；Kahlua 是 UTF-16 字
+            end
+            if not ok then return nil end
+            out[#out + 1] = text
         elseif ch:match("^[A-Za-z0-9:%-/()]$") then
             out[#out + 1] = ch
             i = i + 1
@@ -525,7 +557,7 @@ function PlanFile.unshare(code)
             .. (pg.w and ("\t" .. pg.w) or ""), p[4])
     end
     put("END", 3)
-    local plan, code2, ln = parse(arrayLines(lines), false)
+    local plan, code2, ln = parse(bounded(arrayLines(lines)), false)
     if not plan then return nil, code2, recOf[ln] or 0 end
     return plan
 end
@@ -538,81 +570,145 @@ end
 -- deleteSandboxPreset，:4603-4636,5893-5905），改名只有存檔（renameSavefile，:8112-8139），都碰不到 Zomboid/Lua；
 -- Kahlua 的 os 也沒有 remove、rename，沒有 io（2026-11-16 實機）。
 -- 所以「刪除」＝把檔案改寫成 TOMB（列清單時略過、檔名可以再用），「改名」＝寫新檔再把舊檔標成刪除。
--- 列資料夾也會列出子資料夾的名字（File.listFiles 不分，LuaManager.java:6030-6041），所以只收 .txt 的檔名。
+-- getFileWriter 一開檔就把舊內容清掉（FileWriter 非附加，LuaManager.java:6684-6719），又不能改名，所以每次存檔
+-- 先完整寫進同名的 .cfg 備份檔、讀回確認，再寫正式檔（writeSafe）：任何時間點斷掉，兩份裡至少一份是完整的。
+-- 列資料夾只列檔案（LuaManager.java:6030-6041），裡面還有備份檔與別的檔，所以只收英數檔名的 .txt。
 -- 檔名只用英數＋.txt（使用者 2026-11-16 定案；顯示名稱寫在檔裡）。
 
 local function path(file)
     return PlanFile.DIR .. "/" .. file
 end
 
+local function backupOf(p)
+    return p:sub(1, -5) .. ".cfg"
+end
+
 local function validFile(file)
     return type(file) == "string" and #file <= 40 and file:match("^[A-Za-z0-9]+%.txt$") ~= nil
 end
 
-local function reader(file)
-    local ok, r = pcall(getFileReader, path(file), false)
+local function openReader(p)
+    local ok, r = pcall(getFileReader, p, false)
     if ok then return r end
     return nil
 end
 
-local function firstLine(file)
-    local r = reader(file)
+-- 第一行；沒有檔回 nil，空檔回 ""
+local function firstLine(p)
+    local r = openReader(p)
     if not r then return nil end
     local line = r:readLine()
     r:close()
-    return line
+    return line or ""
 end
 
-local function readAll(file)
-    local r = reader(file)
+-- 整檔的各行（有上限）；沒有檔、超過上限回 nil
+local function readLines(p)
+    local r = openReader(p)
     if not r then return nil end
-    local lines, line = {}, r:readLine()
+    local src, lines = bounded(function() return r:readLine() end), {}
+    local line = src()
     while line do
         lines[#lines + 1] = line
-        line = r:readLine()
+        line = src()
     end
     r:close()
+    if line == false then return nil end
     return lines
 end
 
-local function writeText(file, text)
-    local w = getFileWriter(path(file), true, false)
+local function writeText(p, text)
+    local w = getFileWriter(p, true, false)
     if not w then return false end
     w:write(text)
     w:close()
     return true
 end
 
--- 寫完讀回比對；回 true，或 nil, "WRITE"
-local function write(file, text)
-    local ok, wrote = pcall(writeText, file, text)
-    local okRead, lines = pcall(readAll, file)
-    if ok and wrote and okRead and lines and table.concat(lines, "\n") .. "\n" == text then return true end
-    return nil, "WRITE"
+-- 寫完讀回比對
+local function rawWrite(p, text)
+    local ok, wrote = pcall(writeText, p, text)
+    local okRead, lines = pcall(readLines, p)
+    return ok and wrote and okRead and lines ~= nil and table.concat(lines, "\n") .. "\n" == text
 end
 
--- 藍圖資料夾裡的藍圖檔名（不含已刪除的）。每個檔讀第一行判斷有沒有刪掉
+-- a 的內容是 b 的開頭（最後一行可以只有半行）
+local function prefixOf(a, b)
+    local n = #a
+    if n > #b then return false end
+    for i = 1, n - 1 do
+        if a[i] ~= b[i] then return false end
+    end
+    return n == 0 or b[n]:sub(1, #a[n]) == a[n]
+end
+
+-- 存檔（p 相對 Zomboid/Lua，副檔名 .txt）：先寫備份檔、讀回確認，再寫正式檔。回 true，或 nil, "WRITE"
+function PlanFile.writeSafe(p, text)
+    if not rawWrite(backupOf(p), text) then return nil, "WRITE" end
+    if not rawWrite(p, text) then return nil, "WRITE" end
+    return true
+end
+
+-- 讀 writeSafe 存的檔。use(nextLine) 回 結果，或 nil, 原因碼, 行號（nextLine 超過上限回 false）。
+-- 正式檔讀不出來、而且內容是備份檔的開頭（寫正式檔時斷掉）才改用備份檔，並把正式檔修回來；
+-- 別人換進來的壞檔不是備份檔的開頭，照樣回它的錯。刪除標記照樣是刪除，不從備份復活。
+function PlanFile.readSafe(p, use)
+    local r = openReader(p)
+    if not r then return nil, "NO_FILE" end
+    local got = {}
+    local src = bounded(function()
+        local line = r:readLine()
+        if line then got[#got + 1] = line end
+        return line
+    end)
+    local ok, a, b, c = pcall(use, src)
+    local okRest, last = true, nil
+    if not (ok and a) then
+        okRest, last = pcall(function()
+            local line = src()
+            while line do line = src() end
+            return line
+        end)
+    end
+    pcall(function() r:close() end)
+    if ok and a then return a, b, c end
+    if not ok then a, b, c = nil, "READ", nil end
+    if b == "DELETED" or not okRest or last == false then return a, b, c end
+    local okBack, back = pcall(readLines, backupOf(p))
+    if not okBack or not back or not prefixOf(got, back) then return a, b, c end
+    local ok2, a2, b2, c2 = pcall(use, bounded(arrayLines(back)))
+    if not ok2 or not (a2 or b2 == "DELETED") then return a, b, c end
+    rawWrite(p, table.concat(back, "\n") .. "\n") -- 修不回來也沒關係，下次照樣從備份讀
+    return a2, b2, c2
+end
+
+-- 有內容而且不是刪除標記。正式檔是空的（寫正式檔時一開檔就斷掉）看備份檔
+local function alive(file)
+    local line = firstLine(path(file))
+    if line == "" then line = firstLine(backupOf(path(file))) end
+    return line ~= nil and line ~= "" and line ~= TOMB
+end
+
+-- 藍圖資料夾裡的藍圖檔名（不含已刪除的），和略過的 .txt 檔數（檔名不合規則）。每個檔讀第一行判斷有沒有刪掉
 function PlanFile.list()
-    local out = {}
+    local out, skipped = {}, 0
     local ok, files = pcall(listFilesInZomboidLuaDirectory, PlanFile.DIR)
-    if not ok or not files then return out end
+    if not ok or not files then return out, skipped end
     for i = 0, files:size() - 1 do
         local f = files:get(i)
         if validFile(f) then
-            local okLine, line = pcall(firstLine, f)
-            if okLine and line and line ~= TOMB then out[#out + 1] = f end
+            local okA, live = pcall(alive, f)
+            if okA and live then out[#out + 1] = f end
+        elseif type(f) == "string" and f:lower():sub(-4) == ".txt" then
+            skipped = skipped + 1
         end
     end
-    return out
+    return out, skipped
 end
 
 local function readWith(file, headOnly)
     if not validFile(file) then return nil, "FILE" end
-    local r = reader(file)
-    if not r then return nil, "NO_FILE" end
-    local ok, a, b = pcall(parse, function() return r:readLine() end, headOnly)
-    r:close()
-    if not ok then return nil, "READ" end
+    local a, b = PlanFile.readSafe(path(file), function(src) return parse(src, headOnly) end)
     return a, b
 end
 
@@ -628,9 +724,22 @@ function PlanFile.load(file)
     return plan
 end
 
+-- 讀得回來嗎：行數、字數、行長在上限內，項目 ID 不超過欄位上限（MOD 資訊的欄位存檔時已經截短）
+local function readable(text)
+    local src = bounded(textLines(text))
+    local line = src()
+    while line do
+        if line:sub(1, 2) == "i\t" and #line:match("[^\t]*$") > MAX_FIELD then return false end
+        line = src()
+    end
+    return line == nil
+end
+
 function PlanFile.save(plan, file)
     if not validFile(file) then return nil, "FILE" end
-    local ok, why = write(file, PlanFile.encode(plan))
+    local text = PlanFile.encode(plan)
+    if not readable(text) then return nil, "TOO_BIG" end
+    local ok, why = PlanFile.writeSafe(path(file), text)
     if not ok then return nil, why end
     plan.file = file
     return true
@@ -638,25 +747,31 @@ end
 
 function PlanFile.remove(file)
     if not validFile(file) then return nil, "FILE" end
-    return write(file, TOMB .. "\nEND\n")
+    return PlanFile.writeSafe(path(file), TOMB .. "\nEND\n")
 end
 
-local function taken(file)
-    local ok, line = pcall(firstLine, file)
-    return ok and line ~= nil and line ~= TOMB
-end
-
--- 顯示名稱 → 檔名：只留英數、轉小寫、最多 24 字；撞名加 2、3…；已刪除的檔名可以再用。keep＝這個檔名就算有檔也能用
+-- 顯示名稱 → 檔名：只留英數、轉小寫、最多 24 字；撞名加 2、3…。資料夾有 N 個檔時前 N+1 個編號一定有空的，
+-- 所以沒有上限，也不用一個一個開檔：只有不加編號的那個檔名會開來看是不是已刪除（可以再用）。
+-- keep＝這個檔名就算有檔也能用。回 檔名，或 nil, "READ"（列不出資料夾）
 local function pickName(name, keep)
     local stem = tostring(name or ""):gsub("[^A-Za-z0-9]", ""):lower():sub(1, 24)
     if stem == "" then stem = "plan" end
-    for i = 1, 999 do
+    local ok, files = pcall(listFilesInZomboidLuaDirectory, PlanFile.DIR)
+    if not ok or not files then return nil, "READ" end
+    local used, n = {}, files:size()
+    for i = 0, n - 1 do used[tostring(files:get(i)):lower()] = true end -- Windows 的檔名不分大小寫
+    for i = 1, n + 1 do
         local f = stem .. (i > 1 and i or "") .. ".txt"
-        if f == keep or not taken(f) then return f end
+        if f == keep or not used[f] then return f end
+        if i == 1 then
+            local okA, live = pcall(alive, f)
+            if okA and not live then return f end
+        end
     end
-    return nil
+    return nil, "READ"
 end
 
+-- 回 檔名，或 nil, 原因
 function PlanFile.fileName(name)
     return pickName(name, nil)
 end
@@ -666,8 +781,9 @@ function PlanFile.rename(file, newName)
     local plan, why = PlanFile.load(file)
     if not plan then return nil, why end
     plan.name = Plan.cleanName(newName)
-    local target = pickName(plan.name, file)
-    if not target then return nil, "FILE" end
+    local target
+    target, why = pickName(plan.name, file)
+    if not target then return nil, why end
     local ok
     ok, why = PlanFile.save(plan, target)
     if not ok then return nil, why end
@@ -681,8 +797,9 @@ function PlanFile.duplicate(file, ...)
     local plan, why = PlanFile.load(file)
     if not plan then return nil, why end
     if newName ~= nil then plan.name = Plan.cleanName(newName) end
-    local target = pickName(plan.name, nil)
-    if not target then return nil, "FILE" end
+    local target
+    target, why = pickName(plan.name, nil)
+    if not target then return nil, why end
     local ok
     ok, why = PlanFile.save(plan, target)
     if not ok then return nil, why end

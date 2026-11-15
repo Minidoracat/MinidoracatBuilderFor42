@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "Distance de construction max. (cases)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "De 2 à 8 cases entre le joueur et la case la plus proche de l'objet. L'objet peut être au plus un étage au-dessus ou en dessous.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Objets max. à la fois",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 à 64. Nombre d'objets qu'une construction ou un démontage peut traiter, par exemple en traçant une surface de sol ou en démontant une zone.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "De 1 à 64. Nombre maximal d'objets par demande de construction ou de démontage. Au-delà, un tracé est construit en plusieurs lots successifs, et Annuler la pose démonte aussi par lots ; le démontage d'une zone reste limité à ce nombre d'objets à la fois.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "Pièces max. par case",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "De 1 à 5. Avec Superposer activé, nombre d'objets bloquants et de conteneurs qu'une case peut contenir ; trois caisses vanilla empilées comptent aussi pour 3. Réglez sur 1 pour désactiver Superposer.\nNe concerne que les nouvelles constructions ; ce qui est déjà construit reste en place.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Multiplicateur du coût en matériaux",

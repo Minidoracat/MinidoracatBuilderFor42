@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "Maximale Baudistanz (Kacheln)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "2 bis 8 Kacheln vom Spieler bis zur nächsten Kachel des Objekts. Das Objekt darf höchstens eine Etage darüber oder darunter liegen.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "Max. Objekte auf einmal",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 bis 64. Wie viele Objekte ein Bau- oder Abbauvorgang umfassen kann, z. B. beim Ziehen einer Bodenfläche oder beim Abbauen eines Bereichs.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 bis 64. Höchstzahl an Objekten pro Bau- oder Abbauanfrage. Zieht man mehr, wird in Gruppen nacheinander gebaut, und „Bau rückgängig“ baut ebenfalls in Gruppen ab; beim Abbauen eines Bereichs bleibt es bei höchstens so vielen Objekten auf einmal.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "Max. Teile pro Kachel",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1 bis 5. Wie viele Objekte, die im Weg stehen, und Behälter eine Kachel tragen kann, wenn Stapeln an ist; drei gestapelte Vanilla-Kisten zählen auch als 3. Auf 1 gesetzt ist Stapeln aus.\nGilt nur für neue Bauten; bereits Gebautes bleibt.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "Materialkosten-Multiplikator",

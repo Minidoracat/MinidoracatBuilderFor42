@@ -42,6 +42,9 @@ end
 function P.autoText()
     local Entry = B.Entry
     if Entry and Entry.settings and Entry.settings().AllowAutoBuild == false then return false, getText("IGUI_MBLD_Plan_AutoOff") end
+    -- 規劃中 Runner 開始了下一幀也會自己暫停（PlanMode 與照圖蓋互斥）
+    local PM = B.PlanMode
+    if PM and PM.state and PM.state() == "edit" then return false, getText("IGUI_MBLD_Run_EDIT") end
     return true, nil
 end
 
@@ -58,6 +61,8 @@ function P.onGo(pn)
         R.pause()
         return nil
     end
+    local on, why = P.autoText()
+    if not on then return why end
     local ok, code = R.start(getSpecificPlayer(pn))
     if ok then return nil end
     return P.startText(code)
@@ -641,8 +646,8 @@ function Panel:act(what)
         P.close()
         PM.pickUp(pn)
     elseif what == "edit" and PM.toggle then
-        P.close()
-        PM.toggle(pn)
+        -- 規劃中再按＝完成（stopEdit 先存檔）：存不了時 PlanMode 留在規劃，面板也留著
+        if PM.toggle(pn) ~= false then P.close() end
     elseif what == "save" and PM.save then
         local ok, why = PM.save()
         L.tell(ok and getText("IGUI_MBLD_Plan_Saved") or L.errText(why, 0))
@@ -651,8 +656,7 @@ function Panel:act(what)
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),
             ok = getText("IGUI_MBLD_Plan_Clear"), danger = true,
             onYes = function()
-                P.close()
-                PM.clear()
+                if PM.clear() then P.close() end -- 存不了時地上那張照留，面板也留著
             end })
     end
 end

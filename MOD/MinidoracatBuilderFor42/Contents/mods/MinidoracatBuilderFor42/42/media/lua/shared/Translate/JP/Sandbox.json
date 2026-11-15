@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "最大建築距離（タイル）",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "プレイヤーから項目のいちばん近いタイルまで 2〜8 タイル。項目は上下 1 階まで離れていてもかまいません。",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "一度に扱える最大数",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1〜64。1 回の建築または取り壊しで扱える最大数です。例：床を一面ドラッグしたとき、範囲を取り壊すとき。",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1〜64。1 回の建築または取り壊しリクエストで扱える最大数です。これより多くドラッグすると何回かに分けて順に建築し、「直前の建築を取消」も分けて取り壊します。範囲の取り壊しは、これまでどおり一度にこの数までです。",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "1 タイルに置ける最大数",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1〜5。「重ね置き」がオンのとき、1 タイルに置ける、通行をふさぐ物とコンテナの最大数です。バニラの木箱を 3 つ積んだ場合も 3 です。1 にすると重ね置きはできません。\nこれから建てるものだけに適用され、建築済みのものはそのままです。",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "材料コスト倍率",
@@ -80,7 +80,7 @@
     "Sandbox_MinidoracatBuilder_KindWell": "井戸と手押しポンプ",
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "オンにすると、プレイヤーが井戸と手押しポンプを建築できます。水は尽きず清潔で、断水後も使えます。初期設定はオフです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindPlant": "植物",
+    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "観賞植物、草、野花。飾りのみです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindWater": "水面",
-    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "オンにすると、プレイヤーが 1 階の草地や土など自然の地面を掘って水面を作れます。必要なのはシャベルだけで、材料もスキルも不要です。水面は人もゾンビも通れず、汚れた水をくめ、釣りもできます。取り壊すと元の地面に戻ります。初期設定はオフです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
-    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "観賞植物、草、野花。飾りのみです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。"
+    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "オンにすると、プレイヤーが 1 階の草地や土など自然の地面を掘って水面を作れます。必要なのはシャベルだけで、材料もスキルも不要です。水面は人もゾンビも通れず、汚れた水をくめ、釣りもできます。取り壊すと元の地面に戻ります。初期設定はオフです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。"
 }

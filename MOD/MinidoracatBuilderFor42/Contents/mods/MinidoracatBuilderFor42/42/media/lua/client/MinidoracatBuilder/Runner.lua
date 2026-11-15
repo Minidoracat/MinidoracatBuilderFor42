@@ -110,6 +110,7 @@ end
 local function reasonText(code, detail, extra)
     if code == "REFUSED" then return getText("IGUI_MBLD_Run_REFUSED", Messages.refusal(detail, extra)) end
     if code == "LEFT" then return getText("IGUI_MBLD_Run_LEFT", tostring(summary and summary.left or 0)) end
+    if code == "DONE" and detail == "KEEP" then return getText("IGUI_MBLD_Run_DONE_KEEP") end
     return getText("IGUI_MBLD_Run_" .. code)
 end
 
@@ -207,8 +208,15 @@ local function cancelOurs()
     local p = st.player
     if not p then return end
     st.batch = nil -- 先清掉：Queue.cancel 會同步叫 onDone，那時不再當成這一批停下
-    if st.state == "fetch" then ISTimedActionQueue.clear(p) end
+    -- 拿料的動作還在佇列才清：玩家自己動手時本 MOD 的建造、拆除、配方已經清掉它們、換成玩家的動作（Client.build 等）
+    local f = st.fetch
     st.fetch = nil
+    for _, a in ipairs(f and f.actions or {}) do
+        if ISTimedActionQueue.hasAction(a) then
+            ISTimedActionQueue.clear(p)
+            break
+        end
+    end
     Queue.cancel(p, "plan")
     local R = B.Recipes
     if R and R.stopCells then
@@ -360,7 +368,7 @@ local function openBox(player, b)
         return nil, "SAFEHOUSE"
     end
     if instanceof(obj, "IsoThumpable") and obj:isLockedToCharacter(player) then return nil, "LOCKED" end
-    return container, obj
+    return container
 end
 
 -- 能當材料的：同 Materials 的 usable（裝著東西的袋子、裝著液體的容器不算）
@@ -369,11 +377,12 @@ local function usable(item)
     return not item:isFluidContainer() or item:isEmptyOfFluid()
 end
 
--- 從一個箱子挑這一批缺的（need＝{ [fullType]＝數量 }），照負重上限挑到不超重為止。釘子不夠時拿釘子盒。回 物品陣列
+-- 從一個箱子挑這一批缺的（need＝{ [fullType]＝數量 }），照負重上限挑到不超重為止。釘子不夠時拿釘子盒。
+-- 回 物品陣列；挑不到時再回原因：EMPTY（沒有要的）、HEAVY（有要的但負重放不下）
 local function choose(player, container, need)
     local inv = player:getInventory()
     local room = player:getMaxWeight() - inv:getCapacityWeight()
-    local left, out = {}, {}
+    local left, out, heavy = {}, {}, false
     for ft, n in pairs(need) do left[ft] = n end
     local items = container:getItems()
     local boxes = {}
@@ -384,6 +393,8 @@ local function choose(player, container, need)
             local w = it:getUnequippedWeight()
             if w <= room then
                 out[#out + 1], room, left[ft] = it, room - w, left[ft] - 1
+            else
+                heavy = true
             end
         elseif ft == NAILS_BOX and usable(it) then
             boxes[#boxes + 1] = it
@@ -392,8 +403,13 @@ local function choose(player, container, need)
     for _, it in ipairs(boxes) do
         if (left[NAILS] or 0) <= 0 then break end
         local w = it:getUnequippedWeight()
-        if w <= room then out[#out + 1], room, left[NAILS] = it, room - w, left[NAILS] - PER_BOX end
+        if w <= room then
+            out[#out + 1], room, left[NAILS] = it, room - w, left[NAILS] - PER_BOX
+        else
+            heavy = true
+        end
     end
+    if #out == 0 then return out, heavy and "HEAVY" or "EMPTY" end
     return out
 end
 
@@ -418,26 +434,26 @@ local function startFetch(player, need)
     local inv = player:getInventory()
     for _, o in ipairs(order) do
         local container, why = openBox(player, o.b)
-        local picks = container and choose(player, container, need) or {}
-        if container and #picks > 0 then
+        local picks = {}
+        if container then picks, why = choose(player, container, need) end
+        if #picks > 0 then
             if not luautils.walkToContainer(container, player:getPlayerNum()) then
                 why = "NO_ROOM"
             else
-                local before = {}
+                local before, actions = {}, {}
                 for _, it in ipairs(picks) do
                     local ft = it:getFullType()
                     before[ft] = inv:getCountTypeRecurse(ft)
-                    ISTimedActionQueue.add(ISInventoryTransferAction:new(player, it, container, inv))
+                    actions[#actions + 1] = ISInventoryTransferAction:new(player, it, container, inv)
+                    ISTimedActionQueue.add(actions[#actions])
                 end
-                st.fetch = { box = o.b, i = o.i, before = before }
+                st.fetch = { box = o.b, i = o.i, before = before, actions = actions }
                 return true
             end
         end
-        if why then
-            st.bad[boxKey(o.b)] = why
-            st.badIndex = st.badIndex or {}
-            st.badIndex[o.i] = why
-        end
+        st.bad[boxKey(o.b)] = why
+        st.badIndex = st.badIndex or {}
+        st.badIndex[o.i] = why
     end
     return false
 end
@@ -468,6 +484,14 @@ end
 local function touch(x, y, z)
     local PC = planCheck()
     if PC and PC.touch then PC.touch(x, y, z) end
+end
+
+-- 這一輪開始後藍圖改過（片的增刪、搬、轉、換項目都會加 rev；原點換了＝整張搬了）：送出的批次結果不能再對到片上
+local function planChanged()
+    local PM = B.PlanMode
+    local ox, oy, oz
+    if PM and PM.origin then ox, oy, oz = PM.origin() end
+    return st.plan.rev ~= st.rev or ox ~= st.ox or oy ~= st.oy or oz ~= st.oz
 end
 
 local function perBatch()
@@ -563,8 +587,8 @@ local function evaluate(player, b)
             if info and info.entry and (info.entry.kind == "roof" or info.entry.kind == "floor") and info.cells then
                 for _, cell in ipairs(info.cells) do planned[B.Place.key(cell.x, cell.y, cell.z)] = true end
             end
-        elseif code == "NO_MATERIAL" and cost and not (extra and extra.tools and extra.tools[1]) then
-            local miss = Materials.short(work, cost)
+        elseif code == "NO_MATERIAL" and cost and extra and extra.need and not (extra.tools and extra.tools[1]) then
+            local miss = extra.need -- Check.item 照同一份 work 算好的差額（原地替換已扣掉舊的退料）
             for ft, n in pairs(miss or {}) do
                 if ft:sub(1, #Materials.USE) ~= Materials.USE then need[ft] = (need[ft] or 0) + n end
             end
@@ -603,6 +627,11 @@ end
 local function batchDone(b, sum)
     if st.batch ~= b then return end -- 暫停或停止時已經清掉
     st.batch, st.lastDone = nil, getTimestampMs()
+    if planChanged() then
+        -- 送出後藍圖改了：這些座標上的片可能換了，結果不套到片上；那幾格請 PlanCheck 重查，整張照新的藍圖重新挑
+        for _, c in ipairs(b.sent) do touch(c.x, c.y, c.z) end
+        return halt("paused", "EDIT")
+    end
     local placed = sum.placed or 0
     for i, c in ipairs(b.sent) do
         if i > placed then break end
@@ -645,10 +674,6 @@ end
 
 local function sendRecipe(player, b)
     local R = B.Recipes
-    if not (R and R.runCells) then
-        for _, c in ipairs(b.list) do skip(c.p, "RECIPE") end
-        return
-    end
     local cells = {}
     b.sent = b.list
     for i, c in ipairs(b.list) do cells[i] = { c.x, c.y, c.z, c.d } end
@@ -711,9 +736,12 @@ local function pick(player, plan)
         local s = buildSummary()
         summary, summaryAt = s, t
         if s.left == 0 then
-            halt("done", "DONE")
+            -- 全部蓋好，藍圖自己收起（藍圖檔留著）；存檔失敗時 PlanMode 不收，留在地上要玩家自己收
             local PM = B.PlanMode
-            if PM and PM.clear then pcall(PM.clear) end -- 全部蓋好，藍圖自己收起（藍圖檔留著）
+            local fine, cleared = true, true
+            if PM and PM.clear then fine, cleared = pcall(PM.clear) end
+            if not fine then print(LOG .. "runner clear failed: " .. tostring(cleared)) end
+            halt("done", "DONE", (not fine or cleared == false) and "KEEP" or nil)
         else
             halt("done", "LEFT")
         end
@@ -737,7 +765,8 @@ function Runner.start(player)
     if not plan or not (PM.origin and PM.origin()) or not (PC and PC.state and PC.resolve) then return nil, "NO_PLAN" end
     if not player or player:isDead() then return nil, "NO_PLAN" end
     if st.plan ~= plan then segCache = {} end
-    st.player, st.plan = player, plan
+    st.player, st.plan, st.rev = player, plan, plan.rev
+    st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.lastDone, st.idleAt = nil, nil
@@ -769,6 +798,8 @@ local function watch(p)
     if not (PM and PM.plan and PM.plan() == st.plan and PM.origin and PM.origin()) then
         return Runner.stop("PLAN_GONE") or true
     end
+    -- 規劃中或藍圖改過：照圖蓋暫停（PlanMode 進規劃前也會叫 pause("EDIT")；這裡是防線）
+    if (PM.state and PM.state() == "edit") or planChanged() then return Runner.pause("EDIT") or true end
     -- 單機的遊戲速度 0＝暫停（原版右鍵選單同一個判斷，ISMenuContextWorld.lua:37）
     local speed = UIManager and UIManager.getSpeedControls and UIManager.getSpeedControls()
     if speed and speed:getCurrentGameSpeed() == 0 then return Runner.pause("GAME_PAUSED") or true end
@@ -787,15 +818,19 @@ local function watch(p)
     return false
 end
 
--- 停下的那一批是誰停的：玩家的請求排上了（手拖、拆除、配方拖一排）＝玩家動手；佇列空著還在動＝玩家自己走開
+-- 玩家自己動手：本 MOD 的建造（手拖、單放）、拆除、配方拖一排排上了。照圖蓋自己的批次只在 build 狀態排著，
+-- 所以 pick、fetch 時 Queue 裡有東西就是玩家的
+local function manual(p)
+    local C, R = B.Client, B.Recipes
+    local unbuild = C and C.pendingUnbuild
+    if Queue.busy(p) > 0 or (unbuild and unbuild.player == p) then return true end
+    return (R and R.row and R.row(p:getPlayerNum())) ~= nil
+end
+
+-- 停下的那一批是誰停的：玩家的請求排上了＝玩家動手；佇列空著還在動＝玩家自己走開
 -- （原版一動就清佇列，Queue 的這一批跟著停，比 watch 連兩幀的判斷早一幀）；都不是＝走不過去，跳過那一片
 local function judgeStop(p)
-    local C, R = B.Client, B.Recipes
-    local pn = p:getPlayerNum()
-    local unbuild = C and C.pendingUnbuild
-    if Queue.busy(p) > 0 or (unbuild and unbuild.player == p) or (R and R.row and R.row(pn)) then
-        return halt("paused", "MANUAL")
-    end
+    if manual(p) then return halt("paused", "MANUAL") end
     if p:isJustMoved() and not ISTimedActionQueue.isPlayerDoingAction(p) then return halt("paused", "MOVED") end
     if st.checkFor then skip(st.checkFor.p, "WALK") end
     st.checkFor, st.state = nil, "pick"
@@ -808,6 +843,7 @@ function Runner.tick()
     if watch(p) then return end
     local s = st.state
     if s == "check" then return judgeStop(p) end
+    if (s == "fetch" or s == "pick") and manual(p) then return halt("paused", "MANUAL") end
     if s == "fetch" then
         local t = getTimestampMs()
         if ISTimedActionQueue.isPlayerDoingAction(p) then
@@ -824,12 +860,18 @@ function Runner.tick()
     end
     if s == "pick" then pick(p, st.plan) end
 end
-Events.OnTick.Add(Runner.tick)
 
 -- Esc＝暫停（多人遊戲不會停下時間，原版也不清佇列）
-Events.OnKeyPressed.Add(function(key)
+function Runner.onKey(key)
     if not active() then return end
     if Keyboard and key == Keyboard.KEY_ESCAPE then Runner.pause("ESC") end
-end)
+end
+
+-- 除錯重新載入 Lua 時不重複掛（同 PlanMode）；掛的是轉呼叫，重新載入後跑新的函式
+if not Runner.loaded then
+    Runner.loaded = true
+    Events.OnTick.Add(function() MinidoracatBuilder.Runner.tick() end)
+    Events.OnKeyPressed.Add(function(key) MinidoracatBuilder.Runner.onKey(key) end)
+end
 
 return Runner

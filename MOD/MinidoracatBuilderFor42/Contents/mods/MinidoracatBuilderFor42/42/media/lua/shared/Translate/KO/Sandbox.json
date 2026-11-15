@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "최대 건축 거리 (칸)",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "플레이어에서 항목의 가장 가까운 칸까지 2~8칸. 항목은 최대 한 층 위나 아래에 있을 수 있습니다.",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "한 번에 최대 항목 수",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1~64. 바닥을 한 면 드래그하거나 구역을 해체할 때처럼, 건축이나 해체 한 번에 처리할 수 있는 항목 수입니다.",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1~64. 건축이나 해체 요청 한 번에 처리할 수 있는 최대 항목 수입니다. 이보다 많이 드래그하면 여러 묶음으로 나눠 차례로 짓고, '방금 지은 것 철거'도 나눠서 철거합니다. 구역 해체는 지금처럼 한 번에 이 수까지만 처리합니다.",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "한 칸 최대 개수",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1~5. '겹쳐 놓기'를 켰을 때 한 칸에 놓을 수 있는, 길을 막는 물체와 보관함의 최대 개수입니다. 바닐라 상자 세 개를 쌓은 것도 3입니다. 1로 하면 겹쳐 놓기를 할 수 없습니다.\n앞으로 짓는 것에만 적용되며, 이미 지은 것은 그대로입니다.",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "재료 비용 배율",

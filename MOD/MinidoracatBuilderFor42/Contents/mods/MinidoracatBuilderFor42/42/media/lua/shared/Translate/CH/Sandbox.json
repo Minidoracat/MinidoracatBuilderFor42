@@ -15,7 +15,7 @@
     "Sandbox_MinidoracatBuilder_MaxDistance": "最遠建造距離（格）",
     "Sandbox_MinidoracatBuilder_MaxDistance_tooltip": "2 到 8 格，從玩家量到這一項最近的一格。上下最多差一層。",
     "Sandbox_MinidoracatBuilder_MaxCellsPerDrag": "一次最多幾項",
-    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 到 64。一次建造或拆除最多幾項，例如拖一片地板、框一區拆除。",
+    "Sandbox_MinidoracatBuilder_MaxCellsPerDrag_tooltip": "1 到 64。每一筆建造或拆除請求最多幾項。拖得比這個多時會分成幾批接著蓋，「拆掉剛蓋的」也分批拆；框一區拆除照舊一次最多這麼多項。",
     "Sandbox_MinidoracatBuilder_MaxPerSquare": "同一格最多幾件",
     "Sandbox_MinidoracatBuilder_MaxPerSquare_tooltip": "1 到 5。玩家打開「疊放」時，同一格最多放幾件會擋路的東西與容器；原版疊三個箱子也是 3。設成 1 就不能疊放。\n只管之後蓋的，已經蓋好的不動。",
     "Sandbox_MinidoracatBuilder_CostMultiplier": "材料倍率",

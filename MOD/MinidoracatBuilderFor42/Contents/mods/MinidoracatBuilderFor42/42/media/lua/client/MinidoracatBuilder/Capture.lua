@@ -354,12 +354,14 @@ local function onTick()
     Events.OnTick.Remove(onTick)
     if not fine then
         print(LOG .. "capture failed: " .. tostring(done))
+        Messages.toast(getSpecificPlayer(r.playerNum), getText("IGUI_MBLD_Cap_Fail"), getText("IGUI_MBLD_Title"))
         return
     end
     local fallback = getText("IGUI_MBLD_Cap_DefaultName", tostring(r.cw), tostring(r.ch))
     local ok, out = pcall(Capture.build, r.job, fallback)
     if not ok then
         print(LOG .. "capture build failed: " .. tostring(out))
+        Messages.toast(getSpecificPlayer(r.playerNum), getText("IGUI_MBLD_Cap_Fail"), getText("IGUI_MBLD_Title"))
         return
     end
     Capture.show(r.playerNum, out, r.cw, r.ch, fallback)
