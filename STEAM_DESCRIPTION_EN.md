@@ -20,20 +20,21 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 [*] Find what you want with search or the tabs, select it and press Build
 [*] Click the ground to place it; hold the left button and drag to build a row or a whole area
 [*] Keep the materials in your bags or on the ground next to you; the details list anything missing
+[*] For a whole house, press Plan in the window to draw a blueprint on the ground, then press Build from blueprint and your character builds it
 [/olist]
 
 [h2]✨ Features[/h2]
 [list]
-[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, with the vanilla build menu's recipes listed too
+[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, with the vanilla build menu's recipes, garage doors and double doors listed too
 [*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building and give XP, with optional hardcore skill levels and recipe consumables
-[*] [b]Drag rows and areas[/b]: walls and fences go around a rectangle, floors and roofs fill it, skipping tiles you can't afford
+[*] [b]Drag rows and areas[/b]: walls and fences go around a rectangle, floors and roofs fill it, skipping tiles you can't afford and splitting big drags into batches; R turns walls, doors and windows to any edge of a tile
+[*] [b]Blueprints[/b]: plan a whole building on the ground as a ghost that costs nothing, then let your character build it batch by batch, fetching what's short from supply boxes you pick; share blueprints as a code or capture an existing building
+[*] [b]Quick pick bar and keys[/b]: while placing, recent items and the full set sit at the bottom of the screen; the eyedropper, overlap and undo last build have keys
 [*] [b]Switches and wiring[/b]: choose which lights each switch controls, or let a switch in a closed room wire itself; two switches can share lights
-[*] [b]Dismantle[/b]: right-click what you built, or drag over an area, to remove it and get materials back (it doesn't replace the vanilla sledgehammer)
-[*] [b]Swap in place[/b]: build another style over a floor or wall you built and pay only the difference
-[*] [b]Server-checked[/b]: the server checks materials, distance and safehouse permissions
-[*] [b]Admin settings[/b]: turn kinds, mods and tilesets on or off in game, and change the building rules
+[*] [b]Dismantle and swap[/b]: right-click what you built, or drag over an area, to remove it and get materials back (it doesn't replace the vanilla sledgehammer); build another style over your own floor or wall and pay only the difference
+[*] [b]Server-checked, admin-controlled[/b]: the server checks materials, distance and safehouse permissions; admins turn kinds, mods and tilesets on or off in game and change the building rules
 [/list]
-📖 [b]How to play, materials, wiring, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
+📖 [b]How to play, materials, wiring, blueprints, sandbox options and FAQ:[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545]Minidoracat Build Anything Mod Guide[/url]
 
 [h2]🔗 Minidoracat collection[/h2]
 All my other mods are in the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3809297109]Minidoracat Collection[/url]; subscribe to the ones you need.

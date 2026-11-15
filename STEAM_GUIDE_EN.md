@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
-<!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing and dragging rows, the rules for walls, posts, doors and windows, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Blueprints, Materials, Wiring and Dismantling -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sub-kinds, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing, dragging rows and batches, turning to all four edges of a tile, the quick pick bar and placing keys, the rules for walls, posts, doors and windows, garage and double doors, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling, blueprints (planning, placing, the blueprint panel, building from a blueprint with supply boxes, the library, share codes and import, capturing a building) and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
@@ -15,6 +15,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Place it[/b]: press Build or double-click the item, then click the ground.
 [*] [b]Drag a row[/b]: hold the left button and drag to build a row of walls, posts, floors, fences or roofs.
 [*] [b]Pay for it[/b]: keep the materials in your bags or on the ground next to you, and your character walks over and builds.
+[*] [b]Build a whole house from a blueprint[/b]: press Plan in the window to draw a blueprint on the ground first, then press Build from blueprint and your character builds it piece by piece, see Blueprints: planning.
 [/olist]
 [h3]Requirements[/h3]
 [list]
@@ -33,6 +34,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Other ways to open the window[/h3]
 [list]
 [*] [b]Hotkey[/b]: none by default, so set Open or close the build window under Minidoracat Build Anything in OPTIONS > KEY BINDINGS.
+[*] [b]Placing keys[/b]: the eyedropper, toggle overlap, next recent item and undo last build are on the same page, see Quick pick bar and placing keys.
 [*] [b]Hide the toolbar button[/b]: untick Show toolbar button in OPTIONS > MODS > Build Anything, then use the hotkey.
 [*] [b]First time[/b]: after you enter the game the tiles are cataloged and the window shows Cataloging tiles N%, but you can already search what is done so far.
 [/list]
@@ -47,7 +49,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
 [*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
 [*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
-[*] [b]Sub-kinds[/b]: picking the Light, Furniture, Container, Plants or Floor overlay kind splits it one level further, again with item counts. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers. Floor overlay: Curbs and Edging (curb stones and the edge strips where two ground types meet), Road Markings, Cracks and Grime, Other.
+[*] [b]Sub-kinds[/b]: picking the Wall, Floor, Door, Window, Light, Furniture, Container, Plants or Floor overlay kind splits it one level further, again with item counts. Wall: Wooden Walls, House Exterior Walls, Interior Walls, Commerce and Industry, Gable Walls, Other. Floor: Indoor Floors, Outdoor Ground, Flat Roofs, Other. Door: Standard Doors, Gates, Commerce and Industry, Other. Window: Wood-Frame Windows, White-Frame Windows, Metal-Frame Windows, Church Windows, Commerce and Industry, Other. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers. Floor overlay: Curbs and Edging (curb stones and the edge strips where two ground types meet), Road Markings, Cracks and Grime, Other.
 [*] [b]Finding light switches[/b]: Lights tab, pick Light on the left, then Light Switches; or just search "switch". The 8 vanilla switches are named by the wall they sit on and which end (for example "N wall, east").
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]Material[/b]: pick planks, metal, brick and stone, glass or logs to list only items whose cost includes that material; Other is everything that uses none of them, such as cloth or electronics. It doesn't look at what you carry, and it works together with Only what I can build. Hardware such as nails and screws doesn't count.
@@ -69,7 +71,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Pick tile with a right-click[/b]: right-click the ground and choose Pick tile (Build Anything).
 [*] [b]What it lists[/b]: every image on that square, including overlays on the floor and on walls.
 [*] [b]Pick one[/b]: Build Anything opens with that item selected.
-[*] [b]Tiles you can't build[/b]: shown in red, and hovering one tells you why.
+[*] [b]Tiles you can't build[/b]: shown in red with "(can't build)" after the name, and hovering one tells you why.
 [*] [b]Gamepad[/b]: there is no eyedropper button, so use Pick tile from the right-click menu as before.
 [/list]
 [h3]Sources[/h3]
@@ -79,6 +81,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]After picking a source[/b]: the kind counts and tilesets on the left only count that source.
 [*] [b]Sources the admin turned off[/b]: not in the menu, and hovering the source menu shows which ones are off.
 [/list]
+=== 🧰 The build window: grid, details and full sets
 [h3]The grid[/h3]
 [list]
 [*] [b]Tiles per row[/b]: the Per row slider under the search bar sets 2 to 10, saved on your computer.
@@ -88,7 +91,15 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Items you can't afford[/b]: the name is dimmed with a warning in the top right, and you can still select and build them.
 [*] [b]Items your skill is too low for[/b]: when the server turns on Require vanilla skill levels, they are dimmed with a warning too, and you can build them once you reach that level.
 [*] [b]Favorites[/b]: select an item and press Add to favorites, saved on your computer and kept across servers.
-[*] [b]Recently used[/b]: items you pressed Build on are listed under Recently used.
+[*] [b]Recently used[/b]: items you pressed Build on are listed under Recently used, up to 30, saved on your computer and kept after you restart the game.
+[/list]
+[h3]Blueprints, Remove area, Plan, Undo last build[/h3]
+[list]
+[*] [b]Blueprints[/b]: opens the blueprint panel when a blueprint is on the ground, or the blueprint library when there is none; see Blueprints: placing and the blueprint panel, and Blueprints: library, sharing and import.
+[*] [b]Remove area[/b]: the same as right-click Dismantle an area... (Build Anything), see Dismantling. Hidden when you use a gamepad.
+[*] [b]Plan[/b]: while on, what you place is only added to the blueprint and not built; press again to stop planning. See Blueprints: planning. The button stays lit while planning.
+[*] [b]Undo last build[/b]: takes down the last batch you placed, see Quick pick bar and placing keys. Greyed out when there is nothing to take down.
+[*] [b]Narrow window[/b]: all four become icons, and hovering tells you which is which.
 [/list]
 [h3]Details[/h3]
 {{img:03-detail-en.jpg}}
@@ -124,7 +135,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Where[/b]: on the tab and kind that match their look, with Recipe in the bottom-left corner of the cell, listed after the tiles on that tab. Build recipes on the left lists them by the vanilla build menu's categories, for example Recipe: Carpentry.
 [*] [b]Details[/b]: the source and the vanilla category, then materials, tools (kept) and skills, counted the same way as in the vanilla build menu.
 [*] [b]Building[/b]: press Build or double-click the item to open the vanilla placing cursor. Materials, tools, skills and time all work as in vanilla.
-[*] [b]Dragging a row[/b]: wall, fence and post recipes (and floor or roof recipes other mods add) drag like tiles of the same kind: hold the left button to drag a row, or drag diagonally for a rectangle. After you release, the squares are built one after another, each one a normal vanilla build. When materials only cover some squares, only those are white. If you're interrupted or can't get there, the row stops and a notice says how many were built; if you run out of materials, tools or skill it stops and says what's missing. Dragging another row cancels the squares the last one hadn't built, and the cursor tells you how many before you release. With a controller you place one at a time.
+[*] [b]Dragging a row[/b]: wall, fence and post recipes (and floor or roof recipes other mods add) drag like tiles of the same kind: hold the left button to drag a row, or drag diagonally for a rectangle. After you release, the squares are built one after another, each one a normal vanilla build. When materials only cover some squares, only those are white. If you're interrupted or can't get there, the row stops and a notice says how many were built and to clear that square, gather the materials and drag again; if you run out of materials, tools or skill it stops and says what's missing. Dragging another recipe row cancels the squares the last one hadn't built, and the cursor tells you how many before you release; starting a recipe row also cancels tiles still queued. With a controller you place one at a time.
 [*] [b]Wall paint, wallpaper and plaster[/b]: as in the vanilla build menu, the cursor doesn't open while materials, tools or skills are missing, and a notice says the details show what's missing.
 [*] [b]After placing[/b]: the cursor stays so you can place another, and it blocks when you run out of materials. Right-click (B on a gamepad) to go back to Build Anything.
 [*] [b]Recipes you haven't learned[/b]: they follow the vanilla sandbox option See Not Known Recipes. When it's on (the default) they're listed, and the cell and details say you haven't learned them yet; when it's off they appear once you learn them.
@@ -143,12 +154,13 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ghost colours[/b]: white can be built; red can't, with a warning on that square; yellow with a swap mark replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
 [*] [b]The box by the mouse[/b]: shows the name, facing, tile count while dragging, why it can't be built and the key hints; also the level when stacking crates, the piece number when overlapping, and the skill and level you lack.
-[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things). Walls, fences, door frames and window frames switch to the other side of the same set; stairs switch between the west-going and north-going sets; sloped roofs switch to the mirrored piece. Items you can rotate show a rotate icon at the top left of their tile in the window.
+[*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things). Stairs switch between the west-going and north-going sets; sloped roofs switch to the mirrored piece. Items you can rotate show a rotate icon at the top left of their tile in the window.
+[*] [b]Turning to all four edges[/b]: walls, fences, door frames, window frames, doors and windows step through the North, East, South and West edge of the tile as you press the rotate key, and the box by the mouse shows the name and which edge. The game only draws walls on the north and west edges of a tile, so East and South really go on the west or north edge of the next tile over, and the ghost is drawn there; a dragged row moves as a whole. When there is no art for the other side, it only switches between this edge and the opposite one.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
 [*] [b]Clicking on the UI doesn't build[/b]: a click on the window or other UI never builds on the square underneath.
 [*] [b]Keep building[/b]: the cursor stays after you build.
-[*] [b]Cancel[/b]: right-click to cancel, and the window comes back.
-[*] [b]Pick something else[/b]: while placing you can reopen the window from the toolbar.
+[*] [b]Cancel[/b]: right-click to cancel, and the window comes back. Right-clicking while placing no longer opens the vanilla right-click menu.
+[*] [b]Pick something else[/b]: click a slot in the quick pick bar at the bottom of the screen without closing the cursor, or reopen the window from the toolbar; see Quick pick bar and placing keys.
 [/list]
 [h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
@@ -160,38 +172,15 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Summary in the box[/b]: N tiles: A buildable, B skipped, with one line per reason for the skipped ones.
 [*] [b]When short[/b]: the box says what those tiles still need together.
 [*] [b]Materials for only the first few[/b]: only the tiles you can afford are built, and the rest are skipped.
-[*] [b]At most[/b]: 32 items at once by default, and the admin can change it; tiles over the limit turn red and aren't built.
+[*] [b]Batch size[/b]: 32 items by default, and the admin can change it. Drag more than that and it is split into batches built one after another; the box says "built in N batches". One drag covers at most 512 tiles.
 [/list]
 {{img:06-queued-en.jpg}}
 [list]
 [*] [b]Queued tiles[/b]: after you release, tiles not built yet keep a faint ghost and a blue frame, one fewer each time a tile is done.
 [*] [b]After closing the cursor[/b]: your character keeps building.
-[*] [b]Dragging another row[/b]: cancels the tiles still queued from the last row, and before you release the box tells you how many.
-[/list]
-[h3]Replacing in place[/h3]
-[list]
-[*] [b]How[/b]: build another style of the same kind over a floor, wall, fence, solid furniture or similar that you built with Build Anything, and it's replaced in place; no need to dismantle first. Dragging a row or area works too; those tiles turn yellow.
-[*] [b]What swaps with what[/b]: things of the same kind; walls, door frames and window frames also swap with each other, so you can put a window in a wall without taking the wall down. They must be on the same edge of the square.
-[*] [b]Materials[/b]: you only pay what the new one needs beyond the old one; the old one's leftovers come back like dismantling (1 to all of each material) at your feet. Same materials cost nothing extra. The box shows what you pay and what comes back.
-[*] [b]XP[/b]: only for the materials you pay.
-[*] [b]Durability[/b]: the new one keeps the old one's remaining durability, so swapping doesn't repair it.
-[*] [b]Swapping floors[/b]: floor overlays you added with Build Anything, such as road markings, stay on the new floor.
-[*] [b]Things that fit together[/b]: when both fit on the square, such as hangings facing different ways, they stay together and nothing is replaced.
-[*] [b]Before replacing[/b]: empty containers, and take doors, windows or boards off frames.
-[*] [b]Not replaced[/b]: lights, stairs, doors, windows, curtains, floor overlays, multi-tile furniture and anything movable.
-[*] [b]Right-click Replace with... (Build Anything)[/b]: opens the build window showing only styles of the same kind that use the same materials and tools; click the filter above the search box to go back to the full catalog.
-[/list]
-[h3]Overlap[/h3]
-[list]
-[*] [b]What it's for[/b]: tile-pack pieces meant to share a tile with another piece, such as a cooktop on a counter, lockers drawn as bottom, middle and top, or clothes on a rack.
-[*] [b]Turning it on[/b]: select furniture, a container or a solid object, press Overlap below the details so it lights up, then press Build. It stays on until you turn it off.
-[*] [b]When on[/b]: you can build on a tile that already holds something, and the box by the mouse shows "Overlap: 2 / 3 on this tile". Nothing is replaced in place.
-[*] [b]When off[/b]: the usual rules apply: an occupied tile blocks the build, and building over your own piece replaces it.
-[*] [b]Limit[/b]: up to 3 blocking objects and containers per tile; admins can change it (see Sandbox options).
-[*] [b]Tiles you can't overlap on[/b]: no floor, stairs or a stair landing, water, someone standing there, or the same tile already there.
-[*] [b]Still vanilla rules[/b]: small things that sit on tables and crates vanilla lets you stack (see Stacking crates) don't need Overlap; two table-like pieces can't share a tile through Overlap.
-[*] [b]Removing the middle piece[/b]: each piece is drawn at its own height, so if you remove the one in the middle, the one above stays where it was.
-[*] [b]Other kinds[/b]: walls, floors, lights and the rest have their own rules for sharing a tile, so the Overlap button is greyed out.
+[*] [b]Dragging another row while building[/b]: it is queued after the last row instead of cancelling it, and before you release the box says "Queued after your last row (N tiles still ahead)".
+[*] [b]Stopping halfway[/b]: if you walk away, press Esc or get interrupted, everything queued is cancelled and one notice says how many were built.
+[*] [b]Dragging a recipe row or dismantling[/b]: cancels tiles still queued, and you're told how many before you release or choose.
 [/list]
 [h3]Distance and where you stand[/h3]
 [list]
@@ -212,6 +201,64 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]No room to stand[/b]: when a tile has no free square beside it, the notice says which one.
 [*] [b]Building settings have changed[/b]: the admin changed a sandbox option, so reopen the window, and no materials were used.
 [*] [b]When you pay[/b]: the server checks everything before placing and takes the materials only once it is placed, so a failure costs nothing.
+[/list]
+=== 🧰 Replacing in place and overlap
+[h3]Replacing in place[/h3]
+[list]
+[*] [b]How[/b]: build another style of the same kind over a floor, wall, fence, solid furniture or similar that you built with Build Anything, and it's replaced in place; no need to dismantle first. Dragging a row or area works too; those tiles turn yellow.
+[*] [b]What swaps with what[/b]: things of the same kind; walls, door frames and window frames also swap with each other, so you can put a window in a wall without taking the wall down. They must be on the same edge of the square.
+[*] [b]Materials[/b]: you only pay what the new one needs beyond the old one; the old one's leftovers come back like dismantling (1 to all of each material) at your feet. Same materials cost nothing extra. The box shows what you pay and what comes back.
+[*] [b]XP[/b]: only for the materials you pay.
+[*] [b]Durability[/b]: the new one keeps the old one's remaining durability, so swapping doesn't repair it.
+[*] [b]Swapping floors[/b]: floor overlays you added with Build Anything, such as road markings, stay on the new floor.
+[*] [b]Things that fit together[/b]: when both fit on the square, such as hangings facing different ways, they stay together and nothing is replaced.
+[*] [b]Before replacing[/b]: empty containers, and take doors, windows or boards off frames.
+[*] [b]Not replaced[/b]: lights, stairs, doors, windows, curtains, floor overlays, multi-tile furniture and anything movable.
+[*] [b]Right-click Replace with... (Build Anything)[/b]: opens the build window showing only styles of the same kind that use the same materials and tools; click the filter above the search box to go back to the full catalog.
+[/list]
+[h3]Overlap[/h3]
+[list]
+[*] [b]What it's for[/b]: tile-pack pieces meant to share a tile with another piece, such as a cooktop on a counter, lockers drawn as bottom, middle and top, or clothes on a rack.
+[*] [b]Turning it on[/b]: select furniture, a container or a solid object, press Overlap below the details so it lights up, then press Build; while placing, Shift+O toggles it too. It stays on until you turn it off.
+[*] [b]When on[/b]: you can build on a tile that already holds something, and the box by the mouse shows "Overlap: 2 / 3 on this tile". Nothing is replaced in place.
+[*] [b]When off[/b]: the usual rules apply: an occupied tile blocks the build, and building over your own piece replaces it.
+[*] [b]Limit[/b]: up to 3 blocking objects and containers per tile; admins can change it (see Sandbox options).
+[*] [b]Tiles you can't overlap on[/b]: no floor, stairs or a stair landing, water, someone standing there, or the same tile already there.
+[*] [b]Still vanilla rules[/b]: small things that sit on tables and crates vanilla lets you stack (see Stacking crates) don't need Overlap; two table-like pieces can't share a tile through Overlap.
+[*] [b]Removing the middle piece[/b]: each piece is drawn at its own height, so if you remove the one in the middle, the one above stays where it was.
+[*] [b]Other kinds[/b]: walls, floors, lights and the rest have their own rules for sharing a tile, so the Overlap button is greyed out.
+[/list]
+=== 🧰 Quick pick bar and placing keys
+{{img:17-hotbar-en.jpg}}
+[h3]Quick pick bar[/h3]
+[list]
+[*] [b]Where[/b]: while placing, the Quick pick bar appears at the bottom of the screen, first just above the vanilla hotbar; it goes away when the cursor closes.
+[*] [b]First row[/b]: recently used items, newest first.
+[*] [b]Second row[/b]: the full set of the current item (see Full set).
+[*] [b]Switching[/b]: click a slot to switch to that item without closing the cursor; the facing, level and Overlap stay as they were.
+[*] [b]Build recipes[/b]: the recipe cursor has the bar too.
+[*] [b]Gamepad[/b]: while placing, press the right stick (R3) to move into the bar, A to switch to that item, B to go back to the cursor.
+[/list]
+[h3]Placing keys[/h3]
+[table]
+[tr][th]Name in key bindings[/th][th]Default[/th][th]What it does[/th][/tr]
+[tr][td]Build cursor: eyedropper (hold, then click something)[/td][td]Shift+Z[/td][td]Hold it and click something on the ground or a wall, then release the left button to switch to that item; when it matches several items, the window opens so you can pick[/td][/tr]
+[tr][td]Build cursor: toggle overlap[/td][td]Shift+O[/td][td]Turns Overlap on or off; while on, the box says "Overlap: on"[/td][/tr]
+[tr][td]Build cursor: next recent item[/td][td]Shift+N[/td][td]Steps through Recently used, back to the start after the last[/td][/tr]
+[tr][td]Build cursor: undo last build[/td][td]Ctrl+Z[/td][td]See below[/td][/tr]
+[tr][td]Build cursor: one level up / this level[/td][td]PgUp/PgDn[/td][td]Builds floors and roofs one level up or on this level[/td][/tr]
+[/table]
+[list]
+[*] [b]Rebinding[/b]: Minidoracat Build Anything in OPTIONS > KEY BINDINGS.
+[*] [b]Only while placing[/b]: they do nothing when you aren't placing.
+[*] [b]Combinations[/b]: the key hints in the box by the mouse don't show combinations with Shift or Ctrl; the key bindings page does.
+[/list]
+[h3]Undo last build[/h3]
+[list]
+[*] [b]How[/b]: press Ctrl+Z while placing, or Undo last build in the build window.
+[*] [b]What it takes down[/b]: the last batch you clicked or dragged yourself that built at least one piece, newest first, with materials back as for Dismantle (Build Anything). Anything still queued is cancelled too.
+[*] [b]Only one batch[/b]: it's forgotten once taken down, and pressing again says "Nothing you just built to take down." It's also forgotten when you restart the game; build recipes and building from a blueprint don't count.
+[*] [b]While planning[/b]: Ctrl+Z undoes the last planning step and never takes down anything real.
 [/list]
 === 🧰 Rules for each kind: walls, floors and fences
 [h3]Walls, floors and fences[/h3]
@@ -252,7 +299,14 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
 [*] [b]Fence gates[/b]: need no door frame and go on any empty edge; they can't go where there is already a wall, fence, door or window, so leave a gap first.
-[*] [b]Double doors and garage doors[/b]: not supported yet.
+[*] [b]Garage doors[/b]: in the Door kind. While placing, hold the left button and drag along the edge where it goes; the length you drag is the door's width, from 2 tiles up to the admin's Most items at once (2 when that is set lower). A single click places the shortest, 2 tiles. The box by the mouse shows the width and the price.
+[*] [b]Double doors[/b]: one click places the whole set of 4 pieces.
+[*] [b]Built as a set[/b]: garage doors and double doors need no door frame and go on empty edges; if one tile is blocked, nothing is built or charged. They open and close as a set, as in vanilla.
+[*] [b]Materials[/b]: a garage door costs every piece added together; the details and catalog price the shortest, 2 tiles, and the cursor shows the price for your width. A double door set costs two doors. A whole door takes as long to build as one single door.
+[*] [b]Dismantling[/b]: Dismantle (Build Anything) or Dismantle an area on any piece takes down the whole set, and materials come back once.
+[*] [b]Broken by zombies[/b]: as in vanilla, a garage door goes all at once and a double door loses one side (two pieces) at a time; the half left behind can't be dismantled with Build Anything.
+[*] [b]Sets not listed[/b]: garage and double doors missing a piece or their open tile can't form a whole set and are not listed; searching the full tile name tells you why.
+[*] [b]Gamepad[/b]: garage doors can't be dragged, so they are 2 tiles wide.
 [*] [b]Windows[/b]: open, smashed and glass-removed tiles are not listed, so you always place a whole window.
 [*] [b]Unbreakable windows[/b]: not in the catalog, and neither are window frames, posts and wall overlays that make a window unbreakable (walls such as mall shutters are listed).
 [*] [b]Permanently locked windows[/b]: listed, and the details say Permanently locked.
@@ -517,14 +571,14 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 {{img:08-wiring-en.jpg}}
 [list]
 [*] [b]Open wiring mode[/b]: right-click the switch and choose Wiring... (Build Anything).
-[*] [b]Outline colours[/b]: green is this switch, yellow a wired light, white a light you can wire, grey a light on another switch.
+[*] [b]Outline colours and icons[/b]: green is this switch, yellow a wired light, white a light you can wire, grey a light on another switch. Each also gets an icon: a plug for this switch, a tick for wired, a plus for one you can wire, a lock for another circuit. The panel legend shows the same icons.
 [*] [b]Which one is picked[/b]: point at the image of a light or switch (a lamp head or a wall light counts) to pick it, and its square lights up; when you aren't pointing at anything you can wire, the square under the mouse is grey.
 [*] [b]Click a light[/b]: adds or removes it.
 [*] [b]Lights on another circuit[/b]: clicking one moves it over.
 [*] [b]Click another switch[/b]: makes it two-way, and its whole circuit joins.
 [*] [b]Click a wired switch[/b]: takes it off.
 [*] [b]Several on one square[/b]: when their images overlap, or you point at that square's floor, click again for the next one; the panel shows which one of how many.
-[*] [b]Panel buttons[/b]: Wire this room, Unwire all, Done.
+[*] [b]Panel buttons[/b]: Wire this room, Unwire all, Done. Unwire all is red and asks "Unwire every light on this circuit (N)?" first; once unwired you have to wire them back one by one, and it can't be undone.
 [*] [b]Leave[/b]: Esc or right-click.
 [*] [b]Lights you can wire[/b]: lights built with Build Anything, and movable lights.
 [*] [b]Switches you can wire[/b]: only those built with Build Anything.
@@ -534,7 +588,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [list]
 [*] [b]Right-click a light[/b]: choose Circuit (Build Anything), and the submenu says Switches controlling it: N or Not wired to a switch.
 [*] [b]Which switches[/b]: hover Switches controlling it: N to outline them.
-[*] [b]Unwire[/b]: the light switches on its own again.
+[*] [b]Unwire[/b]: the light switches on its own again. When the light isn't wired, the options show "(unavailable)".
 [*] [b]Open wiring mode[/b]: also available in the submenu.
 [/list]
 [h3]Limits and permissions[/h3]
@@ -552,16 +606,17 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 {{img:10-dismantle-en.jpg}}
 [h3]Dismantle (Build Anything)[/h3]
 [list]
-[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs and stairs built with Build Anything, plus furniture and lights that can't be moved; it also fills back water you dug.
+[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs, stairs, garage doors and double doors built with Build Anything, plus furniture and lights that can't be moved; it also fills back water you dug.
 [*] [b]What it can't remove[/b]: things built in vanilla or other ways, and what the map already had. It does not replace the vanilla sledgehammer: pick those up, disassemble them or smash them as in vanilla.
 [*] [b]How[/b]: right-click and choose Dismantle (Build Anything): name. The piece lights up while you hover the option; your character walks over, and a notice says what came back.
-[*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu, greyed out, and hovering says how to remove them.
+[*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu with "(can't dismantle)" after the name, and hovering says how to remove them.
 [*] [b]Tools[/b]: the same as for building.
 [*] [b]Materials back[/b]: between 1 and all of each material, dropped at your feet.
 [*] [b]Consumables[/b]: clay cement, torch fuel and welding rods used by Vanilla recipe materials don't come back.
 [*] [b]Skill[/b]: dismantling needs no skill, even with Require vanilla skill levels on.
 [*] [b]XP[/b]: dismantling gives none.
 [*] [b]Stairs[/b]: all three steps go together, and materials come back once.
+[*] [b]Garage doors and double doors[/b]: the whole set goes together, and materials come back once.
 [*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it.
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
@@ -596,8 +651,152 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [tr][td]Vanilla dismantle, returns part of the materials[/td][td]Disassemble it as in vanilla[/td][/tr]
 [tr][td]Right-click "Dismantle (Build Anything)", which returns between 1 and all of each material[/td][td]Dismantle it with Build Anything[/td][/tr]
 [tr][td]Vanilla "Remove curtains", returns 1 sheet[/td][td]Take the curtain down as in vanilla[/td][/tr]
-[tr][td]Only by smashing with a sledgehammer. No materials back.[/td][td]For example doors and windows that can't be moved[/td][/tr]
+[tr][td]Only by smashing with a sledgehammer. No materials back.[/td][td]For example doors and windows that can't be moved (not garage or double doors, see above)[/td][/tr]
 [/table]
+=== 🧰 Blueprints: planning
+Draw a whole building on the ground as a blueprint first (only a ghost, nothing is charged), then build from it, save it or share it with friends. A blueprint only shows on your own screen; other players can't see it.
+{{img:18-plan-en.jpg}}
+[h3]Start planning[/h3]
+[list]
+[*] [b]Open[/b]: press Plan in the build window, or New blank blueprint in the library. The Plan Blueprint toolbar appears at the top of the screen, and you can drag it elsewhere.
+[*] [b]Draw[/b]: pick items in the window and click or drag rows as usual; what you place is only added to the blueprint as a pale purple ghost, not built and not charged. The box by the mouse says "Planning: release to add N pieces to the blueprint".
+[*] [b]Pick something else[/b]: the quick pick bar and the eyedropper work as usual.
+[*] [b]Build recipes[/b]: recipes can be drawn in too, ignoring materials, tools and skill; only the terrain can block them. Wall paint, wallpaper and plaster can't be added to a blueprint.
+[*] [b]Finish[/b]: press Done on the toolbar, or Plan in the window again; the blueprint is saved and the blueprint panel opens.
+[*] [b]One at a time[/b]: only one blueprint can be on the ground.
+[/list]
+[h3]Toolbar[/h3]
+[list]
+[*] [b]Draw, Select, Erase[/b]: switch the tool.
+[*] [b]Undo, Redo[/b]: Ctrl+Z and Ctrl+Y by default, up to 50 steps.
+[*] [b]Floors[/b]: Floor down and Floor up, or PgUp/PgDn, change the floor you draw on; floors below are faded and floors above aren't drawn.
+[*] [b]Piece count[/b]: shows "N/4,096 pieces".
+[*] [b]Library[/b]: opens the blueprint library.
+[*] [b]Hide/Show[/b]: hides the blueprint ghost on the ground; it can also have a key (Blueprint: hide/show, unbound by default).
+[*] [b]Done[/b]: saves, closes the toolbar and opens the blueprint panel.
+[/list]
+[h3]Select and erase[/h3]
+[list]
+[*] [b]Select[/b]: hold the left button and drag a box; selected pieces turn cyan and the toolbar gets another row: Move, Rotate 90°, Copy, Delete, Save as new. Hold Shift to include every floor.
+[*] [b]Move, Copy[/b]: the selected pieces follow the mouse; click to drop, R to rotate 90°, right-click to cancel.
+[*] [b]Rotate 90°[/b]: walls, doors and windows move to the matching edge. Wall corners, stairs and furniture with only one facing move but keep their facing, and a notice says how many.
+[*] [b]Delete[/b]: the Delete button or the Delete key.
+[*] [b]Save as new[/b]: type a name to save the selected pieces as a new blueprint in the same place.
+[*] [b]Erase[/b]: hold the left button and drag a box to erase the pieces in it, again as often as you like; right-click to stop.
+[/list]
+[h3]Limits and saving[/h3]
+[list]
+[*] [b]Size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces. Going over shows a notice with the reason when you release, and nothing is added.
+[*] [b]When it saves[/b]: on Done, Put away and when you place it; if the game crashes in between, the unsaved part is lost.
+[/list]
+=== 🧰 Blueprints: placing and the blueprint panel
+{{img:19-plan-panel-en.jpg}}
+[h3]Placing on the ground[/h3]
+[list]
+[*] [b]From the library[/b]: pick one and press Place, and the whole blueprint follows the mouse; R (LB/RB on a gamepad) rotates 90°, a click places it, right-click (B) cancels.
+[*] [b]Back to original spot[/b]: when the saved position is within 100 tiles, the toolbar has Back to original spot (X on a gamepad).
+[*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays.
+[*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was.
+[*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark.
+[*] [b]Coming back[/b]: the blueprint is still there when you return. Every save and every server keeps its own, stored on your computer.
+[/list]
+[h3]Blueprint panel[/h3]
+[list]
+[*] [b]Open[/b]: press Blueprints in the build window while a blueprint is on the ground; it also opens after Done in planning.
+[*] [b]Status line[/b]: pieces built out of the total, what building from the blueprint is doing, the item being built, and the reason when it stops.
+[*] [b]Buttons[/b]: Build from blueprint (Pause while building, Resume once paused), Move, Edit (back to planning), Save, Library, Put away.
+[*] [b]Put away[/b]: asks first, saves, then removes the blueprint from the ground; what's built stays in the world, and you can place it again from the library.
+[/list]
+[h3]Materials tab[/h3]
+[list]
+[*] [b]Materials list[/b]: what the unbuilt pieces need together, with Need, Have and Short, short ones first; tools and build recipe materials are listed too. With build cheat on it says no materials are used.
+[*] [b]Pieces that can't be built[/b]: grouped by reason, for example short on materials, blocked, tile not available here or turned off by the server; press Show on a group and those pieces flash in the world.
+[*] [b]Supply boxes[/b]: lists the boxes you picked, and Remove stops using one, see Blueprints: building from a blueprint and supply boxes.
+[*] [b]Enough for the whole thing?[/b]: each piece only checks itself; the materials list shows what the whole blueprint needs.
+[/list]
+[h3]Floor plan tab[/h3]
+[list]
+[*] [b]What it shows[/b]: one block per tile, coloured by the worst state on it; tiles that are short or can't be built get a frame, and your own position is marked.
+[*] [b]Legend[/b]: how many pieces are built, buildable, not checked, short and can't build.
+[*] [b]Levels[/b]: Level up, Level down.
+[*] [b]Click a tile[/b]: its pieces flash in the world; on a gamepad, move with the D-pad and press A.
+[*] [b]Very large blueprints[/b]: switch to one block per 2×2 tiles when drawing gets slow.
+[/list]
+=== 🧰 Blueprints: building from a blueprint and supply boxes
+{{img:20-autobuild-en.jpg}}
+[h3]Build from blueprint[/h3]
+[list]
+[*] [b]Start[/b]: press Build from blueprint in the blueprint panel, and your character walks over and builds batch by batch. Materials and XP work as when you build by hand, and the server still checks distance, safehouse, materials and skill for every piece.
+[*] [b]Server owners can turn it off[/b]: with the sandbox option Allow building from blueprints off it can't start; planning, the library and the materials list still work. See Sandbox options and defaults.
+[*] [b]Order[/b]: floors first, then walls, posts, door frames, window frames and fences, then stairs, doors, windows and curtains, roofs, and finally furniture and everything else; within each step, lower floors and closer pieces first. A floor one level up waits until the walls below it are built.
+[*] [b]A batch[/b]: the nearest pieces of the same item on the same floor, up to Most items at once; each garage door is a batch of its own.
+[*] [b]Build recipes[/b]: built square by square as in vanilla; skipped when materials, tools or skill are missing or it's too dark.
+[*] [b]All built[/b]: a notice says it's done, and the blueprint on the ground is put away by itself.
+[*] [b]What can't be built this round[/b]: pieces short on materials or skill, blocked, too far or not available here are skipped and the rest go on; when nothing more can be built, one summary says how many are left and why. Fix that and press Build from blueprint again to build only the rest.
+[*] [b]Pieces two or more floors away from you[/b]: count as too far and are skipped this round; go up or down to that floor and press it again.
+[*] [b]Wall paint, wallpaper and plaster[/b]: can't be built from a blueprint and are skipped.
+[/list]
+[h3]Pausing and stopping[/h3]
+[list]
+[*] [b]It pauses[/b]: when you press Pause, press Esc, walk away, attack or aim, build or dismantle something yourself, a zombie chases you, the game is paused, or the server refuses a whole batch. A notice says why.
+[*] [b]Carry on[/b]: once that's dealt with, press Resume to continue with the rest.
+[*] [b]It stops[/b]: when you get in a vehicle, fall asleep, die, the blueprint is put away or replaced, or an admin turns building from blueprints off. Press Build from blueprint again to start on the rest.
+[*] [b]What's built stays[/b]: pausing or stopping never takes anything down.
+[/list]
+[h3]Supply boxes[/h3]
+[list]
+[*] [b]Pick one[/b]: with a blueprint on the ground, right-click a crate, cupboard or other container and choose Use as blueprint supply box (Build Anything). You can pick several.
+[*] [b]How it takes things[/b]: when a batch runs short, your character walks to the nearest supply box, takes only what that batch lacks, up to your carry limit, and comes back to build; boxes of nails are taken too when nails run short.
+[*] [b]Containers you didn't pick[/b]: are never touched.
+[*] [b]Stop using one[/b]: right-click it and choose Stop using as blueprint supply box (Build Anything), or press Remove on the Materials tab. Nothing inside is touched.
+[*] [b]Boxes it can't use[/b]: too far or not loaded, gone, in someone else's safehouse, locked, no free spot next to it, or nothing could be taken; it is skipped this round, and the summary says which box and why.
+[*] [b]Build recipes[/b]: recipe pieces don't fetch materials from supply boxes, nor missing tools.
+[*] [b]Where it's kept[/b]: the boxes you picked are kept with the blueprint on the ground, on your computer, separately for every save.
+[/list]
+=== 🧰 Blueprints: library, sharing and import
+{{img:21-library-en.jpg}}
+[h3]Blueprint library[/h3]
+[list]
+[*] [b]Open[/b]: press Blueprints in the build window when no blueprint is on the ground; the Plan Blueprint toolbar and the blueprint panel have Library too.
+[*] [b]Where they are kept[/b]: each blueprint is a file on your computer, shared by every save and every server; Open folder opens the blueprint folder.
+[*] [b]The list[/b]: Name, Size, Pieces, Can't build, Last used; search by name, sort by Recently used, Name or Pieces.
+[*] [b]For each blueprint[/b]: Place, Share, Rename, Duplicate, Delete (asks first, with the name and piece count).
+[*] [b]Names[/b]: up to 40 characters.
+[*] [b]Other buttons[/b]: Import, Open folder, Capture a building, New blank blueprint.
+[/list]
+[h3]Sharing[/h3]
+[list]
+[*] [b]Share code[/b]: pick one and press Share; the share code is copied to the clipboard, so just paste it to your friend.
+[*] [b]Include the position?[/b]: blueprints with a saved position ask first; with it, a friend on the same map can put it back in the same spot.
+[*] [b]Long share codes[/b]: over 2,000 characters chat apps may cut it off, so you're told to send the file instead, with Open folder at hand.
+[*] [b]Sending the file[/b]: send the file from your blueprint folder, and your friend puts it in theirs.
+[/list]
+[h3]Import[/h3]
+{{img:22-import-en.jpg}}
+[list]
+[*] [b]Open[/b]: press Import in the library.
+[*] [b]Paste a share code[/b]: press Paste from clipboard. If what you just copied doesn't show up, switch to another window and back to the game, then press it again.
+[*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder.
+[*] [b]Check[/b]: press Check to see how many pieces can be built here; a share code that's incomplete or was edited says why.
+[*] [b]Pieces you can't build here[/b]: listed by reason: a mod isn't enabled (with the mod name and Workshop ID, and Open Workshop page), a mod is enabled but some tiles are gone, turned off by the server, not buildable; mods updated since the blueprint was saved are listed with both versions.
+[*] [b]Swap for...[/b]: each missing item can be swapped for one available here, all at once. Or leave them: you can still save and place it, and those pieces are marked as unbuildable.
+[*] [b]Keep it[/b]: Save to library, or Place it on the ground straight away.
+[/list]
+[h3]When a mod is updated or removed[/h3]
+[list]
+[*] [b]Notice[/b]: when a mod the blueprint on the ground uses isn't enabled, lost tiles in an update, or the server turned some items off, you get one notice with the reason when you join; open the blueprint panel to see which pieces.
+[*] [b]Only once[/b]: it only appears when more pieces can't be built than last time.
+[/list]
+=== 🧰 Blueprints: capturing a building
+{{img:23-capture-en.jpg}}
+[list]
+[*] [b]How[/b]: press Capture a building in the library, then hold the left button and drag a rectangle, up to 64 tiles per side; on release it reads 4 floors up from your floor. Buildings from the map and ones anyone built both work.
+[*] [b]Result[/b]: how many pieces of how many kinds can be kept, and how many were left out and why; type a name and press Save Blueprint, then place it from the library.
+[*] [b]Left out[/b]: things turned off on this server, fixtures with special functions, trees, plants and crops, natural ground (grass, dirt), multi-tile objects sticking out of the area, and tiles Build Anything can't build; items on the ground, what's inside containers, vehicles and corpses aren't kept either.
+[*] [b]Over 4,096 pieces[/b]: only part is kept; select a smaller area and save it in parts to keep everything.
+[*] [b]Garage doors that are too wide[/b]: kept anyway, but if they are wider than this server allows in one build they can't be built here; servers with a higher limit can build them.
+[*] [b]Gamepad[/b]: selecting an area needs a mouse.
+[/list]
 === 🧰 Gamepad
 [h3]Build window[/h3]
 [list]
@@ -613,7 +812,15 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Build[/b]: A.
 [*] [b]Cancel[/b]: B.
 [*] [b]Roof and floor level[/b]: X switches between one level up and this level.
-[*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time.
+[*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time, and garage doors are 2 tiles wide. The build window hides the Remove area button when you use a gamepad.
+[*] [b]Quick pick bar[/b]: press the right stick (R3) to move into the bar, A to switch to that item, B to go back to the cursor.
+[/list]
+[h3]Blueprints[/h3]
+[list]
+[*] [b]Select and erase in planning[/b]: A sets the first corner, A again sets the other; B stops.
+[*] [b]Placing on the ground[/b]: LB/RB rotate 90°, A places, X goes back to the original spot, B cancels.
+[*] [b]Blueprint panel[/b]: LB/RB switch tabs; on the floor plan, move with the D-pad and press A to see where that tile's pieces are.
+[*] [b]Capture a building[/b]: mouse only.
 [/list]
 [h3]Wiring mode[/h3]
 [list]
@@ -634,12 +841,13 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Kinds[/b]: turn the 24 kinds on or off, such as floors, walls, posts and furniture. Wells and Hand Pumps and Water are off by default; the others are on.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
-[*] [b]Rules[/b]: the twelve rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors and Container capacity multiplier.
+[*] [b]Rules[/b]: the thirteen rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors, Container capacity multiplier and Allow building from blueprints.
 [*] [b]Server records[/b]: at the bottom of the Rules page, how many entries, files and how much space each of the server's four records uses (floors and water, overlays, lights and appliances, circuits). When a file gets too big, the server moves on to the next one by itself.
 [/list]
 [h3]Applying[/h3]
 [list]
 [*] [b]Change, then apply[/b]: your changes stay in the panel until you press Apply, and Revert drops changes not applied yet.
+[*] [b]Closing and reopening[/b]: changes not applied yet are kept until you press Revert.
 [*] [b]After applying[/b]: the server saves them, and every player's Build Anything follows within a few seconds.
 [*] [b]Changes by other admins[/b]: changes you have already received are kept; if two admins press Apply at almost the same time, the later one overwrites the earlier one.
 [*] [b]If the server doesn't apply them[/b]: the panel says why, and Try again sends them again.
@@ -663,7 +871,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Who can build[/td][td]Everyone[/td][td]Everyone / Admins only[/td][td]Admins only: only players allowed to use the build cheat can build[/td][/tr]
 [tr][td]Where players can build[/td][td]Like vanilla[/td][td]Like vanilla / Own safehouses only[/td][td]Like vanilla: unclaimed land and safehouses where the player may build. Own safehouses only: only inside safehouses where the player may build[/td][/tr]
 [tr][td]Maximum build distance (tiles)[/td][td]3[/td][td]2–8[/td][td]From the player to the nearest square of the item, at most one floor above or below[/td][/tr]
-[tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area[/td][/tr]
+[tr][td]Most items at once[/td][td]32[/td][td]1–64[/td][td]How many items one build or dismantle can take, for example dragging an area of floor or dismantling an area. When a player drags more, it is split into batches built one after another. Also the widest garage door (2 when set lower)[/td][/tr]
 [tr][td]Most pieces per tile[/td][td]3[/td][td]1–5[/td][td]With Overlap on, how many blocking objects and containers one tile can hold. 1 turns Overlap off. Only affects new builds; pieces already built stay[/td][/tr]
 [tr][td]Material cost multiplier[/td][td]1.0[/td][td]0–10[/td][td]Multiplies every material amount, rounded up. 0 = no ordinary materials, but tools are still needed. Tiles with dismantle materials, curtains and light bulbs never go below 1[/td][/tr]
 [tr][td]Require vanilla skill levels[/td][td]Off[/td][td]On/off[/td][td]Each item needs the skill level of the matching vanilla recipe, for example a wooden wall needs Carpentry 2, a wooden window Carpentry 5, wooden stairs Carpentry 6, a brick wall Masonry 2 and a metal wall Welding 3. Furniture and containers have no vanilla recipe, so they need Carpentry 1, 3 or 5 by carry weight, or Welding 3 if metal. Wall hangings, overlays, curtains and lights need no skill. The build cheat isn't affected, and dismantling still needs no skill. See Hardcore options[/td][/tr]
@@ -671,9 +879,19 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [tr][td]Zombies can't break builds[/td][td]Off[/td][td]On/off[/td][td]Zombies don't attack walls, fences, posts, stairs, furniture, containers or blocking lights built with this mod, and don't path through them. Player weapons can't break them either; sledgehammers and dismantling still work. Zombies still climb over low fences like vanilla, and crawling zombies still bang on them but can't break them. Windows and boards nailed over them still break like vanilla. Things already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Zombies can't break doors[/td][td]Off[/td][td]On/off[/td][td]Doors built with this mod get very high durability: zombies still bang on them but can't break them. Doors built before this option existed aren't recognized and break like vanilla. Doors already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
 [tr][td]Container capacity multiplier[/td][td]1.0[/td][td]1–10[/td][td]Multiplies the capacity of containers built with this mod, rounded, up to 100 (the game's limit), fridge freezers too. When it goes down, the items inside stay, but no more fit. Containers already built change only when their area loads again: restart the server in multiplayer, reload the save in singleplayer[/td][/tr]
+[tr][td]Allow building from blueprints[/td][td]On[/td][td]On/off[/td][td]When on, players can have their character build a placed blueprint piece by piece, and fetch materials from supply boxes they pick. Every piece is still checked for distance, safehouse, materials and skill, just like building by hand. When off, building from blueprints can't start; planning blueprints, the library and the materials list still work[/td][/tr]
 [tr][td]Disabled sources (mod IDs)[/td][td]MinidoracatKnoxPassFor42;MinidoracatEconomyFor42;Machinery;Neat_Building;zodi_cisterns;LifestyleHobbies[/td][td]Mod IDs separated by semicolons[/td][td]Tiles from these mods can't be built. By default the Minidoracat family mods, mods whose tiles belong to their own build menus, and Lifestyle: Hobbies, which gives hobby functions by tile name, are off. The default only applies to new worlds, and existing worlds keep the setting in their save[/td][/tr]
 [tr][td]Disabled tilesets[/td][td]Empty[/td][td]Tileset names separated by semicolons[/td][td]Tiles from these tilesets can't be built, for example walls_exterior_house_01[/td][/tr]
 [/table]
+[list]
+[*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools, and like vanilla your character doesn't walk over and there is no distance limit. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
+[*] [b]After changing settings[/b]: the server checks the current settings on every placement.
+[*] [b]Open windows[/b]: follow the new settings within a few seconds, so there is no need to reopen them.
+[*] [b]With Enable building off[/b]: nobody can wire, but built lights and switches still work.
+[*] [b]With Admins only[/b]: ordinary players can't wire, admins can, and lights and switches still work.
+[*] [b]Safehouse[/b]: with Minidoracat Safehouse installed, every square follows its safehouse permissions.
+[/list]
+=== ⚙️ Sandbox options: what can be built
 The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes, all on by default except Wells and Hand Pumps and Water. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
 [table]
 [tr][th]Option[/th][th]Covers[/th][/tr]
@@ -684,7 +902,7 @@ The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes
 [tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
 [tr][td]Post[/td][td]Corner posts and fence posts[/td][/tr]
 [tr][td]Wall overlay[/td][td]Decorative pieces laid over a wall[/td][/tr]
-[tr][td]Door[/td][td]Doors. They go into a door frame[/td][/tr]
+[tr][td]Door[/td][td]Doors. They go into a door frame; garage doors and double doors count here too (no frame needed)[/td][/tr]
 [tr][td]Window[/td][td]Windows. They go into a window frame; windows drawn together with their frame go straight on a wall edge[/td][/tr]
 [tr][td]Door frame[/td][td]Door frames[/td][/tr]
 [tr][td]Window frame[/td][td]Window frames[/td][/tr]
@@ -702,14 +920,6 @@ The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes
 [tr][td]Overlay[/td][td]Other overlay pieces[/td][/tr]
 [tr][td]Plants[/td][td]Ornamental plants you can move, grass and wildflowers. Decoration only[/td][/tr]
 [/table]
-[list]
-[*] [b]Build cheat[/b]: with the build cheat on you never pay and need no tools, and like vanilla your character doesn't walk over and there is no distance limit. Multiplayer only counts Build Cheat mode in Edit your Admin Powers; in singleplayer the debug menu and admin panel switches count too (on by default in debug mode, as in vanilla).
-[*] [b]After changing settings[/b]: the server checks the current settings on every placement.
-[*] [b]Open windows[/b]: follow the new settings within a few seconds, so there is no need to reopen them.
-[*] [b]With Enable building off[/b]: nobody can wire, but built lights and switches still work.
-[*] [b]With Admins only[/b]: ordinary players can't wire, admins can, and lights and switches still work.
-[*] [b]Safehouse[/b]: with Minidoracat Safehouse installed, every square follows its safehouse permissions.
-[/list]
 === ⚙️ For server admins: other mods' facilities
 Some mods give a tile its function by name (an ATM or a propane refill station, for example), so building one with Build Anything would hand out that facility. Those facilities are meant to be obtained the way their mod intends, so they are kept out of the catalog.
 [h3]Already left out[/h3]
@@ -766,13 +976,10 @@ end)
 [/list]
 === ⚠️ Known limitations
 [list]
-[*] [b]Lights in your own rooms go dark after a rebuild[/b]: building walls, doors, windows or floors in or next to a lit room you built darkens the room while the switch still shows on.
-[*] [b]Fix[/b]: press the switch twice.
-[*] [b]After loading a singleplayer save[/b]: your own rooms go dark the same way, and pressing the switch twice fixes it.
 [*] [b]Your own houses are off the grid[/b]: as in vanilla, lights need a generator.
 [*] [b]Vanilla lights that can't be moved[/b]: lights that can't be moved and weren't built with Build Anything can't be switched where there is no room (for example your own houses in multiplayer), as in vanilla.
 [*] [b]Lights built with Build Anything[/b]: are not affected by the previous point.
-[*] [b]Double doors and garage doors[/b]: not supported yet.
+[*] [b]Garage door prices[/b]: the catalog and details price the shortest, 2 tiles; the box by the cursor shows the price for your width.
 [*] [b]No dragging rows with a gamepad[/b]: a gamepad places one item at a time.
 [*] [b]Some furniture can't rotate[/b]: when the game doesn't link the facings into one object, and the tiles share a name with several versions or are pieces the game doesn't group into one object (the vanilla office desk, for example), each tile is its own item with one facing; pick the item with the facing you want.
 [*] [b]Split screen[/b]: only the first player can open Build Anything.
@@ -780,6 +987,17 @@ end)
 [*] [b]Before removing a container[/b]: empty it first, or use Dismantle (Build Anything), which asks you to empty it.
 [*] [b]After a server crash[/b]: lights that can't be moved and were built after the last save can't be dismantled with Build Anything, only smashed with a sledgehammer.
 [*] [b]Floor overlays after a server crash[/b]: overlays built after the last save, if still there, can't be dismantled with Build Anything; they go away when that square's floor is replaced. Wall overlays stuck to a wall behave the same: they go away when that wall is replaced or dismantled.
+[*] [b]New keys and the quick pick bar[/b]: only for the first player. The key hints in the box by the mouse don't show combinations with Shift or Ctrl; check the key bindings page.
+[*] [b]Undo last build[/b]: only remembers the last batch you placed yourself in this session, and forgets it when you restart the game.
+[*] [b]Blueprint size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces.
+[*] [b]When planning saves[/b]: only on Done, Put away and placing; if the game crashes in between, the unsaved part is lost.
+[*] [b]Deleted blueprints leave a tiny file[/b]: the game can't really delete files, so deleting or renaming leaves a marker file of about 20 bytes in the blueprint folder; the library doesn't list it, and a new blueprint with the same name reuses it. To clear it, delete it by hand from Open folder.
+[*] [b]A share code you just copied won't paste[/b]: switch to another window and back to the game, then press Paste from clipboard again.
+[*] [b]Skipped when building from a blueprint[/b]: wall paint, wallpaper and plaster; pieces two or more floors away from you (go there and press it again).
+[*] [b]Build recipes from a blueprint[/b]: don't fetch materials from supply boxes, nor missing tools.
+[*] [b]Pieces that can't turn when rotating 90°[/b]: wall corners, stairs and furniture with one facing move but keep their facing.
+[*] [b]The server's address changed[/b]: place the blueprint on the ground again from the library; blueprint files aren't affected.
+[*] [b]No area selection with a gamepad[/b]: Capture a building needs a mouse.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
@@ -868,6 +1086,18 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]Can I dismantle things built in vanilla or other ways?[/h3]
 [list]
 [*] No. Dismantle (Build Anything) and Dismantle an area only remove what Build Anything built and do not replace the vanilla sledgehammer: things built in vanilla or other ways, and what the map already had, are picked up, disassembled or smashed with a sledgehammer as in vanilla.
+[/list]
+[h3]How do I give a house I built to a friend?[/h3]
+[list]
+[*] Press Capture a building in the library, select it and save it as a blueprint, then press Share and send the share code; your friend presses Import in their library, pastes it, presses Check, then saves it to the library or places it straight away.
+[*] If the share code is too long, send the file instead: find it with Open folder, and your friend puts it in their blueprint folder and picks it in Import.
+[*] If your friend lacks a mod you used, Import lists which one, and the missing items can be swapped for others.
+[/list]
+[h3]Why did building from a blueprint stop?[/h3]
+[list]
+[*] The notice says why. A chasing zombie, walking away, Esc, or building or dismantling yourself pauses it; deal with that and press Resume.
+[*] Pieces short on materials are skipped: gather them, or right-click a crate or other container to pick it as a supply box, then press Build from blueprint.
+[*] Getting in a vehicle, sleeping, or the blueprint being put away or replaced stops it; press Build from blueprint again.
 [/list]
 [h3]Can I add it to an existing save?[/h3]
 [list]

@@ -1,6 +1,6 @@
 {
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Allow building from blueprints",
-    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "When on, players can have their character build a placed blueprint piece by piece, and fetch materials from crates they pick. Every piece is still checked for distance, safehouse, materials and skill, just like building by hand.\nWhen off, building from blueprints can't start. Planning blueprints and the materials list still work.",
+    "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "When on, players can have their character build a placed blueprint piece by piece, and fetch materials from supply boxes they pick. Every piece is still checked for distance, safehouse, materials and skill, just like building by hand.\nWhen off, building from blueprints can't start. Planning blueprints and the materials list still work.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
     "Sandbox_MinidoracatBuilder_Enabled": "Enable building",
     "Sandbox_MinidoracatBuilder_Enabled_tooltip": "When off, the server refuses every build request from this mod. Things already built stay.",
