@@ -124,9 +124,9 @@ local overlay
 function PG.draw()
     local PM = B.PlanMode
     local plan = PM and PM.plan()
+    PG.lastDrawn = 0
     if not plan then return end
     G.mn = 0
-    PG.lastDrawn = 0
     local state = PM.state()
     local drag = PM.floating()
     local placing = state == "place"
@@ -150,8 +150,10 @@ function PG.draw()
     local drawn, max = 0, PG.DRAW_MAX
 
     local fl = G.flashList
-    if fl and getTimestampMs() < (G.flashUntil or 0) then
-        local col = math.floor(getTimestampMs() / 150) % 2 == 0 and FLASH or PLAN
+    local left = fl and (G.flashUntil or 0) - getTimestampMs() or 0
+    if left > 0 then
+        -- 明暗照剩下的毫秒換，不拿整個時間戳取餘：引擎的 % 把商轉成 32 位元整數，時間戳除下來超過範圍，顏色會永遠不換
+        local col = math.floor(left / 150) % 2 == 0 and FLASH or PLAN
         for i = 1, #fl do
             local fp = fl[i]
             drawPiece(plan, fp, fp.x + ox, fp.y + oy, fp.z + oz, col, 0.8, floorSpr, false)
