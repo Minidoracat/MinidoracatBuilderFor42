@@ -632,18 +632,39 @@ local function rawWrite(p, text)
     return ok and wrote and okRead and lines ~= nil and table.concat(lines, "\n") .. "\n" == text
 end
 
--- a 的內容是 b 的開頭（最後一行可以只有半行）
+-- 正式檔斷在多位元組字的中間時，引擎的 reader 把殘缺的位元組解成 U+FFFD（InputStreamReader，LuaManager.java:5926-5928）。
+-- 用跳脫寫：Kahlua 的 lexer 把跳脫存成位元組、整個字串再照 UTF-8 解（LexState.java:194-200,245-247,433-452），
+-- 所以 Kahlua 是 1 個字、標準 Lua 是 3 個位元組，都是 U+FFFD；直接寫這個字會被 lexer 截成 1 個位元組。
+local REPLACEMENT = "\239\191\189"
+
+-- a 的內容是 b 的開頭（最後一行可以只有半行，尾端的替代字元不算）
 local function prefixOf(a, b)
     local n = #a
     if n > #b then return false end
     for i = 1, n - 1 do
         if a[i] ~= b[i] then return false end
     end
-    return n == 0 or b[n]:sub(1, #a[n]) == a[n]
+    if n == 0 then return true end
+    local last = a[n]
+    while #last > 0 and last:sub(-#REPLACEMENT) == REPLACEMENT do last = last:sub(1, -#REPLACEMENT - 1) end
+    return b[n]:sub(1, #last) == last
 end
 
--- 存檔（p 相對 Zomboid/Lua，副檔名 .txt）：先寫備份檔、讀回確認，再寫正式檔。回 true，或 nil, "WRITE"
+-- 正式檔是上次寫到一半的（內容是備份的開頭、但不是整份）：回備份的各行；其他情況回 nil
+local function torn(p)
+    local okB, back = pcall(readLines, backupOf(p))
+    if not okB or not back then return nil end
+    local okM, lines = pcall(readLines, p)
+    if not okM or not lines or not prefixOf(lines, back) then return nil end
+    if #lines == #back and lines[#lines] == back[#back] then return nil end
+    return back
+end
+
+-- 存檔（p 相對 Zomboid/Lua，副檔名 .txt）：先寫備份檔、讀回確認，再寫正式檔。回 true，或 nil, "WRITE"。
+-- 正式檔是上次寫到一半的，備份就是唯一完整的一份：先用備份修回正式檔，修不回來就不動備份
 function PlanFile.writeSafe(p, text)
+    local back = torn(p)
+    if back and not rawWrite(p, table.concat(back, "\n") .. "\n") then return nil, "WRITE" end
     if not rawWrite(backupOf(p), text) then return nil, "WRITE" end
     if not rawWrite(p, text) then return nil, "WRITE" end
     return true
@@ -651,7 +672,7 @@ end
 
 -- 讀 writeSafe 存的檔。use(nextLine) 回 結果，或 nil, 原因碼, 行號（nextLine 超過上限回 false）。
 -- 正式檔讀不出來、而且內容是備份檔的開頭（寫正式檔時斷掉）才改用備份檔，並把正式檔修回來；
--- 別人換進來的壞檔不是備份檔的開頭，照樣回它的錯。刪除標記照樣是刪除，不從備份復活。
+-- 別人換進來的壞檔不是備份檔的開頭，照樣回它的錯；沒有備份檔時也不把壞檔讀完。刪除標記照樣是刪除，不從備份復活。
 function PlanFile.readSafe(p, use)
     local r = openReader(p)
     if not r then return nil, "NO_FILE" end
@@ -662,18 +683,24 @@ function PlanFile.readSafe(p, use)
         return line
     end)
     local ok, a, b, c = pcall(use, src)
-    local okRest, last = true, nil
-    if not (ok and a) then
-        okRest, last = pcall(function()
-            local line = src()
-            while line do line = src() end
-            return line
-        end)
+    local function close() pcall(function() r:close() end) end
+    if ok and a then
+        close()
+        return a, b, c
     end
-    pcall(function() r:close() end)
-    if ok and a then return a, b, c end
     if not ok then a, b, c = nil, "READ", nil end
-    if b == "DELETED" or not okRest or last == false then return a, b, c end
+    local okB, backHead = pcall(firstLine, backupOf(p))
+    if b == "DELETED" or not okB or backHead == nil then
+        close()
+        return a, b, c
+    end
+    local okRest, last = pcall(function()
+        local line = src()
+        while line do line = src() end
+        return line
+    end)
+    close()
+    if not okRest or last == false then return a, b, c end
     local okBack, back = pcall(readLines, backupOf(p))
     if not okBack or not back or not prefixOf(got, back) then return a, b, c end
     local ok2, a2, b2, c2 = pcall(use, bounded(arrayLines(back)))
@@ -704,6 +731,20 @@ function PlanFile.list()
         end
     end
     return out, skipped
+end
+
+-- 這個藍圖檔（正式檔或 .cfg 備份）還在資料夾裡嗎：讀不到（NO_FILE）時分辨「被刪掉了」和「一時打不開」。
+-- 列不出資料夾時回 true（分不出來就當還在）
+function PlanFile.exists(file)
+    if not validFile(file) then return false end
+    local ok, files = pcall(listFilesInZomboidLuaDirectory, PlanFile.DIR)
+    if not ok or not files then return true end
+    local a, b = file:lower(), backupOf(file):lower()
+    for i = 0, files:size() - 1 do
+        local f = tostring(files:get(i)):lower() -- Windows 的檔名不分大小寫
+        if f == a or f == b then return true end
+    end
+    return false
 end
 
 local function readWith(file, headOnly)

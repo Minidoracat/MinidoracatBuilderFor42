@@ -376,10 +376,10 @@ function Panel.new(UI, pn)
         return b
     end
     self.goBtn = button("IGUI_MBLD_Plan_Go", "primary", function(t) t:act("go") end)
-    local btns = { self.goBtn,
-        button("IGUI_MBLD_Plan_Move", nil, function(t) t:act("move") end),
-        button("IGUI_MBLD_Plan_Edit", nil, function(t) t:act("edit") end),
-        button("IGUI_MBLD_Plan_Save", nil, function(t) t:act("save") end),
+    local moveBtn = button("IGUI_MBLD_Plan_Move", nil, function(t) t:act("move") end)
+    local editBtn = button("IGUI_MBLD_Plan_Edit", nil, function(t) t:act("edit") end)
+    self.saveBtn = button("IGUI_MBLD_Plan_Save", nil, function(t) t:act("save") end)
+    local btns = { self.goBtn, moveBtn, editBtn, self.saveBtn,
         button("IGUI_MBLD_Lib_Title", nil, function(t) t:act("library") end),
         button("IGUI_MBLD_Plan_Clear", "danger", function(t) t:act("clear") end) }
     -- 「暫停」「繼續」比「照圖蓋」長時按鈕寬度照最長的那個，換字不擠
@@ -489,6 +489,8 @@ function Panel:refresh()
     self.goBtn:setTitle(getText(ACTIVE[state] and "IGUI_MBLD_Plan_Pause" or state == "paused" and "IGUI_MBLD_Plan_Resume"
         or "IGUI_MBLD_Plan_Go"))
     self.goBtn:setEnabled(on)
+    local PM = B.PlanMode
+    self.saveBtn:setEnabled(not (PM and PM.state and PM.state() == "place")) -- 跟著游標時位置還沒定，PlanMode.save 回 PLACING
     self.win:setTitle(getText("IGUI_MBLD_Plan_Title", plan.name or ""))
     local lines = P.statusLines()
     while #lines > 3 do table.remove(lines) end
@@ -643,14 +645,13 @@ function Panel:act(what)
     end
     if not PM then return L.tell(getText("IGUI_MBLD_Lib_NoPlanMode")) end
     if what == "move" and PM.pickUp then
-        P.close()
-        PM.pickUp(pn)
+        if PM.pickUp(pn) then P.close() end -- 拿不起來（存不了檔）時面板留著
     elseif what == "edit" and PM.toggle then
         -- 規劃中再按＝完成（stopEdit 先存檔）：存不了時 PlanMode 留在規劃，面板也留著
         if PM.toggle(pn) ~= false then P.close() end
     elseif what == "save" and PM.save then
-        local ok, why = PM.save()
-        L.tell(ok and getText("IGUI_MBLD_Plan_Saved") or L.errText(why, 0))
+        -- 失敗的通知 PlanMode 自己跳過（PlanSaveFail），這裡只說成功
+        if PM.save() then L.tell(getText("IGUI_MBLD_Plan_Saved")) end
     elseif what == "clear" and PM.clear then
         local plan = planOf()
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),

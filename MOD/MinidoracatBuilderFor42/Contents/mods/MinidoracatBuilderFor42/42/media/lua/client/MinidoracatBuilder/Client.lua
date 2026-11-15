@@ -233,6 +233,7 @@ local function resolve(b, i, code, args)
     if not b.list[i] or b.res[i] then return end
     b.res[i] = true
     b.got = b.got + 1
+    b.result[b.list[i]] = code or true
     settle(b, code, args)
 end
 
@@ -262,10 +263,13 @@ local function finish(b, refused)
     Client.pendingUnbuild = nil
     for _, it in ipairs(b.scrapping) do
         local sq = it.obj:getSquare()
-        if not (sq and sq:getObjects():contains(it.obj)) then settle(b, nil, nil) end
+        if not (sq and sq:getObjects():contains(it.obj)) then
+            settle(b, nil, nil)
+            b.result[it] = true
+        end
     end
     local s = { done = b.done, total = b.total, skipped = b.skipped, refund = b.refund, stopped = b.left > 0,
-        refused = refused }
+        refused = refused, res = b.result }
     if b.onDone then b.onDone(s) else tell(b, s) end
 end
 
@@ -325,7 +329,12 @@ local function queueUnbuild(b)
             code = nil -- 留給 queueFill
         elseif it.route == "scrap" then
             code = queueScrap(b.player, it.obj)
-            if code then settle(b, code, { code = code }) else b.scrapping[#b.scrapping + 1] = it end
+            if code then
+                settle(b, code, { code = code })
+                b.result[it] = code
+            else
+                b.scrapping[#b.scrapping + 1] = it
+            end
         elseif walk and walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
             code = "NO_ROOM"
             resolve(b, b.index[it], code, { code = code })
@@ -342,7 +351,8 @@ end
 -- 各片所在的格子，走路時不站上去）, route = "builder"（本工具拆）| "scrap"（原版拆解，obj＝物件）, obj }，照拆的順序。
 -- builder 的照順序送一筆拆除請求，伺服器收下後兩種動作照 items 的順序一起排（沒有 builder 的不送請求，直接排）。
 -- 全部輪完、被拒或停下時呼叫 onDone({ done, total, skipped = { [碼] = 件數 }, refund = { [fullType] = 件數 }, stopped,
--- refused＝整筆被拒的碼或 nil })；沒給 onDone 時自己跳通知。會清掉玩家目前排著的動作、取代還沒輪完的建造或拆除。回 nonce。
+-- refused＝整筆被拒的碼或 nil, res = { [items 的那一項] = true（拆好）或跳過的碼；沒輪到的沒有 } })；沒給 onDone 時自己跳通知。
+-- 會清掉玩家目前排著的動作、取代還沒輪完的建造或拆除。回 nonce。
 function Client.dismantleMany(player, items, onDone)
     lastNonce = lastNonce % 2000000000 + 1
     local n = lastNonce
@@ -356,7 +366,7 @@ function Client.dismantleMany(player, items, onDone)
         end
     end
     local b = { n = n, list = list, index = index, items = items, player = player, done = 0, skipped = {}, refund = {},
-        total = #items, left = #items, got = 0, res = {}, scrapping = {}, onDone = onDone, at = getTimestampMs() }
+        total = #items, left = #items, got = 0, res = {}, result = {}, scrapping = {}, onDone = onDone, at = getTimestampMs() }
     -- 拆除照「停下」處理：圖塊建造排著的全部取消（選單、一區拆除放開前已寫出會取消幾格，Cursor.cancels）
     local Q = MinidoracatBuilder.Queue
     if Q then Q.cancel(player) end

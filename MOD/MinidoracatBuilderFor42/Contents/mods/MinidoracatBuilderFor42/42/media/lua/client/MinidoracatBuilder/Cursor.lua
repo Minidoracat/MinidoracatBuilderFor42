@@ -21,7 +21,8 @@ local Entry, Check, Materials, Queue, Turn, Messages = B.Entry, B.Check, B.Mater
 -- self.res 之後、送出之前，回 true＝已處理、不送伺服器；label(cursor, src) 在標籤文字（文字、顏色交錯的陣列）組好後，
 -- 回新的陣列或 nil；tint(cursor) 回 { r, g, b }（或 { r = , g = , b = }）換掉可蓋格子的地框顏色；layer(cursor) 回數字＝
 -- 蓋在滑鼠那格往上幾層（取代 self.up，換層鍵也不處理），nil＝照舊。
--- 掛鉤丟錯時：commit 這次放開取消、不送（掛了就是要接手，落到真的建造會扣料）；valid 回不能放；其他照沒掛
+-- 掛鉤丟錯時：commit 這次放開取消、不送（掛了就是要接手，落到真的建造會扣料）；這次按住拖曳期間 layer 出過錯也一樣
+-- （格子照 self.up 算了，會記到或蓋到別的樓層）；valid 回不能放；其他照沒掛
 Cursor.hook = Cursor.hook or {}
 local LOG = "[MinidoracatBuilderFor42] "
 local hookErr = {} -- 掛鉤名 → 上次的錯誤：每幀呼叫的掛鉤一直錯時 log 只印一次
@@ -571,7 +572,7 @@ function Cursor:isValid(square)
         end
         if self.overUI then return false end
     end
-    if not self.isLeftDown and not self.build then self.lineX, self.lineY = nil, nil end
+    if not self.isLeftDown and not self.build then self.lineX, self.lineY, self.layerBad = nil, nil, nil end
     if self.area then return self:areaValid(square) end
     if not self.joypad and (self.pickObj or Cursor.pickHeld()) then return self:pickValid() end
     if self.picking then self.picking, self.kgen = nil, nil end -- 放開吸管鍵：下面重算，標籤換回來
@@ -586,7 +587,8 @@ function Cursor:isValid(square)
     local ex, ey, drag = self.lineX or ax, self.lineY or ay, self.lineX ~= nil
     local px, py, pz = math.floor(p:getX()), math.floor(p:getY()), math.floor(p:getZ())
     -- Cursor.hook.layer(cursor) 回數字＝規劃模式指定的樓層差（蓋在滑鼠那格往上 dz 層），nil＝照 self.up
-    local dz = hook("layer", self)
+    local dz, layerBad = hook("layer", self)
+    if layerBad then self.layerBad = true end
     if type(dz) ~= "number" then dz = self.up and 1 or 0 end
     if ax ~= self.kx or ay ~= self.ky or az ~= self.kz or ex ~= self.kex or ey ~= self.key or self.si ~= self.kd
         or px ~= self.kpx or py ~= self.kpy or pz ~= self.kpz or self.sGen ~= self.kgen or dz ~= self.kdz
@@ -1148,9 +1150,10 @@ function Cursor:tryBuild(x, y, z)
         local sq = getCell():getGridSquare(x, y, z)
         if not (sq and self:isValid(sq)) then return end
     end
-    local done, bad = hook("commit", self)
-    if bad then -- 掛鉤接手卻出錯：這次不放、不送，說一聲
-        self.lineX, self.lineY, self.kgen = nil, nil, nil
+    local done, bad
+    if not self.layerBad then done, bad = hook("commit", self) end
+    if bad or self.layerBad then -- 掛鉤接手卻出錯：這次不放、不送，說一聲（layer 出過錯就不交給 commit）
+        self.lineX, self.lineY, self.kgen, self.layerBad = nil, nil, nil, nil
         Messages.toast(self.character, getText("IGUI_MBLD_CommitFailed"))
         return
     end

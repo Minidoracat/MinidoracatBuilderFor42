@@ -6,12 +6,13 @@
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Client"
 require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Dismantle"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local B = MinidoracatBuilder
 local Queue = B.Queue or {}
 B.Queue = Queue
-local Entry, Client, Messages = B.Entry, B.Client, B.Messages
+local Entry, Client, Messages, Dismantle = B.Entry, B.Client, B.Messages, B.Dismantle
 
 local LOG = "[MinidoracatBuilderFor42] "
 local ACCEPT_MS = 10000 -- 送出後這麼久沒有 accepted：MP 伺服器限流時不回覆（Server.intent 的 rateOk）
@@ -175,37 +176,52 @@ local function objAt(sq, name)
     return nil
 end
 
--- 復原前這一片的現況：回 obj（當初蓋的那件還在），或 nil, why。why＝"GONE"（那件不在了、同一格有同圖的別件：別人拆了
--- 重蓋，不能拆）｜"VANISHED"（不在了，不提）｜nil（格子沒載入：照記下的送，伺服器會說）。
+-- 復原前這一片的現況：回 obj（當初蓋的那件還在），或 nil, why, ov。why＝"HUNG"（掛在別的東西上的圖還在，ov＝
+-- Dismantle.overlay 的結果）｜"GONE"（那件不在了、同一格有同圖的別件：別人拆了重蓋，不能拆）｜"VANISHED"（不在了，不提）｜
+-- nil（格子沒載入：照記下的送，伺服器會說）。
 -- 格子物件沒換過（沒重新載入）才比得出是不是同一件（IsoGridSquare、IsoObject 沒有覆寫 equals，比的是同一個 Java 物件）；
--- 重新載入過、或 placed 時物件還沒同步到（MP）就照圖名找
+-- 重新載入過、或 placed 時物件還沒同步到（MP）就照圖名找。掛著的圖比宿主（同一格換了一件宿主＝拆了重蓋）
 local function locate(p)
     local sq = getCell():getGridSquare(p.x, p.y, p.z)
     if not sq then return nil, nil end
-    if p.obj and p.sq == sq then
+    local same = p.sq == sq
+    if p.obj and same then
         if sq:getObjects():contains(p.obj) then return p.obj end
         return nil, objAt(sq, p.name) and "GONE" or "VANISHED"
     end
-    local o = objAt(sq, p.name)
-    if o then return o end
-    return nil, "VANISHED"
+    if not p.host then
+        local o = objAt(sq, p.name)
+        if o then return o end
+    end
+    local ov = Dismantle.overlay(sq, p.name)
+    if not ov then return nil, "VANISHED" end
+    if p.host and same and ov.host ~= p.host then return nil, "GONE" end
+    return nil, "HUNG", ov
 end
 
--- 復原輪完（或停下、被拒）：跳一則總結。全部輪完就清掉紀錄（拆不了的原因已經說了）；停下、被拒時只留送了、
--- 還站著（或格子沒載入、看不出來）的，再按一次接著拆
+local FOR_GOOD = { GONE = true, NOT_OURS = true } -- 逐件跳過的碼裡再按也一樣的
+-- 整筆被拒的碼裡再按也一樣的（關閉、只限管理員、死了或在車上、請求有誤、引擎出錯）
+local REFUSED_FOR_GOOD = { OFF = true, NOT_ALLOWED = true, STATE = true, BAD_REQUEST = true, INTERNAL = true }
+local MANUAL = { pickup = true, none = true, sheet = true }
+
+-- 復原輪完（或停下、被拒）：跳一則總結。紀錄只留送了、沒拆掉、現在還站著（或格子沒載入看不出來）的，再按一次接著拆；
+-- 拆好的、伺服器說已經不在或不是本 MOD 蓋的拿掉
 local function undoEnd(run)
     local s = run.slot
     if s.undo ~= run then return end
     s.undo = nil
-    if s.last == run.kept then
-        local keep = {}
-        if run.stopped then
-            for _, p in ipairs(run.kept) do
-                local obj, why = locate(p)
-                if obj or why == nil then keep[#keep + 1] = p end
-            end
+    local keep = {}
+    for _, p in ipairs(run.kept) do
+        local r = run.res[p]
+        if r ~= true and not FOR_GOOD[r] then
+            local obj, why = locate(p)
+            if obj or why == nil or why == "HUNG" then keep[#keep + 1] = p end
         end
+    end
+    local again = false
+    if s.last == run.kept then
         s.last = keep[1] and keep or nil
+        again = keep[1] ~= nil and not REFUSED_FOR_GOOD[run.refused]
     end
     local total = #run.items
     for _, n in pairs(run.pre) do total = total + n end
@@ -219,7 +235,7 @@ local function undoEnd(run)
         local name = one and B.Names and B.Names.of(one.name, one.kind) or nil
         text, title = Messages.unbuildSummary({ done = run.done, total = total, skipped = skipped, refund = run.refund,
             stopped = run.stopped }, name)
-        if run.stopped then text = text .. " " .. getText("IGUI_MBLD_Undo_Again") end
+        if again then text = text .. " " .. getText("IGUI_MBLD_Undo_Again") end
     end
     for route, n in pairs(run.manual) do
         local line = getText("IGUI_MBLD_Undo_Manual", tostring(n), getText("IGUI_MBLD_Refund_" .. route))
@@ -230,7 +246,8 @@ local function undoEnd(run)
     if text then Messages.toast(run.player, text, title, 12) end
 end
 
--- 送下一筆（每筆最多 MaxCellsPerDrag 件，同伺服器 Server.dismantleIntent 的上限）；上一筆輪完才送，停下、被拒就收尾
+-- 送一筆（每筆最多 MaxCellsPerDrag 件，同伺服器 Server.dismantleIntent 的上限）。輪完時只記 next，下一筆由 Queue.tick 送：
+-- 一筆當場全被跳過時完成回呼是同步的，在回呼裡接著送會一路巢狀，件數多時超過 Kahlua 的呼叫堆疊上限（Coroutine.java:18）
 local function undoNext(run)
     local chunk, from = {}, run.at
     for k = from, math.min(from + perBatch() - 1, #run.items) do chunk[#chunk + 1] = run.items[k] end
@@ -240,35 +257,47 @@ local function undoNext(run)
         run.done = run.done + (sum.done or 0)
         for code, n in pairs(sum.skipped or {}) do run.skipped[code] = (run.skipped[code] or 0) + n end
         for ft, n in pairs(sum.refund or {}) do run.refund[ft] = (run.refund[ft] or 0) + n end
+        for it, r in pairs(sum.res or {}) do
+            local p = run.src[it]
+            if p then run.res[p] = r end
+        end
         if sum.refused or sum.stopped then
             run.refused, run.stopped = sum.refused, true
             return undoEnd(run)
         end
-        if run.at <= #run.items then return undoNext(run) end
-        undoEnd(run)
+        if run.at <= #run.items then run.next = true else undoEnd(run) end
     end)
 end
 
--- 拆掉剛蓋的：Queue.last 那幾片後蓋的先拆，照原本的拆法分流（同一區拆除，Area.route）：本工具拆的、原版拆解的送去拆，
--- 一筆最多 MaxCellsPerDrag 件、上一筆輪完接著送（Client.dismantleMany，會取消還沒蓋完的）；能搬、只能砸、窗簾不送，
--- 通知裡說用原版哪個動作。當初那件已經不在的跳過（別人拆了重蓋的同圖不拆）。停下、被拒時沒拆到的留在紀錄裡，再按一次接著拆。
--- 回這次處理的件數（送去拆的＋要自己拆的＋跳過的），沒有可處理的回 0
+-- 拆掉剛蓋的：Queue.last 那幾片後蓋的先拆，照原本的拆法分流（同一區拆除，Area.route）：本工具拆的（含掛在別的東西上的圖）、
+-- 原版拆解的送去拆，一筆最多 MaxCellsPerDrag 件、上一筆輪完接著送（Client.dismantleMany，會取消還沒蓋完的）；能搬、
+-- 只能砸、窗簾不送，通知裡說用原版哪個動作。當初那件已經不在的跳過（別人拆了重蓋的同圖不拆）。沒拆掉的留在紀錄裡，
+-- 再按一次接著拆。回這次處理的件數（送去拆的＋要自己拆的＋跳過的），沒有可處理的回 0
 function Queue.undoLast(player)
     local list = Queue.last(player)
     if not list then return 0 end
     local s = slots[player:getPlayerNum()]
     require "MinidoracatBuilder/Area"
     require "MinidoracatBuilder/Names"
-    local Area, Dismantle = B.Area, B.Dismantle
+    local Area = B.Area
     local run = { player = player, slot = s, items = {}, kept = {}, manual = {}, pre = {}, skipped = {}, refund = {},
-        done = 0, at = 1 }
+        src = {}, res = {}, done = 0, at = 1 }
     local sent = {}
     for i = #list, 1, -1 do
         local p = list[i]
-        local obj, why = locate(p)
+        local obj, why, ov = locate(p)
         local it
-        if obj then
+        if ov then
+            it = Area.item({ overlay = ov, kind = ov.kind, route = "builder", plan = Dismantle.overlayPlan(ov), name = ov.name })
+        elseif obj then
             local route, kind = Area.route(obj)
+            -- 本工具蓋的窗沒有記號（Place.build），Area.route 不認：已認出是剛蓋的那件，照圖說要用原版哪個動作；
+            -- 該本工具拆、原版拆解的照舊不認（伺服器也不會拆）
+            local spr = not route and obj:getSprite()
+            if spr then
+                local _, refund = Dismantle.classOf(spr)
+                if MANUAL[refund] then route = refund end
+            end
             if route == "builder" or route == "scrap" then
                 it = Area.item({ obj = obj, kind = kind, route = route, name = obj:getSprite():getName(),
                     plan = route == "builder" and Dismantle.plan(obj, kind) or nil })
@@ -282,6 +311,7 @@ function Queue.undoLast(player)
         end
         if it then
             run.items[#run.items + 1] = it
+            run.src[it] = p
             sent[#sent + 1] = p
         elseif why == "GONE" or why == "NOT_OURS" then
             run.pre[why] = (run.pre[why] or 0) + 1
@@ -310,8 +340,10 @@ local function piece(g, a)
     local put = Entry.alternate(c[4], x, y)
     local name = put:getName()
     local sq = getCell():getGridSquare(x, y, z)
+    local obj = sq and objAt(sq, name)
+    local ov = sq and not obj and Dismantle.overlay(sq, name)
     return { x = x, y = y, z = z, name = name, e = g.name, kind = g.entry.kind, north = Entry.north(g.entry.kind, put),
-        a = a, cells = cells, sq = sq, obj = sq and objAt(sq, name) }
+        a = a, cells = cells, sq = sq, obj = obj, host = ov and ov.host or nil }
 end
 
 local function find(n)
@@ -418,10 +450,22 @@ local function step(s, j)
     halt(s, g, stuck and (j.placed + 1 >= stuck or req.noneQueued) and j.base + stuck or nil)
 end
 
+-- 復原輪完一筆、還有下一筆：玩家又開始蓋或拆別的、按取消或走開就停（同建造的兩筆之間），否則送下一筆
+local function undoStep(s, run)
+    run.next = nil
+    if s.list[1] or Client.pendingUnbuild or interrupted(s.player) then
+        run.stopped = true
+        return undoEnd(run)
+    end
+    undoNext(run)
+end
+
 function Queue.tick()
     for _, s in pairs(slots) do
         local j = s.list[1]
         if j then step(s, j) end
+        local u = s.undo
+        if u and u.next then undoStep(s, u) end
     end
 end
 Events.OnTick.Add(Queue.tick)

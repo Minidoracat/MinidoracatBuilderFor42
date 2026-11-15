@@ -311,35 +311,54 @@ local function saveFile()
     return true
 end
 
--- 這個存檔的地上藍圖：位置記包圍盒的角（藍圖檔讀回來時片是相對這個角，PlanFile 的 pos），隱藏與否；
--- 材料箱、上次狀態（別的模組寫的）照原樣留著。跟著游標時位置還沒定，原本記的（搬之前那個）留著
-local function storeSave()
-    local st = PlanStore.load()
-    local plan = S.plan
-    if S.mode ~= "place" then
-        st.file, st.ox, st.oy, st.oz = nil, nil, nil, nil
-        if plan and plan.file and plan.ox then
-            local x0, y0, z0 = Plan.bounds(plan)
-            st.file = plan.file
-            st.ox, st.oy, st.oz = plan.ox + (x0 or 0), plan.oy + (y0 or 0), plan.oz + (z0 or 0)
-        end
-    end
-    st.hidden = S.hidden == true
-    return PlanStore.save(st)
+-- 包圍盒的角在世界上的位置：藍圖檔的 pos 與 worlds 檔的原點都記這個（藍圖檔讀回來時片是相對這個角）
+local function corner(plan)
+    local x0, y0, z0 = Plan.bounds(plan)
+    return plan.ox + (x0 or 0), plan.oy + (y0 or 0), plan.oz + (z0 or 0)
 end
-PM.storeSave = storeSave
 
--- 藍圖檔與 worlds 檔一起存：片相對包圍盒的角、角記在 worlds 檔，只存一邊的話包圍盒變過就會錯位
+-- 改這個存檔的地上藍圖記錄：edit(st) 改好再存，隱藏照現況；材料箱、上次狀態（別的模組寫的）照原樣留著。
+-- 回 true；存不了說一聲並回 nil
+local function storeEdit(edit)
+    local st = PlanStore.load()
+    if edit then edit(st) end
+    st.hidden = S.hidden == true
+    if PlanStore.save(st) then return true end
+    say(getText("IGUI_MBLD_PlanSaveFail"))
+    return nil
+end
+
+local function storeForget(st)
+    st.file, st.ox, st.oy, st.oz, st.px, st.py, st.pz = nil, nil, nil, nil, nil, nil, nil
+end
+
+-- 記錄換成這張的檔名與角；同一個檔、角變了時原本的角留在 prev（藍圖檔還沒寫成就斷掉時，讀回照藍圖檔認出舊版）
+local function storePlan(plan)
+    return storeEdit(function(st)
+        local x, y, z = corner(plan)
+        if st.file ~= plan.file then
+            st.px, st.py, st.pz = nil, nil, nil
+        elseif st.ox and (st.ox ~= x or st.oy ~= y or st.oz ~= z) then
+            st.px, st.py, st.pz = st.ox, st.oy, st.oz
+        end
+        st.file, st.ox, st.oy, st.oz = plan.file, x, y, z
+    end)
+end
+
+-- 藍圖檔與 worlds 記錄一起存（片相對包圍盒的角，角記在 worlds 檔，只存一邊的話包圍盒變過就會錯位）。
+-- 記錄已經指著這個檔：先寫記錄（舊的角留在 prev）再寫藍圖檔，中間斷掉時讀回認得出舊版；
+-- 沒存過、或記錄指著別張（剛從藍圖庫擺下）：先寫藍圖檔（取到檔名），再寫記錄，中間斷掉時記錄還是原本那張。
+-- 任一步失敗回 nil, 原因（已說過一聲），記憶體不動、之後可以再存。擺放中、空白沒存過的不存
 local function persist()
     local plan = S.plan
-    if plan and S.mode ~= "place" and (plan.n > 0 or plan.file) then
-        local ok, why = saveFile()
-        if not ok then return nil, why end
+    if not plan or S.mode == "place" or not plan.ox or (plan.n == 0 and not plan.file) then return true end
+    if plan.file and PlanStore.load().file == plan.file then
+        if not storePlan(plan) then return nil, "STORE" end
+        return saveFile()
     end
-    if not storeSave() then
-        say(getText("IGUI_MBLD_PlanSaveFail"))
-        return nil, "STORE"
-    end
+    local ok, why = saveFile()
+    if not ok then return nil, why end
+    if not storePlan(plan) then return nil, "STORE" end
     return true
 end
 
@@ -361,6 +380,8 @@ function PM.restore()
     S.hidden = st.hidden == true
     if not st.file then return false end
     local plan, why = PlanFile.load(st.file)
+    -- 正式檔與備份都不在資料夾裡：被刪掉了（例如在檔案總管刪的），不是一時打不開
+    if not plan and why == "NO_FILE" and not PlanFile.exists(st.file) then why = "GONE" end
     if not plan or st.ox == nil then
         why = why or "NO_POS"
         print(LOG .. "ground plan not restored f=" .. tostring(st.file) .. ": " .. tostring(why))
@@ -369,34 +390,43 @@ function PM.restore()
             return false
         end
         say(getText("IGUI_MBLD_PlanLost"))
-        storeSave()
+        storeEdit(storeForget)
         return false
     end
-    plan.ox, plan.oy, plan.oz = st.ox, st.oy, st.oz
+    -- 藍圖檔的角（pos）等於 prev：記錄寫好、藍圖檔還沒寫成就斷掉，檔是上一版，照上一版的角
+    local fx, fy, fz = plan.ox, plan.oy, plan.oz
+    local ox, oy, oz = st.ox, st.oy, st.oz
+    if fx and not (fx == ox and fy == oy and fz == oz) and fx == st.px and fy == st.py and fz == st.pz then
+        ox, oy, oz = fx, fy, fz
+    end
+    plan.ox, plan.oy, plan.oz = ox, oy, oz
     S.plan, S.mode = plan, "fixed"
     checkReset()
     fire()
     return true
 end
 
--- 藍圖庫改名、刪除之後（PlanLibrary 呼叫）：地上那張是 oldFile 才改。newFile 是 nil＝刪掉了，之後存檔另取檔名，
+-- 藍圖庫改名、刪除之後（PlanLibrary 呼叫）：記錄或地上那張是 oldFile 才改。newFile 是 nil＝刪掉了，之後存檔另取檔名，
 -- 不再寫回舊檔名（舊檔名可能已經給了別張）。回 true＝改了
+-- 記錄先改：讀不到而保留的記錄（地上沒有藍圖）也要跟著改名。原點不動：改名搬過去的是磁碟上那份，不是記憶體裡還沒存的
 function PM.retarget(oldFile, ...)
     local newFile, newName = ...
-    local plan = S.plan
-    if oldFile == nil or not plan or plan.file ~= oldFile then return false end
-    plan.file = newFile
-    if newFile and newName then plan.name = Plan.cleanName(newName) end
-    -- 跟著游標時 storeSave 不動位置記錄，記錄裡的檔名照這裡改
+    if oldFile == nil then return false end
+    local hit = false
     local st = PlanStore.load()
     if st.file == oldFile then
-        st.file = newFile
-        if not newFile then st.ox, st.oy, st.oz = nil, nil, nil end
-        PlanStore.save(st)
+        hit = true
+        if newFile then st.file = newFile else storeForget(st) end
+        if not PlanStore.save(st) then print(LOG .. "plan store save failed after rename f=" .. tostring(oldFile)) end
     end
-    if S.mode ~= "place" then storeSave() end
-    fire()
-    return true
+    local plan = S.plan
+    if plan and plan.file == oldFile then
+        hit = true
+        plan.file = newFile
+        if newFile and newName then plan.name = Plan.cleanName(newName) end
+    end
+    if hit then fire() end
+    return hit
 end
 
 -- ===== 規劃開關 =====
@@ -475,11 +505,10 @@ end
 function PM.stopEdit()
     if S.mode ~= "edit" then return false, "NOT_EDIT" end
     local plan = S.plan
-    if plan.n == 0 and not plan.file then
+    if plan.n == 0 and not plan.file then -- 空白、沒存過：直接丟掉，記錄不動（一時讀不到而保留的那筆要留著）
         leaveEdit()
         S.plan, S.mode = nil, "none"
         checkReset()
-        storeSave()
         fire()
         return true
     end
@@ -500,18 +529,23 @@ function PM.finish()
     return true
 end
 
+-- 只改記錄裡的「隱藏」，不重寫藍圖
 function PM.setHidden(on)
     S.hidden = on == true
-    persist()
+    storeEdit(nil)
     fire()
 end
 
--- 「收起」：先存檔，再把地上的藍圖拿掉（蓋好的留在世界上）。存檔失敗時什麼都不動，回 false, 原因
+-- 「收起」：先存檔，記錄改成地上沒有這張，都成功才把地上的藍圖拿掉（蓋好的留在世界上）。
+-- 任一步失敗時什麼都不動（已說過一聲），回 false, 原因
 function PM.clear()
-    if not S.plan then return false, "NO_PLAN" end
-    if S.mode ~= "place" and S.plan.n > 0 then
-        local ok, why = saveFile()
-        if not ok then return false, why end
+    local plan = S.plan
+    if not plan then return false, "NO_PLAN" end
+    local ok, why = persist()
+    if not ok then return false, why end
+    -- 記錄指著這張才清：從藍圖庫擺、還沒定位的那張不動原本的記錄（例如一時讀不到而保留的那筆）
+    if plan.file and not storeEdit(function(st) if st.file == plan.file then storeForget(st) end end) then
+        return false, "STORE"
     end
     if S.mode == "edit" then leaveEdit() end
     if S.drag then
@@ -520,7 +554,6 @@ function PM.clear()
         S.drag = nil
     end
     S.plan, S.mode, S.home, S.prev = nil, "none", nil, nil
-    storeSave()
     checkReset()
     fire()
     return true
@@ -652,40 +685,16 @@ local function settle(ox, oy, oz)
     fire()
 end
 
--- 搬、複製中按旋轉只轉預覽（另做一份片，算法同 Plan.rotate），放下才改藍圖；取消時原片完全沒動
+-- 搬、複製中按旋轉只轉預覽（另做一份片，位置照 Plan.turned），放下才照預覽改藍圖；取消時原片完全沒動
 local function turnedCopy(list)
-    local plan, x0, y0, x1, y1 = S.plan, nil, nil, nil, nil
-    for _, p in ipairs(list) do
-        x0, y0 = math.min(x0 or p.x, p.x), math.min(y0 or p.y, p.y)
-        x1, y1 = math.max(x1 or p.x, p.x), math.max(y1 or p.y, p.y)
-    end
+    local to, stuck = Plan.turned(S.plan, list, safeTurn)
+    if stuck > 0 then say(getText("IGUI_MBLD_PlanStuck", tostring(stuck))) end
     local out = {}
     for i, p in ipairs(list) do
-        local d, ddx, ddy = safeTurn(p, plan.items[p.it])
-        if d == nil then d, ddx, ddy = p.d, 0, 0 end
-        out[i] = { x = x0 + (y1 - p.y) + (ddx or 0), y = y0 + (p.x - x0) + (ddy or 0), z = p.z, d = d, o = p.o, it = p.it,
-            w = p.w }
+        local t = to[i]
+        out[i] = { x = t[1], y = t[2], z = t[3], d = t[4], o = p.o, it = p.it, w = p.w }
     end
     return out
-end
-
--- 放下後會不會超出每邊、層數上限（搬走的原片不算、複製的原片照算）：先問，免得搬好了才轉不了
-local function dropOverflow(o)
-    local plan, keep = S.plan, o.kind == "copy"
-    local x0, y0, z0, x1, y1, z1
-    local function add(x, y, z)
-        if x0 == nil then
-            x0, y0, z0, x1, y1, z1 = x, y, z, x, y, z
-        else
-            x0, y0, z0 = math.min(x0, x), math.min(y0, y), math.min(z0, z)
-            x1, y1, z1 = math.max(x1, x), math.max(y1, y), math.max(z1, z)
-        end
-    end
-    Plan.each(plan, function(p) if keep or not S.selSet[p] then add(p.x, p.y, p.z) end end)
-    for _, p in ipairs(o.preview) do add(p.x + o.dx, p.y + o.dy, p.z) end
-    if x1 - x0 >= Plan.MAX_SIDE or y1 - y0 >= Plan.MAX_SIDE then return "TOO_WIDE" end
-    if z1 - z0 >= Plan.MAX_LEVELS then return "TOO_HIGH" end
-    return nil
 end
 
 function PM.dragDrop(o, x, y, z)
@@ -707,35 +716,19 @@ function PM.dragDrop(o, x, y, z)
     end
     PM.dragMoved(o, x, y, z)
     endDrag(o)
-    local turns = (o.turns or 0) % 4
-    if o.dx == 0 and o.dy == 0 and turns == 0 then return fire() end
-    local why = turns > 0 and dropOverflow(o) or nil
-    if why then
-        say(whyText(why))
-        return fire()
-    end
-    -- 搬（或複製）和轉算同一步：上一步一次拿掉
-    local plan, list, stuck = S.plan, S.sel, 0
-    Plan.begin(plan)
+    if o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0 then return fire() end
+    -- 照預覽的最終位置一次做完（preview[i] 對應 sel[i]）：搬（或複製）和轉算同一步，上一步一次拿掉；
+    -- 上限與重複都照最終位置算
+    local to = {}
+    for i, p in ipairs(o.preview) do to[i] = { p.x + o.dx, p.y + o.dy, p.z, p.d } end
+    local res, why
     if o.kind == "copy" then
-        list, why = Plan.copy(plan, S.sel, o.dx, o.dy, 0)
+        res, why = Plan.copyTo(S.plan, S.sel, to)
     else
-        local ok
-        ok, why = Plan.move(plan, S.sel, o.dx, o.dy, 0)
-        if not ok then list = nil end
+        res, why = Plan.moveTo(S.plan, S.sel, to)
     end
-    for _ = 1, list and turns or 0 do
-        local n, w = Plan.rotate(plan, list, safeTurn)
-        if not n then
-            why = w
-            break
-        end
-        stuck = n
-    end
-    Plan.commit(plan)
-    if why then say(whyText(why)) end
-    if stuck > 0 then say(getText("IGUI_MBLD_PlanStuck", tostring(stuck))) end
-    if o.kind == "copy" and list then setSel(list) end
+    if not res then say(whyText(why)) end
+    if o.kind == "copy" and res then setSel(res) end
     fire()
 end
 
@@ -971,37 +964,68 @@ function PM.placeHome()
     return true
 end
 
--- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）
+-- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）。規劃中改的先存：擺放中不存檔，跟著游標時換一張（收起）
+-- 會把沒存的改動整個丟掉。存不了留在規劃，回 false, 原因
 function PM.pickUp(playerNum)
     PM.playerNum = playerNum or PM.playerNum or 0
     local plan = S.plan
     if not plan or S.mode == "place" or not plan.ox then return false end
+    if S.mode == "edit" then
+        local ok, why = persist()
+        if not ok then return false, why end
+    end
     return beginPlace(plan, PM.playerNum, { ox = plan.ox, oy = plan.oy, oz = plan.oz })
 end
 
--- 從藍圖庫擺到地上：地上已經有別張時先問（換的話先存檔收起那張）；同一張就是「搬」
+local function sameFile(cur, plan)
+    return cur ~= nil and cur ~= plan and plan.file ~= nil and cur.file == plan.file
+end
+
+-- 同一個檔的另一份換上定住的地上那張：原點照包圍盒的角對齊（位置不動），照圖蓋的狀態重算
+local function swapIn(plan)
+    local cur = S.plan
+    local cx, cy, cz = Plan.bounds(cur)
+    local nx, ny, nz = Plan.bounds(plan)
+    plan.ox, plan.oy = cur.ox + (cx or 0) - (nx or 0), cur.oy + (cy or 0) - (ny or 0)
+    plan.oz = cur.oz + (cz or 0) - (nz or 0)
+    S.plan = plan
+    setSel(nil)
+    checkReset()
+end
+
+-- 藍圖庫把同一個檔存成另一份之後（PlanLibrary）：地上那張定住的換成這份，不拿起來；不換的話之後地上那張存檔
+-- 會把舊內容寫回去。回 true；正在規劃回 false, "EDITING"（沒存的改動比檔案新，不換）；
+-- 不是同一個檔的另一份、地上沒有、正跟著游標回 false
+function PM.adopt(plan)
+    if not plan or not sameFile(S.plan, plan) then return false end
+    if S.mode == "edit" then return false, "EDITING" end
+    if S.mode ~= "fixed" then return false end
+    swapIn(plan)
+    persist() -- 藍圖檔的 pos 對齊記錄的角（藍圖庫存的那份帶的是它自己的 pos）；存不了已說過，下次存檔再寫
+    fire()
+    return true
+end
+
+-- 從藍圖庫擺到地上：地上已經有別張時先問（換的話先存檔收起那張）；同一張就是「搬」。
+-- 同一個檔的另一份（重新匯入、重新讀過）：定住的換成新的這份、位置不動再拿起來；地上那張正在規劃時，
+-- 沒存的改動比檔案新，新的這份當成另一張（之後存檔另取檔名），照「先問、存檔收起、再擺」
 function PM.place(plan, playerNum)
     PM.playerNum = playerNum or PM.playerNum or 0
     if not plan then return false end
-    local cur = S.plan
-    -- 同一個檔的另一份（重新匯入、重新讀過、換過圖）：用新的這份取代地上那張、位置不動再拿起來，
-    -- 不然之後存檔會把地上的舊內容寫回同一個檔。規劃中還沒存的改動比檔案新，照舊拿起地上那張
-    if cur and cur ~= plan and plan.file ~= nil and cur.file == plan.file and S.mode ~= "edit" then
-        if S.mode == "place" and S.drag then getCell():setDrag(nil, S.drag.player) end
-        cur = S.plan
-        if cur and cur.ox then
-            local cx, cy, cz = Plan.bounds(cur)
-            local nx, ny, nz = Plan.bounds(plan)
-            plan.ox, plan.oy = cur.ox + (cx or 0) - (nx or 0), cur.oy + (cy or 0) - (ny or 0)
-            plan.oz = cur.oz + (cz or 0) - (nz or 0)
-            if S.mode == "edit" then leaveEdit() end
-            S.plan, S.mode = plan, "fixed"
-            setSel(nil)
-            checkReset()
-            return PM.pickUp(PM.playerNum)
+    local detach = false
+    if sameFile(S.plan, plan) then
+        if S.mode == "edit" then
+            detach = true
+        else
+            if S.mode == "place" and S.drag then getCell():setDrag(nil, S.drag.player) end
+            if S.plan and S.plan.ox then
+                swapIn(plan)
+                return PM.pickUp(PM.playerNum)
+            end
         end
     end
-    if cur and (cur == plan or (plan.file ~= nil and cur.file == plan.file)) then
+    local cur = S.plan
+    if cur and cur == plan then
         if S.mode == "place" then return true end
         return PM.pickUp(PM.playerNum)
     end
@@ -1019,6 +1043,7 @@ function PM.place(plan, playerNum)
         onResult = function(ok)
             if not ok then return end
             if not PM.clear() then return end -- 存檔失敗：地上那張留著，不換
+            if detach then plan.file = nil end
             beginPlace(plan, PM.playerNum, nil)
         end })
     return true

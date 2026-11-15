@@ -149,7 +149,7 @@ local function doorGroup(spr)
     local garage = key == "GarageDoor"
     local offs = garage and GARAGE_OFF or north and DOUBLE_N or DOUBLE_W
     local opens = garage and GARAGE_OPEN or north and DOUBLE_N_OPEN or DOUBLE_W_OPEN
-    local name, parts, members = spr:getName(), {}, {}
+    local name, parts, members, closed = spr:getName(), {}, {}, {}
     Rules.ensure()
     for i, d in ipairs(offs) do
         local part = offset(name, d)
@@ -164,12 +164,14 @@ local function doorGroup(spr)
         if not (o and tonumber(o:getProperties():get(key)) == i + #offs) then return nil end -- 開著的值：車庫門 4–6、雙開門 5–8
         parts[i] = s
         members[part], members[open] = true, true
+        closed[part], closed[open] = s, s
     end
-    return { garage = garage, north = north, parts = parts, members = members }
+    return { garage = garage, north = north, parts = parts, members = members, closed = closed }
 end
 
 -- spr 是車庫門頭片（GarageDoor＝1）或雙開門第 1 片（DoubleDoor＝1），而且整組各片與各片開著的圖都在、值與方向都對時回
--- { garage = 是不是車庫門, north, parts = { 關著的各片 }, members = { [各片關著、開著的圖名] = true } }，否則 nil。
+-- { garage = 是不是車庫門, north, parts = { 關著的各片 }, members = { [各片關著、開著的圖名] = true },
+-- closed = { [各片關著、開著的圖名] = 那一片關著的圖 } }，否則 nil。
 -- 圖塊表一個 session 不變，照名稱快取
 local doorSets = {}
 function Entry.doorSet(spr)

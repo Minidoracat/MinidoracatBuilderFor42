@@ -257,6 +257,12 @@ function Runner.stop(...)
     halt("done", reason or "STOP", nil, nil, reason == nil)
 end
 
+-- 玩家用本 MOD 的入口自己動手（配方單放、拖一排、牆面油漆）：入口在排玩家的動作之前叫，照圖蓋暫停 MANUAL。
+-- 照圖蓋自己送的配方走 Recipes.runCells，不經過這些入口；分割畫面的另一位玩家動手不算
+function Runner.manual(player)
+    if active() and player == st.player then halt("paused", "MANUAL") end
+end
+
 -- "idle"｜"pick"｜"build"｜"fetch"｜"paused"｜"done"（內部的 check 對外算 build）
 function Runner.state() return st.state == "check" and "build" or st.state end
 
@@ -754,9 +760,19 @@ local function pick(player, plan)
     if st.state == "fetch" then st.fetchedFor = b.id .. "@" .. b.z end
 end
 
+-- 玩家自己動手的請求排著：本 MOD 的建造（手拖、單放）、拆除、配方拖一排。照圖蓋自己的批次只在 build 狀態排著，
+-- 所以沒在跑、pick、fetch 時 Queue 裡有東西就是玩家的（不經過這三者的入口改叫 Runner.manual）
+local function handBusy(p)
+    local C, R = B.Client, B.Recipes
+    local unbuild = C and C.pendingUnbuild
+    if Queue.busy(p) > 0 or (unbuild and unbuild.player == p) then return true end
+    return (R and R.row and R.row(p:getPlayerNum())) ~= nil
+end
+
 -- ---------------------------------------------------------------- 開始
 
--- 照圖蓋；回 true，或 nil, 原因碼：OFF（沙盒關掉）、NO_PLAN（地上沒有定位好的藍圖）、NOTHING（沒有能蓋的）、BUSY（正在蓋）
+-- 照圖蓋；回 true，或 nil, 原因碼：OFF（沙盒關掉）、NO_PLAN（地上沒有定位好的藍圖）、NOTHING（沒有能蓋的）、
+-- BUSY（正在蓋，或玩家自己動手的還沒跑完）
 function Runner.start(player)
     if Entry.settings().AllowAutoBuild == false then return nil, "OFF" end
     if active() then return nil, "BUSY" end
@@ -764,6 +780,7 @@ function Runner.start(player)
     local plan = PM and PM.plan and PM.plan()
     if not plan or not (PM.origin and PM.origin()) or not (PC and PC.state and PC.resolve) then return nil, "NO_PLAN" end
     if not player or player:isDead() then return nil, "NO_PLAN" end
+    if handBusy(player) then return nil, "BUSY" end
     if st.plan ~= plan then segCache = {} end
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
@@ -818,19 +835,10 @@ local function watch(p)
     return false
 end
 
--- 玩家自己動手：本 MOD 的建造（手拖、單放）、拆除、配方拖一排排上了。照圖蓋自己的批次只在 build 狀態排著，
--- 所以 pick、fetch 時 Queue 裡有東西就是玩家的
-local function manual(p)
-    local C, R = B.Client, B.Recipes
-    local unbuild = C and C.pendingUnbuild
-    if Queue.busy(p) > 0 or (unbuild and unbuild.player == p) then return true end
-    return (R and R.row and R.row(p:getPlayerNum())) ~= nil
-end
-
 -- 停下的那一批是誰停的：玩家的請求排上了＝玩家動手；佇列空著還在動＝玩家自己走開
 -- （原版一動就清佇列，Queue 的這一批跟著停，比 watch 連兩幀的判斷早一幀）；都不是＝走不過去，跳過那一片
 local function judgeStop(p)
-    if manual(p) then return halt("paused", "MANUAL") end
+    if handBusy(p) then return halt("paused", "MANUAL") end
     if p:isJustMoved() and not ISTimedActionQueue.isPlayerDoingAction(p) then return halt("paused", "MOVED") end
     if st.checkFor then skip(st.checkFor.p, "WALK") end
     st.checkFor, st.state = nil, "pick"
@@ -843,7 +851,7 @@ function Runner.tick()
     if watch(p) then return end
     local s = st.state
     if s == "check" then return judgeStop(p) end
-    if (s == "fetch" or s == "pick") and manual(p) then return halt("paused", "MANUAL") end
+    if (s == "fetch" or s == "pick") and handBusy(p) then return halt("paused", "MANUAL") end
     if s == "fetch" then
         local t = getTimestampMs()
         if ISTimedActionQueue.isPlayerDoingAction(p) then

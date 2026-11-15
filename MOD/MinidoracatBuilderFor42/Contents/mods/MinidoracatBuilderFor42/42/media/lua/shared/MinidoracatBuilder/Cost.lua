@@ -345,7 +345,7 @@ local function usesOf(fam, kind, mt)
 end
 
 -- 門（車庫門以外）被打壞時每片各掉門把 1、鉸鏈 0–2，三個材質都沒寫的另掉木板 1–2（IsoDoor.destroy，IsoDoor.java:1199-1234；
--- 雙開門壞一片整側兩片一起壞，destroyDoubleDoor :3010-3030）。每片至少收這麼多，預設倍率下打壞拿到的不比付的多
+-- 雙開門壞一片整側兩片一起壞，destroyDoubleDoor :3010-3030）。乘完倍率後每片至少收這麼多（倍率低於 1 也是），打壞拿到的不比付的多
 local DOOR_DROPS = { ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1 }
 local DOOR_DROPS_BARE = { ["Base.Hinge"] = 2, ["Base.Doorknob"] = 1, [PLANK] = 2 }
 
@@ -426,13 +426,6 @@ function Cost.of(kind, spr, multiplier)
             perkOf[PIPE] = false
         end
     end
-    if kind == "door" and not p:has("GarageDoor") then
-        local bare = (p:get("Material") or "") == "" and (p:get("Material2") or "") == "" and (p:get("Material3") or "") == ""
-        for ft, n in pairs(bare and DOOR_DROPS_BARE or DOOR_DROPS) do
-            if (items[ft] or 0) < n then items[ft] = n end
-            if perkOf[ft] == nil then perkOf[ft] = false end
-        end
-    end
     -- 電器費（照拆解價或基本價都收）：照倍率算進 items，另記在 fee，Place 不寫進 buildMaterials（拆了不退）
     if elec then
         items[ESCRAP] = (items[ESCRAP] or 0) + 1
@@ -446,6 +439,13 @@ function Cost.of(kind, spr, multiplier)
     if kind == "light" and p:has("lightR") then -- 燈泡：倍率低於 1 也照 1 收（能搬的拿得下來，不能搬的拆了退）
         out[BULB] = (out[BULB] or 0) + math.max(1, math.ceil(m - 1e-9))
         perkOf[BULB] = false
+    end
+    if kind == "door" and not p:has("GarageDoor") then
+        local bare = (p:get("Material") or "") == "" and (p:get("Material2") or "") == "" and (p:get("Material3") or "") == ""
+        for ft, n in pairs(bare and DOOR_DROPS_BARE or DOOR_DROPS) do
+            out[ft] = math.max(out[ft] or 0, n)
+            if perkOf[ft] == nil then perkOf[ft] = false end
+        end
     end
     local fee = {}
     if elec then

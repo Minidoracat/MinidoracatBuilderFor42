@@ -743,6 +743,15 @@ local function record(o, cells)
     if not ok then print(LOG .. "plan addCells failed: " .. tostring(err)) end
 end
 
+-- 玩家自己動手：照圖蓋先暫停，才排玩家的動作（暫停會取消照圖蓋排著的，排在後面就會清掉玩家的）。
+-- 照圖蓋自己送的走 Recipes.runCells → startRow，不經過叫這支的入口
+local function handOver(player)
+    local R = MinidoracatBuilder.Runner
+    if not (R and R.manual) then return end
+    local ok, err = pcall(R.manual, player)
+    if not ok then print(LOG .. "runner manual failed: " .. tostring(err)) end
+end
+
 -- 放開左鍵或手把 A，而且可蓋（ISBuildingObject.lua:171-174）：拖曳中送整排可蓋的格子，不然送按下那一格
 local function rowBuild(self, x, y, z)
     local v, cells = views[self.player], {}
@@ -756,12 +765,14 @@ local function rowBuild(self, x, y, z)
     self.lineX, self.lineY, views[self.player] = nil, nil, nil
     if not cells[1] then return end
     if planning() then return record(self, cells) end
+    handOver(self.character)
     startRow(self, cells)
 end
 
 -- 不能拖的配方游標放下時：舊的一排剩下的格子不再接著送（它正在蓋的那格照原版跑完）。規劃開著時記進藍圖、不蓋
 local function single(self, x, y, z)
     if planning() then return record(self, { { x, y, z, self.nSprite } }) end
+    handOver(self.character)
     local row = rows[self.player]
     if row then endRow(self.player, row) end
     return ISBuildIsoEntity.tryBuild(self, x, y, z)
@@ -1002,6 +1013,11 @@ function Recipes.build(pn, id)
             o = ISPaperCursor:new(player, p.wallpaperType, WallPaper["wall"][p.wallpaperType])
         else
             o = ISPaintCursor:new(player, p.actionType:toString(), p)
+        end
+        local base = o.tryBuild -- 放下就直接動手（ISBuildingObject.lua:171-174 可蓋才叫）
+        o.tryBuild = function(self, x, y, z)
+            handOver(self.character)
+            return base(self, x, y, z)
         end
     end
     o.mbldRecipe = true

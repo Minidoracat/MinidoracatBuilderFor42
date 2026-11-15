@@ -164,8 +164,9 @@ local DOUBLE_POS = {
 
 -- 整組門收到的片（buildUtil.getGarageDoorObjects／getDoubleDoorObjects）不是完整一組時回拒絕碼，完整回 nil。
 -- 引擎找相鄰片時那一格沒載入就回 null（IsoDoor.java:2814-2816,3076-3078,3117-3119），收到的只是載入中的那幾片：
--- 斷掉那一頭的下一格沒載入回 NOT_LOADED，有載入（真的少了片）回 NOT_OURS。車庫門完整＝頭片（值 1）與尾片（值 3）都在
--- （中間缺片時從 obj 走不到另一頭）；雙開門完整＝四片都在
+-- 缺的片那一格沒載入回 NOT_LOADED，有載入（真的少了片）回 NOT_OURS。車庫門完整＝頭片（值 1）與尾片（值 3）都在
+-- （中間缺片時從 obj 走不到另一頭）；雙開門完整＝四片都在。頭片（第 1 片）那一格沒載入時認不出這一組
+-- （Place.doorAnchor 回 nil），走不到這裡，伺服器回 GONE、不動世界與帳本
 local function doorGap(obj, list, garage)
     local cell = getCell()
     if garage then
@@ -248,15 +249,16 @@ function Dismantle.plan(obj, kind)
     return { remove = remove, refund = refund, landing = landing, foreign = foreign, incomplete = incomplete }
 end
 
--- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。整組門照現在的圖對回那一組
--- 關著的各片（Entry.doorItem、Entry.doorSet；開著的車庫門圖沒有拆解材質，照它算工具會不一樣）。不看 modData（客戶端改得到）
+-- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。整組門每一片照現在的圖對回
+-- 它自己那一片關著的圖（Entry.doorSet 的 closed；開著的圖沒有拆解材質，照它算工具會不一樣），只算真的在的片（兩格寬的
+-- 車庫門沒有中段）。不看 modData（客戶端改得到）
 function Dismantle.tools(kind, plan)
     local list = {}
     for _, o in ipairs(plan.remove) do
         local spr = o:getSprite()
         local first = kind == "door" and Entry.doorItem(spr:getName())
         local set = first and Entry.doorSet(Entry.sprite(first))
-        for _, s in ipairs(set and set.parts or { spr }) do list[#list + 1] = Cost.of(kind, s, 1) end
+        list[#list + 1] = Cost.of(kind, set and set.closed[spr:getName()] or spr, 1)
     end
     if plan.overlay then list[#list + 1] = Cost.of(kind, plan.overlay.spr, 1) end
     return Cost.sum(list).tools

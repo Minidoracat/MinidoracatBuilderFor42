@@ -243,7 +243,7 @@ function L.paste()
     return nil
 end
 
--- 這段文字放進可複製的文字框安不安全：原生複製在 render 執行緒轉 UTF-8，超過 SHARE_MAX 位元組整個遊戲當掉。
+-- 從剪貼簿收的分享碼上限，同 L.copy 放得進剪貼簿的上限（超過的不是分享出來的，改請用檔案）。
 -- 有非 ASCII 字時一字最多算 3 位元組
 function L.fits(s)
     local n = #s
@@ -776,17 +776,24 @@ function L.askRemove(file, name, n, pn, onDone)
         end })
 end
 
--- 存進藍圖庫（匯入的、換過項目的）：從檔案讀的存回同一個檔，分享碼照名稱取新檔名。回 檔名，或 nil, 句子
+-- 存進藍圖庫（匯入的、換過項目的）：從檔案讀的存回同一個檔，分享碼照名稱取新檔名。回 檔名, 是否另存成新的一張；或 nil, 句子。
+-- 地上那張用同一個檔：規劃中＝另存成新的一張（不動地上那張的檔）；其他＝存好後地上那張換成這份（不然它之後存檔會寫回舊內容）
 function L.store(plan)
+    local PM = B.PlanMode
+    local cur = PM and PM.plan and PM.plan()
+    local asNew = plan.file ~= nil and cur ~= nil and cur ~= plan and cur.file == plan.file
+        and PM.state ~= nil and PM.state() == "edit"
+    if asNew then plan.file = nil end
     local file, why = plan.file, nil
     if not file then file, why = PlanFile.fileName(plan.name) end
     if not file then return nil, L.errText(why or "FILE", 0) end
     local ok
     ok, why = PlanFile.save(plan, file)
     if not ok then return nil, L.errText(why, 0) end
+    if not asNew and PM and PM.adopt then PM.adopt(plan) end
     L.markUsed(file, nil)
     L.touch(file)
-    return file
+    return file, asNew
 end
 
 -- 「把缺的換成…」：這款（項目編號 it）的片全部改指到這裡有的 id。回 換了幾片，或 nil, 句子
@@ -1163,21 +1170,18 @@ function Imp.new(UI, pn)
         win:addChild(b)
         return b
     end
-    -- 第一列：分享碼＋從剪貼簿貼上
+    -- 第一列：從剪貼簿貼上＋讀到了什麼。不放可輸入的文字框：原生 Ctrl+C 會把框裡的字直接送進剪貼簿，太長會讓遊戲當掉
     local pasteBtn = (Clipboard and Clipboard.getClipboard) and button("IGUI_MBLD_Imp_Paste", nil, function(t) t:paste() end)
-    local codeW = innerW - (pasteBtn and pasteBtn.width + GAP or 0)
-    -- 欄位設長度上限：原生 Ctrl+V 貼進來的超長文字下一幀就被截掉（UITextBox2.java:398-401），中文另由 onChange 清掉
-    self.code = UI.TextField.new({ x = PAD, y = y, width = codeW, placeholder = getText("IGUI_MBLD_Imp_CodeHint"),
-        clearButton = true, theme = theme, maxLength = PlanFile.SHARE_MAX,
-        onChange = function(_, text)
-            if not L.fits(text or "") then self:tooLong() end
-        end })
-    win:addChild(self.code)
     if pasteBtn then
-        pasteBtn:setX(PAD + codeW + GAP)
+        pasteBtn:setX(PAD)
         pasteBtn:setY(y)
+        local tx = PAD + pasteBtn.width + GAP
+        self.status = L.textPanel(win, tx, y, PAD + innerW - tx, theme, font)
+        -- 這一列的高度照兩種狀態裡較高的那個（翻譯長了就換行，不蓋到下面）
+        local th = math.max(L.setLines(self.status, { { getText("IGUI_MBLD_Imp_CodeRead", "60000"), "text" } }),
+            L.setLines(self.status, { { getText("IGUI_MBLD_Imp_CodeHint"), "textMuted" } }))
+        y = y + math.max(pasteBtn.height, th) + GAP
     end
-    y = y + self.code.height + GAP
     -- 第二列：資料夾裡的檔＋檢查
     local checkBtn = button("IGUI_MBLD_Imp_Check", "primary", function(t) t:check() end)
     local opts = {}
@@ -1190,7 +1194,7 @@ function Imp.new(UI, pn)
     self.fileDD = UI.Dropdown.new({ x = PAD, y = y, width = innerW - checkBtn.width - GAP, options = opts,
         placeholder = getText(#opts > 0 and "IGUI_MBLD_Imp_FileHint" or "IGUI_MBLD_Imp_NoFiles"), theme = theme, target = self,
         onChange = function(t)
-            t.code:setText("")
+            t:setCode(nil)
             t:check()
         end })
     win:addChild(self.fileDD)
@@ -1207,36 +1211,46 @@ function Imp.new(UI, pn)
     self.box = UI.ScrollPanel.new({ x = PAD, y = y, width = innerW, height = math.max(fh * 3, fy - GAP - y), theme = theme })
     win:addChild(self.box)
     win:addToUIManager()
+    self:setCode(nil)
     self:render()
     return self
 end
 
--- 太長的文字不留在可複製的文字框（L.fits），改請玩家用藍圖檔匯入
+-- 已讀到的分享碼（nil＝沒有）與狀態那一行
+function Imp:setCode(s)
+    self.code = s
+    if not self.status then return end
+    L.setLines(self.status, { s and { getText("IGUI_MBLD_Imp_CodeRead", tostring(#s)), "text" }
+        or { getText("IGUI_MBLD_Imp_CodeHint"), "textMuted" } })
+end
+
+-- 太長的不收（L.fits），改請玩家用藍圖檔匯入
 function Imp:tooLong()
-    self.code:setText("")
+    self:setCode(nil)
     self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_TooLong"), false
     self:render()
 end
 
--- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦
+-- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦。
+-- 再按一次＝換成新的
 function Imp:paste()
     local s = L.paste()
     if not s or s == "" then
+        self:setCode(nil)
         self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_ClipEmpty"), true
         return self:render()
     end
     if not L.fits(s) then return self:tooLong() end
-    self.code:setText(s)
+    self:setCode(s)
     self:check(true)
 end
 
--- 分享碼優先；欄位空的才讀選的檔
+-- 分享碼優先；沒讀到分享碼才讀選的檔
 function Imp:check(pasted)
     self.pasted = pasted == true
-    local text = self.code:getText() or ""
     local file = self.fileDD:getSelected()
-    if text:gsub("%s", "") ~= "" then
-        self.plan, self.err = L.parseCode(text)
+    if self.code then
+        self.plan, self.err = L.parseCode(self.code)
     elseif file then
         self.plan, self.err = L.loadFile(file)
     else
@@ -1303,9 +1317,9 @@ function Imp:finish(how)
     local plan = self.plan
     if not plan then return end
     if how == "store" then
-        local file, err = L.store(plan)
-        if not file then return L.tell(err) end
-        L.tell(getText("IGUI_MBLD_Imp_Stored", plan.name, file))
+        local file, asNew = L.store(plan)
+        if not file then return L.tell(asNew) end
+        L.tell(getText(asNew and "IGUI_MBLD_Imp_StoredNew" or "IGUI_MBLD_Imp_Stored", plan.name, file))
         L.closeImport()
         if L.visible() and L.v then L.v:reload(file) end
     else

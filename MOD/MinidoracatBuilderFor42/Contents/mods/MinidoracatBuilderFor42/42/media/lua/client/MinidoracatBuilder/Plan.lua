@@ -324,66 +324,34 @@ function Plan.remove(plan, pieces)
     return #list
 end
 
--- 搬完會超出每邊 64、4 層（或格子鍵的範圍）時整個不做
-local function shifted(list, dx, dy, dz)
-    for _, p in ipairs(list) do
-        if not inRange(p.x + dx, p.y + dy, 0) then return false, "TOO_WIDE" end
-        if not inRange(0, 0, p.z + dz) then return false, "TOO_HIGH" end
-    end
-    return true
-end
-
--- 回 true；超出上限回 nil, 原因
-function Plan.move(plan, pieces, dx, dy, dz)
-    local list = alive(plan, pieces)
-    if #list == 0 or (dx == 0 and dy == 0 and dz == 0) then return true end
-    local ok, why = shifted(list, dx, dy, dz)
-    if not ok then return nil, why end
-    open(plan)
-    local from = #plan._step + 1
-    for _, p in ipairs(list) do modify(plan, p, p.x + dx, p.y + dy, p.z + dz, p.d, p.it) end
-    ok, why = fits(plan)
-    if not ok then
-        rollback(plan, from)
-        close(plan)
-        return nil, why
-    end
-    dedupe(plan, list)
-    changed(plan, from)
-    close(plan)
-    return true
-end
-
--- 繞這幾片的包圍盒順時針轉 90 度（北→東→南→西：(x, y) → (minX + maxY − y, minY + x − minX)）。
--- turnPiece(piece, item) 回 新 d, 位移修正 dx, dy（格邊的片換邊時用）；回 nil＝朝向不換，位置照樣跟著轉。
--- 回朝向沒換的片數；超出上限回 nil, 原因（整個不做）
-function Plan.rotate(plan, pieces, turnPiece)
-    local list = alive(plan, pieces)
-    if #list == 0 then return 0 end
-    local x0, y0, x1, y1 = list[1].x, list[1].y, list[1].x, list[1].y
-    for _, p in ipairs(list) do
-        x0, x1 = math.min(x0, p.x), math.max(x1, p.x)
-        y0, y1 = math.min(y0, p.y), math.max(y1, p.y)
-    end
-    local moves, stuck = {}, 0
-    for i, p in ipairs(list) do
-        local d, ddx, ddy = turnPiece(p, plan.items[p.it])
-        if d == nil then
-            stuck = stuck + 1
-            d, ddx, ddy = p.d, 0, 0
+-- 這幾片一次放到各自的最終位置 to[i]＝{ x, y, z, d }（照 pieces 的順序）。copy＝原片不動、在那裡加一份新的
+-- （那裡已經有一模一樣的就略過）；不然搬過去，全部到位後和別片一樣的才拿掉：中間位置不去重，
+-- 先搬再轉時中間位置剛好疊到沒選的同款片，那片也不會被吃掉。
+-- 回 true（copy 回新片的陣列）；超出每邊 64、4 層（或格子鍵的範圍）回 nil, 原因（整個不做）
+local function relocate(plan, pieces, to, copy)
+    local list, dest, seen, n = {}, {}, {}, 0
+    for i, p in ipairs(pieces) do
+        if not seen[p] and live(plan, p) then
+            seen[p] = true
+            local t = to[i]
+            if not inRange(t[1], t[2], 0) then return nil, "TOO_WIDE" end
+            if not inRange(0, 0, t[3]) then return nil, "TOO_HIGH" end
+            n = n + 1
+            list[n], dest[n] = p, t
         end
-        moves[i] = { x0 + (y1 - p.y) + (ddx or 0), y0 + (p.x - x0) + (ddy or 0), d }
     end
     open(plan)
     local from = #plan._step + 1
+    local out = {}
     for i, p in ipairs(list) do
-        local m = moves[i]
-        if not inRange(m[1], m[2], 0) then
-            rollback(plan, from)
-            close(plan)
-            return nil, "TOO_WIDE"
+        local t = dest[i]
+        if not copy then
+            modify(plan, p, t[1], t[2], t[3], t[4], p.it)
+        elseif not same(plan, t[1], t[2], t[3], t[4], p.o, p.it, nil) then
+            local q = { x = t[1], y = t[2], z = t[3], d = t[4], o = p.o, it = p.it, w = p.w }
+            addPiece(plan, q)
+            out[#out + 1] = q
         end
-        modify(plan, p, m[1], m[2], p.z, m[3], p.it)
     end
     local ok, why = fits(plan)
     if not ok then
@@ -391,37 +359,70 @@ function Plan.rotate(plan, pieces, turnPiece)
         close(plan)
         return nil, why
     end
-    dedupe(plan, list)
+    if not copy then dedupe(plan, list) end
     changed(plan, from)
     close(plan)
+    if copy then return out end
+    return true
+end
+
+local function shiftedTo(pieces, dx, dy, dz)
+    local to = {}
+    for i, p in ipairs(pieces) do to[i] = { p.x + dx, p.y + dy, p.z + dz, p.d } end
+    return to
+end
+
+-- 回 true；超出上限回 nil, 原因
+function Plan.move(plan, pieces, dx, dy, dz)
+    if dx == 0 and dy == 0 and dz == 0 then return true end
+    return relocate(plan, pieces, shiftedTo(pieces, dx, dy, dz), false)
+end
+
+-- 搬到各自的最終位置（搬加轉一次做完，見 relocate）。回 true；超出上限回 nil, 原因
+function Plan.moveTo(plan, pieces, to)
+    return relocate(plan, pieces, to, false)
+end
+
+-- 這幾片繞自己的包圍盒順時針轉 90 度（北→東→南→西：(x, y) → (minX + maxY − y, minY + x − minX)）後在哪，不改藍圖；
+-- list 可以是藍圖外的片（搬、複製的預覽）。turnPiece(piece, item) 回 新 d, 位移修正 dx, dy（格邊的片換邊時用）；
+-- 回 nil＝朝向不換，位置照樣跟著轉。回 { { x, y, z, d }… }（照 list 的順序）, 朝向沒換的片數
+function Plan.turned(plan, list, turnPiece)
+    if #list == 0 then return {}, 0 end
+    local x0, y0, x1, y1 = list[1].x, list[1].y, list[1].x, list[1].y
+    for _, p in ipairs(list) do
+        x0, x1 = math.min(x0, p.x), math.max(x1, p.x)
+        y0, y1 = math.min(y0, p.y), math.max(y1, p.y)
+    end
+    local to, stuck = {}, 0
+    for i, p in ipairs(list) do
+        local d, ddx, ddy = turnPiece(p, plan.items[p.it])
+        if d == nil then
+            stuck = stuck + 1
+            d, ddx, ddy = p.d, 0, 0
+        end
+        to[i] = { x0 + (y1 - p.y) + (ddx or 0), y0 + (p.x - x0) + (ddy or 0), p.z, d }
+    end
+    return to, stuck
+end
+
+-- 轉 90 度（Plan.turned）。回朝向沒換的片數；超出上限回 nil, 原因（整個不做）
+function Plan.rotate(plan, pieces, turnPiece)
+    local list = alive(plan, pieces)
+    if #list == 0 then return 0 end
+    local to, stuck = Plan.turned(plan, list, turnPiece)
+    local ok, why = relocate(plan, list, to, false)
+    if not ok then return nil, why end
     return stuck
 end
 
 -- 複製一份到位移處；目的地已經有一模一樣的片就略過。回新片的陣列；超出上限回 nil, 原因（整個不做）
 function Plan.copy(plan, pieces, dx, dy, dz)
-    local list = alive(plan, pieces)
-    local ok, why = shifted(list, dx, dy, dz)
-    if not ok then return nil, why end
-    open(plan)
-    local from = #plan._step + 1
-    local out = {}
-    for _, p in ipairs(list) do
-        local x, y, z = p.x + dx, p.y + dy, p.z + dz
-        if not same(plan, x, y, z, p.d, p.o, p.it, nil) then
-            local q = { x = x, y = y, z = z, d = p.d, o = p.o, it = p.it, w = p.w }
-            addPiece(plan, q)
-            out[#out + 1] = q
-        end
-    end
-    ok, why = fits(plan)
-    if not ok then
-        rollback(plan, from)
-        close(plan)
-        return nil, why
-    end
-    changed(plan, from)
-    close(plan)
-    return out
+    return relocate(plan, pieces, shiftedTo(pieces, dx, dy, dz), true)
+end
+
+-- 複製到各自的最終位置（複製加轉一次做完）。回新片的陣列；超出上限回 nil, 原因
+function Plan.copyTo(plan, pieces, to)
+    return relocate(plan, pieces, to, true)
 end
 
 -- 「全部換成…」：項目編號 it 的片改指到項目 id（src 同 Plan.item，可省略）。換完和別片重複的拿掉。回換了幾片
