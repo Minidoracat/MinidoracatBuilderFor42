@@ -3,6 +3,7 @@
 -- 沒有才問 Check.item（帶游標預覽同一組 opts），能不能蓋不另外判斷。配方項目看 Recipes。
 -- 算完整張後只重查有變動的片：PlanCheck.touch 的格子、背包或技能變了（材料摘要每秒比一次）、沙盒設定變了、
 -- 玩家換樓層或走開 MOVE 格（重查還沒載入或太遠的片）、玩家身邊 NEAR 格內格上的物件數變了（每幀輪流比一段）。
+-- 被人、殭屍、動物或車擋住的片（TRANSIENT）不改物件數，離開了也看不出來：身邊的每 RECHECK_MS 重查一次。
 -- 沒有地上的藍圖時 OnTick 第一行就離開。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Check"
@@ -20,10 +21,12 @@ PlanCheck.SUMMARY_MS = 1000 -- 材料摘要、沙盒設定多久比一次（同�
 PlanCheck.MOVE = 8          -- 玩家走開幾格（或換樓層）就重查還沒載入、太遠的片
 PlanCheck.NEAR = 12         -- 身邊幾格內的片輪流比格上的物件數
 PlanCheck.SWEEP = 128       -- 每幀輪流比幾片
+PlanCheck.RECHECK_MS = 500  -- 被會動的東西擋住的片多久重查一次
 local MAX_BUCKET = 255
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 local FAR = { TOO_FAR = true, NOT_LOADED = true }
 local OFF = { DISABLED_KIND = true, DISABLED_SOURCE = true, DISABLED_TILESET = true }
+local TRANSIENT = { OCCUPIED = true, VEHICLE = true }
 
 local cur -- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep }
 local canonMemo, itemMemo, memoDigest = {}, {}, nil
@@ -352,8 +355,8 @@ local function changed(now, player)
     end
 end
 
--- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查
-local function sweep(player)
+-- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查。被會動的東西擋住的片隔一下就重查（時鐘往回調時也查）
+local function sweep(player, now)
     local n = cur.n
     if n == 0 then return end
     local cell, near = getCell(), PlanCheck.NEAR
@@ -365,9 +368,14 @@ local function sweep(player)
         local r = cur.rec[p]
         if r.s and not r.q and r.s ~= "far" then
             local x, y, z = p.x + cur.ox, p.y + cur.oy, p.z + cur.oz
-            if math.abs(x - px) <= near and math.abs(y - py) <= near and math.abs(z - pz) <= 1
-                and sigOf(cell:getGridSquare(x, y, z)) ~= r.sig then
-                push(p)
+            if math.abs(x - px) <= near and math.abs(y - py) <= near and math.abs(z - pz) <= 1 then
+                local dt = TRANSIENT[r.c] and now - (r.at or 0)
+                if dt and (dt < 0 or dt >= PlanCheck.RECHECK_MS) then
+                    r.at = now
+                    push(p)
+                elseif sigOf(cell:getGridSquare(x, y, z)) ~= r.sig then
+                    push(p)
+                end
             end
         end
     end
@@ -383,7 +391,7 @@ function PlanCheck.tick(player)
     local now = getTimestampMs()
     local stop = now + PlanCheck.BUDGET_MS
     changed(now, player)
-    sweep(player)
+    sweep(player, now)
     repeat
         local p, r = pop()
         if not p then return end

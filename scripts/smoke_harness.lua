@@ -13123,7 +13123,8 @@ end)()
         sprite("pct_01_0", 1305, { type = T.tree }),
         sprite("pcx_01_0", 1306, { flags = { "WallN" }, keys = { WallN = "" } }),
         sprite("blends_natural_01_0", 1307, { flags = { "solidfloor" } }),
-        sprite("blends_natural_01_8", 1308, { flags = { "FloorOverlay" } }) })
+        sprite("blends_natural_01_8", 1308, { flags = { "FloorOverlay" } }),
+        sprite("pcs_01_0", 1309, { flags = { "solidtrans" } }) })
     sb.DisabledTilesets = "pcx_01"
     local function obj(name, o)
         o = o or {}
@@ -13209,6 +13210,22 @@ end)()
     squares["201,201,0"].objects[1] = wall
     PC.tick(K)
     check(gone == "ok" and st(pDone) == "done", "牆拆掉：touch 後不算蓋好；放回去：身邊的片比物件數就認回來")
+    -- 有人站著的那格：人走了物件數沒變，隔 RECHECK_MS 重查（植入：不重查就一直 OCCUPIED，照圖蓋永遠挑不到那片）
+    local pSeat = put("pcs_01_0", 6, 6, 0)
+    squares["206,206,0"].moving[1] = {}
+    PC.tick(K)
+    PC.tick(K)
+    local occS, occC = PC.state(pSeat)
+    squares["206,206,0"].moving[1] = nil
+    PC.tick(K)
+    local soon = select(2, PC.state(pSeat))
+    clockStep = PC.RECHECK_MS
+    getTimestampMs()
+    clockStep = 0
+    PC.tick(K)
+    check(occS == "blocked" and occC == "OCCUPIED" and soon == "OCCUPIED" and select(2, PC.state(pSeat)) ~= "OCCUPIED",
+        "有人站著的格標 OCCUPIED；人走了隔 RECHECK_MS 重查，不再是 OCCUPIED（同一段時間內不重算）")
+    Plan.remove(pl, { pSeat })
     -- 車庫門太寬：照這裡的上限標成蓋不了
     sb.MaxCellsPerDrag = 4
     local wide = Plan.add(pl, 7, 7, 0, 0, 0, Plan.item(pl, "pcw_01_0"), 9)
