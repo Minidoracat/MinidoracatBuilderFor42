@@ -13210,7 +13210,7 @@ end)()
     squares["201,201,0"].objects[1] = wall
     PC.tick(K)
     check(gone == "ok" and st(pDone) == "done", "牆拆掉：touch 後不算蓋好；放回去：身邊的片比物件數就認回來")
-    -- 有人站著的那格：人走了物件數沒變，隔 RECHECK_MS 重查（植入：不重查就一直 OCCUPIED，照圖蓋永遠挑不到那片）
+    -- 有人站著的那格：人走了物件數沒變，隔 RECHECK.OCCUPIED 重查（植入：不重查就一直 OCCUPIED，照圖蓋永遠挑不到那片）
     local pSeat = put("pcs_01_0", 6, 6, 0)
     squares["206,206,0"].moving[1] = {}
     PC.tick(K)
@@ -13219,12 +13219,12 @@ end)()
     squares["206,206,0"].moving[1] = nil
     PC.tick(K)
     local soon = select(2, PC.state(pSeat))
-    clockStep = PC.RECHECK_MS
+    clockStep = PC.RECHECK.OCCUPIED
     getTimestampMs()
     clockStep = 0
     PC.tick(K)
     check(occS == "blocked" and occC == "OCCUPIED" and soon == "OCCUPIED" and select(2, PC.state(pSeat)) ~= "OCCUPIED",
-        "有人站著的格標 OCCUPIED；人走了隔 RECHECK_MS 重查，不再是 OCCUPIED（同一段時間內不重算）")
+        "有人站著的格標 OCCUPIED；人走了隔一下重查，不再是 OCCUPIED（同一段時間內不重算）")
     Plan.remove(pl, { pSeat })
     -- 車庫門太寬：照這裡的上限標成蓋不了
     sb.MaxCellsPerDrag = 4
@@ -13240,7 +13240,7 @@ end)()
             if d == 4 then return "pcw_01_0", 40, 40 end
             return d == 1 and "pcw_01_0" or "pcx_01_0"
         end,
-        state = function() return true, true end, dark = function() return false end }
+        state = function() return true, true end, dark = function() return B.Recipes.night == true end }
     local rIt = Plan.item(pl, "recipe:Base.PcWall")
     local rDone, rTurned = Plan.add(pl, 1, 1, 0, 1, 0, rIt), Plan.add(pl, 1, 1, 0, 2, 0, rIt)
     PC.tick(K)
@@ -13248,6 +13248,22 @@ end)()
     local rOff, rFar = Plan.add(pl, 0, 1, 0, 3, 0, rIt), Plan.add(pl, 1, 1, 0, 4, 0, rIt)
     PC.tick(K)
     check(st(rOff) == "done" and st(rFar) ~= "done", "配方片：左上那格空著的面照有圖的那格認蓋好（錨點格沒有圖也算；那格沒有就不算）")
+    -- 配方太暗：天亮了背包沒變，隔 RECHECK.DARK 重查（植入：不重查就一直 DARK）
+    B.Recipes.night = true
+    local rDark = Plan.add(pl, 3, 5, 0, 2, 0, rIt)
+    PC.tick(K)
+    PC.tick(K)
+    local darkS, darkC = PC.state(rDark)
+    B.Recipes.night = false
+    PC.tick(K)
+    local stillDark = select(2, PC.state(rDark))
+    clockStep = PC.RECHECK.DARK
+    getTimestampMs()
+    clockStep = 0
+    PC.tick(K)
+    check(darkS == "blocked" and darkC == "DARK" and stillDark == "DARK" and st(rDark) == "ok",
+        "配方太暗標 DARK；亮了隔一下重查變成能蓋（同一段時間內不重算）")
+    Plan.remove(pl, { rDark })
     Plan.remove(pl, { rOff, rFar })
     Plan.remove(pl, { rDone, rTurned })
     B.Recipes = noRecipes
