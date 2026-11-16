@@ -19,7 +19,7 @@
   "IGUI_MBLD_Roof_Level": "屋頂放在 %1 樓",
   "IGUI_MBLD_Roof_Drag": "拖出範圍",
   "IGUI_MBLD_Roof_Drag_Pad": "拖範圍要用滑鼠，手把不能拖",
-  "IGUI_MBLD_Roof_Hint": "拖出房子在地上的範圍，屋頂排在上面選的樓層，整批加進藍圖，復原一次就整個收回。斜屋頂只擋雨，要算室內請在屋頂下鋪一層地板。",
+  "IGUI_MBLD_Roof_Hint": "拖出房子在地上的範圍，屋頂排在上面選的樓層，整批加進藍圖，復原一次就整個收回。30 度屋頂只擋雨，要算室內請在屋頂下鋪一層地板。",
   "IGUI_MBLD_Roof_Hint45": "45 度屋頂只畫朝南、朝東的坡面，建議配山牆把側面封起來",
   "IGUI_MBLD_Roof_Preview": "%1 · %2 %3×%4，共 %5 片",
   "IGUI_MBLD_Roof_Warn_HALF": "屋頂底下每一格都會補一片天花板，牆圍好的房間這樣才算室內、不漏雨",

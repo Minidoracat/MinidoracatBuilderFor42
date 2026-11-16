@@ -19,7 +19,7 @@
   "IGUI_MBLD_Roof_Level": "Çatı %1. katta",
   "IGUI_MBLD_Roof_Drag": "Alan sürükle",
   "IGUI_MBLD_Roof_Drag_Pad": "Alan sürüklemek için fare gerekir; oyun koluyla sürüklenemez",
-  "IGUI_MBLD_Roof_Hint": "Evin taban alanını sürükle. Çatı yukarıda seçilen kata konur ve plana tek grup olarak eklenir; tek geri alma hepsini kaldırır. Eğimli çatılar yalnızca yağmuru keser; iç mekân sayılması için çatının altına zemin döşe.",
+  "IGUI_MBLD_Roof_Hint": "Evin taban alanını sürükle. Çatı yukarıda seçilen kata konur ve plana tek grup olarak eklenir; tek geri alma hepsini kaldırır. 30 derecelik çatılar yalnızca yağmuru keser; iç mekân sayılması için çatının altına zemin döşe.",
   "IGUI_MBLD_Roof_Hint45": "45 derecelik çatılar yalnızca güney ve doğu yüzlerini çizer. Yanları kapatmak için kalkan duvar ekle",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 parça",
   "IGUI_MBLD_Roof_Warn_HALF": "Çatının altındaki her kareye tavan konur. Kapalı bir oda iç mekân sayılması ve kuru kalması için buna ihtiyaç duyar",

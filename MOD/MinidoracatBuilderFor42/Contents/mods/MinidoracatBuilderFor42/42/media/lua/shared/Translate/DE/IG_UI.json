@@ -19,7 +19,7 @@
   "IGUI_MBLD_Roof_Level": "Dach auf Etage %1",
   "IGUI_MBLD_Roof_Drag": "Bereich ziehen",
   "IGUI_MBLD_Roof_Drag_Pad": "Zum Ziehen eines Bereichs brauchst du eine Maus; mit dem Controller geht das nicht",
-  "IGUI_MBLD_Roof_Hint": "Zieh über die Grundfläche des Hauses. Das Dach kommt auf die oben gewählte Etage und wird als eine Gruppe zum Bauplan hinzugefügt; einmal „Zurück“ entfernt alles. Schrägdächer halten nur Regen ab; damit der Raum als drinnen zählt, leg unter dem Dach einen Boden.",
+  "IGUI_MBLD_Roof_Hint": "Zieh über die Grundfläche des Hauses. Das Dach kommt auf die oben gewählte Etage und wird als eine Gruppe zum Bauplan hinzugefügt; einmal „Zurück“ entfernt alles. 30-Grad-Dächer halten nur Regen ab; damit der Raum als drinnen zählt, leg unter dem Dach einen Boden.",
   "IGUI_MBLD_Roof_Hint45": "45-Grad-Dächer zeichnen nur die Süd- und Ostseite. Füg Giebelwände hinzu, um die Seiten zu schließen",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 Teile",
   "IGUI_MBLD_Roof_Warn_HALF": "Unter jede Dachkachel kommt ein Deckenteil. Ein geschlossener Raum braucht es, um als drinnen zu zählen und trocken zu bleiben.",

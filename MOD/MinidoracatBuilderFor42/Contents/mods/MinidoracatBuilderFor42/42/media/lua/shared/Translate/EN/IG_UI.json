@@ -19,7 +19,7 @@
   "IGUI_MBLD_Roof_Level": "Roof on floor %1",
   "IGUI_MBLD_Roof_Drag": "Drag an area",
   "IGUI_MBLD_Roof_Drag_Pad": "Dragging an area needs a mouse; controllers can't drag",
-  "IGUI_MBLD_Roof_Hint": "Drag over the house's footprint. The roof goes on the floor chosen above and is added to the blueprint as one batch; one undo removes all of it. Sloped roofs only keep rain out; to count as indoors, lay a floor under the roof.",
+  "IGUI_MBLD_Roof_Hint": "Drag over the house's footprint. The roof goes on the floor chosen above and is added to the blueprint as one batch; one undo removes all of it. 30-degree roofs only keep rain out; to count as indoors, lay a floor under the roof.",
   "IGUI_MBLD_Roof_Hint45": "45-degree roofs only draw the south and east slopes. Add gable walls to close the sides",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 pieces",
   "IGUI_MBLD_Roof_Warn_HALF": "Each roof cell gets a ceiling tile underneath. An enclosed room needs it to count as indoors and stay dry.",

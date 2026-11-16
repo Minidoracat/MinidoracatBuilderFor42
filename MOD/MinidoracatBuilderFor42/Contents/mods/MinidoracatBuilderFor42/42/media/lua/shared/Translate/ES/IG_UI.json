@@ -19,7 +19,7 @@
   "IGUI_MBLD_Roof_Level": "Techo en el nivel %1",
   "IGUI_MBLD_Roof_Drag": "Arrastrar zona",
   "IGUI_MBLD_Roof_Drag_Pad": "Para arrastrar una zona necesitas un ratón; con mando no se puede",
-  "IGUI_MBLD_Roof_Hint": "Arrastra sobre la planta de la casa. El techo va en el nivel elegido arriba y se añade al plano como una sola tanda; un solo Deshacer lo quita entero. Los techos inclinados solo frenan la lluvia; para que cuente como interior, pon un suelo bajo el techo.",
+  "IGUI_MBLD_Roof_Hint": "Arrastra sobre la planta de la casa. El techo va en el nivel elegido arriba y se añade al plano como una sola tanda; un solo Deshacer lo quita entero. Los techos de 30 grados solo frenan la lluvia; para que cuente como interior, pon un suelo bajo el techo.",
   "IGUI_MBLD_Roof_Hint45": "Los techos de 45 grados solo dibujan las vertientes sur y este. Añade hastiales para cerrar los lados",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 piezas",
   "IGUI_MBLD_Roof_Warn_HALF": "Bajo cada casilla del techo se pone cielorraso; así una habitación cerrada cuenta como interior y queda seca",
