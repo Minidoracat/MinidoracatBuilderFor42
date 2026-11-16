@@ -13141,7 +13141,7 @@ end)()
         "右鍵：放置中清掉原版按下時記的物件（不跳右鍵選單）、關游標")
 
     -- 快選列：有游標才建；游標關了（deactivate 或下一幀發現沒有）就收
-    local made, under = 0, nil
+    local made, under, lastWin = 0, nil, nil
     local function el(o)
         o.children = {}
         o.visible = true
@@ -13169,10 +13169,11 @@ end)()
             made = made + 1
             local w = el({ width = opts.width, height = opts.height })
             function w.contentTop() return 24 end
+            lastWin = w
             return w
         end },
         TileGrid = { new = function(opts)
-            local g = el({ height = opts.height, items = {} })
+            local g = el({ height = opts.height, items = {}, opts = opts })
             function g.setItems(self, items) self.items = items end
             function g.getItems(self) return self.items end
             function g.setSelectedIndex(self, i) self.sel = i end
@@ -13193,6 +13194,11 @@ end)()
     cur = nil
     under.prerender(under)
     check(not H.visible(), "快選列：游標關了，下一幀自己收掉")
+    -- 收掉是在視窗的 prerender 裡發生的，同一幀後面的格子還會畫
+    local grid = lastWin.children[2]
+    local okDraw = pcall(grid.opts.drawTile, grid, { drawTextureScaledAspect = function() end, drawTextCentre = function() end },
+        "a_1", 0, 0, 64, 64)
+    check(okDraw, "快選列：這一幀收掉後，同一幀還在畫的格子不出錯")
     cur = "a_1"
     H.show(0)
     H.show(0)
@@ -15412,6 +15418,136 @@ end)()
     check(okC7 and #walks == 0 and R.state() == "done" and s7.boxes[1] == "EMPTY" and s7.boxes[2] == "HEAVY"
         and toasts[#toasts] and toasts[#toasts]:find("IGUI_MBLD_Run_Box", 1, true), -- 假 getText 不帶參數：只看得到材料箱那一行
         "箱子沒有要的 EMPTY、負重放不下 HEAVY：不走過去、不出錯，總結列出")
+
+    -- 一片一組地拿：箱子裡重的排前面（木板 3.0），負重只夠一片時要拿到配得齊的一組，不是照箱子順序只拿木板
+    local function stock(ft, n, w)
+        local out = {}
+        for k = 1, n do
+            out[k] = item(ft)
+            out[k].getUnequippedWeight = function() return w end
+        end
+        return out
+    end
+    local function join(...)
+        local out = {}
+        for _, list in ipairs({ ... }) do
+            for _, it in ipairs(list) do out[#out + 1] = it end
+        end
+        return out
+    end
+    local function shortAt(x, set)
+        local k = (x + OX) .. "," .. OY .. ",0"
+        CODE[k] = set and { code = "NO_MATERIAL", extra = { need = set }, need = set } or nil
+        return at[k]
+    end
+    local maxW, sm = K.getMaxWeight, getScriptManager
+    getScriptManager = function()
+        return { getItem = function(_, ft) return { getActualWeight = function() return ft == "Base.Plank" and 3 or 0.1 end } end }
+    end
+    K.getMaxWeight = function() return 6 end
+    local boxS = crate(square(137, 100, 0), join(stock("Base.Plank", 4, 3), stock("Base.Nails", 4, 0.1), stock("Base.ClayTile", 8, 0.5)))
+    newPlan()
+    store = { boxes = {} }
+    R.addBox(boxS)
+    local SET = { ["Base.Plank"] = 1, ["Base.Nails"] = 1, ["Base.ClayTile"] = 2 }
+    for i = 0, 2 do
+        put("rn_floor", 30 + i, 0, 0)
+        S[shortAt(30 + i, SET)] = "short"
+    end
+    actions, walks = {}, {}
+    R.start(K)
+    run(1)
+    local gotS = {}
+    for _, a in ipairs(actions) do gotS[a.item.ft] = (gotS[a.item.ft] or 0) + 1 end
+    check(R.state() == "fetch" and #actions == 4 and gotS["Base.Plank"] == 1 and gotS["Base.Nails"] == 1
+        and gotS["Base.ClayTile"] == 2,
+        "材料箱：負重只夠一片時拿配得齊的一組（木板 1、釘子 1、瓷磚 2），不是照箱子順序只拿木板")
+    R.stop()
+
+    -- 沒有散裝釘子：拿一盒，後面幾片的釘子用同一盒抵
+    K.getMaxWeight = function() return 20 end
+    local boxB = crate(square(138, 100, 0), join(stock("Base.Plank", 2, 3), stock("Base.NailsBox", 2, 0.5)))
+    newPlan()
+    store = { boxes = {} }
+    R.addBox(boxB)
+    local NB = { ["Base.Plank"] = 1, ["Base.Nails"] = 2 }
+    for i = 0, 1 do
+        put("rn_floor", 34 + i, 0, 0)
+        S[shortAt(34 + i, NB)] = "short"
+    end
+    actions, walks = {}, {}
+    R.start(K)
+    run(1)
+    local gotB = {}
+    for _, a in ipairs(actions) do gotB[a.item.ft] = (gotB[a.item.ft] or 0) + 1 end
+    check(R.state() == "fetch" and #actions == 3 and gotB["Base.Plank"] == 2 and gotB["Base.NailsBox"] == 1,
+        "材料箱：沒有散裝釘子時拿一盒，後面幾片的釘子用同一盒抵（不多拿）")
+    R.stop()
+
+    -- 材料分在兩個箱子：一組的重量連別的箱子才有的那幾樣一起算；放不下的箱子不記成壞的，蓋掉一片、變輕了再回去拿
+    K.getMaxWeight = function() return 3.5 end
+    local boxP = crate(square(140, 100, 0), stock("Base.Plank", 2, 3))
+    local boxN = crate(square(150, 100, 0), stock("Base.Nails", 2, 0.1))
+    newPlan()
+    store = { boxes = {} }
+    R.addBox(boxP)
+    R.addBox(boxN)
+    local PN = { ["Base.Plank"] = 1, ["Base.Nails"] = 1 }
+    put("rn_wall", 40, 0, 0)
+    put("rn_wall", 41, 0, 0)
+    local p1, p2 = shortAt(40, PN), shortAt(41, PN)
+    S[p1], S[p2] = "short", "short"
+    local function runUntil(done)
+        for _ = 1, 20 do
+            run(1)
+            if done() then return end
+        end
+    end
+    local function fetching() return #actions > 0 end
+    actions, walks = {}, {}
+    R.start(K)
+    run(1)
+    local trip1 = #actions == 1 and actions[1].item.ft == "Base.Plank" and actions[1].src == boxP
+    K.inv:add(table.remove(boxP.items, 1)) -- 拿到那塊木板：負重剩 0.5
+    K.load = 3
+    shortAt(40, { ["Base.Nails"] = 1 })
+    actions = {}
+    runUntil(fetching)
+    local trip2 = #actions == 1 and actions[1].item.ft == "Base.Nails" and actions[1].src == boxN
+    K.inv:add(table.remove(boxN.items, 1))
+    shortAt(40, nil) -- 第一片配齊了
+    actions = {}
+    runUntil(function() return #pushes > 0 end)
+    local built1 = #pushes == 1 and #pushes[1].anchors == 1
+    if built1 then buildAll() end
+    K.load = 0 -- 蓋掉了：木板、釘子用掉
+    actions = {}
+    runUntil(fetching)
+    check(trip1 and trip2 and built1 and R.state() == "fetch" and #actions == 1 and actions[1].item.ft == "Base.Plank"
+        and actions[1].src == boxP,
+        "材料箱：兩個箱子各放一種時一次拿一片的份（木板留位置給釘子）；放不下的箱子蓋掉一片後再回去拿")
+    R.stop()
+    K.getMaxWeight, getScriptManager = maxW, sm
+
+    -- 遊戲暫停：暫停時引擎不送 OnTick，照圖蓋在 OnTickEvenPaused 看
+    local gp, pausedNow = isGamePaused, false
+    isGamePaused = function() return pausedNow end
+    local tickPaused = R.tickPaused or function() end
+    newPlan()
+    put("rn_floor", 0, 2, 0)
+    pausedNow = true
+    tickPaused()
+    local idleState = R.state()
+    pausedNow = false
+    R.start(K)
+    tickPaused()
+    local running = R.state()
+    pausedNow = true
+    tickPaused()
+    check(idleState ~= "paused" and running == "pick" and R.state() == "paused" and (R.reason()) == "GAME_PAUSED",
+        "遊戲暫停：按了照圖蓋或正在蓋時暫停 GAME_PAUSED；反面：沒暫停不動、沒在跑不動")
+    isGamePaused = gp
+    R.stop()
 
     -- 拿料途中玩家自己動手：暫停 MANUAL、不再送；玩家的建造已換掉拿料動作時不清佇列
     local boxM = crate(square(136, 100, 0), planks(4))

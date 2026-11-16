@@ -49,6 +49,7 @@ end
 
 -- 格子：縮圖＋一行名稱（截好的字記著，不在每幀配置）
 local function drawTile(_, el, name, x, y, w, h)
+    if not hb then return end -- 這一幀在 prerender 收掉（pump）之後，格子還會畫完這一幀
     local c = hb.colors
     local tex = texOf(name)
     local iconH = h - hb.fh - 10

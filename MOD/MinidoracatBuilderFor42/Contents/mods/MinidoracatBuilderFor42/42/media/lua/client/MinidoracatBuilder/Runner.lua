@@ -383,37 +383,61 @@ local function usable(item)
     return not item:isFluidContainer() or item:isEmptyOfFluid()
 end
 
--- 從一個箱子挑這一批缺的（need＝{ [fullType]＝數量 }），照負重上限挑到不超重為止。釘子不夠時拿釘子盒。
+-- 這個箱子沒有的那幾樣也要留位置（多半放在別的箱子）：沒有實體可量，用物品定義的重量
+local function unitWeight(ft)
+    local s = getScriptManager():getItem(ft)
+    return s and s:getActualWeight() or 0
+end
+
+-- 從一個箱子挑這一批缺的。sets＝{ { [fullType]＝數量 }… }，一片一組、照蓋的順序；一組整組放得下才拿，放不下就停。
+-- 照箱子裡的順序拿到滿的話，只會拿到排前面那一種（負重剩 6 拿兩片木板就滿），一片都配不齊。釘子不夠時拿釘子盒。
 -- 回 物品陣列；挑不到時再回原因：EMPTY（沒有要的）、HEAVY（有要的但負重放不下）
-local function choose(player, container, need)
-    local inv = player:getInventory()
-    local room = player:getMaxWeight() - inv:getCapacityWeight()
-    local left, out, heavy = {}, {}, false
-    for ft, n in pairs(need) do left[ft] = n end
+local function choose(player, container, sets)
+    local room = player:getMaxWeight() - player:getInventory():getCapacityWeight()
+    local stock, at = {}, {} -- 箱子裡能用的，照種類排；at＝各種類拿到第幾個
     local items = container:getItems()
-    local boxes = {}
     for i = 0, items:size() - 1 do
         local it = items:get(i)
-        local ft = it:getFullType()
-        if (left[ft] or 0) > 0 and usable(it) then
-            local w = it:getUnequippedWeight()
-            if w <= room then
-                out[#out + 1], room, left[ft] = it, room - w, left[ft] - 1
-            else
-                heavy = true
-            end
-        elseif ft == NAILS_BOX and usable(it) then
-            boxes[#boxes + 1] = it
+        if usable(it) then
+            local ft = it:getFullType()
+            if not stock[ft] then stock[ft], at[ft] = {}, 1 end
+            stock[ft][#stock[ft] + 1] = it
         end
     end
-    for _, it in ipairs(boxes) do
-        if (left[NAILS] or 0) <= 0 then break end
-        local w = it:getUnequippedWeight()
-        if w <= room then
-            out[#out + 1], room, left[NAILS] = it, room - w, left[NAILS] - PER_BOX
-        else
-            heavy = true
+    local out, heavy, spare = {}, false, 0 -- spare＝已拿的釘子盒還能抵幾根釘子
+    for _, set in ipairs(sets) do
+        local got, w, to, left, lack = {}, 0, {}, spare, {}
+        for ft, n in pairs(set) do
+            if ft == NAILS then
+                local t = math.min(n, left)
+                n, left = n - t, left - t
+            end
+            local q, k = stock[ft], to[ft] or at[ft]
+            while n > 0 and q and q[k] do
+                got[#got + 1], w, k, n = q[k], w + q[k]:getUnequippedWeight(), k + 1, n - 1
+            end
+            to[ft] = k
+            if ft == NAILS then
+                q, k = stock[NAILS_BOX], to[NAILS_BOX] or at[NAILS_BOX]
+                while n > 0 and q and q[k] do
+                    local t = math.min(n, PER_BOX)
+                    got[#got + 1], w, k, n, left = q[k], w + q[k]:getUnequippedWeight(), k + 1, n - t, left + PER_BOX - t
+                end
+                to[NAILS_BOX] = k
+            end
+            if n > 0 then lack[ft] = n end
         end
+        if #got > 0 then
+            for ft, n in pairs(lack) do w = w + n * unitWeight(ft) end
+            if w > room then
+                heavy = true
+                break
+            end
+            for _, it in ipairs(got) do out[#out + 1] = it end
+            for ft, k in pairs(to) do at[ft] = k end
+            room = room - w
+        end
+        spare = left
     end
     if #out == 0 then return out, heavy and "HEAVY" or "EMPTY" end
     return out
@@ -422,7 +446,7 @@ end
 local function boxKey(b) return b.x .. "," .. b.y .. "," .. b.z .. "," .. b.index end
 
 -- 找一個有這一批缺的、能拿的點名箱子，走過去並排搬運動作。回 true＝開始拿了
-local function startFetch(player, need)
+local function startFetch(player, sets)
     local boxes = Runner.boxes()
     local px, py = player:getX(), player:getY()
     local order = {}
@@ -441,7 +465,7 @@ local function startFetch(player, need)
     for _, o in ipairs(order) do
         local container, why = openBox(player, o.b)
         local picks = {}
-        if container then picks, why = choose(player, container, need) end
+        if container then picks, why = choose(player, container, sets) end
         if #picks > 0 then
             if not luautils.walkToContainer(container, player:getPlayerNum()) then
                 why = "NO_ROOM"
@@ -454,10 +478,12 @@ local function startFetch(player, need)
                     ISTimedActionQueue.add(actions[#actions])
                 end
                 st.fetch = { box = o.b, i = o.i, before = before, actions = actions }
+                if st.badIndex then st.badIndex[o.i] = nil end
                 return true
             end
         end
-        st.bad[boxKey(o.b)] = why
+        -- 放不下不記成壞箱子：蓋掉一批就輕了，下次挑批再看（只列進總結）
+        if why ~= "HEAVY" then st.bad[boxKey(o.b)] = why end
         st.badIndex = st.badIndex or {}
         st.badIndex[o.i] = why
     end
@@ -570,14 +596,14 @@ local function pickBatch(player, plan)
 end
 
 -- 這一批逐片問 Check.item（同游標預覽：可蓋的照順序扣掉材料，屋頂、地板能靠前面可蓋的撐）。
--- 回 可蓋的 { c, info }…、缺料合計（只算缺的物品；耗材與工具不拿）
+-- 回 可蓋的 { c, info }…、缺料的片各缺什麼（一片一組，只算缺的物品；耗材與工具不拿）
 local function evaluate(player, b)
     local S = Materials.summary(player)
     local work = {}
     for k, v in pairs(S) do work[k] = v end
     work.items = setmetatable({}, { __index = S.items })
     work.uses = setmetatable({}, { __index = S.uses })
-    local ok, need, short, planned = {}, {}, {}, {}
+    local ok, sets, short, planned = {}, {}, {}, {}
     for _, c in ipairs(b.list) do
         local a = { c.x, c.y, c.z, c.d, c.w }
         local fine, code, extra, info = pcall(Check.item, player, b.id, c.d, a,
@@ -594,19 +620,19 @@ local function evaluate(player, b)
                 for _, cell in ipairs(info.cells) do planned[B.Place.key(cell.x, cell.y, cell.z)] = true end
             end
         elseif code == "NO_MATERIAL" and cost and extra and extra.need and not (extra.tools and extra.tools[1]) then
-            local miss = extra.need -- Check.item 照同一份 work 算好的差額（原地替換已扣掉舊的退料）
-            for ft, n in pairs(miss or {}) do
-                if ft:sub(1, #Materials.USE) ~= Materials.USE then need[ft] = (need[ft] or 0) + n end
+            -- Check.item 照同一份 work 算好的差額（原地替換已扣掉舊的退料）
+            local set, any = {}, false
+            for ft, n in pairs(extra.need) do
+                if ft:sub(1, #Materials.USE) ~= Materials.USE then set[ft], any = n, true end
             end
+            if any then sets[#sets + 1] = set end
             Materials.take(work, cost)
             short[#short + 1] = { c = c, code = code, extra = extra }
         else
             short[#short + 1] = { c = c, code = code, extra = extra, hard = true }
         end
     end
-    local any = false
-    for _ in pairs(need) do any = true break end -- Kahlua 沒有全域 next
-    return ok, any and need or nil, short
+    return ok, sets[1] and sets or nil, short
 end
 
 -- 玩家腳下那一格上還沒蓋、只被玩家自己擋住的片：PlanCheck 判成 OCCUPIED 的，或這一輪挑批時才發現而跳過的。
@@ -742,8 +768,8 @@ local function sendRecipe(player, b)
 end
 
 local function sendTiles(player, b)
-    local ok, need, short = evaluate(player, b)
-    if need and not b.fetched and startFetch(player, need) then
+    local ok, sets, short = evaluate(player, b)
+    if sets and not b.fetched and startFetch(player, sets) then
         st.state = "fetch"
         return
     end
@@ -867,9 +893,6 @@ local function watch(p)
     end
     -- 規劃中或藍圖改過：照圖蓋暫停（PlanMode 進規劃前也會叫 pause("EDIT")；這裡是防線）
     if (PM.state and PM.state() == "edit") or planChanged() then return Runner.pause("EDIT") or true end
-    -- 單機的遊戲速度 0＝暫停（原版右鍵選單同一個判斷，ISMenuContextWorld.lua:37）
-    local speed = UIManager and UIManager.getSpeedControls and UIManager.getSpeedControls()
-    if speed and speed:getCurrentGameSpeed() == 0 then return Runner.pause("GAME_PAUSED") or true end
     -- 有殭屍以這位玩家為目標（IsoZombie.java:3044 每幀累計、IsoPlayer.java:5711 存成上一幀的數，Stats.java:135）
     local stats = p:getStats()
     if stats and stats:getNumChasingZombies() > 0 then return Runner.pause("ZOMBIE") or true end
@@ -924,6 +947,12 @@ function Runner.tick()
     if s == "pick" then pick(p, st.plan) end
 end
 
+-- 遊戲暫停時引擎不送 OnTick（GameWindow.java:354-367 只送 OnTickEvenPaused），所以暫停在這裡看：
+-- 正在蓋、或暫停中按了照圖蓋，都停成 GAME_PAUSED
+function Runner.tickPaused()
+    if active() and isGamePaused() then Runner.pause("GAME_PAUSED") end
+end
+
 -- Esc＝暫停（多人遊戲不會停下時間，原版也不清佇列）
 function Runner.onKey(key)
     if not active() then return end
@@ -935,6 +964,7 @@ if not Runner.loaded then
     Runner.loaded = true
     Events.OnTick.Add(function() MinidoracatBuilder.Runner.tick() end)
     Events.OnKeyPressed.Add(function(key) MinidoracatBuilder.Runner.onKey(key) end)
+    Events.OnTickEvenPaused.Add(function() MinidoracatBuilder.Runner.tickPaused() end)
 end
 
 return Runner
