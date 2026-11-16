@@ -25,10 +25,10 @@ Build with any tile in the game, including other mods' tile packs: walls, floors
 
 [h2]✨ Features[/h2]
 [list]
-[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, with the vanilla build menu's recipes, garage doors and double doors listed too
+[*] [b]Every loaded tile[/b]: vanilla and tile pack mods in one searchable catalog, with the vanilla build menu's recipes, garage doors, double doors and ramps listed too
 [*] [b]Vanilla-style costs[/b]: materials follow vanilla dismantling or building and give XP, with optional hardcore skill levels and recipe consumables
 [*] [b]Drag rows and areas[/b]: walls and fences go around a rectangle, floors and roofs fill it, skipping tiles you can't afford and splitting big drags into batches; R turns walls, doors and windows to any edge of a tile
-[*] [b]Blueprints[/b]: plan a whole building on the ground as a ghost that costs nothing, then let your character build it batch by batch, fetching what's short from supply boxes you pick; share blueprints as a code or capture an existing building
+[*] [b]Blueprints[/b]: plan a whole building on the ground as a ghost that costs nothing, then let your character build it batch by batch, fetching what's short from supply boxes you pick; the Roof Helper lays out a whole roof over an area you drag; share blueprints as a code or capture an existing building
 [*] [b]Quick pick bar and keys[/b]: while placing, recent items and the full set sit at the bottom of the screen; the eyedropper, overlap and undo last build have keys
 [*] [b]Switches and wiring[/b]: choose which lights each switch controls, or let a switch in a closed room wire itself; two switches can share lights
 [*] [b]Dismantle and swap[/b]: right-click what you built, or drag over an area, to remove it and get materials back (it doesn't replace the vanilla sledgehammer); build another style over your own floor or wall and pay only the difference

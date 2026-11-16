@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Blueprints, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sub-kinds, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing, dragging rows and batches, turning to all four edges of a tile, the quick pick bar and placing keys, the rules for walls, posts, doors and windows, garage and double doors, curtains, stairs, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling, blueprints (planning, placing, the blueprint panel, building from a blueprint with supply boxes, the library, share codes and import, capturing a building) and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sub-kinds, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing, dragging rows and batches, turning to all four edges of a tile, the quick pick bar and placing keys, the rules for walls, posts, doors and windows, garage and double doors, curtains, stairs, ramps, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling, blueprints (planning, the Roof Helper, placing, the blueprint panel, building from a blueprint with supply boxes, the library, share codes and import, capturing a building) and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
@@ -47,9 +47,9 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Leaving a full-name search[/b]: switching to another tab, kind, tileset or source clears the full name from the search bar and lists by the new choice.
 [*] [b]Other looks of a tile[/b]: an open door, a smashed window, a closed curtain, one square of a multi-square object and the like select the item they belong to.
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
-[*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs, Furniture, Lights, Decor.
-[*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses.
-[*] [b]Sub-kinds[/b]: picking the Wall, Floor, Door, Window, Light, Furniture, Container, Plants or Floor overlay kind splits it one level further, again with item counts. Wall: Wooden Walls, House Exterior Walls, Interior Walls, Commerce and Industry, Gable Walls, Other. Floor: Indoor Floors, Outdoor Ground, Flat Roofs, Other. Door: Standard Doors, Gates, Commerce and Industry, Other. Window: Wood-Frame Windows, White-Frame Windows, Metal-Frame Windows, Church Windows, Commerce and Industry, Other. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers. Floor overlay: Curbs and Edging (curb stones and the edge strips where two ground types meet), Road Markings, Cracks and Grime, Other.
+[*] [b]Tabs[/b]: All, Floors, Walls, Doors & windows, Roofs, Stairs & ramps, Furniture, Lights, Decor.
+[*] [b]Left side[/b]: Mine (Favorites, Recently used), Kinds, Build recipes and Tilesets, with item counts in parentheses. With the newer Minidoracat UI Library, hover over a cut-off name to see it in full.
+[*] [b]Sub-kinds[/b]: picking the Wall, Floor, Door, Window, Roof, Door frame, Window frame, Light, Furniture, Container, Plants or Floor overlay kind splits it one level further, again with item counts. Wall: Wooden Walls, House Exterior Walls, Interior Walls, Commerce and Industry, Gable Walls, Other. Floor: Indoor Floors, Outdoor Ground, Flat Roofs, Other. Door: Standard Doors, Gates, Commerce and Industry, Other. Window: Wood-Frame Windows, White-Frame Windows, Metal-Frame Windows, Church Windows, Commerce and Industry, Other. Roof: 30-Degree, 45-Degree, Low Pitch, Other. Door frame and Window frame: the same as Wall, without Gable Walls. Light: Light Switches, Lamps, Signs and Street Lights. Furniture: Wall Art and Posters, Rugs, Tables, Beds and Seating, Tabletop Items, Other. Container: by name (for example Cupboard, Shelves, Fridge), one row for each of the 8 largest groups and Other for the rest. Plants: Ornamental Plants, Grass and Wildflowers. Floor overlay: Curbs and Edging (curb stones and the edge strips where two ground types meet), Road Markings, Cracks and Grime, Other.
 [*] [b]Finding light switches[/b]: Lights tab, pick Light on the left, then Light Switches; or just search "switch". The 8 vanilla switches are named by the wall they sit on and which end (for example "N wall, east").
 [*] [b]Only what I can build[/b]: lists only items you have the materials and tools for, counting your inventory, bags and items on the ground next to you.
 [*] [b]Material[/b]: pick planks, metal, brick and stone, glass or logs to list only items whose cost includes that material; Other is everything that uses none of them, such as cloth or electronics. It doesn't look at what you carry, and it works together with Only what I can build. Hardware such as nails and screws doesn't count.
@@ -58,7 +58,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
 [*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
-[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected. Wells and Hand Pumps and Water are off by default and are not counted in N.
+[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected (with the newer Minidoracat UI Library, hovering over it tells you why). Wells and Hand Pumps and Water are off by default and are not counted in N.
 [*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
 [/list]
 [h3]Eyedropper and Pick tile[/h3]
@@ -122,6 +122,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:16-set-en.jpg}}
 [list]
 [*] [b]How[/b]: select a wall, post, window frame or door frame, and press Full set above Build in the details.
+[*] [b]Roofs[/b]: when you select a sloped roof piece whose set is recognized, this button becomes Roof helper (icon only in a narrow window), see Blueprints: Roof Helper.
 [*] [b]What it lists[/b]: only the walls, posts, window frames and door frames of the same set.
 [*] [b]Cells show the position[/b]: for example Wall W, Wall N, Corner, Post, Window W, Door N.
 [*] [b]Back to your list[/b]: press the ✕ on the filter button above the search bar.
@@ -234,11 +235,12 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Quick pick bar[/h3]
 [list]
 [*] [b]Where[/b]: while placing, the Quick pick bar appears at the bottom of the screen, first just above the vanilla hotbar; it goes away when the cursor closes.
-[*] [b]First row[/b]: recently used items, newest first.
+[*] [b]First row[/b]: recently used items, newest first; the row takes no space while you have none.
 [*] [b]Second row[/b]: the full set of the current item (see Full set).
 [*] [b]Switching[/b]: click a slot to switch to that item without closing the cursor; the facing, level and Overlap stay as they were.
 [*] [b]Build recipes[/b]: the recipe cursor has the bar too.
-[*] [b]Gamepad[/b]: while placing, press the right stick (R3) to move into the bar, A to switch to that item, B to go back to the cursor.
+[*] [b]Collapse[/b]: click the bar's title to fold it into one line, "Quick pick: current item", and click again to open it; dragging the title still moves the bar without folding it. Folded or open is saved on your own computer and stays after restarting the game.
+[*] [b]Gamepad[/b]: while placing, press the right stick (R3) to move into the bar (it opens first if folded), A to switch to that item, B to go back to the cursor; press R3 again in the bar to fold it and go back to the cursor.
 [/list]
 [h3]Placing keys[/h3]
 [table]
@@ -297,7 +299,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
 [*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
 [/list]
-=== 🧰 Rules for each kind: doors, windows, stairs and roofs
+=== 🧰 Rules for each kind: doors, windows, stairs, ramps and roofs
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
@@ -336,6 +338,17 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Where not[/b]: on water, tall grass, trees or anything that blocks, or below an existing floor.
 [*] [b]Durability[/b]: 450 per step.
 [*] [b]Dismantled or destroyed[/b]: any step removes the whole set, and materials come back only once.
+[/list]
+[h3]Ramps[/h3]
+[list]
+[*] [b]Where[/b]: the Ramp kind on the Stairs & ramps tab, one item per direction; press R (gamepad LB/RB) while placing to change direction.
+[*] [b]A 20-tile set[/b]: the whole ramp goes down at once, 20 tiles long and rising one level; if the level above has no floor at the top, a landing is added.
+[*] [b]Who can use it[/b]: people and vehicles; to keep driving on the level above, extend the landing with more floor.
+[*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it, and the box points out which tile.
+[*] [b]What can go on a ramp[/b]: only edge pieces such as walls, fences, posts, door and window frames, doors, windows, curtains and things hung on walls; floors, furniture, containers and stairs can't.
+[*] [b]Materials[/b]: the whole set is paid at once; the details show the price.
+[*] [b]Dismantling[/b]: any piece takes down the whole set and materials come back once; the landing stays if something is on it. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down, but returns nothing.
+[*] [b]Ramp pieces built as floors in older versions[/b]: stay floors and are dismantled as floors.
 [/list]
 [h3]Roofs[/h3]
 {{img:07-roof-en.jpg}}
@@ -610,7 +623,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 {{img:10-dismantle-en.jpg}}
 [h3]Dismantle (Build Anything)[/h3]
 [list]
-[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs, stairs, garage doors and double doors built with Build Anything, plus furniture and lights that can't be moved; it also fills back water you dug.
+[*] [b]What it removes[/b]: walls, floors, floor overlays, roofs, stairs, ramps, garage doors and double doors built with Build Anything, plus furniture and lights that can't be moved; it also fills back water you dug.
 [*] [b]What it can't remove[/b]: things built in vanilla or other ways, and what the map already had. It does not replace the vanilla sledgehammer: pick those up, disassemble them or smash them as in vanilla.
 [*] [b]How[/b]: right-click and choose Dismantle (Build Anything): name. The piece lights up while you hover the option; your character walks over, and a notice says what came back.
 [*] [b]Things for vanilla removal[/b]: things you built with Build Anything that vanilla picks up or disassembles still show in the menu with "(can't dismantle)" after the name, and hovering says how to remove them.
@@ -622,6 +635,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Stairs[/b]: all three steps go together, and materials come back once.
 [*] [b]Garage doors and double doors[/b]: the whole set goes together, and materials come back once; not while a piece isn't loaded yet or is missing. The tools needed go by the pieces that are actually there.
 [*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it.
+[*] [b]Ramps[/b]: the whole set goes and materials come back once; the landing stays if something is on it. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down but returns nothing.
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
 [*] [b]Built with the build cheat[/b]: no materials back.
@@ -668,6 +682,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Build recipes[/b]: recipes can be drawn in too, ignoring materials, tools and skill; only the terrain can block them. Wall paint, wallpaper and plaster can't be added to a blueprint.
 [*] [b]Finish[/b]: press Done on the toolbar, or Plan in the window again; the blueprint is saved and the blueprint panel opens.
 [*] [b]One at a time[/b]: only one blueprint can be on the ground.
+[*] [b]A whole roof[/b]: select a sloped roof and press Roof helper, then drag an area to add the whole roof to the blueprint, see Blueprints: Roof Helper.
 [/list]
 [h3]Toolbar[/h3]
 [list]
@@ -692,6 +707,32 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [list]
 [*] [b]Size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces. Going over shows a notice with the reason when you release, and nothing is added.
 [*] [b]When it saves[/b]: on Done, Save, Move in the panel while planning, Put away and when you place it; if the game crashes in between, the unsaved part is lost. If it can't save, the blueprint stays and a notice asks you to check your disk space; Put away, Done, Move and swapping blueprints wait until it can save.
+[/list]
+=== 🧰 Blueprints: Roof Helper
+Pick a sloped roof, drag over the house's footprint on the ground, and the whole roof is added to the blueprint at once. Then build from the blueprint or follow it yourself.
+[h3]Opening it[/h3]
+[list]
+[*] [b]How[/b]: select a sloped roof piece in the build window; the Full set button in the details becomes Roof helper (icon only in a narrow window). Press it to open the Roof Helper panel.
+[*] [b]Which roofs[/b]: only 30-degree and 45-degree roof sets that can be recognized as a full set have the button; others don't.
+[*] [b]Planning turns on[/b]: if you aren't planning yet, pressing it starts planning, and the roof goes one level above the one you stand on by default.
+[/list]
+[h3]The panel[/h3]
+[list]
+[*] [b]Shape[/b]: Gable, Hip or Shed; 45-degree sets also have Flat.
+[*] [b]Direction[/b]: for Gable, pick Ridge east-west or Ridge north-south; for Shed, pick which way the low side faces: all four for 30-degree sets, only south or east for 45-degree sets.
+[*] [b]Gable walls[/b]: pick a wall set from Gable Walls to close the triangles at both ends of the roof; the default is None. If that set isn't a complete gable set or its pitch doesn't match the roof, it goes back to None and says why.
+[*] [b]Floor[/b]: the panel says "Roof on floor N"; change it with + and -.
+[*] [b]Drag an area[/b]: press it, then hold the left mouse button and drag over the house's footprint; the box by the mouse shows the shape, size and piece count. Let go and the roof is added to the blueprint as one batch.
+[*] [b]Taking it back[/b]: one planning Undo (Ctrl+Z) removes the whole roof.
+[/list]
+[h3]Rules[/h3]
+[list]
+[*] [b]Area size[/b]: at least 2 tiles per side. 30-degree Gable and Hip roofs span up to 11 tiles; 45-degree sets without flat tops span up to 6.
+[*] [b]45-degree roofs[/b]: only the south and east slopes are drawn; ceiling tiles fill the hidden half and go under half tiles, so the whole room stays dry. Add gable walls to close the sides.
+[*] [b]45-degree Hip roofs[/b]: for sets without half tiles, the short side must be even, or 7 tiles or more.
+[*] [b]Indoors[/b]: sloped roofs only keep rain out; to count as indoors, lay a floor under the roof.
+[*] [b]When it can't be added[/b]: going past the blueprint limits (64 tiles per side, 4 floors, 4,096 pieces) or needing tiles the server turned off shows a notice with the reason, and nothing is added.
+[*] [b]Gamepad[/b]: dragging an area needs a mouse.
 [/list]
 === 🧰 Blueprints: placing and the blueprint panel
 {{img:19-plan-panel-en.jpg}}
@@ -783,7 +824,8 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 {{img:22-import-en.jpg}}
 [list]
 [*] [b]Open[/b]: press Import in the library.
-[*] [b]Paste a share code[/b]: copy the share code, then press Paste from clipboard; the line next to it says "Share code read (N characters)." There's no box to type in, and pressing it again replaces the code. If what you just copied doesn't show up, switch to another window and back to the game, then press it again. Codes that are too long can't be pasted; use the blueprint file instead.
+[*] [b]Paste a share code[/b]: copy the share code, then press Paste from clipboard; it says "Share code read (N characters)," and pressing it again replaces the code. If what you just copied doesn't show up, switch to another window and back to the game, then press it again. Codes that are too long can't be pasted; use the blueprint file instead.
+[*] [b]Paste or type into the box[/b]: with the newer Minidoracat UI Library, the first row has a "Paste or type a share code here" box with Paste from clipboard to its right. A complete share code pasted or typed into it is read right away; a half-typed one shows no error until you press Check. Pressing Paste from clipboard or picking a file from the folder clears the box. Older versions of the library don't have the box.
 [*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder, which clears any share code read. File names can only use letters and numbers; others aren't listed, and it says how many weren't.
 [*] [b]Check[/b]: press Check to see how many pieces can be built here; a share code that's incomplete or was edited says why.
 [*] [b]Pieces you can't build here[/b]: listed by reason: a mod isn't enabled (with the mod name and Workshop ID, and Open Workshop page), a mod is enabled but some tiles are gone, turned off by the server, not buildable; mods updated since the blueprint was saved are listed with both versions. Each list shows up to 30, then says how many more weren't listed.
@@ -822,7 +864,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Cancel[/b]: B.
 [*] [b]Roof and floor level[/b]: X switches between one level up and this level.
 [*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time, and garage doors are 2 tiles wide. The build window hides the Remove area button when you use a gamepad.
-[*] [b]Quick pick bar[/b]: press the right stick (R3) to move into the bar, A to switch to that item, B to go back to the cursor.
+[*] [b]Quick pick bar[/b]: press the right stick (R3) to move into the bar (it opens first if folded), A to switch to that item, B to go back to the cursor; press R3 again in the bar to fold it and go back to the cursor.
 [/list]
 [h3]Blueprints[/h3]
 [list]
@@ -830,6 +872,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Placing on the ground[/b]: LB/RB rotate 90°, A places, X goes back to the original spot, B cancels.
 [*] [b]Blueprint panel[/b]: LB/RB switch tabs; on the floor plan, move with the D-pad and press A to see where that tile's pieces are.
 [*] [b]Capture a building[/b]: mouse only.
+[*] [b]Roof Helper[/b]: dragging an area needs a mouse.
 [/list]
 [h3]Wiring mode[/h3]
 [list]
@@ -847,7 +890,7 @@ Players who can change sandbox options can turn what can be built on or off for 
 [/list]
 [h3]Four pages[/h3]
 [list]
-[*] [b]Kinds[/b]: turn the 24 kinds on or off, such as floors, walls, posts and furniture. Wells and Hand Pumps and Water are off by default; the others are on.
+[*] [b]Kinds[/b]: turn the 25 kinds on or off, such as floors, walls, posts, ramps and furniture. Wells and Hand Pumps and Water are off by default; the others are on.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
 [*] [b]Rules[/b]: the thirteen rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors, Container capacity multiplier and Allow building from blueprints.
@@ -901,7 +944,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [*] [b]Safehouse[/b]: with Minidoracat Safehouse installed, every square follows its safehouse permissions.
 [/list]
 === ⚙️ Sandbox options: what can be built
-The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes, all on by default except Wells and Hand Pumps and Water. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
+The other page, Minidoracat Build Anything: what can be built, has 25 checkboxes, all on by default except Wells and Hand Pumps and Water. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
 [table]
 [tr][th]Option[/th][th]Covers[/th][/tr]
 [tr][td]Floor[/td][td]Floors, including flat roof floors[/td][/tr]
@@ -919,6 +962,7 @@ The other page, Minidoracat Build Anything: what can be built, has 24 checkboxes
 [tr][td]Curtain[/td][td]Curtains hung on the indoor side of a window[/td][/tr]
 [tr][td]Roof[/td][td]Roof pieces and eaves[/td][/tr]
 [tr][td]Stairs[/td][td]Three-piece stairs[/td][/tr]
+[tr][td]Ramps[/td][td]A 20-tile ramp that rises one level; people and vehicles can use it[/td][/tr]
 [tr][td]Furniture[/td][td]Furniture and objects that can be picked up[/td][/tr]
 [tr][td]Container[/td][td]Containers you can store items in, such as cabinets, fridges and crates[/td][/tr]
 [tr][td]Wells and Hand Pumps[/td][td]Wells and hand pumps with water that never runs out, off by default[/td][/tr]
@@ -1007,6 +1051,7 @@ end)
 [*] [b]Pieces that can't turn when rotating 90°[/b]: wall corners, stairs and furniture with one facing move but keep their facing.
 [*] [b]The server's address changed[/b]: place the blueprint on the ground again from the library; blueprint files aren't affected.
 [*] [b]No area selection with a gamepad[/b]: Capture a building needs a mouse.
+[*] [b]Roof Helper[/b]: roof styles that can't be recognized as a full set don't get the button; 45-degree roofs only draw the south and east slopes; dragging an area needs a mouse.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.

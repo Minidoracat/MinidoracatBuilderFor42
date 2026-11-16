@@ -1,15 +1,37 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-0.12.1[/h1]
-[i]2026-11-15[/i]
+[h1]Minidoracat Build Anything for B42 42.22.2-1.0.0[/h1]
+[i]2026-11-16[/i]
 
 [b]English summary[/b]
 [list]
-[*] Things you build with Build Anything now count toward the building achievements, daily and weekly building quests and the building leaderboard of Minidoracat Quests & Achievements, when the server runs both mods.
-[*] Each thing you pay materials for counts as 1 build; stairs and furniture that cover several squares count as 1.
-[*] Build cheat, builds that took no materials (Material cost multiplier 0), in-place replacements and dismantling do not count.
-[*] Quests & Achievements needs its own update before the counting starts. Without it, nothing changes.
+[*] Blueprints: plan a build as a ghost, keep it in your library, share it by code or capture an existing building, then let your character build it piece by piece, fetching materials from supply boxes you pick.
+[*] Roof helper: pick a sloped roof, drag over the house, and the whole roof (gable, hip or shed; 45-degree sets also flat) is added to the blueprint at once.
+[*] Ramps: a 20-tile ramp that rises one level, placed as one set; people and vehicles can use it.
+[*] Garage doors (drag for the width) and double doors, built and dismantled as one set.
+[*] Walls, fences, frames, doors and windows rotate to all four edges of a tile, and long drags build in batches.
+[*] A collapsible quick pick bar while placing, new placing keys and Undo last build.
 [/list]
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]用建造工坊蓋的東西算進 Quests & Achievements 的建造成就與任務[/b]：伺服器同時裝了 Minidoracat Quests & Achievements 時，每蓋好一件、而且有付材料，就算 1 個建造（建造成就、每日與每週的建造任務、建造排行榜都會加）；多格的樓梯、家具算 1 件。建造作弊、材料倍率設成 0 而沒收到任何材料、原地替換都不算，拆除也不算。Quests & Achievements 也要更新到支援這項的版本才會開始算；沒裝或還沒更新時和以前一樣
+[*] [b]藍圖[/b]：按「規劃」先在地上畫好虛影，不扣料；能存進藍圖庫、用分享碼傳給朋友，也能框選現成房子存成藍圖。
+[*] [b]照圖蓋[/b]：角色照著藍圖一片片自己蓋，缺料時去你點名的材料箱拿。
+[*] [b]屋頂助手[/b]：選一款斜屋頂，拖出房子的範圍，整片屋頂一次排進藍圖。
+[*] [b]坡道[/b]：一整組 20 格長、升一層，人和車都上得去。
+[*] [b]車庫門與雙開門[/b]：車庫門拖多寬就多寬，整組一起蓋、一起拆。
+[*] [b]快選列[/b]：放置時畫面下方列出最近用的與同一套，點一下就換；點標題列可以收起。
+[*] [b]放置中的新按鍵[/b]：吸管、切換疊放、換成最近用的下一項、拆掉剛蓋的（Ctrl＋Z）。
+[*] [b]子種類[/b]：牆、地板、門、窗、屋頂、門框、窗框在左邊多分一層。
+[/list]
+
+[h3]🔄 變更[/h3]
+[list]
+[*] [b]轉到四條邊[/b]：以前牆、柵欄只能在兩面之間換，門窗不能轉；現在按 R 依序轉到格子的四條邊。
+[*] [b]拖太長會分批[/b]：以前超過「一次最多幾項」的格子不蓋；現在自動分批接著蓋。
+[*] [b]門的鉸鏈與門把[/b]：以前有些門少收；現在每扇至少收 2 個鉸鏈、1 個門把，和打壞時掉的一樣多。
+[*] [b]右鍵取消[/b]：以前放置中按右鍵取消會跳出原版選單；現在不會。
+[/list]
+
+[h3]🔧 修正[/h3]
+[list]
+[*] [b]建造配方的來源[/b]：以前裝了其他 MOD 時全部顯示成同一個 MOD；現在照定義那個配方的 MOD 顯示。
 [/list]
