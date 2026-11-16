@@ -177,13 +177,16 @@ local function objAt(sq, name)
     return nil
 end
 
--- 那一格上這一組門（車庫門、雙開門）的那一片：開過就換了圖（Entry.doorItem 開著、關著的圖都認），照圖名找不到；沒有回 nil
-local function doorAt(sq, e)
+-- 那一格上和 name（當初放下的那張圖）同一組門（車庫門、雙開門）的那一片：開過就換了圖，照圖名找不到。比的是那一組
+-- 第一片的圖（Entry.doorItem 開著、關著的圖都認），不比項目 ID：轉到另一面蓋的是另一組圖。沒有回 nil
+local function doorAt(sq, name)
+    local head = Entry.doorItem(name)
+    if not head then return nil end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         local spr = instanceof(o, "IsoDoor") and o:getSprite()
-        if spr and Entry.doorItem(spr:getName()) == e then return o end
+        if spr and Entry.doorItem(spr:getName()) == head then return o end
     end
     return nil
 end
@@ -202,7 +205,7 @@ local function locate(p)
         return nil, objAt(sq, p.name) and "GONE" or "VANISHED"
     end
     if not p.host then
-        local o = objAt(sq, p.name) or doorAt(sq, p.e)
+        local o = objAt(sq, p.name) or doorAt(sq, p.name)
         if o then return o end
     end
     local ov = Dismantle.overlay(sq, p.name)

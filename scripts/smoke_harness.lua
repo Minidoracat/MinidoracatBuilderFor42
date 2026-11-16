@@ -11099,17 +11099,21 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     check(not x5 and t:find("UnbuildShort_GONE,1", 1, true) ~= nil and t:find("UnbuildSummary_Many(2", 1, true) ~= nil,
         "復原：當初那件被別人拆掉、同一格重蓋同圖的不拆（說已經不在）；單純不在的不提")
     -- 整組門開過（多人）：placed 到的時候物件還沒同步、紀錄裡沒有那一件，開過門又換了圖。照「同一組門」認回來
-    -- （植入：只比圖名就當成不在了，按了沒反應也不提）；圖換成不相干的那一片照舊算不在
+    -- （植入：只比圖名就當成不在了，按了沒反應也不提）；圖換成不相干的那一片照舊算不在。
+    -- 照實機：門轉到另一面蓋，放下的是另一組圖（u_01_16，開著 u_01_24），不是項目 ID 那一組（u_01_0）；
+    -- 拿項目 ID 去比會找不到（doors-mp b1116-doors-ud3：undoLast 回 0）
     for i = 1, 6 do sqs[i].objects = {} end
     local realDoorItem, realInstD = E.doorItem, instanceof
-    E.doorItem = function(name) return name == "u_01_8" and "u_01_0" or nil end
+    local HEAD = { u_01_0 = "u_01_0", u_01_8 = "u_01_0", u_01_16 = "u_01_16", u_01_24 = "u_01_16" }
+    E.doorItem = function(name) return HEAD[name] end
     instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
     local door, other = fakeObj(sqs[1], "builder"), fakeObj(sqs[2], "builder")
     buildAll("u_01_0", { six[1], six[2] })
     local rec = Q.last(P2)
     rec[1].obj, rec[2].obj = nil, nil
+    rec[1].name = "u_01_16" -- 放下的那張（另一面的第一片）；rec[1].e 仍是項目 ID u_01_0
     door.class = "IsoDoor"
-    function door:getSprite() return { getName = function() return "u_01_8" end } end
+    function door:getSprite() return { getName = function() return "u_01_24" end } end
     function other:getSprite() return { getName = function() return "u_02_0" end } end
     got = nil
     toasts = {}
