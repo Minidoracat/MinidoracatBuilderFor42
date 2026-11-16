@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "No se pudo abrir el asistente de techos. Los detalles están en el registro de la consola.",
   "IGUI_MBLD_Roof_Title": "Asistente de techos",
   "IGUI_MBLD_Roof_Shape": "Forma",
   "IGUI_MBLD_Roof_Shape_gable": "A dos aguas",

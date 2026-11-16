@@ -29,10 +29,20 @@ local function readFolded()
     return line
 end
 
-local function writeFolded()
+local function writeFolded(v)
     local w = getFileWriter(Hotbar.FILE, true, false)
-    w:write((folded and "1" or "0") .. "\n")
+    w:write(v .. "\n")
     w:close()
+end
+
+-- 存收合狀態：引擎的 writer 吞掉寫入錯誤（LuaManager.java:6706-6719），所以寫完讀回比對；不一致只記 log，
+-- 畫面照這次切的（只是個偏好，下次進遊戲可能回到上次存到的狀態）
+local function saveFolded()
+    local v = folded and "1" or "0"
+    local okW = pcall(writeFolded, v)
+    local okR, line = pcall(readFolded)
+    if okW and okR and type(line) == "string" and line:match("^%s*(%d)%s*$") == v then return end
+    print(LOG .. "hotbar state not saved to " .. Hotbar.FILE)
 end
 
 function Hotbar.collapsed()
@@ -179,7 +189,7 @@ end
 -- 收合／展開（標題列按一下、手把右搖桿）。記進 Hotbar.FILE；快選列開著就馬上重排。回收合了沒有
 function Hotbar.toggle()
     folded = not Hotbar.collapsed()
-    if not pcall(writeFolded) then print(LOG .. "hotbar state not saved to " .. Hotbar.FILE) end
+    saveFolded()
     if hb then layout() end
     return folded
 end

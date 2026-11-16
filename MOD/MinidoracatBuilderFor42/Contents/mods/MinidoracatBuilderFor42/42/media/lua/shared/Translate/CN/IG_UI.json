@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "屋顶助手打不开，详情见控制台日志。",
   "IGUI_MBLD_Roof_Title": "屋顶助手",
   "IGUI_MBLD_Roof_Shape": "形状",
   "IGUI_MBLD_Roof_Shape_gable": "双坡（人字）",

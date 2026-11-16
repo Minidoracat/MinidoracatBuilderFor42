@@ -258,25 +258,53 @@ local function stairsOk(spr, sq, role)
     return not buildUtil.stairIsBlockingPlacement(sq, true)
 end
 
--- 坡道一片（Entry.cells；role＝platform 是坡頂上一層的平台，同樓梯的平台只要不實心）。比照樓梯：不在最高層、踩在地板上
--- （z=0 的地面也算），不放在高草、樹、水、實心或擋放置的東西上，格上沒有人、沒有車，不擋到樓梯。格上已經有斜面的
--- 由 Place.check 開頭擋（ON_SLOPE）。正上方有地板不擋：探針走得過去（temp/impl-1116/reports/Probe.md）
-local function rampOk(sq, role)
-    if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
-    if sq:isVehicleIntersecting() then return false, "VEHICLE" end
-    if sq:getZ() >= getMaximumWorldLevel() or sq:HasStairs() then return false end
-    if not floorUnder(sq) or vegetation(sq) or sq:has(F.water) or sq:has(F.taintedWater) then return false end
-    if sq:isSolid() or sq:isSolidTrans() or (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved)) then return false end
-    if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
-    return not buildUtil.stairIsBlockingPlacement(sq, true)
-end
-
 -- 格上有斜面（坡道片，本 MOD 蓋的或任何帶 SlopedSurfaceDirection 的物件）時還放得下的：佔格邊的（Entry.EDGE）與掛在牆、
--- 窗上的（不站在地板上）。其他站在地板上的東西引擎照高度 0 放，坡面卻是 0.05～1（探針 2e：容器、牆、地板都放得下、
--- 高度都是 0，temp/impl-100/reports/E2EProbe10.md）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
+-- 窗上的（不站在地板上）。其他站在地板上的東西引擎照高度 0 放，坡面卻是 0.05～1（探針：容器、牆、地板都放得下、
+-- 高度都是 0，見 builder-dev placement.md「坡道」）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
 local ON_SLOPE = { curtain = true, wallObject = true, windowObject = true, wallOverlay = true }
 local function slopeOk(kind, spr)
     return Entry.EDGE[kind] or ON_SLOPE[kind] or Rules.onWall(kind, spr) ~= nil
+end
+
+-- 坡道格上原本就有的東西：和 slopeOk 對稱，站在地面上的（家具、容器、燈這類）會埋進斜面，擋。留得下的是地板、地面上的
+-- （地毯、標線、疊圖）、掛在牆或天花板上的（attached）與 slopeOk 收的；草（canBeRemoved）放的時候清掉（clearGrass）。
+-- 認不出種類的照 rampOk 的實心與擋放置那幾條
+local UNDER_SLOPE = { floor = true, floorOverlay = true, overlay = true, attached = true }
+local function rampClear(sq)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local s = objects:get(i):getSprite()
+        local p = s and s:getProperties()
+        if p and not (p:has(F.solidfloor) or p:has(F.canBeRemoved)) then
+            local kind = Rules.classify(s)
+            if kind and not (UNDER_SLOPE[kind] or slopeOk(kind, s)) then return false end
+        end
+    end
+    return true
+end
+
+-- 坡道一片（Entry.cells；role＝platform 是坡頂上一層的平台，同樓梯的平台只要不實心）。比照樓梯：不在最高層、踩在地板上
+-- （z=0 的地面也算），不放在高草、樹、水、實心或擋放置的東西上，格上沒有人、沒有車，不擋到樓梯，格上原本的東西留得下
+-- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門（isSomethingTo），
+-- 不然走到坡頂過不去。格上已經有斜面的由 Place.check 開頭擋（slopeOk）。正上方有地板不擋：探針走得過去
+-- （見 builder-dev placement.md「坡道」）
+local function rampOk(spr, sq, role)
+    if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
+    if sq:isVehicleIntersecting() then return false, "VEHICLE" end
+    local x, y, z = sq:getX(), sq:getY(), sq:getZ()
+    if z >= getMaximumWorldLevel() or sq:HasStairs() then return false end
+    if not floorUnder(sq) or vegetation(sq) or sq:has(F.water) or sq:has(F.taintedWater) then return false end
+    if sq:isSolid() or sq:isSolidTrans() or (sq:has("BlocksPlacement") and not sq:has(F.canBeRemoved)) then return false end
+    if not rampClear(sq) then return false end
+    local dx, dy = Entry.rampTop(spr)
+    if dx then
+        local cell = getCell()
+        local ahead, up, deck = cell:getGridSquare(x + dx, y + dy, z), cell:getGridSquare(x, y, z + 1),
+            cell:getGridSquare(x + dx, y + dy, z + 1)
+        if (ahead and sq:isSomethingTo(ahead)) or (up and deck and up:isSomethingTo(deck)) then return false end
+    end
+    if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
+    return not buildUtil.stairIsBlockingPlacement(sq, true)
 end
 
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
@@ -478,8 +506,9 @@ function Place.dug(obj)
     return spr ~= nil and spr:getName() == e and spr:getProperties():has(F.water)
 end
 
--- 本 MOD 蓋的坡道一片：一般物件（不是 IsoThumpable，Place.build），記號 builderEntry＝那一組的頭片名，圖帶斜面屬性。
--- 記號被改過、圖和記號對不上的不算（只看物件與圖，不碰世界）
+-- 帶本 MOD 記號的坡道一片：一般物件（不是 IsoThumpable，Place.build），記號 builderEntry＝那一組的頭片名，圖帶斜面屬性。
+-- 記號被改過、圖和記號對不上的不算（只看物件與圖，不碰世界）。記號只決定右鍵選單列不列（Dismantle.kindOf）；伺服器認
+-- 「是不是本 MOD 蓋的」、退多少只看頭片那格那一筆帳本（Place.refundOf），收哪些片照位置與圖名（Place.rampOrigin）
 function Place.ramp(obj)
     if instanceof(obj, "IsoThumpable") or not obj:hasModData() then return false end
     local e = obj:getModData().builderEntry
@@ -487,13 +516,16 @@ function Place.ramp(obj)
     return spr ~= nil and spr:getProperties():has("SlopedSurfaceDirection") and Entry.rampHead(spr:getName()) == e
 end
 
--- 坡道任一片 → 那一組頭片那格的 x, y, z 與 Entry.rampSet；湊不成整組的片、不在格子上的回 nil
+-- 坡道任一片（一般物件，圖在湊得成整組的一組裡）→ 那一組頭片那格的 x, y, z 與 Entry.rampSet；只看圖與位置，不看記號。
+-- IsoThumpable（舊版當地板蓋的）、湊不成整組的片、不在格子上的回 nil
 function Place.rampOrigin(obj)
-    local spr, sq = obj:getSprite(), obj:getSquare()
-    local name = spr and sq and spr:getName()
-    local head = name and Entry.rampHead(name)
+    if instanceof(obj, "IsoThumpable") then return nil end
+    local spr = obj:getSprite()
+    local name = spr and spr:getName()
+    local head = name and Entry.rampHead(name) -- 先只看圖（照名稱快取）：每件被移除的物件都會來，絕大多數到這裡就結束
     local set = head and Entry.rampSet(Entry.sprite(head))
-    if not set then return nil end
+    local sq = set and obj:getSquare()
+    if not sq then return nil end
     for i = 1, set.n do
         if set.parts[i]:getName() == name then
             return sq:getX() - (i - 1) * set.dx, sq:getY() - (i - 1) * set.dy, sq:getZ(), set
@@ -580,7 +612,7 @@ end
 function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
     if sq:hasSlopedSurface() and not slopeOk(kind, spr) then return false end
     if kind == "stairs" then return stairsOk(spr, sq, role) end
-    if kind == "ramp" then return rampOk(sq, role) end
+    if kind == "ramp" then return rampOk(spr, sq, role) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
     if kind == "water" then return waterOk(sq) end
     overlap = overlap == true -- Kahlua 少傳的參數不保證是 nil（家族 pitfalls）：只認明確的 true
@@ -764,7 +796,8 @@ end
 -- 拆了退什麼（Server.dismantle 與伺服器的原地替換讀，只在伺服器）：燈、家電（Place.keyed）照伺服器帳本；一樓以下的地板照
 -- 地板帳本，現在的圖和蓋的時候一樣、這一格只有它一片地板才退；其他照 buildMaterials。單機讀檔時帳本建好之前讀進來、
 -- 還沒搬的舊地板照 buildMaterials（Place.migrate）。本工具挖的水面也照地板帳本認（Place.dig 記的那筆，圖要一樣），
--- 不收料所以退空表。車庫門、雙開門照伺服器帳本那一組的一筆（Place.build；obj 是哪一片都行），坡道照頭片那格那一筆。
+-- 不收料所以退空表。車庫門、雙開門照伺服器帳本那一組的一筆（Place.build；obj 是哪一片都行），坡道照頭片那格那一筆
+-- （Place.rampOrigin 照圖與位置推頭片格，不看記號；某片被別的方式移走後那一筆是空表，見 Place.onAboutToBeRemoved）。
 -- 都沒有回 nil。
 function Place.refundOf(obj)
     local door = Place.doorAnchor(obj)
@@ -772,10 +805,10 @@ function Place.refundOf(obj)
         local Ledger = MinidoracatBuilder.Ledger
         return Ledger and Ledger.getDoor(door) or nil
     end
-    if Place.ramp(obj) then
+    local x, y, z = Place.rampOrigin(obj)
+    if x then
         local Ledger = MinidoracatBuilder.Ledger
-        local x, y, z = Place.rampOrigin(obj)
-        return Ledger and x and Ledger.getRamp(x, y, z) or nil
+        return Ledger and Ledger.getRamp(x, y, z) or nil
     end
     if Place.keyed(obj) then
         local Ledger, Dismantle = MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
@@ -1031,7 +1064,8 @@ local function placeStairs(cells, placed)
     local sq = landing.sq
     if not sq:has(F.solidfloor) then
         Place.clearFloor(sq)
-        local floor = sq:addFloor(Entry.STAIR_FLOOR)
+        local floor = layFloor(sq, Entry.STAIR_FLOOR)
+        if not floor then error("stair landing not placed at " .. sq:getX() .. "," .. sq:getY()) end
         placed[#placed + 1] = floor
         -- 拆樓梯時只拆本 MOD 補的平台（Server.dismantle）：一般 IsoObject、和原版補的同一張圖，只能記在伺服器帳本
         if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
@@ -1043,9 +1077,11 @@ local function placeStairs(cells, placed)
 end
 
 -- 坡道：每片一個一般物件（引擎照格上物件的圖塊屬性算斜面，IsoThumpable 也是物件，但原版與探針都用一般物件，
--- temp/impl-1116/reports/Probe.md），AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
--- 記號＝頭片名（Place.ramp）放之前寫好，跟著整件物件送給玩家。照樓梯清掉這格的草。坡頂上一層沒有地板時補平台，
--- 記帳本（拆坡道時一起拆，Dismantle.plan）。整組的退料記成伺服器帳本一筆，鍵是頭片那格（Place.refundOf）
+-- 見 builder-dev placement.md「坡道」），AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
+-- 記號＝頭片名（Place.ramp，只給右鍵選單看）放之前寫好，跟著整件物件送給玩家。照樓梯清掉這格的草。坡頂上一層沒有地板
+-- 時補平台（layFloor：引擎半途出錯的那片拿掉、整組失敗），記帳本（拆坡道時一起拆，Dismantle.plan）。整組的退料記成
+-- 伺服器帳本一筆，鍵是頭片那格（Place.refundOf）：這一筆是「這組是本 MOD 蓋的」唯一的憑據，記不進去就整組失敗
+-- （丟錯，Server.complete 照 Place.undo 收回、不扣料），不留一組本工具拆不掉的坡道
 local function placeRamp(cells, placed)
     local head, items = cells[1], {}
     for _, c in ipairs(cells) do
@@ -1054,7 +1090,8 @@ local function placeRamp(cells, placed)
         if c.role == "platform" then
             if not sq:has(F.solidfloor) then
                 Place.clearFloor(sq)
-                local floor = sq:addFloor(c.spr:getName())
+                local floor = layFloor(sq, c.spr:getName())
+                if not floor then error("ramp deck not placed at " .. sq:getX() .. "," .. sq:getY()) end
                 placed[#placed + 1] = floor
                 if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
             end
@@ -1068,7 +1105,10 @@ local function placeRamp(cells, placed)
         end
         sq:RecalcAllWithNeighbours(true)
     end
-    if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.putRamp(head.x, head.y, head.z, items) end
+    local Ledger = MinidoracatBuilder.Ledger
+    if not (Ledger and Ledger.putRamp(head.x, head.y, head.z, items)) then
+        error("ramp ledger not recorded at " .. head.x .. "," .. head.y .. "," .. head.z)
+    end
 end
 
 -- 燈：照原版搬動放燈（ISMoveableSpriteProps.lua:2325-2329）一律建 IsoLightSwitch，多格的每片一個。有 lightR 的自己發光、
@@ -1389,6 +1429,22 @@ do
     end
 end
 
+-- 這一組坡道除了 obj 以外還有沒有片在格子上（照位置與圖名）；有格子沒載入時當成還有
+local function rampRest(obj, x, y, z, set)
+    local cell = getCell()
+    for i = 1, set.n do
+        local sq = cell:getGridSquare(x + (i - 1) * set.dx, y + (i - 1) * set.dy, z)
+        if not sq then return true end
+        local name, objects = set.parts[i]:getName(), sq:getObjects()
+        for j = 0, objects:size() - 1 do
+            local o = objects:get(j)
+            local s = o ~= obj and o:getSprite()
+            if s and s:getName() == name and not instanceof(o, "IsoThumpable") then return true end
+        end
+    end
+    return false
+end
+
 -- 移出世界前：
 --   掛著圖的那一件（地板、牆）：圖跟著消失，覆蓋帳本清掉那一件的（只在伺服器，Overlays.drop）。
 --   IsoThumpable：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
@@ -1396,7 +1452,8 @@ end
 --     物件不該再退料。
 --   車庫門任何一片、雙開門第 1、4 片（拆、砸、殭屍打壞、原版拆解）：整組那一筆帳本清掉，剩下的片不再退料（只在伺服器）。
 --     雙開門第 2、3 片開關時會被移除再重建（IsoDoor.java:2650-2754），不算；重建的片耐久照預設，交給 Place.reharden。
---   本 MOD 蓋的坡道任一片：整組那一筆帳本清掉，剩下的片不再退料（只在伺服器）。
+--   坡道任一片（照圖與位置認，不看記號；只在伺服器）：這一組還有別的片在（或有格子沒載入）時整組那一筆改成空表（作廢：
+--     剩下的片照樣拆得掉、不退料），最後一片移走時刪掉那一筆。地圖原有的坡道沒有那一筆，不動帳本。
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
@@ -1409,10 +1466,11 @@ function Place.onAboutToBeRemoved(obj)
         if a then Ledger.forgetDoor(a) end
         return
     end
-    if Place.ramp(obj) then
+    local x, y, z, set = Place.rampOrigin(obj)
+    if x then
         local Ledger = MinidoracatBuilder.Ledger
-        local x, y, z = Place.rampOrigin(obj)
-        if Ledger and x then Ledger.forgetRamp(x, y, z) end
+        if not (Ledger and Ledger.getRamp(x, y, z)) then return end
+        if rampRest(obj, x, y, z, set) then Ledger.voidRamp(x, y, z) else Ledger.forgetRamp(x, y, z) end
         return
     end
     if not instanceof(obj, "IsoThumpable") then

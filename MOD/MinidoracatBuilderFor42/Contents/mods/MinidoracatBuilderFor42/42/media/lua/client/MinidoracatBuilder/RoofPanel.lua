@@ -185,6 +185,8 @@ function Panel.new(UI, pn)
         onClose = function(wnd)
             UI.Dropdown.close(wnd)
             if RP.panel == self then RP.panel = nil end
+            -- 框架的 close 只隱藏，下次開又建新的：從 UIManager 拿掉（引擎排到這一幀處理完才移除，UIManager.RemoveElement）
+            wnd:removeFromUIManager()
         end })
     win.onEscape = function()
         win:close()
@@ -275,7 +277,7 @@ function Panel.new(UI, pn)
     return self
 end
 
--- 方向下拉照目前的形狀換選項；沒有方向的（四坡、平頂）停用
+-- 方向下拉照目前的形狀換選項；沒有方向的（四坡、平頂）停用。山牆下拉只在雙斜、單斜可選（另兩種不放山牆，選擇留著）
 function Panel:syncDirs()
     local def = RP.fix()
     local st, opts = RP.st, {}
@@ -283,6 +285,7 @@ function Panel:syncDirs()
     self.dirDD:setOptions(opts)
     self.dirDD:setSelected(st.dir, true)
     self.dirDD:setEnabled(#opts > 0)
+    self.gableDD:setEnabled(st.shape == "gable" or st.shape == "shed")
 end
 
 -- 每幀：只畫備好的字；樓層字只在樓層變了才重組
@@ -316,8 +319,10 @@ function Panel:draw()
     end
 end
 
--- 開面板（同時只開一個，新的取代舊的）：認不出整套、沒有 addMany、沒有框架回 false。規劃沒開就先開，
--- 規劃樓層設成玩家那層加 1（屋頂預設蓋在上一層，同建造游標的 LAYERED）
+-- 開面板（同時只開一個，新的取代舊的）：認不出整套、沒有 addMany、沒有框架、建不起來、規劃開不了回 false（後三種跳通知）。
+-- 面板建好才開規劃、把規劃樓層設成玩家那層加 1（屋頂預設蓋在上一層，同建造游標的 LAYERED）：失敗時規劃、樓層、選擇都不動。
+-- Panel.new 最後一步才 addToUIManager，建到一半出錯不會留下視窗
+local KEEP = { "pn", "set", "shape", "dir", "gable", "gableTs" }
 function RP.open(playerNum, name)
     local PM, W = B.PlanMode, B.Window
     local player = getSpecificPlayer(playerNum)
@@ -329,12 +334,13 @@ function RP.open(playerNum, name)
         Messages.toast(player, getText("IGUI_MBLD_NeedFramework"), getText("IGUI_MBLD_Title"))
         return false
     end
-    if not PM.planning() and not PM.toggle(playerNum) then
-        Messages.toast(player, getText(ADD_WHY.OFF), title())
+    local st, was = RP.st, {}
+    for _, k in ipairs(KEEP) do was[k] = st[k] end
+    local function undo(text)
+        for _, k in ipairs(KEEP) do st[k] = was[k] end
+        Messages.toast(player, getText(text), title())
         return false
     end
-    PM.setLevel(math.floor(player:getZ()) + 1)
-    local st = RP.st
     st.pn, st.set = playerNum, set
     if st.gable and st.gable.fam ~= set.fam then st.gable, st.gableTs = nil, "" end
     RP.fix()
@@ -342,8 +348,13 @@ function RP.open(playerNum, name)
     local ok, p = pcall(Panel.new, UI, playerNum)
     if not ok then
         print(LOG .. "roof panel build failed: " .. tostring(p))
-        return false
+        return undo("IGUI_MBLD_Roof_BuildFailed")
     end
+    if not PM.planning() and not PM.toggle(playerNum) then
+        p.win:close()
+        return undo(ADD_WHY.OFF)
+    end
+    PM.setLevel(math.floor(player:getZ()) + 1)
     RP.panel = p
     p.win:setVisible(true)
     p.win:bringToTop()

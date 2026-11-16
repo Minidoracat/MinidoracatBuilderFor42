@@ -719,10 +719,17 @@ local function retarget(file, nf, name)
     if PM and PM.retarget then PM.retarget(file, nf, name) end
 end
 
--- 改名：回 新檔名，或 nil, 句子。檔名跟著改（PlanFile.rename：寫新檔、舊檔標成刪除）
+-- 改名：回 新檔名，或 nil, 句子。檔名跟著改（PlanFile.rename：寫新檔、舊檔標成刪除）。
+-- 地上那張是這個檔時，先在記錄寫下要改成的名稱（PM.renaming），寫檔與改記錄中間斷掉時讀回認得
 function L.rename(file, name)
+    local PM = B.PlanMode
+    local pending = PM and PM.renaming
+    if pending and not pending(file, Plan.cleanName(name)) then return nil, L.errText("WRITE", 0) end
     local nf, why = PlanFile.rename(file, name)
-    if not nf then return nil, L.errText(why, 0) end
+    if not nf then
+        if pending then pending(file, nil) end
+        return nil, L.errText(why, 0)
+    end
     retarget(file, nf, Plan.cleanName(name))
     if used[file] then L.markUsed(nf, file) end
     if why == "OLD_LEFT" then L.tell(getText("IGUI_MBLD_Lib_OldLeft", file)) end

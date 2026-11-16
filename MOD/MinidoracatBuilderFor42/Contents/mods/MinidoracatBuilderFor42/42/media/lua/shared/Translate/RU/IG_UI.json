@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "Не удалось открыть мастер крыши. Подробности в журнале консоли.",
   "IGUI_MBLD_Roof_Title": "Мастер крыши",
   "IGUI_MBLD_Roof_Shape": "Форма",
   "IGUI_MBLD_Roof_Shape_gable": "Двускатная",

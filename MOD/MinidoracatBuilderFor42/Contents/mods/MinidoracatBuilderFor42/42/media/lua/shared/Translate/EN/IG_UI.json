@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "Couldn't open the Roof Helper. Details are in the console log.",
   "IGUI_MBLD_Roof_Title": "Roof Helper",
   "IGUI_MBLD_Roof_Shape": "Shape",
   "IGUI_MBLD_Roof_Shape_gable": "Gable",

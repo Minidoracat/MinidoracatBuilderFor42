@@ -1,10 +1,11 @@
 -- 每個存檔、每個伺服器各記各的「地上的藍圖」：哪個檔、擺在哪、隱藏沒有、點名的材料箱、上次各項目的狀態。
 -- 存本機檔 Zomboid/Lua/MinidoracatBuilder/worlds/<worldId>.txt，不用 modData（多人的玩家 modData 會送到伺服器）。
 -- 讀寫照 Favorites.lua：引擎會吞掉讀寫錯誤，讀要看到 END，寫完讀回比對；存檔先寫備份（PlanFile.writeSafe）。
--- 檔案（欄位用 Tab）：MBLDWORLD 1 / file 檔名 / name 名稱代號 / pos x y z / prev x y z / hidden 0|1 / box x y z 編號 /
--- seen 狀態 項目ID / END
+-- 檔案（欄位用 Tab）：MBLDWORLD 1 / file 檔名 / name 名稱代號 / rename 名稱代號 / pos x y z / prev x y z / hidden 0|1 /
+-- box x y z 編號 / seen 狀態 項目ID / END
 -- prev＝寫這份之前的原點：先寫這裡、再寫藍圖檔，中間斷掉時藍圖檔還是舊的那版，讀回時照它的 pos 認出要用哪個原點
 -- name＝那張藍圖的顯示名稱（PlanStore.nameKey）：檔名被別張重用時認得出不是同一張、檔被改名時照名稱找回。沒有這行的舊檔照讀
+-- rename＝藍圖庫正在改成的名稱（PlanMode.renaming 寫、改好清掉）：改名寫完藍圖檔、還沒改記錄就斷掉時，讀回兩個名稱都認
 require "MinidoracatBuilder/PlanFile"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
@@ -105,6 +106,8 @@ local function parse(lines)
             st.file = f[2]
         elseif tag == "name" and n == 2 and f[2]:match("^[A-Za-z0-9_]*$") then
             st.name = f[2]
+        elseif tag == "rename" and n == 2 and f[2]:match("^[A-Za-z0-9_]*$") then
+            st.renameTo = f[2]
         elseif tag == "pos" and n == 4 and int(f[2]) and int(f[3]) and int(f[4]) then
             st.ox, st.oy, st.oz = int(f[2]), int(f[3]), int(f[4])
         elseif tag == "prev" and n == 4 and int(f[2]) and int(f[3]) and int(f[4]) then
@@ -124,7 +127,8 @@ local function parse(lines)
     return st
 end
 
--- 回 { file, name（名稱代號，舊檔沒有）, ox, oy, oz, px, py, pz（上一個原點，可能沒有）, hidden, boxes＝{ { x, y, z, index }… },
+-- 回 { file, name（名稱代號，舊檔沒有）, renameTo（改到一半的名稱代號，通常沒有）, ox, oy, oz, px, py, pz（上一個原點，
+-- 可能沒有）, hidden, boxes＝{ { x, y, z, index }… },
 -- seen＝{ [項目 ID]＝上次的狀態 } }；沒有回空表
 function PlanStore.load()
     local st, why = PlanFile.readSafe(path(), function(nextLine)
@@ -142,6 +146,7 @@ local function serialize(st)
     local function put(s) out[#out + 1] = s end
     if st.file then put("file\t" .. st.file) end
     if st.name then put("name\t" .. st.name) end
+    if st.renameTo then put("rename\t" .. st.renameTo) end
     if st.ox then put("pos\t" .. st.ox .. "\t" .. st.oy .. "\t" .. st.oz) end
     if st.px then put("prev\t" .. st.px .. "\t" .. st.py .. "\t" .. st.pz) end
     put("hidden\t" .. (st.hidden and "1" or "0"))

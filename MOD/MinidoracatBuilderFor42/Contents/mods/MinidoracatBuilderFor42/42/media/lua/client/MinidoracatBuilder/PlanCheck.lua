@@ -39,13 +39,13 @@ PlanCheck.WAIT_MS = 100 -- 「在等旁邊」的名單最多多久重算一次
 -- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep,
 --   ver＝片的狀態變過幾次, wait, wVer, wAt＝waiting 的名單與算的時候, rq＝還沒排完的重排請求（見 requeue） }
 local cur
-local canonMemo, itemMemo, memoDigest = {}, {}, nil
+local canonMemo, itemMemo, cellsMemo, memoDigest = {}, {}, {}, nil
 
--- 項目、認圖、成本的快取都照沙盒摘要（種類開關、停用來源與圖塊組、成本倍率）：摘要變了全部丟掉
+-- 項目、認圖、佔地、成本的快取都照沙盒摘要（種類開關、停用來源與圖塊組、成本倍率）：摘要變了全部丟掉
 local function syncMemo()
     local dg = Entry.digest()
     if dg ~= memoDigest then
-        canonMemo, itemMemo, PlanCheck.costMemo, memoDigest = {}, {}, {}, dg
+        canonMemo, itemMemo, cellsMemo, PlanCheck.costMemo, memoDigest = {}, {}, {}, {}, dg
     end
 end
 
@@ -140,14 +140,44 @@ local function sigOf(sq)
     return n
 end
 
+-- 一張圖的佔地（Entry.cells），照圖名記住：坡道一組 20 多格，每算一片都要
+local function cellsOf(spr)
+    local name = spr:getName()
+    local c = cellsMemo[name]
+    if not c then
+        c = Entry.cells(spr)
+        cellsMemo[name] = c
+    end
+    return c
+end
+
 -- 圖塊項目在世界上這一格（錨點）放的那一張（朝向、交替柵欄照 Check.item 同一套）與佔地；沒有那一面回 nil
 local function placed(entry, d, x, y, w)
     local spr = Entry.face(entry, d)
     if not spr then return nil end
     spr = Entry.alternate(spr, x, y)
     local set = entry.kind == "door" and Entry.doorSet(spr)
-    local offs = set and set.garage and Entry.groupCells(set, w or 2) or Entry.cells(spr)
+    local offs = set and set.garage and Entry.groupCells(set, w or 2) or cellsOf(spr)
     return spr, offs, set
+end
+
+-- 坡道整組在不在：每一格斜面都要有那一片；平台格有任何地板就算（同 Place 放坡道：已有地板不另補）。
+-- 格子不在（沒載入、上一層沒有格子）不算。照順序看，缺一格就停
+local rampWant
+local function isRampWant(name) return name == rampWant end
+local function rampBuilt(cell, offs, x, y, z)
+    for i = 1, #offs do
+        local o = offs[i]
+        local s = cell:getGridSquare(x + o[1], y + o[2], z + o[3])
+        if not s then return false end
+        if o[5] == "platform" then
+            if not s:has(IsoFlagType.solidfloor) then return false end
+        else
+            rampWant = o[4]:getName()
+            if not eachTile(s, isRampWant) then return false end
+        end
+    end
+    return true
 end
 
 -- 這一片蓋好了沒（看世界，不看紀錄）
@@ -164,9 +194,15 @@ local function built(id, x, y, z, d, w, sq)
         return s ~= nil and eachTile(s, function(name) return name == want end), dx, dy
     end
     local entry = Entry.resolve(id)
-    if not entry then return hasTile(sq, id) end -- 這裡關掉了，世界上照樣可能有
-    local spr, offs, set = placed(entry, d, x, y, w)
-    if not spr then return false end
+    local spr, offs, set
+    if entry then
+        spr, offs, set = placed(entry, d, x, y, w)
+        if not spr then return false end
+    else -- 這裡關掉了，世界上照樣可能有：坡道照樣看整組，其他看錨點那格
+        spr = Entry.sprite(id)
+        if not (spr and Entry.rampSet(spr)) then return hasTile(sq, id) end
+        offs = cellsOf(spr)
+    end
     if set then -- 車庫門、雙開門：整扇的每一格都要有這一組的片（開著關著都算）
         for _, o in ipairs(offs) do
             local s = cell:getGridSquare(x + o[1], y + o[2], z + o[3])
@@ -174,6 +210,8 @@ local function built(id, x, y, z, d, w, sq)
         end
         return true
     end
+    -- 坡道一片代表整組：頭片在、中段或平台不在的殘組不算蓋好
+    if Entry.rampSet(spr) then return rampBuilt(cell, offs, x, y, z) end
     return hasTile(sq, spr:getName())
 end
 
@@ -443,13 +481,15 @@ local function sync(plan, ox, oy, oz, player)
     cur.list, cur.n = list, n
     if cur.rq then cur.rq.i = 1 end -- 清單換了，索引作廢：從頭走（看過的片照 r.rq 略過）
     cur.ver = cur.ver + 1 -- 片多了、少了或搬了：旁邊是誰要重看
+    -- 佇列整個重建：還在排的片照新的距離重排一次（舊的桶留著的話，同一片會被取出兩次）
+    cur.q = { b = {}, lo = MAX_BUCKET + 1 }
     for i = 1, n do
         local p = list[i]
         local r = rec[p]
         local it = plan.items[p.it]
         if r.q or not it or r.id ~= it.id or r.x ~= p.x + ox or r.y ~= p.y + oy or r.z ~= p.z + oz or r.d ~= p.d
             or r.o ~= p.o or r.w ~= p.w then
-            r.q, r.rq = false, cur.rq -- 舊佇列裡的位置作廢：照新的距離重排；這裡排了，重排請求不必再排一次
+            r.q, r.rq = false, cur.rq -- 這裡排了，重排請求不必再排一次
             push(p)
         end
     end

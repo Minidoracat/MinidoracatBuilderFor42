@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "지붕 도우미를 열 수 없습니다. 자세한 내용은 콘솔 로그에 있습니다.",
   "IGUI_MBLD_Roof_Title": "지붕 도우미",
   "IGUI_MBLD_Roof_Shape": "형태",
   "IGUI_MBLD_Roof_Shape_gable": "박공지붕",

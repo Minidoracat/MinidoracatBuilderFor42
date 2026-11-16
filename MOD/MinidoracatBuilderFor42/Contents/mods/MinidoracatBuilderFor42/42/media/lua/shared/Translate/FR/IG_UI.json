@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "Impossible d'ouvrir l'assistant toit. Les détails sont dans le journal de la console.",
   "IGUI_MBLD_Roof_Title": "Assistant toit",
   "IGUI_MBLD_Roof_Shape": "Forme",
   "IGUI_MBLD_Roof_Shape_gable": "Deux pans",

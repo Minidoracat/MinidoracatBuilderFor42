@@ -400,7 +400,7 @@ local function storeEdit(edit)
 end
 
 local function storeForget(st)
-    st.file, st.name, st.ox, st.oy, st.oz, st.px, st.py, st.pz = nil, nil, nil, nil, nil, nil, nil, nil
+    st.file, st.name, st.renameTo, st.ox, st.oy, st.oz, st.px, st.py, st.pz = nil, nil, nil, nil, nil, nil, nil, nil, nil
 end
 
 -- 記錄換成這張的檔名、名稱與角；同一個檔、角變了時原本的角留在 prev（藍圖檔還沒寫成就斷掉時，讀回照藍圖檔認出舊版）
@@ -412,7 +412,7 @@ local function storePlan(plan)
         elseif st.ox and (st.ox ~= x or st.oy ~= y or st.oz ~= z) then
             st.px, st.py, st.pz = st.ox, st.oy, st.oz
         end
-        st.file, st.name, st.ox, st.oy, st.oz = plan.file, PlanStore.nameKey(plan.name), x, y, z
+        st.file, st.name, st.renameTo, st.ox, st.oy, st.oz = plan.file, PlanStore.nameKey(plan.name), nil, x, y, z
     end)
 end
 
@@ -443,12 +443,18 @@ end
 -- 讀不到的原因裡，只有這兩種可能下次就好了（檔案被鎖住、暫時打不開）：保留記錄、下次再試
 local RETRY = { READ = true, NO_FILE = true }
 
--- 藍圖資料夾裡名稱代號是 key 的檔：剛好一個才回它的檔名
-local function fileNamed(key)
+-- 記錄認得這個名稱嗎：記的名稱，或藍圖庫正在改成的名稱（改名寫完藍圖檔、還沒改記錄就斷掉）
+local function knownName(st, name)
+    local key = PlanStore.nameKey(name)
+    return key == st.name or key == st.renameTo
+end
+
+-- 藍圖資料夾裡名稱是記錄認得的檔：剛好一個才回它的檔名
+local function fileNamed(st)
     local found
     for _, f in ipairs(PlanFile.list()) do
         local head = PlanFile.head(f)
-        if head and PlanStore.nameKey(head.name) == key then
+        if head and knownName(st, head.name) then
             if found then return nil end
             found = f
         end
@@ -466,21 +472,22 @@ function PM.restore()
     local plan, why = PlanFile.load(st.file)
     -- 正式檔與備份都不在資料夾裡：被刪掉了（例如在檔案總管刪的），不是一時打不開
     if not plan and why == "NO_FILE" and not PlanFile.exists(st.file) then why = "GONE" end
-    -- 檔不在、記錄有名稱：檔被改了名（藍圖庫以外的地方）時照名稱找回；同名的剛好一張才接，零張或好幾張照舊算沒了
-    if why == "GONE" and st.name then
-        local f = fileNamed(st.name)
+    -- 檔不在、記錄有名稱：檔被改了名（藍圖庫以外的地方）時照名稱找回；藍圖庫改名換了檔名、還沒改記錄就斷掉時，
+    -- 舊檔已標成刪除，記錄有「要改成的名稱」也照名稱找。同名的剛好一張才接，零張或好幾張照舊算沒了
+    local moved = false
+    if (why == "GONE" and st.name) or (why == "DELETED" and st.renameTo) then
+        local f = fileNamed(st)
         local p2, why2 = nil, nil
         if f then p2, why2 = PlanFile.load(f) end
         if p2 then
-            plan, why = p2, nil
+            plan, why, moved = p2, nil, true
             st.file = f
-            storeEdit(function(s) s.file = f end)
         elseif f then
             why = why2
         end
     end
     -- 記錄的名稱和檔裡的不同：這個檔名已經給了另一張藍圖（原本那張刪掉後重用），不擺別張
-    if plan and st.name and PlanStore.nameKey(plan.name) ~= st.name then plan, why = nil, "NAME" end
+    if plan and (st.name or st.renameTo) and not knownName(st, plan.name) then plan, why = nil, "NAME" end
     if not plan or st.ox == nil then
         why = why or "NO_POS"
         print(LOG .. "ground plan not restored f=" .. tostring(st.file) .. ": " .. tostring(why))
@@ -500,9 +507,30 @@ function PM.restore()
     end
     plan.ox, plan.oy, plan.oz = ox, oy, oz
     S.plan, S.mode = plan, "fixed"
+    -- 找回別的檔、或改名做到一半：記錄改成現在這個檔與名稱（寫不進去已說過，下次進遊戲照樣認得）
+    if moved or st.renameTo then
+        local f, key = st.file, PlanStore.nameKey(plan.name)
+        storeEdit(function(s) s.file, s.name, s.renameTo = f, key, nil end)
+    end
     checkReset()
     fire()
     return true
+end
+
+-- 藍圖庫改名之前（PlanLibrary 的 L.rename）：記錄指著這個檔時先寫下要改成的名稱。改名先寫藍圖檔（可能換檔名）
+-- 再改記錄（PM.retarget），中間斷掉時檔裡的名稱和記錄的不同，讀回時（PM.restore）兩個名稱都認。
+-- newName 是 nil＝改名沒成，清掉。沒記名稱的舊記錄讀回時本來就不比名稱，不用記。
+-- 回 true；記錄寫不進去回 nil（不要改名：斷在中間時認不出來）
+function PM.renaming(file, ...)
+    local newName = ...
+    local st = PlanStore.load()
+    if file == nil or st.file ~= file or not st.name then return true end
+    local key = newName and PlanStore.nameKey(Plan.cleanName(newName)) or nil
+    if st.renameTo == key then return true end
+    st.renameTo = key
+    if PlanStore.save(st) then return true end
+    print(LOG .. "plan store save failed before rename f=" .. tostring(file))
+    return nil
 end
 
 -- 藍圖庫改名、刪除之後（PlanLibrary 呼叫）：記錄或地上那張是 oldFile 才改。newFile 是 nil＝刪掉了，之後存檔另取檔名，
@@ -516,7 +544,7 @@ function PM.retarget(oldFile, ...)
     if st.file == oldFile then
         hit = true
         if newFile then
-            st.file = newFile
+            st.file, st.renameTo = newFile, nil
             if newName then st.name = PlanStore.nameKey(Plan.cleanName(newName)) end
         else
             storeForget(st)

@@ -526,7 +526,7 @@ end
 -- 片 i（0 起）在頭片格＋i×上坡方向；上坡方向就是 SlopedSurfaceDirection（引擎算高度時那一邊是 Max，
 -- IsoGridSquare.java:10248-10257）。方向字串引擎用 IsoDirections.fromString（去頭尾空白、轉大寫再 valueOf，
 -- PropertyContainer.java:270-271、IsoDirections.java:32-34）讀，這裡同一種寫法，只收 N／E／S／W。
--- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98（探針，temp/impl-1116/reports/Probe.md）
+-- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98（見 builder-dev placement.md「坡道」）
 Entry.RAMP_DECK = 1
 local RAMP_DIR = { N = { 0, -1, 1 }, E = { 1, 0, 2 }, S = { 0, 1, 3 }, W = { -1, 0, 4 } } -- dx, dy, Entry.face 的 d
 local function slope(spr)
@@ -570,9 +570,22 @@ function Entry.isRampDeck(name)
     return tileset ~= nil and deckOf(tileset) == name
 end
 
+-- 坡道最上面那片（Max＝100）回上坡方向 dx, dy，否則 nil：它往前一格、上一層就是平台（Place 的 rampOk、Dismantle 找平台）
+function Entry.rampTop(spr)
+    local dir, _, max = slope(spr)
+    if not dir or max ~= 100 then return nil end
+    return RAMP_DIR[dir][1], RAMP_DIR[dir][2]
+end
+
+-- 能搬或能拆解（IsMoveAble、CanScrap）的片不成組：原版會逐片拆、照圖塊材質退料，整組只收一次料（同樓梯的 STAIRS_PART）
+local function scrappable(s)
+    local p = s:getProperties()
+    return p:has("CanScrap") or p:has("IsMoveAble")
+end
+
 local function rampChain(spr)
     local dir, min, max = slope(spr)
-    if not dir or min ~= 0 or max <= 0 then return nil end
+    if not dir or min ~= 0 or max <= 0 or scrappable(spr) then return nil end
     local name = spr:getName()
     local tileset, num = name:match("^(.*)_(%d+)$")
     if not tileset then return nil end
@@ -583,7 +596,7 @@ local function rampChain(spr)
         local s = Entry.sprite(tileset .. "_" .. (num + #parts))
         if not s or #parts >= 100 then return nil end
         local d2, lo, hi = slope(s)
-        if d2 ~= dir or lo ~= max or hi <= lo or Rules.classify(s) ~= "ramp" then return nil end
+        if d2 ~= dir or lo ~= max or hi <= lo or Rules.classify(s) ~= "ramp" or scrappable(s) then return nil end
         parts[#parts + 1] = s
         max = hi
     end

@@ -1,4 +1,5 @@
 {
+  "IGUI_MBLD_Roof_BuildFailed": "Der Dach-Assistent ließ sich nicht öffnen. Details stehen im Konsolen-Log.",
   "IGUI_MBLD_Roof_Title": "Dach-Assistent",
   "IGUI_MBLD_Roof_Shape": "Form",
   "IGUI_MBLD_Roof_Shape_gable": "Satteldach",

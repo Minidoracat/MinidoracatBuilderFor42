@@ -129,10 +129,36 @@ function Dismantle.overlayPlan(t)
     return { remove = {}, refund = {}, overlay = t, foreign = false }
 end
 
+-- 往 N、E、S、W 上坡的一步
+local STEPS = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
+
+-- 有沒有坡道最上面那片（Entry.rampTop）通到 (x, y, z + 1) 這格：那片在這格往下坡方向一格、下一層。skipX, skipY＝要拆的
+-- 那一組自己最上面那片的位置（不算）。地圖原有的坡道也算
+local function rampInto(cell, x, y, z, skipX, skipY)
+    for _, d in ipairs(STEPS) do
+        local tx, ty = x - d[1], y - d[2]
+        local sq = not (tx == skipX and ty == skipY) and cell:getGridSquare(tx, ty, z)
+        local objects = sq and sq:hasSlopedSurface() and sq:getObjects() -- 沒有斜面的格子（幾乎全部）不必逐件看
+        for i = 0, (objects and objects:size() or 0) - 1 do
+            local s = objects:get(i):getSprite()
+            local dx, dy
+            if s then dx, dy = Entry.rampTop(s) end -- Kahlua 的 a and f() 只留一個回傳值
+            if dx == d[1] and dy == d[2] then return true end
+        end
+    end
+    return false
+end
+
+-- 有沒有樓梯頂片通到 (x, y, z + 1) 這格（同原版 countAdjacentStairs：W 型頂片在平台東邊、N 型在南邊）
+local function stairInto(cell, x, y, z)
+    local e, s = cell:getGridSquare(x + 1, y, z), cell:getGridSquare(x, y + 1, z)
+    return (e and e:has(IsoObjectType.stairsTW)) or (s and s:has(IsoObjectType.stairsTN)) or false
+end
+
 -- 這一組樓梯的平台：頂片往上爬那一側、上一層那格的 Entry.STAIR_FLOOR 一般物件（Entry.cells 的 platform）。照位置找，
 -- 不照原版 buildUtil.getStairObjects 收：原版旁邊八格有別的地板就不收（ISBuildUtil.lua:523-537，原版分不出平台是不是
 -- 跟著樓梯補的），本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）。另一組往別的方向爬的
--- 樓梯也通到這格時不收（同原版 countAdjacentStairs：W 型頂片在平台東邊、N 型在南邊），等最後一組拆掉時才拆。
+-- 樓梯（同原版 countAdjacentStairs）或坡道（rampInto）也通到這格時不收，等最後一組拆掉時才拆。
 local function landingOf(top, west)
     local cell, x, y, z = getCell(), top:getX(), top:getY(), top:getZ()
     local lx, ly, other
@@ -145,6 +171,7 @@ local function landingOf(top, west)
         other = cell:getGridSquare(lx + 1, ly, z)
         if other and other:has(IsoObjectType.stairsTW) then return nil end
     end
+    if rampInto(cell, lx, ly, z) then return nil end
     local sq = cell:getGridSquare(lx, ly, z + 1)
     local objects = sq and sq:getObjects()
     for i = 0, (objects and objects:size() or 0) - 1 do
@@ -158,11 +185,15 @@ local function landingOf(top, west)
 end
 
 -- 這一組坡道的平台：坡頂往前 Entry.RAMP_DECK 格、上一層那格圖＝set.deck 的一般地板（Entry.cells 的 platform）。照位置找，
--- 本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）
+-- 本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）。別的坡道或樓梯也通到這格時不收
+-- （同 landingOf），等最後一組拆掉時才拆
 local function rampDecks(x, y, z, set)
     local cell, out = getCell(), {}
+    local topX, topY = x + (set.n - 1) * set.dx, y + (set.n - 1) * set.dy
     for k = 0, Entry.RAMP_DECK - 1 do
-        local sq = cell:getGridSquare(x + (set.n + k) * set.dx, y + (set.n + k) * set.dy, z + 1)
+        local px, py = x + (set.n + k) * set.dx, y + (set.n + k) * set.dy
+        local sq = not (stairInto(cell, px, py, z) or rampInto(cell, px, py, z, topX, topY))
+            and cell:getGridSquare(px, py, z + 1)
         local objects = sq and sq:getObjects()
         for i = 0, (objects and objects:size() or 0) - 1 do
             local o = objects:get(i)
@@ -176,9 +207,10 @@ local function rampDecks(x, y, z, set)
     return out[1] and out or nil
 end
 
--- 坡道：照頭片那格推整組各格（Place.rampOrigin），逐格找這一組那一片（同位置、同圖），本 MOD 的片收進 remove。
--- 回 incomplete, partial, 平台：有一格沒載入 incomplete＝NOT_LOADED（不能拆一半又退料）；都載入但有片不見了或不是本 MOD
--- 的 partial＝true（殘組：拆剩下本 MOD 的片、不退料；原版大錘不保證砸得掉一般物件的坡道片，不給拆會留下清不掉的斜面）
+-- 坡道：照頭片那格推整組各格（Place.rampOrigin），逐格找這一組那一片（同位置、同圖的一般物件），找到的都收進 remove，
+-- 不看記號（客戶端改得到；這組是不是本 MOD 蓋的由伺服器照帳本認，Server.unbuildOne）。回 incomplete, partial, 平台：
+-- 有一格沒載入 incomplete＝NOT_LOADED（不能拆一半）；都載入但有片不見了 partial＝true（殘組：拆剩下的片、不退料；原版
+-- 大錘不保證砸得掉一般物件的坡道片，不給拆會留下清不掉的斜面）
 local function rampParts(obj, remove)
     local x, y, z, set = Place.rampOrigin(obj)
     if not set then return "NOT_OURS", false, nil end
@@ -190,14 +222,14 @@ local function rampParts(obj, remove)
         for j = 0, (objects and objects:size() or 0) - 1 do
             local o = objects:get(j)
             local spr = o:getSprite()
-            if spr and spr:getName() == name then
+            if spr and spr:getName() == name and not instanceof(o, "IsoThumpable") then
                 found = o
                 break
             end
         end
         if not sq then
             unloaded = true
-        elseif found and Place.ramp(found) then
+        elseif found then
             remove[#remove + 1] = found
         else
             partial = true
@@ -248,20 +280,20 @@ local function doorGap(obj, list, garage)
 end
 
 -- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = { 平台 } 或 nil,
--- foreign = true（同一組裡有不是本 MOD 蓋的片）, incomplete = 拒絕碼（整組門不完整、坡道有格沒載入）}。同一組的片照
--- 「本 MOD 蓋的」收，不照各片自己的種類（建造時整組用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆
--- （foreign；坡道例外，見下）：
+-- foreign = true（同一組裡有不是本 MOD 蓋的片）, incomplete = 拒絕碼（整組門不完整、坡道有格沒載入）, partial = true
+-- （坡道殘組：refund 照樣要查得到帳本，但不退料）}。同一組的片照「本 MOD 蓋的」收，不照各片自己的種類（建造時整組用
+-- 原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
 --   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:76-80），只照被點的那片退一次（三片的退料表都寫
 --     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
 --     平台照 landingOf 找。
---   坡道：整組各片（rampParts），退料照頭片那格那一筆帳本退一次（Place.refundOf，點哪一片都一樣）；平台照 rampDecks 找。
---     殘組（rampParts 的 partial）照拆剩下本 MOD 的片、一律不退料（refund 是空的）；整組那筆帳本在片移除時清掉
---     （Place.onAboutToBeRemoved），完整的一組退過一次後帳本也沒了，所以拆殘組不會多拿材料。
+--   坡道：整組各片照位置與圖名收（rampParts），退料照頭片那格那一筆帳本退一次（Place.refundOf，點哪一片都一樣；沒有
+--     那一筆伺服器回 NOT_OURS、一片不拆）；平台照 rampDecks 找。殘組（partial）照拆剩下的片、一律不退料；某片被別的
+--     方式移走時那一筆已作廢成空表（Place.onAboutToBeRemoved），完整的一組退過一次後那一筆也沒了，所以不會多拿材料。
 --   多格：同一組的每一片（getSpriteGridObjectsIncludingSelf，ISDestroyCursor.lua:217），每片照自己的退料表退。引擎只看
 --     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5410-5444），另用 isConnectedSpriteGridObject 對原點。
 --   其他：自己。
 function Dismantle.plan(obj, kind)
-    local remove, refund, landing, foreign, incomplete = {}, {}, nil, false, nil
+    local remove, refund, landing, foreign, incomplete, partial = {}, {}, nil, false, nil, nil
     if kind == "stairs" then
         local west, top = Rules.westStairs(obj:getSprite():getType()), nil
         for _, o in ipairs(buildUtil.getStairObjects(obj, true)) do
@@ -276,9 +308,8 @@ function Dismantle.plan(obj, kind)
         if l then landing = { l } end
         refund[1] = obj
     elseif kind == "ramp" then
-        local partial
         incomplete, partial, landing = rampParts(obj, remove)
-        if not partial then refund[1] = obj end
+        refund[1] = obj
     elseif kind == "door" then
         -- 車庫門、雙開門（單扇門 kindOf 不認）：整組拆（原版大錘也整組砸，ISDestroyStuffAction.lua:269-296），退料照第一片
         -- 那一筆帳本退一次（Place.refundOf）。不完整的一組不拆（doorGap）：一部分沒載入時只拆得到載入的那幾片、卻退整組；
@@ -305,7 +336,8 @@ function Dismantle.plan(obj, kind)
             end
         end
     end
-    return { remove = remove, refund = refund, landing = landing, foreign = foreign, incomplete = incomplete }
+    return { remove = remove, refund = refund, landing = landing, foreign = foreign, incomplete = incomplete,
+        partial = partial or nil }
 end
 
 -- 拆這一件要的工具：和蓋的時候一樣（Cost.of 的 tools，多格取聯集；使用者 2026-10-28 選）。整組門每一片照現在的圖對回

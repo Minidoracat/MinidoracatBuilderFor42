@@ -31,7 +31,7 @@ end
 -- rise＝幾格升一層、maxSpan＝雙斜與四坡的跨距上限、off＝片種位移、core＝認整套要全部對上的片、shapes＝做得出的形狀、
 -- key＝排法用的角色 → 片種字首、gable＝山牆（牆的圖塊組，本 MOD 目錄是「牆 › 山牆與斜牆」）的模板。
 -- 30 度：11 款原版模板全部相同（90 片）。山牆 38 款相同（36 片），原版非燒毀款的外形完全一樣（差 0），不同片種最近只差 6 點
--- （Fall 與 Peak），所以容許取 3；燒毀款（walls_exterior_roofs_30_burnt_01 差到 49）認不出（temp/impl-100/p2/gable_tol.py）
+-- （Fall 與 Peak），所以容許取 3；燒毀款（walls_exterior_roofs_30_burnt_01 差到 49）認不出（量測見 builder-dev roof.md）
 Roof.FAM = {
     ["30"] = {
         ref = "roofs_30_01", tol = 16, rise = 6, maxSpan = 11, kind = "roof",
@@ -49,14 +49,16 @@ Roof.FAM = {
                 { "PeakE", 32, 1 }, { "PeakS", 40, 1 } }) },
     },
     -- 45 度：核心 20 片，原版 17 套模板相同、基準 0 或 32；+22 是平頂片（TOP1，不算核心）。建築編輯器只畫朝南、朝東的坡面
-    -- （PeakWE／PeakNS 只畫南、東半邊，北、西沒有片）；那半邊照 CONTRACT 閘門 A1 補天花板片（FILL）擋雨、算室內。
+    -- （PeakWE／PeakNS 只畫南、東半邊，北、西沒有片）；那半邊補天花板片（FILL）：實機探針補了天花板整間才算有屋頂、
+    -- 不漏雨（見 builder-dev roof.md）。
     -- 跨距的一半超過 3 格（離屋簷 3 格以上）鋪平頂片在上一層（建築編輯器 depth Three 的平頂放在上一層的地板層，
     -- r43_buildingfloor.cpp:884-891），所以 45 度沒有跨距上限。
     -- 半格片：RS2／RE2（OnePt5S／E）＝+15／+14；RS3／RE3（TwoPt5）在 +71／+70 或 +47／+46，沒有的款照建築編輯器用 +15／+14
     -- 往西北移一格（BuildingTiles offset -1 -1）；OP2／OP3（OuterOnePt5／TwoPt5，四坡奇數短邊的屋脊頭與錐頂）在
     -- +65／+66 或 +41／+42，只有部分款有（set.half）。這幾片在辨識時找（set.pieces），不在模板裡。
-    -- 山牆 44 款，模板 18 片（walls_exterior_roofs_05 那列的位移），原版非燒毀款同片種最大差 4（location_shop_bargNclothes_01），
-    -- 不同片種最近差 10（PeakS 與 RiseS），容許取 4；燒毀款與 walls_logs 認不出（temp/impl-100/p2/gable45_tol.py）。
+    -- 山牆 44 款，模板 18 片（建築編輯器 roof_caps 的位移，walls_exterior_roofs_01 與 _05 各列都一樣；參考圖用 _01），
+    -- 原版非燒毀款同片種最大差 4（location_shop_bargNclothes_01），不同片種最近差 10（PeakS 與 RiseS），容許取 4；
+    -- 燒毀款與 walls_logs 認不出（量測見 builder-dev roof.md）。
     -- 跨距 7 以上的山牆中段（建築編輯器的 CapGap，是別的牆圖塊組的整面牆）不放
     ["45"] = {
         ref = "roofs_01", tol = 20, rise = 3, kind = "roof",
@@ -383,11 +385,12 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
             end
         end
     end
-    -- 山牆：只在垂直屋簷的兩邊（雙斜的兩端、單斜的兩側；高的那面和四坡不放，同建築編輯器的預設）。
+    -- 山牆：只有雙斜、單斜放，而且只在垂直屋簷的兩邊（雙斜的兩端、單斜的兩側；高的那面不放，同建築編輯器的預設）。
+    -- 四坡、平頂沒有山牆，已選的山牆照常忽略（面板換形狀時不清掉選擇）。
     -- 45 度跨距 7 以上的中段（離屋簷 3 格以上）不放：建築編輯器在那裡放別的牆圖塊組的整面牆（CapGap）
-    if gable and gable.fam ~= set.fam then error("Roof.layout: gable family " .. gable.fam .. " on " .. set.fam) end
-    local gs = gable and spec.gable
-    if gs and not ((eaves.N or eaves.S) and (eaves.W or eaves.E)) then
+    local gs = gable and (shape == "gable" or shape == "shed") and spec.gable
+    if gs and gable.fam ~= set.fam then error("Roof.layout: gable family " .. gable.fam .. " on " .. set.fam) end
+    if gs then
         local sides = (eaves.N or eaves.S) and { "W", "E" } or { "N", "S" }
         for _, side in ipairs(sides) do
             local along = side == "W" or side == "E"

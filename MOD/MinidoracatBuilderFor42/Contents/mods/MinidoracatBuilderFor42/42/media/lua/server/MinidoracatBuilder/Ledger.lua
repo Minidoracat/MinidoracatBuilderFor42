@@ -272,21 +272,34 @@ function Ledger.forgetDoor(anchor)
 end
 
 -- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp"] = 整組的退料表，鍵是頭片那格（Place.rampOrigin；一格只放得下一片斜面，
--- Place.check）。同車庫門不看 modData
+-- Place.check）。「這組是不是本 MOD 蓋的」只認這一筆：記號（modData）客戶端改得到，認片、清帳本都照圖與位置
+-- （Place.refundOf、Place.onAboutToBeRemoved）。某片被本工具以外的方式移走時這一筆改成空表（作廢，Ledger.voidRamp）：
+-- 剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪
 function Ledger.rampKey(x, y, z)
     return x .. "," .. y .. "," .. z .. ",ramp"
 end
 
--- Place.build 蓋好整組後記；帳本還沒建或滿了只記 log（之後拆不退料）
+-- Place.build 蓋好整組後記，回記進去了沒有。記不進去（帳本還沒建、滿了）時印 log、回 false：Place.build 丟錯，整組收回、不扣料
 function Ledger.putRamp(x, y, z, items)
     local k = Ledger.instance and Ledger.rampKey(x, y, z)
     local copy = {}
     for ft, n in pairs(items) do copy[ft] = n end
-    if not (k and valid(copy, k) and L:put(k, copy)) then print(LOG .. "ramp ledger not ready or full; not recorded: " .. tostring(k)) end
+    if k and valid(copy, k) and L:put(k, copy) then return true end
+    print(LOG .. "ramp ledger not ready or full; not recorded: " .. tostring(k))
+    return false
 end
 
 function Ledger.getRamp(x, y, z)
     return Ledger.instance and L:get(Ledger.rampKey(x, y, z)) or nil
+end
+
+-- 作廢：有那一筆時改成空表（不再退料、鍵留著）。空表比原本的小，放得回原處
+function Ledger.voidRamp(x, y, z)
+    local k = Ledger.instance and Ledger.rampKey(x, y, z)
+    if k and L:get(k) and not L:put(k, {}) then
+        L:del(k)
+        print(LOG .. "ramp ledger could not be voided; removed: " .. k)
+    end
 end
 
 function Ledger.forgetRamp(x, y, z)
