@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "このサーバーにはこの項目がありません（MOD かタイルが不足）。",
   "IGUI_MBLD_RunSkip_CLOSED": "自由建築ではこの項目を建築できません。",
   "IGUI_MBLD_RunSkip_FAR": "遠すぎるか、読み込まれていません。近づいてから「設計図から建築」を押してください。",
+  "IGUI_MBLD_RunSkip_WAIT": "隣のパーツが先に建つのを待っています（屋根には壁、ドアにはドア枠が必要です）。それらが建てば建築できます。",
   "IGUI_MBLD_RunBox_FAR": "遠すぎるか、読み込まれていません。近づいてもう一度お試しください。",
   "IGUI_MBLD_RunBox_GONE": "箱がなくなりました。別の箱を右クリックして指定してください。",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "他人のセーフハウス内にあるため、取り出せません。",

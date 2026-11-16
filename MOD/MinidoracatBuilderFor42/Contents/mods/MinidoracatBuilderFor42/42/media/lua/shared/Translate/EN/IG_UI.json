@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "This server doesn't have this item (a mod or tile is missing).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything can't build this item.",
   "IGUI_MBLD_RunSkip_FAR": "Too far away or not loaded. Move closer, then press Build from blueprint.",
+  "IGUI_MBLD_RunSkip_WAIT": "Waiting for nearby pieces to be built first, such as the walls under a roof or the door frame for a door. They can be built once those are in place.",
   "IGUI_MBLD_RunBox_FAR": "Too far away or not loaded. Move closer and try again.",
   "IGUI_MBLD_RunBox_GONE": "The box is gone. Right-click another one to pick it.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "It's in someone else's safehouse, so you can't take from it.",

@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "이 서버에는 이 항목이 없습니다(모드나 타일이 없음).",
   "IGUI_MBLD_RunSkip_CLOSED": "자유 건축으로 지을 수 없는 항목입니다.",
   "IGUI_MBLD_RunSkip_FAR": "너무 멀거나 불러오지 않았습니다. 가까이 간 뒤 '청사진대로 건축'을 누르세요.",
+  "IGUI_MBLD_RunSkip_WAIT": "옆 조각이 먼저 지어지기를 기다립니다(지붕은 벽, 문은 문틀이 필요합니다). 그 조각이 지어지면 지을 수 있습니다.",
   "IGUI_MBLD_RunBox_FAR": "너무 멀거나 불러오지 않았습니다. 가까이 가서 다시 시도하세요.",
   "IGUI_MBLD_RunBox_GONE": "상자가 없어졌습니다. 다른 상자를 우클릭해 지정하세요.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "다른 사람의 은신처 안에 있어 가져갈 수 없습니다.",

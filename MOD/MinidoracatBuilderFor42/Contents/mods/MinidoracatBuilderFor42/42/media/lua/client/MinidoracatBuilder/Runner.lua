@@ -486,7 +486,7 @@ local function skip(p, code, extra)
     st.skip[p] = { code = code, extra = extra }
 end
 
--- 有變動的片：PlanCheck 重查那一格與上一層、四鄰（上層地板與屋頂靠它們撐，PlanCheck.touch）
+-- 有變動的片：PlanCheck 重查那一格與上下一層、四鄰（上層地板與屋頂靠它們撐，PlanCheck.touch）
 local function touch(x, y, z)
     local PC = planCheck()
     if PC and PC.touch then PC.touch(x, y, z) end

@@ -4,6 +4,7 @@
 -- 算完整張後只重查有變動的片：PlanCheck.touch 的格子、背包或技能變了（材料摘要每秒比一次）、沙盒設定變了、
 -- 玩家換樓層或走開 MOVE 格（重查還沒載入或太遠的片）、玩家身邊 NEAR 格內格上的物件數變了（每幀輪流比一段）。
 -- 會自己消失、又不改物件數的原因（PlanCheck.RECHECK：有人或車擋著、配方太暗）看不出來：身邊的片隔一段時間重查一次。
+-- 放不下、但旁邊還有會蓋的片的，細節碼報 WAIT（等旁邊先蓋好，見 waiting），狀態照舊是 blocked。
 -- 沒有地上的藍圖時 OnTick 第一行就離開。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Check"
@@ -27,8 +28,14 @@ local MAX_BUCKET = 255
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 local FAR = { TOO_FAR = true, NOT_LOADED = true }
 local OFF = { DISABLED_KIND = true, DISABLED_SOURCE = true, DISABLED_TILESET = true }
+-- 一片會靠到的格子：同一格、上下一層、四鄰（屋頂與上層地板靠下面的牆或旁邊的地板撐，門窗裝在那格的門框窗框上，
+-- 窗簾要上面有屋頂）。touch 照它重查，waiting 照它找在等誰
+local AROUND = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 } }
+PlanCheck.WAIT_MS = 100 -- 「在等旁邊」的名單最多多久重算一次
 
-local cur -- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep }
+-- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep,
+--   ver＝片的狀態變過幾次, wait, wVer, wAt＝waiting 的名單與算的時候 }
+local cur
 local canonMemo, itemMemo, memoDigest = {}, {}, nil
 
 -- 項目、認圖、成本的快取都照沙盒摘要（種類開關、停用來源與圖塊組、成本倍率）：摘要變了全部丟掉
@@ -181,6 +188,65 @@ function PlanCheck.resolve(piece)
     return id, piece.x + ox, piece.y + oy, piece.z + oz, piece.d, piece.o, piece.w
 end
 
+-- ===== 等旁邊的片 =====
+
+-- 還會蓋的片：還沒算、能蓋、缺料、太遠，或擋著的原因自己會消失（RECHECK）
+local function live(r)
+    local s = r.s
+    return s == nil or s == "ok" or s == "short" or s == "far" or (s == "blocked" and PlanCheck.RECHECK[r.c] ~= nil)
+end
+
+-- 片 p 旁邊（AROUND）的每一片（不含自己）：fn 回 true 就停並回 true
+local function around(p, fn)
+    local at, plan = B.Plan.at, cur.plan
+    for _, a in ipairs(AROUND) do
+        local list = at(plan, p.x + a[1], p.y + a[2], p.z + a[3])
+        for j = 1, #list do
+            local q = list[j]
+            if q ~= p and fn(q) then return true end
+        end
+    end
+    return false
+end
+
+-- 放不下（BLOCKED：Place.check 沒說更細的原因）的片裡，在等旁邊的那些：{ [片] = true }。屋頂等牆、門等門框這類，
+-- 開工前就說「換一格或先清空」會讓人以為擺錯地方。從挨著會蓋的片的開始，一圈一圈往外標（屋頂也靠旁邊的屋頂撐）；
+-- 旁邊都蓋好了、或都蓋不了還放不下的不算（兩片互相挨著、各自被擋住的不會互相等）。
+-- 片的狀態有變才重算，最多 WAIT_MS 一次（最大的藍圖一次要查幾萬格）
+local function waiting()
+    if cur.wait and cur.wVer == cur.ver then return cur.wait end
+    local now = getTimestampMs()
+    if cur.wait and now >= cur.wAt and now - cur.wAt < PlanCheck.WAIT_MS then return cur.wait end
+    cur.wVer, cur.wAt = cur.ver, now
+    local rec = cur.rec
+    local wait, todo, n = {}, {}, 0
+    local function isLive(q)
+        local r = rec[q]
+        return r ~= nil and live(r)
+    end
+    local function spread(q)
+        local r = rec[q]
+        if r and r.s == "blocked" and r.c == "BLOCKED" and not wait[q] then
+            wait[q] = true
+            n = n + 1
+            todo[n] = q
+        end
+        return false
+    end
+    for i = 1, cur.n do
+        local p = cur.list[i]
+        local r = rec[p]
+        if r.s == "blocked" and r.c == "BLOCKED" and around(p, isLive) then spread(p) end
+    end
+    local i = 1
+    while i <= n do
+        around(todo[i], spread)
+        i = i + 1
+    end
+    cur.wait = wait
+    return wait
+end
+
 -- 一片的狀態, 細節碼。算的時候的藍圖、位置（含現在的原點）、項目、朝向、疊放、寬度和現在不一樣（搬了、換了）回 nil
 function PlanCheck.state(piece)
     local r = cur and cur.rec[piece]
@@ -189,6 +255,7 @@ function PlanCheck.state(piece)
     if not (M and M.plan and M.plan() == cur.plan) then return nil end
     local id, x, y, z, d, o, w = PlanCheck.resolve(piece)
     if id ~= r.id or x ~= r.x or y ~= r.y or z ~= r.z or d ~= r.d or o ~= r.o or w ~= r.w then return nil end
+    if r.c == "BLOCKED" and waiting()[piece] then return r.s, "WAIT" end
     return r.s, r.c
 end
 
@@ -306,7 +373,7 @@ end
 
 local function fresh(plan, ox, oy, oz, player)
     cur = { plan = plan, rev = -1, ox = ox, oy = oy, oz = oz, list = {}, n = 0, rec = {}, q = { b = {}, lo = MAX_BUCKET + 1 },
-        S = Materials.summary(player), sAt = getTimestampMs(), digest = Entry.digest(), player = player,
+        S = Materials.summary(player), sAt = getTimestampMs(), digest = Entry.digest(), player = player, ver = 0,
         px = math.floor(player:getX()), py = math.floor(player:getY()), pz = math.floor(player:getZ()), sweep = 0 }
 end
 
@@ -323,6 +390,7 @@ local function sync(plan, ox, oy, oz, player)
         rec[p] = old[p] or { q = false }
     end)
     cur.list, cur.n = list, n
+    cur.ver = cur.ver + 1 -- 片多了、少了或搬了：旁邊是誰要重看
     for i = 1, n do
         local p = list[i]
         local r = rec[p]
@@ -405,7 +473,9 @@ function PlanCheck.tick(player)
     repeat
         local p, r = pop()
         if not p then return end
+        local s, c = r.s, r.c
         evaluate(player, p, r)
+        if r.s ~= s or r.c ~= c then cur.ver = cur.ver + 1 end
     until getTimestampMs() >= stop
 end
 
@@ -420,8 +490,7 @@ function PlanCheck.reset()
     memoDigest = nil
 end
 
--- 世界座標這一格有變動：重查這格、上一層（屋頂、地板靠下面的牆撐）與四鄰（同一條邊的另一側）的片
-local AROUND = { { 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 } }
+-- 世界座標這一格有變動：重查這格、上下一層與四鄰（AROUND）的片
 function PlanCheck.touch(x, y, z)
     if not cur then return end
     for _, a in ipairs(AROUND) do

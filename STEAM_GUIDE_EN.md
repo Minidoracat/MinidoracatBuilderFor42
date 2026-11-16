@@ -701,7 +701,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Back to original spot[/b]: when the saved position is within 100 tiles, the toolbar has Back to original spot (X on a gamepad).
 [*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays.
 [*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was. While planning it saves first, and stays in planning if it can't save.
-[*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark.
+[*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark. Pieces waiting for nearby pieces to be built first (a roof for its walls, a door for its frame) are drawn as buildable.
 [*] [b]Coming back[/b]: the blueprint is still there when you return. Every save and every server keeps its own, stored on your computer. If the blueprint file can't be opened this time, it's hidden but its spot is kept and it's read again next time you load; it's only removed when the file was deleted or damaged.
 [/list]
 [h3]Blueprint panel[/h3]
@@ -714,7 +714,7 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [h3]Materials tab[/h3]
 [list]
 [*] [b]Materials list[/b]: what the unbuilt pieces need together, with Need, Have and Short, short ones first; tools and build recipe materials are listed too. With build cheat on it says no materials are used.
-[*] [b]Pieces that can't be built[/b]: grouped by reason, for example short on materials, blocked, tile not available here or turned off by the server; press Show on a group and those pieces flash in the world.
+[*] [b]Pieces that can't be built[/b]: grouped by reason, for example short on materials, blocked, tile not available here or turned off by the server; press Show on a group and those pieces flash in the world. The grey group "Waiting for nearby pieces to be built first" needs no action: once the nearby pieces are in place, Build from blueprint carries on with them.
 [*] [b]Supply boxes[/b]: lists the boxes you picked, and Remove stops using one, see Blueprints: building from a blueprint and supply boxes.
 [*] [b]Enough for the whole thing?[/b]: each piece only checks itself; the materials list shows what the whole blueprint needs.
 [/list]

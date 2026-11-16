@@ -13218,7 +13218,8 @@ end)()
         sprite("pcx_01_0", 1306, { flags = { "WallN" }, keys = { WallN = "" } }),
         sprite("blends_natural_01_0", 1307, { flags = { "solidfloor" } }),
         sprite("blends_natural_01_8", 1308, { flags = { "FloorOverlay" } }),
-        sprite("pcs_01_0", 1309, { flags = { "solidtrans" } }) })
+        sprite("pcs_01_0", 1309, { flags = { "solidtrans" } }),
+        sprite("pcr_01_0", 1310, { type = T.WestRoofB, keys = { RoofGroup = "1" } }) })
     sb.DisabledTilesets = "pcx_01"
     local function obj(name, o)
         o = o or {}
@@ -13326,6 +13327,37 @@ end)()
     PC.tick(K)
     check(wide and select(2, PC.state(wide)) == "DOOR_WIDE" and st(wide) == "blocked", "比上限寬的車庫門：blocked、DOOR_WIDE")
     Plan.remove(pl, { wide })
+    -- 在等旁邊的片（實機 b1116-gs-ch4：4×4 的房子還沒開工，面板就寫「20 片：這格放不下…換一格或先清空」，其實屋頂在等牆）。
+    -- 放不下、旁邊還有會蓋的片的報 WAIT，跟著等的屋頂一圈一圈往外傳；旁邊沒有片、旁邊的片已經蓋好、兩片互相挨著各自
+    -- 放不下的照舊 BLOCKED（植入：只看旁邊有沒有還沒蓋好的片，互相挨著的兩片就會永遠互相等）
+    local function waitNow()
+        for _ = 1, 3 do PC.tick(K) end
+        clockStep = PC.WAIT_MS or 100 -- 名單最多 WAIT_MS 重算一次
+        getTimestampMs()
+        clockStep = 0
+    end
+    local function codeOf(p) return (select(2, PC.state(p))) end
+    local wWall = put("pcw_01_0", 2, 5, 0)
+    local wRoof = put("pcr_01_0", 2, 5, 1)                           -- 下面是還沒蓋的牆
+    local wNext = put("pcr_01_0", 3, 5, 1)                           -- 旁邊是在等的屋頂
+    local wLone = put("pcr_01_0", 6, 4, 1)                           -- 旁邊沒有片
+    local wOver = put("pcr_01_0", 1, 1, 1)                           -- 下面那片牆已經蓋好（假格子沒有牆的旗標：撐不住）
+    local wA, wB = put("pcr_01_0", 0, 7, 1), put("pcr_01_0", 1, 7, 1) -- 互相挨著，旁邊沒有會蓋的
+    waitNow()
+    local cw = PC.counts()
+    check(st(wWall) ~= "blocked" and st(wRoof) == "blocked" and codeOf(wRoof) == "WAIT" and codeOf(wNext) == "WAIT",
+        "在等旁邊：下面的牆還沒蓋的屋頂報 WAIT（狀態照舊 blocked），挨著它的屋頂跟著等")
+    check(codeOf(wLone) == "BLOCKED" and codeOf(wOver) == "BLOCKED" and codeOf(wA) == "BLOCKED" and codeOf(wB) == "BLOCKED"
+        and cw.byCode.WAIT == 2 and cw.byCode.BLOCKED == 4,
+        "在等旁邊：旁邊沒有片、旁邊已經蓋好、兩片互相挨著各自放不下的照舊 BLOCKED；counts 照細節碼分開算")
+    square(202, 205, 0, { wallN = {} })
+    squares["202,205,0"].objects[1] = obj("pcw_01_0")
+    PC.touch(202, 205, 0)
+    waitNow()
+    check(st(wWall) == "done" and st(wRoof) ~= "blocked" and codeOf(wNext) == "WAIT",
+        "在等旁邊：牆蓋好後 touch，上面的屋頂不再放不下；挨著的那片改等它")
+    Plan.remove(pl, { wWall, wRoof, wNext, wLone, wOver, wA, wB })
+    square(202, 205, 0)
     -- 配方片：照 Recipes.tile 那一面的圖認蓋好；換了面（植入：另一面也算就抓得到）不算
     local noRecipes = B.Recipes
     B.Recipes = { get = function(id) return id == "recipe:Base.PcWall" and { id = id } or nil end, all = function() end,

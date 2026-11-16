@@ -2,7 +2,7 @@
 -- 畫法同 Queue／Cursor：IsoSprite:RenderGhostTileColor（引擎每幀清掉，要每幀重畫）。
 -- 一幀最多畫 DRAW_MAX 片：片照藍圖座標 10×10 分桶，從玩家（擺放時是滑鼠）那一桶一圈一圈往外取，近的先畫。
 -- 樓層：規劃時正在規劃那層清楚、下面淡、上面不畫；在地上時畫玩家那層與下面；跟著游標時整張都畫。
--- 片的狀態照 PlanCheck.state（done 不畫、缺料黃、被擋或少了紅並加警告記號）；選到的片青色。
+-- 片的狀態照 PlanCheck.state（done 不畫、缺料黃、被擋或少了紅並加警告記號；在等旁邊先蓋好的照能蓋的畫）；選到的片青色。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Plan"
 
@@ -196,13 +196,14 @@ function PG.draw()
                         local p = b[i]
                         local wz = p.z + oz
                         if placing or wz <= top then
-                            local st = C and C.state(p)
+                            local st, code = nil, nil
+                            if C then st, code = C.state(p) end
                             if st ~= "done" then
                                 local col, a, warn = PLAN, 0.5, false
                                 if editing and wz < top then a = 0.22 elseif not placing and wz < top then a = 0.35 end
                                 if st == "short" then
                                     col = SHORT
-                                elseif BAD_STATE[st] then
+                                elseif BAD_STATE[st] and code ~= "WAIT" then
                                     col, warn = BAD, true
                                 end
                                 if PM.isSelected(p) then

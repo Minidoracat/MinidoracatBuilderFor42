@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Bu sunucuda bu öğe yok (bir mod veya tile eksik).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything bu öğeyi inşa edemez.",
   "IGUI_MBLD_RunSkip_FAR": "Çok uzak ya da yüklenmedi. Yaklaş, sonra Plana göre inşa et düğmesine bas.",
+  "IGUI_MBLD_RunSkip_WAIT": "Önce yanındaki parçaların inşa edilmesini bekliyor; örneğin çatının altındaki duvarlar ya da kapının çerçevesi. Onlar bitince inşa edilebilir.",
   "IGUI_MBLD_RunBox_FAR": "Çok uzak ya da yüklenmedi. Yaklaşıp tekrar dene.",
   "IGUI_MBLD_RunBox_GONE": "Sandık yok olmuş. Seçmek için başka bir sandığa sağ tıkla.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Başkasının sığınağında; ondan alamazsın.",

@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Este servidor no tiene este objeto (falta un mod o un tile).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything no puede construir este objeto.",
   "IGUI_MBLD_RunSkip_FAR": "Demasiado lejos o sin cargar. Acércate y pulsa Construir según el plano.",
+  "IGUI_MBLD_RunSkip_WAIT": "Esperan a que antes se construyan las piezas de al lado, como las paredes bajo un techo o el bastidor de una puerta. Después se podrán construir.",
   "IGUI_MBLD_RunBox_FAR": "Demasiado lejos o sin cargar. Acércate e inténtalo de nuevo.",
   "IGUI_MBLD_RunBox_GONE": "La caja ya no está. Haz clic derecho en otra para elegirla.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Está en el refugio de otra persona, así que no puedes sacar nada.",

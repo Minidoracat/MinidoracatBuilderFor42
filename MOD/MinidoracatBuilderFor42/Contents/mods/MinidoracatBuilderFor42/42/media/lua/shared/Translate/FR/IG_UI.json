@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Ce serveur n'a pas cet objet (il manque un mod ou une tile).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything ne peut pas construire cet objet.",
   "IGUI_MBLD_RunSkip_FAR": "Trop loin ou non chargé. Rapprochez-vous, puis cliquez sur Construire le plan.",
+  "IGUI_MBLD_RunSkip_WAIT": "En attente des pièces voisines à construire d'abord, comme les murs sous un toit ou le cadre de porte d'une porte. Elles seront constructibles ensuite.",
   "IGUI_MBLD_RunBox_FAR": "Trop loin ou non chargée. Rapprochez-vous et réessayez.",
   "IGUI_MBLD_RunBox_GONE": "La caisse a disparu. Faites un clic droit sur une autre pour la désigner.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Elle est dans l'abri de quelqu'un d'autre : vous ne pouvez rien y prendre.",

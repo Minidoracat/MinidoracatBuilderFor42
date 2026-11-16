@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "這個伺服器沒有這項（少了 MOD 或圖塊），蓋不了。",
   "IGUI_MBLD_RunSkip_CLOSED": "建造工坊不能蓋這一項。",
   "IGUI_MBLD_RunSkip_FAR": "離你太遠或還沒載入。走近一點再按「照圖蓋」。",
+  "IGUI_MBLD_RunSkip_WAIT": "要等旁邊的片先蓋好，例如屋頂等牆、門等門框。旁邊蓋好後就能蓋。",
   "IGUI_MBLD_RunBox_FAR": "離太遠或還沒載入，走近一點再試。",
   "IGUI_MBLD_RunBox_GONE": "箱子不見了。右鍵新的箱子重新點名。",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "在別人的安全屋裡，不能拿。",

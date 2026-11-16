@@ -22,7 +22,7 @@ P.START_CODES = { OFF = true, NO_PLAN = true, NOTHING = true, BUSY = true }
 local PAD, GAP = 8, 6
 local ACTIVE = { pick = true, build = true, fetch = true }
 
--- 平面圖的狀態等級：一格取最差的（數字大的）
+-- 平面圖的狀態等級：一格取最差的（數字大的）。在等旁邊先蓋好的片（細節碼 WAIT）算能蓋，同地上的虛影
 local RANK = { done = 1, ok = 2, far = 3, short = 4, blocked = 5, missing = 5, off = 5, closed = 5 }
 P.LEGEND = { "done", "ok", "pending", "short", "blocked" }
 local RANK_NAME = { "done", "ok", "pending", "short", "blocked" }
@@ -188,8 +188,9 @@ function P.grid(plan, z)
     local cell, half = {}, {}
     Plan.each(plan, function(p)
         if p.z ~= z then return end
-        local s = PC and PC.state and PC.state(p) or nil
-        local r = s and RANK[s] or 3
+        local s, code = nil, nil
+        if PC and PC.state then s, code = PC.state(p) end
+        local r = (code == "WAIT" and 2) or (s and RANK[s]) or 3
         local name = RANK_NAME[r]
         g.counts[name] = g.counts[name] + 1
         local fx, fy = p.x - g.x0, p.y - g.y0
@@ -601,7 +602,9 @@ function Panel:fillMat(mat, groups, boxes)
     self.groups = groups
     for i, g in ipairs(groups) do
         if self.groupRows[i] then
-            L.setLines(self.groupRows[i], { { getText("IGUI_MBLD_Plan_Group", tostring(g.n), g.text), "warning" } })
+            -- 在等旁邊先蓋好的不是出錯：不用警告色
+            L.setLines(self.groupRows[i], { { getText("IGUI_MBLD_Plan_Group", tostring(g.n), g.text),
+                g.code == "WAIT" and "textMuted" or "warning" } })
         end
     end
     L.setLines(self.boxHead, { { #boxes > 0 and getText("IGUI_MBLD_Plan_Boxes", tostring(#boxes)) or getText("IGUI_MBLD_Plan_NoBoxes"),

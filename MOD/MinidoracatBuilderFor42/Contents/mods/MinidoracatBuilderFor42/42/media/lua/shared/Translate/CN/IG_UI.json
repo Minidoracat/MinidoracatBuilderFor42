@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "这个服务器没有这一项（缺少模组或图块），建不了。",
   "IGUI_MBLD_RunSkip_CLOSED": "建造工坊不能建这一项。",
   "IGUI_MBLD_RunSkip_FAR": "离你太远或还没加载。走近一点再按「按图建造」。",
+  "IGUI_MBLD_RunSkip_WAIT": "要等旁边的块先建好，例如屋顶等墙、门等门框。旁边建好后就能建。",
   "IGUI_MBLD_RunBox_FAR": "离得太远或还没加载，走近一点再试。",
   "IGUI_MBLD_RunBox_GONE": "箱子不见了。右键新的箱子重新指定。",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "在别人的安全屋里，不能拿。",

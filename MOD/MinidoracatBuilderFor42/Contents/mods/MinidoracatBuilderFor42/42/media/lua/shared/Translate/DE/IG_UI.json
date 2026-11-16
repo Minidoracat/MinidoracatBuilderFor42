@@ -203,6 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Dieser Server hat dieses Objekt nicht (ein Mod oder eine Kachel fehlt).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything kann dieses Objekt nicht bauen.",
   "IGUI_MBLD_RunSkip_FAR": "Zu weit weg oder nicht geladen. Geh näher heran und drück dann „Nach Plan bauen“.",
+  "IGUI_MBLD_RunSkip_WAIT": "Wartet darauf, dass benachbarte Teile zuerst gebaut werden, z. B. die Wände unter einem Dach oder der Türrahmen für eine Tür. Danach sind sie baubar.",
   "IGUI_MBLD_RunBox_FAR": "Zu weit weg oder nicht geladen. Geh näher heran und versuch es erneut.",
   "IGUI_MBLD_RunBox_GONE": "Die Kiste ist weg. Rechtsklick auf eine andere, um sie zu wählen.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Sie steht im Safehouse eines anderen, daher kannst du nichts herausnehmen.",
