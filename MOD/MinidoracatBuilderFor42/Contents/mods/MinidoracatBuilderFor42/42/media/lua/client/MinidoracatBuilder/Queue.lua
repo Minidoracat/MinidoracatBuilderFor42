@@ -93,6 +93,7 @@ function Queue.push(player, name, anchors, parts, overlap, opts)
         slots[pn] = s
     end
     s.player = player
+    s.cut = nil -- 之前記下的取消作廢：玩家又排了新的
     if owner == "drag" then Queue.cancel(player, "plan") end
     lastId = lastId + 1
     local g = { id = lastId, owner = owner, onDone = opts.onDone, name = name, overlap = overlap, count = #anchors,
@@ -176,11 +177,22 @@ local function objAt(sq, name)
     return nil
 end
 
+-- 那一格上這一組門（車庫門、雙開門）的那一片：開過就換了圖（Entry.doorItem 開著、關著的圖都認），照圖名找不到；沒有回 nil
+local function doorAt(sq, e)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local spr = instanceof(o, "IsoDoor") and o:getSprite()
+        if spr and Entry.doorItem(spr:getName()) == e then return o end
+    end
+    return nil
+end
+
 -- 復原前這一片的現況：回 obj（當初蓋的那件還在），或 nil, why, ov。why＝"HUNG"（掛在別的東西上的圖還在，ov＝
 -- Dismantle.overlay 的結果）｜"GONE"（那件不在了、同一格有同圖的別件：別人拆了重蓋，不能拆）｜"VANISHED"（不在了，不提）｜
 -- nil（格子沒載入：照記下的送，伺服器會說）。
 -- 格子物件沒換過（沒重新載入）才比得出是不是同一件（IsoGridSquare、IsoObject 沒有覆寫 equals，比的是同一個 Java 物件）；
--- 重新載入過、或 placed 時物件還沒同步到（MP）就照圖名找。掛著的圖比宿主（同一格換了一件宿主＝拆了重蓋）
+-- 重新載入過、或 placed 時物件還沒同步到（MP）就照圖名找，整組門再照同一組找。掛著的圖比宿主（同一格換了一件宿主＝拆了重蓋）
 local function locate(p)
     local sq = getCell():getGridSquare(p.x, p.y, p.z)
     if not sq then return nil, nil end
@@ -190,7 +202,7 @@ local function locate(p)
         return nil, objAt(sq, p.name) and "GONE" or "VANISHED"
     end
     if not p.host then
-        local o = objAt(sq, p.name)
+        local o = objAt(sq, p.name) or doorAt(sq, p.e)
         if o then return o end
     end
     local ov = Dismantle.overlay(sq, p.name)
@@ -419,11 +431,15 @@ end
 -- 佇列空了分不出是玩家自己走開、按 ESC，還是路徑走不通（動作停下一律 resetQueue，不留原因：ISBaseTimedAction.lua:63-64），
 -- 所以只有排隊時就知道的「旁邊沒空位」（Client.lua 的 queue 記在 noRoom）另外說；其他照實說蓋好幾格。材料是一格一格在
 -- Server.complete 扣的（Place.build 成功後才 Materials.consume），停下時沒蓋的格子沒有扣。
--- 兩筆之間（上一筆最後一格的 placed 到了、動作還在跑）按取消或走開：原版清掉動作後佇列也是空的，要先看按鍵，不然下一筆照送
+-- 兩筆之間（上一筆最後一格的 placed 到了、動作還在跑）按取消或走開：原版清掉動作後佇列也是空的，要先看按鍵，不然下一筆照送。
+-- 更早一點（最後一格的動作做完了、placed 還沒到）按一下就放開的，輪到下一筆時已經讀不到：動作佇列空著時看到就記在 s.cut
 local function step(s, j)
     local p, g = s.player, j.group
     if not j.n then
-        if interrupted(p) then return halt(s, g, nil, true) end
+        if s.cut or interrupted(p) then
+            s.cut = nil
+            return halt(s, g, nil, true)
+        end
         if not ISTimedActionQueue.isPlayerDoingAction(p) then send(s, j) end
         return
     end
@@ -442,6 +458,7 @@ local function step(s, j)
         j.idleAt = nil
         return
     end
+    if interrupted(p) then s.cut = true end
     j.idleAt = j.idleAt or now
     if now - j.idleAt < IDLE_MS then return end
     -- 前面的都蓋好了，停在旁邊沒空位的那一格；一次挖好幾格水面時有一格沒空位就整批沒排（Client 的 noneQueued）

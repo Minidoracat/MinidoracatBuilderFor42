@@ -2336,7 +2336,9 @@ local function stopNotices()
         told = nil
         local cells = {}
         for i = 1, count do cells[i] = { i, 0, 0, 0 } end
-        local n = Cursor.send({ getPlayerNum = function() return 0 end }, "x_01_0", cells, nil)
+        -- 假玩家：沒按著取消鍵、方向鍵（動作佇列空著等 placed 時 Queue 會讀）
+        local n = Cursor.send({ getPlayerNum = function() return 0 end, pressedMovement = function() return false end,
+            pressedCancelAction = function() return false end }, "x_01_0", cells, nil)
         C.pending.noRoom, C.pending.noneQueued = noRoom, none
         local Q = B.Queue
         Q.onResult("accepted", { n = n })
@@ -11096,6 +11098,26 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     for _, it in ipairs(got) do if it.x == 45 or it.x == 46 then x5 = true end end
     check(not x5 and t:find("UnbuildShort_GONE,1", 1, true) ~= nil and t:find("UnbuildSummary_Many(2", 1, true) ~= nil,
         "復原：當初那件被別人拆掉、同一格重蓋同圖的不拆（說已經不在）；單純不在的不提")
+    -- 整組門開過（多人）：placed 到的時候物件還沒同步、紀錄裡沒有那一件，開過門又換了圖。照「同一組門」認回來
+    -- （植入：只比圖名就當成不在了，按了沒反應也不提）；圖換成不相干的那一片照舊算不在
+    for i = 1, 6 do sqs[i].objects = {} end
+    local realDoorItem, realInstD = E.doorItem, instanceof
+    E.doorItem = function(name) return name == "u_01_8" and "u_01_0" or nil end
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local door, other = fakeObj(sqs[1], "builder"), fakeObj(sqs[2], "builder")
+    buildAll("u_01_0", { six[1], six[2] })
+    local rec = Q.last(P2)
+    rec[1].obj, rec[2].obj = nil, nil
+    door.class = "IsoDoor"
+    function door:getSprite() return { getName = function() return "u_01_8" end } end
+    function other:getSprite() return { getName = function() return "u_02_0" end } end
+    got = nil
+    toasts = {}
+    local kd = Q.undoLast(P2)
+    check(kd == 1 and got and #got == 1 and got[1].obj == door and got[1].x == 41,
+        "復原：開過的整組門（紀錄裡沒有物件、圖換成開著的）照同一組門認回來、送去拆；圖不相干的算不在")
+    if got then gotDone({ done = 1, total = 1, skipped = {}, refund = {}, stopped = false, res = { [got[1]] = true } }) end
+    E.doorItem, instanceof = realDoorItem, realInstD
     for i = 1, 6 do sqs[i].objects = {} end
     Area.route, Dis.plan, C.dismantleMany = realRoute, realPlan, real.dm
     check(Q.undoLast(P2) == 0, "復原：沒有可復原的回 0")
@@ -11265,6 +11287,24 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     Q.tick()
     moving = false
     check(#sent == b0 + 4 and Q.busy(P2) == 0, "批次交界：按方向鍵走開也算取消，下一筆不送")
+    Q.cancel(P2)
+    -- 再早一點：最後一格的動作做完了（佇列空）、placed 還沒到時按一下 Esc 就放開。輪到下一筆時已經沒按著：照記下的停
+    -- （植入：只看當下按鍵，下一筆照送）；之後再拖一排不受上一次的影響
+    toasts = {}
+    local b1 = #sent
+    Q.push(P2, "a_01_0", cells(40, 100))
+    Q.onResult("accepted", { n = sent[#sent].n })
+    esc = true
+    Q.tick()
+    esc = false
+    for i = 1, sent[#sent].count do Q.onResult("placed", { n = sent[#sent].n, i = i }) end
+    Q.tick()
+    check(#sent == b1 + 1 and Q.busy(P2) == 0 and toasts[1] == "IGUI_MBLD_Stopped(32,40)",
+        "批次交界：placed 到之前按一下 Esc 就放開：placed 到了也不送下一筆，說停了 32／40")
+    Q.push(P2, "a_01_0", cells(40, 100))
+    placeAll()
+    Q.tick()
+    check(#sent == b1 + 3 and Q.busy(P2) == 1, "批次交界：記下的取消只管那一排；之後再拖的一排照常送下一筆")
     Q.cancel(P2)
 
     -- 放開前提示只算手拖的（審查 K3）、空的一組當場結束（建議）
