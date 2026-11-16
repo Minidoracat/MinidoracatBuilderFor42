@@ -750,10 +750,10 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [h3]Supply boxes[/h3]
 [list]
 [*] [b]Pick one[/b]: with a blueprint on the ground, right-click a crate, cupboard or other container and choose Use as blueprint supply box (Build Anything). You can pick several.
-[*] [b]How it takes things[/b]: when a batch runs short, your character walks to the nearest supply box and takes only what that batch lacks, one piece's worth at a time (everything one piece needs before the next), up to your carry limit, then comes back to build; boxes of nails are taken too when nails run short.
+[*] [b]How it takes things[/b]: when a batch runs short, your character fetches what that batch lacks from your supply boxes. A piece's materials are taken only if the boxes together have all of them and you can carry them, piece by piece up to your carry limit; then it comes back to build. One box per trip, nearest first; boxes of nails are taken too when nails run short.
 [*] [b]Containers you didn't pick[/b]: are never touched.
 [*] [b]Stop using one[/b]: right-click it and choose Stop using as blueprint supply box (Build Anything), or press Remove on the Materials tab. Nothing inside is touched.
-[*] [b]Boxes it can't use[/b]: too far or not loaded, gone, in someone else's safehouse, locked, no free spot next to it, or it doesn't have what this batch needs; it is skipped this round, and the summary says which box and why. If you're carrying too much to take even one piece's worth, that batch is skipped for now; once other pieces are built and you carry less, it goes back for more.
+[*] [b]Boxes it can't use[/b]: too far or not loaded, gone, in someone else's safehouse, locked, or no free spot next to it: skipped this round. If the boxes together don't have everything a piece needs, nothing is taken for that piece. If you're carrying too much for even one piece's worth, those pieces wait; once other pieces are built and you carry less, it goes back for more. The summary says which box and why.
 [*] [b]Build recipes[/b]: recipe pieces don't fetch materials from supply boxes, nor missing tools.
 [*] [b]Where it's kept[/b]: the boxes you picked are kept with the blueprint on the ground, on your computer, separately for every save.
 [/list]

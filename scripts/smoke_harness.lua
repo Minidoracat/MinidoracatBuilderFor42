@@ -15440,10 +15440,7 @@ end)()
         CODE[k] = set and { code = "NO_MATERIAL", extra = { need = set }, need = set } or nil
         return at[k]
     end
-    local maxW, sm = K.getMaxWeight, getScriptManager
-    getScriptManager = function()
-        return { getItem = function(_, ft) return { getActualWeight = function() return ft == "Base.Plank" and 3 or 0.1 end } end }
-    end
+    local maxW = K.getMaxWeight
     K.getMaxWeight = function() return 6 end
     local boxS = crate(square(137, 100, 0), join(stock("Base.Plank", 4, 3), stock("Base.Nails", 4, 0.1), stock("Base.ClayTile", 8, 0.5)))
     newPlan()
@@ -15527,12 +15524,75 @@ end)()
         and actions[1].src == boxP,
         "材料箱：兩個箱子各放一種時一次拿一片的份（木板留位置給釘子）；放不下的箱子蓋掉一片後再回去拿")
     R.stop()
-    K.getMaxWeight, getScriptManager = maxW, sm
+
+    -- 木板和整盒釘子分在兩個箱子：重量照真的那一盒算（2.0），不能當成散釘留位置而先拿兩片木板
+    K.getMaxWeight = function() return 6.2 end
+    K.load = 0
+    local boxP2 = crate(square(142, 100, 0), stock("Base.Plank", 2, 3))
+    local boxNB = crate(square(152, 100, 0), stock("Base.NailsBox", 1, 2))
+    newPlan()
+    store = { boxes = {} }
+    R.addBox(boxP2)
+    R.addBox(boxNB)
+    put("rn_floor", 44, 0, 0)
+    put("rn_floor", 45, 0, 0)
+    S[shortAt(44, PN)], S[shortAt(45, PN)] = "short", "short"
+    actions, walks = {}, {}
+    R.start(K)
+    run(1)
+    local onePlank = #actions == 1 and actions[1].item.ft == "Base.Plank" and actions[1].src == boxP2
+    K.inv:add(table.remove(boxP2.items, 1))
+    K.load = 3
+    shortAt(44, { ["Base.Nails"] = 1 })
+    actions = {}
+    runUntil(fetching)
+    check(onePlank and #actions == 1 and actions[1].item.ft == "Base.NailsBox" and actions[1].src == boxNB,
+        "材料箱：木板和整盒釘子分在兩個箱子、負重 6.2 時只先拿一片木板（留得下那一盒 2.0），再去拿釘子盒")
+    R.stop()
+
+    -- 開工時就背不動（身上只有第一片的料）：第二片先放著、不算跳過，第一片蓋好、背包輕了再回去拿。
+    -- 箱子裡和這一批無關的東西不檢查、不進候選
+    local looked = 0
+    local junk = stock("Base.Log", 30, 9)
+    for _, it in ipairs(junk) do
+        it.isFluidContainer = function() looked = looked + 1; return false end
+    end
+    local function laterCase(lighter)
+        K.getMaxWeight = function() return 3.5 end
+        K.load = 3.1
+        local box = crate(square(lighter and 143 or 144, 100, 0), join(junk, stock("Base.Plank", 1, 3), stock("Base.Nails", 1, 0.1)))
+        newPlan()
+        store = { boxes = {} }
+        R.addBox(box)
+        put("rn_floor", 46, 0, 0)
+        put("rn_floor", 47, 0, 0)
+        S[shortAt(47, PN)] = "short"
+        actions, walks = {}, {}
+        R.start(K)
+        runUntil(function() return #pushes > 0 end)
+        local firstOnly = #pushes == 1 and #pushes[1].anchors == 1 and #actions == 0
+        if firstOnly then buildAll() end
+        if lighter then K.load = 0 end
+        runUntil(function() return #actions > 0 or R.state() == "done" end)
+        return firstOnly, box
+    end
+    local first1, boxL = laterCase(true)
+    local again = R.state() == "fetch" and #actions == 2 and actions[1].src == boxL
+    R.stop()
+    local first2 = laterCase(false)
+    local sL = R.summary()
+    check(first1 and again and first2 and R.state() == "done" and (R.reason()) == "LEFT" and #actions == 0
+        and sL.boxes[1] == "HEAVY" and sL.short.n == 1 and looked == 0,
+        "材料箱：開工時背不動的片先放著，前一片蓋好、背包輕了再回去拿；反面：還是背不動就收尾並寫背包太重；無關的東西不檢查")
+    R.stop()
+    K.getMaxWeight, K.load = maxW, 0
 
     -- 遊戲暫停：暫停時引擎不送 OnTick，照圖蓋在 OnTickEvenPaused 看
     local gp, pausedNow = isGamePaused, false
     isGamePaused = function() return pausedNow end
-    local tickPaused = R.tickPaused or function() end
+    local function tickPaused() -- 照引擎的路：走事件，不直接叫 Runner（註冊行拿掉時要紅）
+        for _, f in ipairs(handlers.OnTickEvenPaused or {}) do pcall(f) end
+    end
     newPlan()
     put("rn_floor", 0, 2, 0)
     pausedNow = true

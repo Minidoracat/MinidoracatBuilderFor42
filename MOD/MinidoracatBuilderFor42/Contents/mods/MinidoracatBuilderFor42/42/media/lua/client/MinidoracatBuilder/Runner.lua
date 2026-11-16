@@ -45,7 +45,8 @@ local WHOLE = { OFF = true, NOT_ALLOWED = true, STALE = true, RATE_LIMITED = tru
     STATE = true, INTERNAL = true }
 
 -- st.state："idle"｜"pick"｜"build"｜"fetch"｜"check"（一批停下，下一幀看是誰停的）｜"paused"｜"done"
-local st = { state = "idle", skip = {}, placed = {}, bad = {}, stepped = {} }
+-- st.later＝材料箱有料但背不動而先放著的片：這一輪有片蓋好（背包輕了）才重新挑
+local st = { state = "idle", skip = {}, placed = {}, bad = {}, stepped = {}, later = {} }
 local listeners = {}
 local summary, summaryAt
 
@@ -383,69 +384,88 @@ local function usable(item)
     return not item:isFluidContainer() or item:isEmptyOfFluid()
 end
 
--- 這個箱子沒有的那幾樣也要留位置（多半放在別的箱子）：沒有實體可量，用物品定義的重量
-local function unitWeight(ft)
-    local s = getScriptManager():getItem(ft)
-    return s and s:getActualWeight() or 0
-end
-
--- 從一個箱子挑這一批缺的。sets＝{ { [fullType]＝數量 }… }，一片一組、照蓋的順序；一組整組放得下才拿，放不下就停。
--- 照箱子裡的順序拿到滿的話，只會拿到排前面那一種（負重剩 6 拿兩片木板就滿），一片都配不齊。釘子不夠時拿釘子盒。
--- 回 物品陣列；挑不到時再回原因：EMPTY（沒有要的）、HEAVY（有要的但負重放不下）
-local function choose(player, container, sets)
-    local room = player:getMaxWeight() - player:getInventory():getCapacityWeight()
-    local stock, at = {}, {} -- 箱子裡能用的，照種類排；at＝各種類拿到第幾個
-    local items = container:getItems()
-    for i = 0, items:size() - 1 do
-        local it = items:get(i)
-        if usable(it) then
-            local ft = it:getFullType()
-            if not stock[ft] then stock[ft], at[ft] = {}, 1 end
-            stock[ft][#stock[ft] + 1] = it
-        end
-    end
-    local out, heavy, spare = {}, false, 0 -- spare＝已拿的釘子盒還能抵幾根釘子
+-- 從能開的點名箱子（cands，近的在前）挑這一批缺的。sets＝{ { [fullType]＝數量 }… }，一片一組、照蓋的順序。
+-- 一組要的東西在這些箱子裡湊得齊、整組背得動才挑：照箱子裡的順序拿到滿的話只會拿到排前面那一種（負重剩 6 拿兩片
+-- 木板就滿），一片都配不齊。重量照真的那幾件算（另一個箱子只有釘子盒時算整盒）。
+-- 回 挑到的 { it, k＝第幾個箱子 }…、有沒有背不動的組、各箱子有沒有這一批要的東西
+local function choose(player, cands, sets)
+    -- 只記這一批要的種類、最多要的件數：箱子裡無關的東西不進表
+    local want = {}
     for _, set in ipairs(sets) do
-        local got, w, to, left, lack = {}, 0, {}, spare, {}
-        for ft, n in pairs(set) do
-            if ft == NAILS then
-                local t = math.min(n, left)
-                n, left = n - t, left - t
-            end
-            local q, k = stock[ft], to[ft] or at[ft]
-            while n > 0 and q and q[k] do
-                got[#got + 1], w, k, n = q[k], w + q[k]:getUnequippedWeight(), k + 1, n - 1
-            end
-            to[ft] = k
-            if ft == NAILS then
-                q, k = stock[NAILS_BOX], to[NAILS_BOX] or at[NAILS_BOX]
-                while n > 0 and q and q[k] do
-                    local t = math.min(n, PER_BOX)
-                    got[#got + 1], w, k, n, left = q[k], w + q[k]:getUnequippedWeight(), k + 1, n - t, left + PER_BOX - t
-                end
-                to[NAILS_BOX] = k
-            end
-            if n > 0 then lack[ft] = n end
-        end
-        if #got > 0 then
-            for ft, n in pairs(lack) do w = w + n * unitWeight(ft) end
-            if w > room then
-                heavy = true
-                break
-            end
-            for _, it in ipairs(got) do out[#out + 1] = it end
-            for ft, k in pairs(to) do at[ft] = k end
-            room = room - w
-        end
-        spare = left
+        for ft, n in pairs(set) do want[ft] = (want[ft] or 0) + n end
     end
-    if #out == 0 then return out, heavy and "HEAVY" or "EMPTY" end
-    return out
+    if want[NAILS] then want[NAILS_BOX] = (want[NAILS_BOX] or 0) + math.ceil(want[NAILS] / PER_BOX) end
+    local stock, at, has = {}, {}, {} -- at＝各種類挑到第幾個
+    for k, c in ipairs(cands) do
+        local items = c.container:getItems()
+        for i = 0, items:size() - 1 do
+            local it = items:get(i)
+            local ft = it:getFullType()
+            if want[ft] and usable(it) then
+                has[k] = true
+                local q = stock[ft]
+                if not q then
+                    q = {}
+                    stock[ft], at[ft] = q, 1
+                end
+                if #q < want[ft] then q[#q + 1] = { it = it, k = k } end
+            end
+        end
+    end
+    local room = player:getMaxWeight() - player:getInventory():getCapacityWeight()
+    local out, heavy, spare = {}, false, 0 -- spare＝已挑的釘子盒還能抵幾根釘子
+    for _, set in ipairs(sets) do
+        local got, w, to, left, full = {}, 0, {}, spare, true
+        for ft, n in pairs(set) do
+            if ft ~= NAILS then
+                local q, k = stock[ft], at[ft]
+                while n > 0 and q and q[k] do
+                    got[#got + 1], w, k, n = q[k], w + q[k].it:getUnequippedWeight(), k + 1, n - 1
+                end
+                to[ft] = k
+                if n > 0 then full = false end
+            end
+        end
+        -- 釘子放最後：先用已挑的釘子盒剩的，再挑散的，再挑整盒（這一組自己也要整盒時不挑同一盒）
+        local n = set[NAILS] or 0
+        if n > 0 then
+            local t = math.min(n, left)
+            n, left = n - t, left - t
+            local q, k = stock[NAILS], at[NAILS]
+            while n > 0 and q and q[k] do
+                got[#got + 1], w, k, n = q[k], w + q[k].it:getUnequippedWeight(), k + 1, n - 1
+            end
+            to[NAILS] = k
+            q, k = stock[NAILS_BOX], to[NAILS_BOX] or at[NAILS_BOX]
+            while n > 0 and q and q[k] do
+                t = math.min(n, PER_BOX)
+                got[#got + 1], w, k, n, left = q[k], w + q[k].it:getUnequippedWeight(), k + 1, n - t, left + PER_BOX - t
+            end
+            to[NAILS_BOX] = k
+            if n > 0 then full = false end
+        end
+        if full and w > room then
+            heavy = true
+        elseif full then
+            for _, g in ipairs(got) do out[#out + 1] = g end
+            for ft, k in pairs(to) do at[ft] = k end
+            room, spare = room - w, left
+        end
+    end
+    return out, heavy, has
 end
 
 local function boxKey(b) return b.x .. "," .. b.y .. "," .. b.z .. "," .. b.index end
 
--- 找一個有這一批缺的、能拿的點名箱子，走過去並排搬運動作。回 true＝開始拿了
+-- 箱子這一趟不能用：why 列進總結。hard＝這一輪都不再試（不見、鎖住、走不到）；沒有要的、背不動只是這一批的事
+local function boxFailed(o, why, hard)
+    if hard then st.bad[boxKey(o.b)] = why end
+    st.badIndex = st.badIndex or {}
+    st.badIndex[o.i] = why
+end
+
+-- 這一批缺的去點名的箱子拿：能開的箱子一起看，這一趟去拿得到東西的裡面最近的那個，走過去並排搬運動作。
+-- 回 true＝開始拿了；沒開始時再回是不是因為背不動
 local function startFetch(player, sets)
     local boxes = Runner.boxes()
     local px, py = player:getX(), player:getY()
@@ -461,31 +481,43 @@ local function startFetch(player, sets)
             order[k] = { b = b, i = i, d = d }
         end
     end
-    local inv = player:getInventory()
+    local cands = {}
     for _, o in ipairs(order) do
         local container, why = openBox(player, o.b)
-        local picks = {}
-        if container then picks, why = choose(player, container, sets) end
-        if #picks > 0 then
-            if not luautils.walkToContainer(container, player:getPlayerNum()) then
-                why = "NO_ROOM"
-            else
-                local before, actions = {}, {}
-                for _, it in ipairs(picks) do
-                    local ft = it:getFullType()
+        if container then
+            cands[#cands + 1] = { container = container, o = o }
+        else
+            boxFailed(o, why, true)
+        end
+    end
+    local inv = player:getInventory()
+    while cands[1] do
+        local picks, heavy, has = choose(player, cands, sets)
+        if not picks[1] then
+            for k, c in ipairs(cands) do boxFailed(c.o, heavy and has[k] and "HEAVY" or "EMPTY") end
+            return false, heavy
+        end
+        local k = picks[1].k
+        for _, g in ipairs(picks) do
+            if g.k < k then k = g.k end
+        end
+        local c = cands[k]
+        if luautils.walkToContainer(c.container, player:getPlayerNum()) then
+            local before, actions = {}, {}
+            for _, g in ipairs(picks) do
+                if g.k == k then
+                    local ft = g.it:getFullType()
                     before[ft] = inv:getCountTypeRecurse(ft)
-                    actions[#actions + 1] = ISInventoryTransferAction:new(player, it, container, inv)
+                    actions[#actions + 1] = ISInventoryTransferAction:new(player, g.it, c.container, inv)
                     ISTimedActionQueue.add(actions[#actions])
                 end
-                st.fetch = { box = o.b, i = o.i, before = before, actions = actions }
-                if st.badIndex then st.badIndex[o.i] = nil end
-                return true
             end
+            st.fetch = { box = c.o.b, i = c.o.i, before = before, actions = actions }
+            if st.badIndex then st.badIndex[c.o.i] = nil end
+            return true
         end
-        -- 放不下不記成壞箱子：蓋掉一批就輕了，下次挑批再看（只列進總結）
-        if why ~= "HEAVY" then st.bad[boxKey(o.b)] = why end
-        st.badIndex = st.badIndex or {}
-        st.badIndex[o.i] = why
+        boxFailed(c.o, "NO_ROOM", true)
+        table.remove(cands, k)
     end
     return false
 end
@@ -540,7 +572,7 @@ local function pickBatch(player, plan)
     local cand = {}
     B.Plan.each(plan, function(p)
         -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）
-        if st.skip[p] or st.placed[p] then return end
+        if st.skip[p] or st.placed[p] or st.later[p] then return end
         local state = PC.state(p)
         if state == nil then
             local id = resolve(p)
@@ -710,6 +742,7 @@ local function batchDone(b, sum)
         return halt("paused", "EDIT")
     end
     local placed = sum.placed or 0
+    if placed > 0 then st.later = {} end
     for i, c in ipairs(b.sent) do
         if i > placed then break end
         st.placed[c.p] = true
@@ -769,13 +802,23 @@ end
 
 local function sendTiles(player, b)
     local ok, sets, short = evaluate(player, b)
-    if sets and not b.fetched and startFetch(player, sets) then
-        st.state = "fetch"
-        return
+    local heavy = false
+    if sets and not b.fetched then
+        local started
+        started, heavy = startFetch(player, sets)
+        if started then
+            st.state = "fetch"
+            return
+        end
     end
-    -- 剛拿過料的這一批：缺料的片先留著（下一次挑批再去拿；拿不到東西的箱子會被跳過，所以不會一直來回）
+    -- 剛拿過料的這一批：缺料的片先留著（下一次挑批再去拿；拿不到東西時那幾片會跳過，所以不會一直來回）。
+    -- 背不動的不算跳過，先放著（st.later）
     for _, s in ipairs(short) do
-        if s.hard or not b.fetched then skip(s.c.p, s.code, s.extra) end
+        if s.hard or not (b.fetched or heavy) then
+            skip(s.c.p, s.code, s.extra)
+        elseif heavy then
+            st.later[s.c.p] = true
+        end
     end
     if #ok == 0 then return end
     local anchors, sent = {}, {}
@@ -860,6 +903,7 @@ function Runner.start(player)
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
+    st.later = {}
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     local boxes, any = #Runner.boxes() > 0, false
