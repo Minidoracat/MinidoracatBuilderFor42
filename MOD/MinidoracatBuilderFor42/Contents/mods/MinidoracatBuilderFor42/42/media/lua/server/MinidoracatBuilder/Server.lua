@@ -52,8 +52,16 @@ function Server.send(player, cmd, args)
     end
 end
 
+-- log 的 at＝擋住的那一格（extra 帶 x, y, z 的原因碼）；沒有時是這個請求第 i 項的錨點；都沒有（i＝0 的整批拒絕）不寫
 function Server.refuse(player, n, i, code, extra)
-    print(LOG .. "REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " i=" .. tostring(i) .. " code=" .. code)
+    local at = extra and tonumber(extra.x) and extra
+    if not at then
+        local it = Server.intents[keyOf(player)]
+        local a = it and it.n == n and it.c[i]
+        if a then at = { x = a[1], y = a[2], z = a[3] } end
+    end
+    print(LOG .. "REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " i=" .. tostring(i) .. " code=" .. code
+        .. (at and " at=" .. tostring(at.x) .. "," .. tostring(at.y) .. "," .. tostring(at.z) or ""))
     local args = { n = n, i = i, code = code }
     for k, v in pairs(extra or {}) do args[k] = v end
     Server.send(player, "refused", args)

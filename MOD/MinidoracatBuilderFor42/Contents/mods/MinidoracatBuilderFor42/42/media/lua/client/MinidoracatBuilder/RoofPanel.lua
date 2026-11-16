@@ -15,7 +15,8 @@ local Roof, Messages = B.Roof, B.Messages
 local LOG = "[MinidoracatBuilderFor42] "
 local PAD, GAP = 8, 6
 RP.CAPS = { "window", "controls", "dropdown" }
--- 這次的選擇（關掉再開照舊）：pn、set（Roof.family）、shape、dir、gableTs（山牆圖塊組，"" 是不放）、gable（Roof.gableFamily）
+-- 這次的選擇（關掉再開照舊）：pn、set（Roof.family）、shape、dir、gableTs（山牆圖塊組，"" 是不放）、gable（Roof.gableFamily）、
+-- gableWait（選了山牆但它的貼圖還沒載好，gable 還是 nil：排之前與面板每 0.5 秒再認一次）
 RP.st = { gableTs = "" }
 -- PlanMode.addMany 的失敗碼 → 屋頂自己的句子（addMany 失敗時不跳通知）。TOO_HIGH 和 Roof.layout 的同一句（兩種都是超過藍圖層數）
 local ADD_WHY = { FULL = "IGUI_MBLD_Roof_Err_FULL", TOO_WIDE = "IGUI_MBLD_Roof_Err_PLAN_WIDE",
@@ -23,12 +24,14 @@ local ADD_WHY = { FULL = "IGUI_MBLD_Roof_Err_FULL", TOO_WIDE = "IGUI_MBLD_Roof_E
 
 local function title() return getText("IGUI_MBLD_Roof_Title") end
 
--- 認得出整套、而且規劃模式有整批加片的入口（PlanMode.addMany）才給
+-- 認得出整套、而且規劃模式有整批加片的入口（PlanMode.addMany）才給。回 能不能用, 還沒載好（true＝貼圖遮罩還沒建好，
+-- 不是認不出：呼叫的不要記住這次的結果，晚點再問）
 function RP.available(name)
     local PM = B.PlanMode
-    if not (PM and PM.addMany) then return false end
-    local set = Roof.family(name)
-    return set ~= nil and #Roof.shapes(set) > 0
+    if not (PM and PM.addMany) then return false, false end
+    local set, late = Roof.family(name)
+    if not set then return false, late == true end
+    return #Roof.shapes(set) > 0, false
 end
 
 -- 形狀與方向夾回這一套做得出的；回形狀定義
@@ -49,32 +52,41 @@ function RP.fix()
     return def
 end
 
--- 選山牆組：認不出或坡度不同（族不同）回 false，選擇退回不放
+-- 選山牆組：認不出或坡度不同（族不同）回 false，選擇退回不放；貼圖還沒載好時留著選擇、記 gableWait、回 true
 function RP.pickGable(ts)
     local st = RP.st
-    local g = ts ~= "" and Roof.gableFamily(ts) or nil
+    local g, late = nil, false
+    if ts ~= "" then g, late = Roof.gableFamily(ts) end
     if g and st.set and g.fam == st.set.fam then
-        st.gable, st.gableTs = g, ts
+        st.gable, st.gableTs, st.gableWait = g, ts, false
         return true
     end
-    st.gable, st.gableTs = nil, ""
+    if late then
+        st.gable, st.gableTs, st.gableWait = nil, ts, true
+        return true
+    end
+    st.gable, st.gableTs, st.gableWait = nil, "", false
     return ts == ""
 end
 
 local memo = {}
+-- 山牆還沒認出來（gableWait）先再認一次；還是沒載好就不排（排了會少山牆）：GABLE_WAIT
 local function layout(x1, y1, x2, y2, z)
     local st = RP.st
+    if st.gableWait then RP.pickGable(st.gableTs) end
+    if st.gableWait then return nil, "GABLE_WAIT" end
     return Roof.layout(st.set, st.shape, st.dir, x1, y1, x2, y2, z, st.gable)
 end
 
 -- 長方形游標的預覽（Cursor.startArea 的 cb.preview）：屋頂片的格子（灰框，排在規劃樓層）與兩行字。範圍、樓層、選擇沒變
--- 回同一份（游標每秒再問一次，拿到同一份就不重排）
+-- 回同一份（游標每秒再問一次，拿到同一份就不重排）；山牆還沒認出來時每次都再認一次，認出來了 key 跟著變
 function RP.preview(x1, y1, x2, y2)
     local st, PM = RP.st, B.PlanMode
     local z = PM and PM.level and PM.level()
     if not (st.set and z) then return { cells = {}, lines = {} } end
+    if st.gableWait then RP.pickGable(st.gableTs) end
     local key = table.concat({ st.set.ts, tostring(st.set.base), tostring(x1), tostring(y1), tostring(x2), tostring(y2),
-        tostring(z), tostring(st.shape), tostring(st.dir), st.gableTs }, ",")
+        tostring(z), tostring(st.shape), tostring(st.dir), st.gableTs, tostring(st.gableWait) }, ",")
     if memo.key == key then return memo.res end
     local groups, code = layout(x1, y1, x2, y2, z)
     local warn = groups and code
@@ -99,13 +111,14 @@ function RP.preview(x1, y1, x2, y2)
     end
     local lines = { text }
     if warn and warn.HALF then lines[#lines + 1] = getText("IGUI_MBLD_Roof_Warn_HALF") end
+    if warn and warn.GAP then lines[#lines + 1] = getText("IGUI_MBLD_Roof_Warn_GAP", tostring(warn.GAP)) end
     lines[#lines + 1] = getText("IGUI_MBLD_Area_HintRelease") .. getText("IGUI_MBLD_HintSep") .. getText("IGUI_MBLD_HintCancel")
     local res = { cells = cells, lines = lines }
     memo.key, memo.res = key, res
     return res
 end
 
--- 放開：排出來的片整批加進藍圖（一步）；排不出或加不進去用通知說原因
+-- 放開：排出來的片整批加進藍圖（一步）；排不出或加不進去用通知說原因。加進去了但山牆底下有補不了牆的格子：通知說幾格
 function RP.release(x1, y1, x2, y2)
     local st, PM = RP.st, B.PlanMode
     local player = getSpecificPlayer(st.pn or 0)
@@ -127,6 +140,8 @@ function RP.release(x1, y1, x2, y2)
         Messages.toast(player, getText(ADD_WHY[why] or ADD_WHY.OFF), title())
         return false
     end
+    local warn = code
+    if warn and warn.GAP then Messages.toast(player, getText("IGUI_MBLD_Roof_Warn_GAP", tostring(warn.GAP)), title()) end
     return true
 end
 
@@ -228,8 +243,10 @@ function Panel.new(UI, pn)
     self.gableDD = UI.Dropdown.new({ x = cx, y = y, width = cw, options = gableOptions(), selected = st.gableTs,
         theme = theme, target = self, onChange = function(t, id)
             t.gableBad = not RP.pickGable(id)
+            t.gableTs = RP.st.gableTs
             if t.gableBad then t.gableDD:setSelected("", true) end
         end })
+    self.gableTs = st.gableTs -- 下拉現在顯示的；和 RP.st.gableTs 不同＝被再認改掉了（Panel:draw）
     row("IGUI_MBLD_Roof_Gable", self.gableDD)
 
     -- 樓層：屋頂排在規劃樓層（PlanMode.level），上一層、下一層鈕直接改規劃的樓層
@@ -246,7 +263,7 @@ function Panel.new(UI, pn)
     self.levelY = y + math.floor((up.height - fh) / 2)
     y = y + up.height + GAP
 
-    -- 說明（屋頂排法、斜屋頂只擋雨）與山牆認不出的那句（位置先留著，不重排）
+    -- 說明（屋頂排法、整批加進藍圖）與山牆認不出的那句（位置先留著，不重排）
     local innerW = w - 2 * PAD
     self.hint = wrap(UI, getText("IGUI_MBLD_Roof_Hint"), innerW, font)
     self.hintY = y
@@ -271,9 +288,14 @@ function Panel.new(UI, pn)
     win:setHeight(h)
     body:setHeight(h)
     win:setX(sx + math.floor((sw - w) / 2))
-    win:setY(sy + math.floor((sh - h) / 2))
+    -- 規劃工具列（PlanMode 的 Bar：畫面上方 y=8、標題加兩排按鈕，約 3 行高）每次重建都排到最上層。置中會碰到它時
+    -- 放得下就排在它下面；放不下（960x540、字級 5）就讓本面板一直在最上層，免得形狀、方向下拉被蓋住
+    local top, barB = sy + math.floor((sh - h) / 2), sy + 8 + 3 * (fh + 10) + 30
+    if top < barB and barB + h <= sy + sh then top = barB end
+    win:setY(top)
     self:syncDirs()
     win:addToUIManager()
+    if top < barB then win:setAlwaysOnTop(true) end -- 要在 addToUIManager 之後才生效（ISUIElement）
     return self
 end
 
@@ -305,13 +327,24 @@ function Panel:draw()
     for i = 1, #self.hint do
         b:drawText(self.hint[i], PAD, self.hintY + (i - 1) * self.fh, c.textMuted.r, c.textMuted.g, c.textMuted.b, 1, font)
     end
+    -- 山牆的貼圖還沒載好（gableWait）：每 0.5 秒再認一次。選擇被再認改掉（認不出、坡度不同，退回不放；這裡或排之前的再認）
+    -- 時下拉跟著換、顯示那句
+    local st = RP.st
+    if st.gableWait and getTimestampMs() >= (self.gableAt or 0) then
+        self.gableAt = getTimestampMs() + 500
+        RP.pickGable(st.gableTs)
+    end
+    if self.gableTs ~= st.gableTs then
+        self.gableBad = st.gableTs == "" and self.gableTs ~= ""
+        self.gableTs = st.gableTs
+        self.gableDD:setSelected(st.gableTs, true)
+    end
     local wc = c.warning
     if self.gableBad then
         for i = 1, #self.bad do
             b:drawText(self.bad[i], PAD, self.badY + (i - 1) * self.fh, wc.r, wc.g, wc.b, 1, font)
         end
     end
-    local st = RP.st
     if st.set and st.set.fam == "45" and st.gableTs == "" and (st.shape == "gable" or st.shape == "shed") then
         for i = 1, #self.h45 do
             b:drawText(self.h45[i], PAD, self.h45Y + (i - 1) * self.fh, wc.r, wc.g, wc.b, 1, font)
@@ -322,7 +355,7 @@ end
 -- 開面板（同時只開一個，新的取代舊的）：認不出整套、沒有 addMany、沒有框架、建不起來、規劃開不了回 false（後三種跳通知）。
 -- 面板建好才開規劃、把規劃樓層設成玩家那層加 1（屋頂預設蓋在上一層，同建造游標的 LAYERED）：失敗時規劃、樓層、選擇都不動。
 -- Panel.new 最後一步才 addToUIManager，建到一半出錯不會留下視窗
-local KEEP = { "pn", "set", "shape", "dir", "gable", "gableTs" }
+local KEEP = { "pn", "set", "shape", "dir", "gable", "gableTs", "gableWait" }
 function RP.open(playerNum, name)
     local PM, W = B.PlanMode, B.Window
     local player = getSpecificPlayer(playerNum)

@@ -569,6 +569,64 @@ function Place.rampOrigin(obj)
     return nil
 end
 
+-- 格上有沒有叫 name 的物件
+local function named(sq, name)
+    local objects = sq and sq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local s = objects:get(i):getSprite()
+        if s and s:getName() == name then return true end
+    end
+    return false
+end
+
+-- sq 上叫 name 的那件是不是某一組坡道或樓梯補的平台（Place.build 的 platform 那格；框選用：那一組收進藍圖時平台跟著
+-- 整組一起蓋，Capture）。只看圖與位置、不看記號：
+--   坡道：某一組最上面那片（Entry.rampTop）在這格往下坡方向一格、下一層，name 是那一組會補的平台圖（set.deck）
+--   樓梯：下一層、頂片往上爬那一側有一座湊得成整組的樓梯（頂片、中片、底片的圖照 Entry.cells），name 是它會補的平台圖
+-- 是的話回 那一組的錨點 x, y, z（坡道頭片、樓梯頂片：藍圖記那一組的位置），框選讀到後記成那一組的那一片的 x, y 與圖名
+-- （坡道頭片、樓梯底片，同一層）；否則 nil
+local RAMP_STEPS = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
+function Place.deckOwner(name, sq)
+    local ramp = Entry.isRampDeck(name)
+    if not (ramp or name == Entry.STAIR_FLOOR) then return nil end
+    local cell, x, y, z = getCell(), sq:getX(), sq:getY(), sq:getZ() - 1
+    for _, d in ipairs(RAMP_STEPS) do
+        local below = cell:getGridSquare(x - d[1], y - d[2], z)
+        local objects = below and below:hasSlopedSurface() and below:getObjects()
+        for i = 0, (objects and objects:size() or 0) - 1 do
+            local o = objects:get(i)
+            local s = o:getSprite()
+            local dx, dy
+            if s then dx, dy = Entry.rampTop(s) end -- Kahlua 的 a and f() 只留一個回傳值
+            if dx == d[1] and dy == d[2] then
+                local hx, hy, hz, set = Place.rampOrigin(o)
+                if hx and set.deck == name then return hx, hy, hz, hx, hy, set.parts[1]:getName() end
+            end
+        end
+    end
+    if ramp then return nil end
+    -- 樓梯：W 型的頂片在平台東邊一格、底片再往東兩格；N 型往南（Entry.cells 的 platform 在頂片前一格）
+    for _, d in ipairs({ { 1, 0 }, { 0, 1 } }) do
+        local bx, by = x + 3 * d[1], y + 3 * d[2]
+        local objects = cell:getGridSquare(bx, by, z)
+        objects = objects and objects:getObjects()
+        for i = 0, (objects and objects:size() or 0) - 1 do
+            local s = objects:get(i):getSprite()
+            local t = s and s:getType()
+            if t == T.stairsBW or t == T.stairsBN then
+                local c = Entry.cells(s)
+                local top, mid, plat = c[1], c[2], c[4]
+                if plat and plat[5] == "platform" and plat[1] == -d[1] and plat[2] == -d[2] and plat[4]:getName() == name
+                    and named(cell:getGridSquare(x + d[1], y + d[2], z), top[4]:getName())
+                    and named(cell:getGridSquare(x + 2 * d[1], y + 2 * d[2], z), mid[4]:getName()) then
+                    return x + d[1], y + d[2], z, bx, by, s:getName()
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- 填平換回哪張：挖之前記的地板（builderWater；照挖的條件只收天然地面、圖還在）；沒記到或不對的換泥土
 function Place.waterBase(obj)
     local b = obj:hasModData() and obj:getModData().builderWater

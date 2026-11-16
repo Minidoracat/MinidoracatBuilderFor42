@@ -2,7 +2,8 @@
 -- 跳結果框（能收幾片幾種、不收的照原因分組、名稱）→ 存成藍圖檔、打開藍圖庫。只讀世界，不動世界、不送伺服器。
 -- 只收建造工坊能蓋的圖（Entry.resolve）與原版建造配方蓋的東西（收成 recipe: 項目）；容器裡的東西、地上物品、車、屍體
 -- 不是格上的圖塊，不收。開著的門、破掉的窗、拉上的窗簾照 Entry.why 認回能蓋的那一張（門窗一律記成關著）；
--- 多格物件、樓梯只在原點那一片記一次；車庫門、雙開門照 Place.doorGroup 認回第一片、錨點與寬度，一扇記一片。
+-- 多格物件、樓梯、坡道只在原點那一片記一次（那一組收得進藍圖時，它補的平台也不另外收）；車庫門、雙開門照 Place.doorGroup
+-- 認回第一片、錨點與寬度，一扇記一片。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Plan"
@@ -91,6 +92,20 @@ function Capture.tile(res, name, x, y, z, z0)
     skip(res, code or "UNKNOWN")
 end
 
+-- 坡道、樓梯補的平台（Place.deckOwner）：那一組收得進藍圖時不另外收，放那一組時會帶平台（Place.build）。收得進＝框選會
+-- 讀到、記成那一組的那一片（坡道頭片、樓梯底片）和錨點都在框裡，而且那一片能蓋（Entry.resolve）。收不進（在框外、
+-- 那種沒開放）、不是坡道或樓梯通到的同圖地板、圖和那一組會補的不同時，照一般地板收
+local function inBox(b, x, y, z)
+    return x >= b.x1 and x <= b.x2 and y >= b.y1 and y <= b.y2 and z >= b.z0 and z <= b.z1
+end
+
+local function platform(res, name, sq)
+    local b = res.box
+    if not b then return false end
+    local x, y, z, px, py, pname = Place.deckOwner(name, sq)
+    return x ~= nil and inBox(b, x, y, z) and inBox(b, px, py, z) and Entry.resolve(pname) ~= nil
+end
+
 -- 一格上的每一件（地上物品不收：容器裡的東西、車、屍體本來就不在格上的物件裡）
 function Capture.square(res, sq, z0)
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
@@ -110,7 +125,7 @@ function Capture.square(res, sq, z0)
                 elseif g.x == x and g.y == y and g.z == z then
                     add(res, g.e, x, y, z, 0, g.garage and g.w or nil)
                 end
-            else
+            elseif not platform(res, name, sq) then
                 Capture.tile(res, name, x, y, z, z0)
             end
             local att = o:getAttachedAnimSprite()
@@ -134,7 +149,8 @@ function Capture.scan(x1, y1, x2, y2, z)
     if y1 > y2 then y1, y2 = y2, y1 end
     if x2 - x1 + 1 > Capture.SIDE or y2 - y1 + 1 > Capture.SIDE then return nil, "TOO_WIDE" end
     return { x1 = x1, y1 = y1, x2 = x2, y2 = y2, z0 = z, z1 = z + Capture.LEVELS - 1, x = x1, y = y1, z = z,
-        res = { pieces = {}, n = 0, seen = {}, skip = {}, skipped = 0 } }
+        res = { pieces = {}, n = 0, seen = {}, skip = {}, skipped = 0,
+            box = { x1 = x1, y1 = y1, x2 = x2, y2 = y2, z0 = z, z1 = z + Capture.LEVELS - 1 } } }
 end
 
 -- 掃到時間用完（每幀 BUDGET_MS），掃完回 true

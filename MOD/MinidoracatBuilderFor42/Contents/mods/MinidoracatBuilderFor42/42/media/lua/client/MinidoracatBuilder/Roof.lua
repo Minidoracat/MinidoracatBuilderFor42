@@ -3,7 +3,8 @@
 -- 認整套＝「編號模板位置＋外形」：原版的屋頂片照官方建築編輯器的固定模板排，MOD 會整個平移或自己排，所以先照模板位置
 -- 找候選、每片都要存在而且種類對，再比外形（只看屬性、只看編號、只比外形都不行；離線量測 roofproto-20261116）。
 -- 排法照建築編輯器的規則自己寫（30 度：所有片放在同一層、每 6 格升一層、屋脊與四角錐頂只有奇數跨距的片、山牆是牆片；
--- 45 度：每 3 格升一層，只有朝南、朝東的坡面有片，屋頂那一層每格都補天花板片，跨距中間超過 3 格的鋪平頂片在上一層）。
+-- 45 度：每 3 格升一層，只有朝南、朝東的坡面有片，跨距中間超過 3 格的鋪平頂片在上一層）。兩種坡度的斜屋頂都在屋頂
+-- 那一層每格補一片天花板，整間才算室內（Roof.FILL）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Rules"
 
@@ -74,9 +75,9 @@ Roof.FAM = {
     },
 }
 Roof.FAMILIES = { "30", "45" }
--- 45 度屋頂那一層每一格補的天花板（平頂除外：平頂片自己是地板）。引擎替自建房間建房間要封閉而且屋頂過半
--- （WorldRegionToMetaGrid.java:183），「有屋頂」照上面幾層有沒有 solidfloor 算（DataChunk.recalcRoofs），45 度的斜片沒有
--- solidfloor；地圖房子屋頂層每格也都疊這張（實測見 builder-dev roof.md）
+-- 屋頂那一層每一格補的天花板（30、45 度都補；45 度平頂除外：平頂片自己是地板）。引擎替自建房間建房間要封閉而且屋頂過半
+-- （WorldRegionToMetaGrid.java:183），「有屋頂」照上面幾層有沒有 solidfloor 算（DataChunk.recalcRoofs），斜片都沒有
+-- solidfloor；地圖房子屋頂層每格也都疊這張。30 度不補時整間不算室內，四面牆畫成不透光的黑色（實測見 builder-dev roof.md）
 Roof.FILL = "ceilings_01_0"
 
 -- 每族的核心片（照編號排，比對時先失敗的先跳出）；45 度的平頂片不算核心
@@ -227,8 +228,8 @@ end
 
 -- 這張屋頂圖所屬的圖塊組認不認得出整套：回 { fam＝"30"｜"45", ts, base, half, top, pieces } 或 nil。half＝有沒有
 -- 四坡奇數短邊要的半格轉角片（30 度沒有這種片、也用不到），top＝有沒有平頂片，pieces＝45 度模板外的半格片。
--- 一組可能有好幾套（roofs_01 有 @0、@32）：先給模板範圍包住這張的那套，不然第一套。照圖塊組快取，第一次約 0.1 秒（推測）；
--- 有貼圖還沒載好時這次照認不出回、不快取，下次再認
+-- 一組可能有好幾套（roofs_01 有 @0、@32）：先給模板範圍包住這張的那套，不然第一套。照圖塊組快取，第一次實機最慢約 67 ms
+-- （E2E 冷掃 74 款）；有貼圖還沒載好時回 nil, true（還沒載好，不是認不出）、不快取，呼叫的晚點再問
 function Roof.family(name)
     local ts, num = tostring(name):match("^(.*)_(%d+)$")
     if not ts then return nil end
@@ -251,7 +252,7 @@ function Roof.family(name)
                 sets[#sets + 1] = s
             end
         end
-        if late then return nil end
+        if late then return nil, true end
         cache[ts] = sets
     end
     num = tonumber(num)
@@ -262,7 +263,7 @@ function Roof.family(name)
 end
 
 -- 山牆：牆的圖塊組（ts＝圖塊組名，例 walls_exterior_roofs_30_01）認不認得出一整套山牆片。回 { fam, ts, base } 或 nil。
--- 有貼圖還沒載好時照認不出回、不快取
+-- 有貼圖還沒載好時回 nil, true、不快取
 function Roof.gableFamily(ts)
     local hit = gableCache[ts]
     if hit == nil then
@@ -272,7 +273,7 @@ function Roof.gableFamily(ts)
             local g = Roof.FAM[fam].gable
             local bases, wait = {}, false
             if g then bases, wait = scan(ts, g) end
-            if wait then return nil end
+            if wait then return nil, true end
             if bases[1] then
                 hit = { fam = fam, ts = ts, base = bases[1] }
                 break
@@ -283,7 +284,7 @@ function Roof.gableFamily(ts)
     return hit or nil
 end
 
--- 45 度每格要補的天花板：FILL 不成立（圖塊組被沙盒關掉、目錄不收）改鋪這一款的平頂片；都不成立回 nil
+-- 每格要補的天花板：FILL 不成立（圖塊組被沙盒關掉、目錄不收）改鋪這一款的平頂片（只有 45 度有）；都不成立回 nil
 local function fillName(set)
     if Entry.resolve(Roof.FILL) then return Roof.FILL end
     local top = set.top and set.ts .. "_" .. (set.base + Roof.FAM["45"].off.TOP1)
@@ -291,13 +292,13 @@ local function fillName(set)
 end
 
 -- 這一套做得出的形狀與方向：{ { id, dirs = { … } }, … }（唯讀）。雙斜的方向是屋脊走向（EW／NS），單斜的是坡面朝哪邊（低的那邊）。
--- 45 度：單斜只有朝南、朝東（另兩面沒有片）；補不了天花板時只剩平頂；沒有平頂片不給平頂
+-- 45 度：單斜只有朝南、朝東（另兩面沒有片）；補不了天花板時只剩平頂；沒有平頂片不給平頂。30 度補不了天花板時一種都不給
 local SHAPES45 = { { id = "gable", dirs = { "EW", "NS" } }, { id = "hip", dirs = {} }, { id = "shed", dirs = { "S", "E" } } }
 local FLAT = { id = "flat", dirs = {} }
 function Roof.shapes(set)
     local spec = set and Roof.FAM[set.fam]
     if not spec then return {} end
-    if spec.shapes then return spec.shapes end
+    if spec.shapes then return fillName(set) and spec.shapes or {} end
     local out = {}
     if fillName(set) then
         for _, s in ipairs(SHAPES45) do out[#out + 1] = s end
@@ -368,7 +369,7 @@ end
 -- 排出整個屋頂：set＝Roof.family 的回傳、shape＝Roof.shapes 的 id、dir＝它的方向之一（沒有方向的傳 nil）、
 -- x1..y2＝範圍（含兩端，世界座標）、z＝屋頂那一層、gable＝Roof.gableFamily 的回傳或 nil（不放山牆）。
 -- 回 groups, warn：groups＝{ { id＝圖名, cells＝{ { x, y, z, 0 }, … } }, … }（照第一次出現的順序；同一格可以有屋頂片和
--- 天花板各一片：藍圖只擋同一項目同一格（Plan.lua same）），warn＝{ HALF＝補了天花板 }
+-- 天花板各一片：藍圖只擋同一項目同一格（Plan.lua same）），warn＝{ HALF＝補了天花板, GAP＝山牆底下補不了牆的格數 }
 -- 或 nil；或 nil, 碼：TOO_SMALL 任一邊不到 2 格、TOO_WIDE 雙斜或四坡跨距超過上限（30 度 11 格；45 度沒有平頂片的款 6 格）、
 -- ODD_SPAN 45 度四坡奇數短邊 3、5 格而這一款沒有半格轉角片、TOO_HIGH 升超過藍圖的層數、
 -- DISABLED 要用的圖有一張 Entry.resolve 不成立（圖塊組、來源或種類被沙盒關掉；一片都不產生）
@@ -391,7 +392,7 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
     if shape == "hip" and key.half and not set.half and span % 2 == 1 and span < 2 * spec.rise then
         return nil, "ODD_SPAN" -- 四坡奇數短邊的屋脊頭要半格轉角片，這一款沒有
     end
-    local fill = key.half and fillName(set)
+    local fill = fillName(set)
 
     local order, byName, top, warn = {}, {}, 0, nil
     local function add(name, x, y, lv)
@@ -411,18 +412,25 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
         if not o then error("Roof.layout: no piece " .. k .. " in " .. set.fam) end
         add(ts .. "_" .. (base + o), x + (p and p[2] or 0), y + (p and p[3] or 0), lv)
     end
+    -- 照世界判斷（加進藍圖那一刻，客戶端）：格子沒載入就當沒有
+    local cell = getCell()
+    local function sq(x, y, lz) return cell and cell:getGridSquare(x, y, lz) or nil end
+    -- 屋頂層那格已經有實心地板（玩家鋪的、地圖原有的、之前蓋的天花板）：本來就封住了，不補（不換掉玩家的地板）
     local function putFill(x, y)
         if not fill then error("Roof.layout: no fill for " .. set.ts) end
+        local s = sq(x, y, z)
+        if s and s:has(IsoFlagType.solidfloor) then return end
         add(fill, x, y, 0)
-        warn = { HALF = true }
+        warn = warn or {}
+        warn.HALF = true
     end
     local d = {}
     for y = y1, y2 do
         for x = x1, x2 do
             d.N, d.S, d.W, d.E = y - y1, y2 - y, x - x1, x2 - x
             local kk, m = role(spec, eaves, d)
-            -- 45 度（平頂除外）每格先補天花板：同格的屋頂片、上一層的平頂片與往上接的片都靠它撐（Place.roofAt）
-            if key.half and kk ~= key.flat then putFill(x, y) end
+            -- 每格先補天花板（45 度平頂除外）：同格的屋頂片、上一層的平頂片與往上接的片都靠它撐（Place.roofAt）
+            if shape ~= "flat" then putFill(x, y) end
             if multi and m >= spec.rise then
                 put(set.ts, set.base, spec.off, nil, key.flat .. "1", x, y, 1)
             elseif kk ~= nil then
@@ -432,20 +440,58 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
     end
     -- 山牆：只有雙斜、單斜放，而且只在垂直屋簷的兩邊（雙斜的兩端、單斜的兩側；高的那面不放，同建築編輯器的預設）。
     -- 四坡、平頂沒有山牆，已選的山牆照常忽略（面板換形狀時不清掉選擇）。
-    -- 45 度跨距 7 以上的中段（離屋簷 3 格以上）不放：建築編輯器在那裡放別的牆圖塊組的整面牆（CapGap）
+    -- 山牆片底下的空段要一整面牆：45 度跨距 7 以上的中段（離屋簷 3 格以上：上一層是平頂片，這一層沒有山牆片）、單斜往上
+    -- 接的片底下那幾層。建築編輯器在那裡放別的牆圖塊組的整面牆（CapGap，例 walls_exterior_roofs_05 配
+    -- walls_exterior_house_02_020／021，BuildingTiles.r43.txt:46920-46925），山牆組自己沒有這種片。這裡用房子那條邊正下方
+    -- 那層的直牆圖（顏色和房子一致；牆疊在牆上，Place wallHeld）；那格是門框、窗框、牆角或沒有牆就用同一邊最近的一面直牆；
+    -- 整條邊都沒有直牆就不放，warn.GAP 記幾格（面板說要自己補牆，不無聲留缺口）
     local gs = gable and (shape == "gable" or shape == "shed") and spec.gable
     if gs and gable.fam ~= set.fam then error("Roof.layout: gable family " .. gable.fam .. " on " .. set.fam) end
+    local function straight(x, y, north) -- (x, y) 往下一層那條邊（north＝北邊，否則西邊）的直牆圖名或 false
+        local s = sq(x, y, z - 1)
+        local o = s and s:getWall(north) -- 引擎照 cutN／cutW 找（IsoGridSquare.getWall）：門框、窗框、牆角也會回，下面濾掉
+        local spr = o and o:getSprite()
+        if not (spr and Rules.classify(spr) == "wall") then return false end
+        local n, w = Entry.edges("wall", spr)
+        local name = spr:getName()
+        if n == north and w == not north and name and Entry.resolve(name) then return name end
+        return false
+    end
     if gs then
         local sides = (eaves.N or eaves.S) and { "W", "E" } or { "N", "S" }
         for _, side in ipairs(sides) do
             local along = side == "W" or side == "E"
-            for i = along and y1 or x1, along and y2 or x2 do
-                local x = side == "W" and x1 or side == "E" and x2 + 1 or i
-                local y = side == "N" and y1 or side == "S" and y2 + 1 or i
+            local a, b = along and y1 or x1, along and y2 or x2
+            local function at(i)
+                return side == "W" and x1 or side == "E" and x2 + 1 or i, side == "N" and y1 or side == "S" and y2 + 1 or i
+            end
+            local below = {}
+            for i = a, b do
+                local x, y = at(i)
+                below[i] = straight(x, y, not along) -- E 系列山牆片在格子西邊，S 系列在北邊
+            end
+            for i = a, b do
+                local x, y = at(i)
                 d.N, d.S, d.W, d.E = y - y1, y2 - y, x - x1, x2 - x
                 local kk, m = capRole(side, eaves, d)
-                if not (multi and m >= spec.rise) then
-                    put(gable.ts, gable.base, gs.off, nil, kk .. (m % spec.rise + 1), x, y, math.floor(m / spec.rise))
+                local lv = math.floor(m / spec.rise) -- 山牆片在第幾層；底下 0..lv-1 層要整面牆
+                if multi and m >= spec.rise then
+                    lv = 1
+                else
+                    put(gable.ts, gable.base, gs.off, nil, kk .. (m % spec.rise + 1), x, y, lv)
+                end
+                local name = below[i]
+                for k = 1, b - a do
+                    if name or lv == 0 then break end
+                    name = below[i - k] or below[i + k] or false
+                end
+                for l = 0, lv - 1 do
+                    if name then
+                        add(name, x, y, l)
+                    else
+                        warn = warn or {}
+                        warn.GAP = (warn.GAP or 0) + 1
+                    end
                 end
             end
         end

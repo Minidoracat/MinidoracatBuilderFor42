@@ -1351,6 +1351,30 @@ local function applyItems(v, list, jump, keep)
     W.setStatus(v)
 end
 
+-- 完整圖塊名命中（jump）時 listFor 不看頁籤、分類、來源：畫面上的頁籤、左欄與分類下拉、來源也換成「全部」，才和
+-- 方格列的一致（2026-11-17 實機：搜 roofs_01_0 後窄版下拉還寫「坡道」）。原本的記在 st.jumpPrev，搜尋字不再是
+-- 完整圖塊名（改字、清掉）時換回去；玩家自己換頁籤、分類、來源（leaveJump）或開「換成」就不回去。
+-- 回 true＝換回了原本的條件，清單要照它重列
+local function syncJump(v, jump)
+    local st = W.st
+    if jump then
+        if st.tab == "all" and (st.cat or "all") == "all" and st.source == "all" then return false end
+        st.jumpPrev = st.jumpPrev or { tab = st.tab, cat = st.cat, source = st.source }
+        st.tab, st.cat, st.source = "all", "all", "all"
+    elseif st.jumpPrev then
+        local p = st.jumpPrev
+        st.jumpPrev = nil
+        st.tab, st.cat, st.source = p.tab, p.cat, p.source
+    else
+        return false
+    end
+    v.tabs:setSelected(st.tab, true)
+    W.refreshTabs(v) -- 換回的頁籤這段時間被管理員關掉了：回「全部」
+    W.refreshSources(v) -- 換回的來源沒有了：回「全部」
+    W.refreshCats(v)
+    return not jump
+end
+
 -- keep＝true：保留捲動位置（整理進度、材料變動的重算）；false：換了條件，回到頂端或捲到選取
 function W.refilter(keep)
     local v = W.v
@@ -1359,6 +1383,7 @@ function W.refilter(keep)
     local st = W.st
     st.fav = Favorites.list
     local out, jump = W.filter(st)
+    if not st.set and syncJump(v, jump) then out, jump = W.filter(st) end
     -- 「只看能蓋的」還沒做完的那一批是換了條件（keep＝false，例：挑圖塊要選到那張）時，這次也照換了條件套，不然
     -- applyItems 會留住舊的選取
     if v.aff and not v.aff.keep then keep = false end
@@ -1875,10 +1900,15 @@ local function prepareDetail(v)
         or nil
     if setKey ~= v.setKey then
         v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil
-        -- 「屋頂助手」：選著屋頂、而且屋頂助手認得出這一項的整套才有（晚綁定：沒載入就沒有這顆）。認整套要掃一整組圖，
-        -- 和整套一樣只在換項目、目錄或設定時算。屋頂不是牆類、整套鈕一定按不了，所以占它的位置（W.layout 排在同一處）
-        local RP = B.RoofPanel
-        v.roofOn = e ~= nil and e.kind == "roof" and RP ~= nil and RP.available ~= nil and RP.available(name) == true
+        v.roofLate = true
+    end
+    -- 「屋頂助手」：選著屋頂、而且屋頂助手認得出這一項的整套才有（晚綁定：沒載入就沒有這顆）。認整套要掃一整組圖，
+    -- 和整套一樣只在換項目、目錄或設定時算；貼圖遮罩還沒載好（RP.available 第二個回傳）時不記住，下一次重組詳情
+    -- （選著東西時約每秒，SUMMARY_MS）再判。屋頂不是牆類、整套鈕一定按不了，所以占它的位置（W.layout 排在同一處）
+    if v.roofLate then
+        local RP, on, late = B.RoofPanel, false, false
+        if e ~= nil and e.kind == "roof" and RP ~= nil and RP.available ~= nil then on, late = RP.available(name) end
+        v.roofOn, v.roofLate = on == true, late == true
     end
     local set = v.setInfo
     local key = set and set.button or "IGUI_MBLD_Set"
@@ -2199,6 +2229,7 @@ function W.openReplace(playerNum, name)
     if not kind or not W.open(playerNum) then return false end
     local v, st = W.v, W.st
     st.replace = { name = name, spr = spr, kind = kind, label = Names.of(name, kind) }
+    st.jumpPrev = nil -- 頁籤、分類、來源照「換成」定，清搜尋後不回搜完整圖塊名之前的（syncJump）
     if st.set then -- 一次只開一個條件
         st.set = nil
         v.text, v.textN = {}, 0
@@ -2360,6 +2391,7 @@ end
 -- 頁籤、分類、來源）。玩家換頁籤、分類或來源就是要看別的：清掉它，清單照新的條件列；選著的那格在新清單裡就留著
 -- （applyItems）。2026-11-03 Workshop 回報：挑圖塊之後換什麼清單都不動
 local function leaveJump(v)
+    W.st.jumpPrev = nil -- 玩家自己換了條件：之後清掉搜尋字也不回搜完整圖塊名之前的（syncJump）
     local q = trim(W.st.query)
     local full = q:find("_%d+$") ~= nil
     if not (exactBucket(q) or (full and (listedAlt(q) or Recipes.forSprite(W.playerNum, q)))) then return end
