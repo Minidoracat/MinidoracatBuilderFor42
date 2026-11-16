@@ -584,9 +584,12 @@ function Server.dismantleDuration(player, n, i)
     if not it or player:isTimedActionInstant() then return 1 end
     local a = it.list[i]
     local sq = getCell():getGridSquare(a[1], a[2], a[3])
-    local obj = sq and Dismantle.find(sq, a[4])
-    local t = not obj and sq and Dismantle.hung(sq, a[4])
-    local kind = obj and Dismantle.kindOf(obj) or (t and t.kind) or nil
+    local obj, kind
+    if sq then obj, kind = Dismantle.find(sq, a[4]) end -- 兩個回傳值都要：不寫成 sq and f()
+    if not obj then
+        local t = sq and Dismantle.hung(sq, a[4])
+        kind = t and t.kind or nil
+    end
     if not kind then return 1 end
     return Entry.duration(kind, player)
 end
@@ -600,8 +603,9 @@ local function keepLanding(player, l)
         or Check.safehouse(player, { x = s:getX(), y = s:getY(), z = s:getZ(), sq = s }, true, "dismantle") ~= nil
 end
 
--- 拆一件：拆那格上 sprite 名稱相同、本 MOD 蓋的那件；格上沒有那件物件時，找那格掛著的那張地面覆蓋或牆面疊圖
--- （Dismantle.hung，不看記號）。物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），能不能拆照 Dismantle.check 重查。
+-- 拆一件：拆那格上 sprite 名稱相同、本工具拆得到的那件（Dismantle.find；坡道片照圖與位置找，不看記號）；格上沒有那件物件時，
+-- 找那格掛著的那張地面覆蓋或牆面疊圖（Dismantle.hung，不看記號）。物件由伺服器自己找（不傳物件：物件索引兩端的順序可能不同），
+-- 能不能拆照 Dismantle.check 重查。
 -- 退料表先讀完再移除（移除前 Place.onAboutToBeRemoved 清掉退料表、帳本清掉燈與家電）：同一件被兩個動作拆時，後到的
 -- 找不到物件（GONE），不會再退。燈、家電與平台只認帳本；掛上去的圖只認覆蓋帳本（Overlays）；其他照 Place.refundOf
 -- （一樓以下的地板在地板帳本，坡道在頭片那格那一筆）。查不到退料表的不拆（NOT_OURS，平台留著）；坡道殘組
@@ -611,10 +615,9 @@ local function unbuildOne(player, x, y, z, name)
     local at = { x = x, y = y, z = z }
     local sq = getCell():getGridSquare(x, y, z)
     if not sq then return "NOT_LOADED", at end
-    local obj = Dismantle.find(sq, name)
-    local kind, plan
+    local obj, kind = Dismantle.find(sq, name)
+    local plan
     if obj then
-        kind = Dismantle.kindOf(obj)
         plan = Dismantle.plan(obj, kind)
     else
         local t = Dismantle.hung(sq, name)

@@ -272,9 +272,9 @@ function Ledger.forgetDoor(anchor)
 end
 
 -- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp"] = 整組的退料表，鍵是頭片那格（Place.rampOrigin；一格只放得下一片斜面，
--- Place.check）。「這組是不是本 MOD 蓋的」只認這一筆：記號（modData）客戶端改得到，認片、清帳本都照圖與位置
--- （Place.refundOf、Place.onAboutToBeRemoved）。某片被本工具以外的方式移走時這一筆改成空表（作廢，Ledger.voidRamp）：
--- 剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪
+-- Place.check）。「這組是不是本 MOD 蓋的」只認這一筆；伺服器不看記號（modData），找片、認片、清帳本都照圖與位置
+-- （Dismantle.find、Place.refundOf、Place.onAboutToBeRemoved）。某片被本工具以外的方式移走時這一筆改成空表（作廢，
+-- Ledger.voidRamp）：剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪
 function Ledger.rampKey(x, y, z)
     return x .. "," .. y .. "," .. z .. ",ramp"
 end
@@ -293,12 +293,12 @@ function Ledger.getRamp(x, y, z)
     return Ledger.instance and L:get(Ledger.rampKey(x, y, z)) or nil
 end
 
--- 作廢：有那一筆時改成空表（不再退料、鍵留著）。空表比原本的小，放得回原處
+-- 作廢：有那一筆時改成空表（不再退料、鍵留著）。空表比原本的小，照理放得回原處；萬一放不回去就留著原本那筆、不刪鍵：
+-- 剩下的片照樣認得到這組，缺片的組拆除照殘組算（Dismantle.plan 的 partial），一樣不退料
 function Ledger.voidRamp(x, y, z)
     local k = Ledger.instance and Ledger.rampKey(x, y, z)
     if k and L:get(k) and not L:put(k, {}) then
-        L:del(k)
-        print(LOG .. "ramp ledger could not be voided; removed: " .. k)
+        print(LOG .. "ramp ledger could not be voided; kept: " .. k)
     end
 end
 

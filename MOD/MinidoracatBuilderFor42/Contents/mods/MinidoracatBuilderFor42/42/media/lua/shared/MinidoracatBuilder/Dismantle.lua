@@ -69,15 +69,21 @@ function Dismantle.kindOf(obj, memo)
     return kind
 end
 
--- 格上 sprite 名稱是 name、本 MOD 蓋的那件（會疊的箱子能搬，本工具不拆，所以同一張圖只會有一件拆得掉）
+-- 伺服器拆除用（Server.unbuildOne、Server.dismantleDuration）：格上 sprite 名稱是 name、本工具拆得到的那件與種類（會疊的
+-- 箱子能搬，本工具不拆，所以同一張圖只會有一件拆得掉）。坡道片照圖與位置認（Place.rampOrigin），不看記號：記號客戶端
+-- 改得到，這組是不是本 MOD 蓋的由伺服器照帳本認（Place.refundOf，查不到回 NOT_OURS）；其他照 Dismantle.kindOf
 function Dismantle.find(sq, name)
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         local spr = o:getSprite()
-        if spr and spr:getName() == name and Dismantle.kindOf(o) then return o end
+        if spr and spr:getName() == name then
+            if Place.rampOrigin(o) then return o, "ramp" end
+            local kind = Dismantle.kindOf(o)
+            if kind then return o, kind end
+        end
     end
-    return nil
+    return nil, nil
 end
 
 -- 掛上去的地面覆蓋與牆面疊圖（Rules.onFloor、Rules.onWall、Place.attach）：name 是會掛上去的圖、sq 上它該掛的那一件
@@ -133,7 +139,7 @@ end
 local STEPS = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
 
 -- 有沒有坡道最上面那片（Entry.rampTop）通到 (x, y, z + 1) 這格：那片在這格往下坡方向一格、下一層。skipX, skipY＝要拆的
--- 那一組自己最上面那片的位置（不算）。地圖原有的坡道也算
+-- 那一組自己最上面那片的位置（不算；沒有就傳 nil, nil）。地圖原有的坡道也算
 local function rampInto(cell, x, y, z, skipX, skipY)
     for _, d in ipairs(STEPS) do
         local tx, ty = x - d[1], y - d[2]
@@ -155,7 +161,17 @@ local function stairInto(cell, x, y, z)
     return (e and e:has(IsoObjectType.stairsTW)) or (s and s:has(IsoObjectType.stairsTN)) or false
 end
 
--- 這一組樓梯的平台：頂片往上爬那一側、上一層那格的 Entry.STAIR_FLOOR 一般物件（Entry.cells 的 platform）。照位置找，
+-- 本 MOD 會補的平台：樓梯的 Entry.STAIR_FLOOR 或任一組坡道的平台圖（Entry.isRampDeck），一般地板物件。共用一格的平台只由
+-- 先蓋的那組補（後蓋的看到有地板就不補，Place.build），所以樓梯、坡道收平台都認這幾種圖；是不是本 MOD 補的照舊由伺服器
+-- 帳本認（Server.dismantle 的 keepLanding）
+local function deckOf(o)
+    local spr = o:getSprite()
+    local name = spr and spr:getName()
+    if not (name == Entry.STAIR_FLOOR or (name and Entry.isRampDeck(name) and o:isFloor())) then return false end
+    return not (o:isStairsObject() or instanceof(o, "IsoThumpable"))
+end
+
+-- 這一組樓梯的平台：頂片往上爬那一側、上一層那格本 MOD 會補的平台（deckOf；Entry.cells 的 platform）。照位置找，
 -- 不照原版 buildUtil.getStairObjects 收：原版旁邊八格有別的地板就不收（ISBuildUtil.lua:523-537，原版分不出平台是不是
 -- 跟著樓梯補的），本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）。另一組往別的方向爬的
 -- 樓梯（同原版 countAdjacentStairs）或坡道（rampInto）也通到這格時不收，等最後一組拆掉時才拆。
@@ -171,20 +187,17 @@ local function landingOf(top, west)
         other = cell:getGridSquare(lx + 1, ly, z)
         if other and other:has(IsoObjectType.stairsTW) then return nil end
     end
-    if rampInto(cell, lx, ly, z) then return nil end
+    if rampInto(cell, lx, ly, z, nil, nil) then return nil end
     local sq = cell:getGridSquare(lx, ly, z + 1)
     local objects = sq and sq:getObjects()
     for i = 0, (objects and objects:size() or 0) - 1 do
         local o = objects:get(i)
-        local spr = o:getSprite()
-        if spr and spr:getName() == Entry.STAIR_FLOOR and not o:isStairsObject() and not instanceof(o, "IsoThumpable") then
-            return o
-        end
+        if deckOf(o) then return o end
     end
     return nil
 end
 
--- 這一組坡道的平台：坡頂往前 Entry.RAMP_DECK 格、上一層那格圖＝set.deck 的一般地板（Entry.cells 的 platform）。照位置找，
+-- 這一組坡道的平台：坡頂往前 Entry.RAMP_DECK 格、上一層那格本 MOD 會補的平台（deckOf；Entry.cells 的 platform）。照位置找，
 -- 本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）。別的坡道或樓梯也通到這格時不收
 -- （同 landingOf），等最後一組拆掉時才拆
 local function rampDecks(x, y, z, set)
@@ -197,8 +210,7 @@ local function rampDecks(x, y, z, set)
         local objects = sq and sq:getObjects()
         for i = 0, (objects and objects:size() or 0) - 1 do
             local o = objects:get(i)
-            local spr = o:getSprite()
-            if spr and spr:getName() == set.deck and not o:isStairsObject() and not instanceof(o, "IsoThumpable") then
+            if deckOf(o) then
                 out[#out + 1] = o
                 break
             end

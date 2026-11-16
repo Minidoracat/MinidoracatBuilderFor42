@@ -15852,6 +15852,14 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     set("rm_01", 0, "N", 20, 9830)
     add("rm_01_0", 9830, { SlopedSurfaceDirection = "N", SlopedSurfaceHeightMax = "5", IsMoveAble = "" })
     local rugS = add("rpr_01_0", 9793, {}, { "FloorOverlay" })
+    -- 樓梯平台圖（原版一定有；前面情境換過圖塊表時這裡補上）與一組 W 型樓梯（底、中、頂）
+    if not spriteMap[Entry.STAIR_FLOOR] then add(Entry.STAIR_FLOOR, 9797) end
+    for i, t in ipairs({ T.stairsBW, T.stairsMW, T.stairsTW }) do
+        local name = "rpt_01_" .. (i - 1)
+        local s = sprite(name, 9797 + i, { type = t, keys = { BlocksPlacement = "" } })
+        spriteMap[name], added[#added + 1] = s, name
+        spriteOrder[#spriteOrder + 1] = s
+    end
 
     -- 格子：移除時照引擎先觸發 OnObjectAboutToBeRemoved；退料掉在格上；getFloor 照引擎回第一個帶 solidfloor 的物件
     -- （IsoGridSquare.java:4637-4646；坡道片也是）；AddTileObject 記放置順序，failAt 那一格放進去之後丟錯
@@ -16062,18 +16070,42 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         table.remove(s9.objects)
         check(cc == "BLOCKED" and ec.y == 421 and Rules.classify(rugS) == "floorOverlay" and cr == nil,
             "坡道（Ramp）✗ 路線格上原本有容器：BLOCKED 指那一格；地毯（地面覆蓋）不擋")
-        -- 最後一片往平台那條邊：這一層（坡頂往前那格）或上一層（坡頂正上方到平台）有牆都擋
-        local top, ahead = at(424, 411), at(424, 410)
-        local rt = top.isSomethingTo
-        function top:isSomethingTo(o) return o == ahead end
-        local cw, ew = item424()
-        top.isSomethingTo = rt
+        -- 最後一片往平台那條邊：這一層（坡頂往前那格）或上一層（坡頂正上方到平台）有牆、窗、門都擋。那條邊照持有它的
+        -- 格子查（北、西邊由那格自己持有）：另一側格子不在（預覽時還沒載入）也查得到
+        local function flagged(sq, name, f)
+            local h = sq.has
+            function sq:has(k) return (type(k) == "table" and k.name or k) == name or h(self, k) end
+            local a, b = f()
+            sq.has = h
+            return a, b
+        end
+        local function prev424() return Check.item(P, "rp_01_0", 0, { 424, 430, 0 }, PV) end
+        local top = at(424, 411)
+        local cw, ew = flagged(top, "collideN", item424)
+        local cd, ed = flagged(top, "doorN", item424)
         local up = esq(424, 411, 1)
-        function up:isSomethingTo(o) return o == at(424, 410, 1) end
-        local cu, eu = item424()
-        squares["424,411,1"] = nil
-        check(cw == "BLOCKED" and ew.y == 411 and cu == "BLOCKED" and eu.y == 411 and item424() == nil,
-            "坡道（Ramp）✗ 坡頂和平台之間有牆（這一層或上一層）：BLOCKED，指最後一片")
+        local cu, eu = flagged(up, "windowN", item424)
+        check(cw == "BLOCKED" and ew.y == 411 and cd == "BLOCKED" and ed.y == 411 and cu == "BLOCKED" and eu.y == 411
+            and item424() == nil,
+            "坡道（Ramp）✗ 坡頂和平台之間有牆、門（這一層）或窗（上一層）：BLOCKED，指最後一片")
+        -- 北向：牆在坡頂格（持有北邊），前方格、平台格不在（預覽）
+        local aheadSq, deckSq = at(424, 410), at(424, 410, 1)
+        squares["424,410,0"] = nil
+        local pn, en = flagged(top, "collideN", prev424)
+        squares["424,410,0"] = aheadSq
+        squares["424,410,1"] = nil
+        local pu, eu2 = flagged(up, "collideN", prev424)
+        squares["424,410,1"], squares["424,411,1"] = deckSq, nil
+        -- 南向（頭片 (424,411)，坡頂 (424,430)）：那條邊是前方格／平台格的北邊，坡頂正上方那格不在
+        local deckS = esq(424, 431, 1)
+        local function south() return Check.item(P, "rp_01_24", 0, { 424, 411, 0 }, PV) end
+        local ps0 = south()
+        local ps, es = flagged(deckS, "collideN", south)
+        local pa, ea = flagged(at(424, 431), "collideN", south)
+        squares["424,431,1"] = nil
+        check(pn == "BLOCKED" and en.y == 411 and pu == "BLOCKED" and eu2.y == 411 and ps0 == nil and ps == "BLOCKED"
+            and es.y == 430 and pa == "BLOCKED" and ea.y == 430 and prev424() == nil,
+            "坡道（Ramp）✗ 預覽：出口那條邊的牆在持有那條邊的格子上（北向坡頂格、坡頂正上方；南向平台格、前方格），另一側格子還沒載入也 BLOCKED")
     end
 
     -- 放置（第 421 欄）：20 個一般物件、記號、頭片到最後一片的順序、平台、帳本整組一筆
@@ -16356,6 +16388,173 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         table.remove(rsq.objects)
         check(alone.landing and alone.landing[1] == land and shared.landing == nil,
             "坡道（Ramp）✗ 坡道頂也通到樓梯平台：拆樓梯時平台不收（沒有坡道時照收）")
+    end
+
+    -- 伺服器找坡道片照圖與位置（不看記號）：被點那片、整組的記號清掉照常拆；地圖坡道照圖找得到、帳本沒有 → NOT_OURS
+    do
+        fresh()
+        build(60, 427)
+        piece(427, 420, "rp_01_10").md = {}
+        local okC = unbuild(61, 427, 420, "rp_01_10")
+        local dropC = P:getCurrentSquare().dropped["Base.Plank"]
+        local goneC = column(427) == 0 and Ledger.getRamp(427, 430, 0) == nil and deck(427) == nil
+        build(62, 427)
+        for i = 0, 19 do piece(427, 430 - i, "rp_01_" .. i).md = {} end
+        P:getCurrentSquare().dropped = {}
+        sent = {}
+        Server.dismantleIntent(P, { n = 63, t = { 427, 425, 0, "rp_01_5" } })
+        local dur = Server.dismantleDuration(P, 63, 1)
+        sent = {}
+        Server.dismantle(P, 63, 1)
+        local okA = sent[#sent] and sent[#sent].cmd
+        local dropA = P:getCurrentSquare().dropped["Base.Plank"]
+        check(okC == "dismantled" and dropC == 20 and goneC and dur == Entry.duration("ramp", P) and dur > 1
+            and okA == "dismantled" and dropA == 20 and column(427) == 0 and Ledger.getRamp(427, 430, 0) == nil,
+            "坡道（Ramp）✗ 被點那片、整組的記號都清掉：伺服器照圖與位置找到，施工時間照坡道，整組拆、退一次（木板 20）")
+        for i = 0, 19 do
+            local o = piece(445, 430 - i, "rp_01_" .. i)
+            if o then o.md = {} end
+        end
+        local okN, codeN = unbuild(64, 445, 420, "rp_01_10")
+        check(okN == "dismantleSkipped" and codeN == "NOT_OURS" and column(445) == 19,
+            "坡道（Ramp）✗ 地圖坡道（沒有記號、帳本沒有那一筆）：伺服器照圖找到，NOT_OURS、一片不拆")
+    end
+    -- 共用平台的圖不同（先蓋的那組補、後蓋的不補）：最後一組拆掉時照樣收平台。引擎看到格上有地板就不補（sq:has 照格上
+    -- 物件算），假格子的 has 只看旗標，這裡補上
+    do
+        fresh()
+        local function floorAware(sq)
+            local h = sq.has
+            function sq:has(k)
+                if k == F.solidfloor then
+                    for _, o in ipairs(self.objects) do
+                        local s = o.getSprite and o:getSprite()
+                        if s and s:getProperties():has(F.solidfloor) then return true end
+                    end
+                end
+                return h(self, k)
+            end
+            return sq
+        end
+        local function west(n)
+            P.pos.x, P.pos.y = 440.5, 410.5
+            local c = intentCode(n, "rp_01_48", { 440, 410, 0, 0 })
+            sent = {}
+            local ok = c == nil and Server.complete(P, n, 1)
+            P.pos.y = 431.5
+            return ok
+        end
+        local function north(n)
+            P.pos.x = 420.5
+            local c = intentCode(n, "rn_01_0", { 420, 430, 0, 0 })
+            sent = {}
+            return c == nil and Server.complete(P, n, 1)
+        end
+        local function unWest(n)
+            P.pos.y = 410.5
+            local ok = unbuild(n, 440, 410, "rp_01_48")
+            P.pos.y = 431.5
+            return ok
+        end
+        -- 西向 rp_01（平台 rp_01_23）先蓋、北向 rn_01（平台圖退回 STAIR_FLOOR）後蓋；先拆西向，再拆北向
+        local dsq = floorAware(esq(420, 410, 1))
+        local b1, b2 = west(70), north(71)
+        local d1 = dsq.objects[1]
+        local one = #dsq.objects == 1 and d1.name == "rp_01_23" and Ledger.get(d1) ~= nil
+        local u1 = unWest(72)
+        local kept1 = dsq.objects[1] == d1
+        local u2 = unbuild(73, 420, 430, "rn_01_0")
+        check(b1 and b2 and one and u1 == "dismantled" and kept1 and u2 == "dismantled" and #dsq.objects == 0
+            and Ledger.get(d1) == nil,
+            "坡道（Ramp）✗ 兩組平台圖不同的坡道共用平台（rp_01_23 那組先蓋先拆）：最後拆的那組照樣收平台、帳本清掉")
+        -- 反過來：北向先蓋（平台 STAIR_FLOOR）、西向後蓋；先拆北向，再拆西向
+        dsq = floorAware(esq(420, 410, 1))
+        local c1, c2 = north(74), west(75)
+        local d2 = dsq.objects[1]
+        local two = #dsq.objects == 1 and d2.name == Entry.STAIR_FLOOR and Ledger.get(d2) ~= nil
+        local v1 = unbuild(76, 420, 430, "rn_01_0")
+        local kept2 = dsq.objects[1] == d2
+        local v2 = unWest(77)
+        check(c1 and c2 and two and v1 == "dismantled" and kept2 and v2 == "dismantled" and #dsq.objects == 0
+            and Ledger.get(d2) == nil,
+            "坡道（Ramp）✗ 反過來（STAIR_FLOOR 平台那組先蓋先拆）：最後拆的那組照樣收平台、帳本清掉")
+        -- 坡道與樓梯：先蓋的坡道補了 rp_01_23、先拆了（第 418 欄，平台因樓梯頂留著）→ 拆樓梯時收它
+        local tsq, d418 = at(419, 410), deck(418)
+        local st = { class = "IsoThumpable", md = { builderEntry = "rps_01_0" } }
+        local stairSpr = sprite("rps_01_1", 9796, { type = T.stairsTW })
+        function st:getSprite() return stairSpr end
+        function st:getSquare() return tsq end
+        function st:hasModData() return true end
+        function st:getModData() return self.md end
+        function st:isStairsObject() return true end
+        function st:isFloor() return false end
+        local realGet = buildUtil.getStairObjects
+        buildUtil.getStairObjects = function(o) return { o } end
+        local sp = Dismantle.plan(st, "stairs")
+        buildUtil.getStairObjects = realGet
+        check(d418 and sp.landing and sp.landing[1] == d418 and Ledger.get(d418) ~= nil,
+            "坡道（Ramp）✗ 坡道先拆、平台（rp_01_23）因樓梯頂留著：拆樓梯時收它（帳本有那筆，伺服器照帳本拆）")
+        -- 樓梯先拆、留下的 STAIR_FLOOR 平台（帳本有）→ 拆接在上面的坡道時收它
+        local ssq = floorAware(esq(427, 410, 1))
+        local land = ssq:addFloor(Entry.STAIR_FLOOR)
+        Ledger.put(land, {})
+        local okB = build(78, 427)
+        local only = #ssq.objects == 1
+        local okU = unbuild(79, 427, 430, "rp_01_0")
+        check(okB and only and okU == "dismantled" and #ssq.objects == 0 and Ledger.get(land) == nil and column(427) == 0,
+            "坡道（Ramp）✗ 樓梯先拆、平台（STAIR_FLOOR）留著：拆接在上面的坡道時收它、帳本清掉")
+    end
+    -- 移除事件：同組有片所在的格子沒載入時只作廢、不刪鍵；作廢寫不進去時留著原筆、不刪鍵（剩下的照殘組拆、不退料）
+    do
+        fresh()
+        esq(427, 410, 1)
+        build(80, 427)
+        -- 除了第 6 片（y=425）和要砸的第 15 片（y=416）都先悄悄拿掉（不觸發事件），再讓第 6 片那格沒載入：
+        -- 載入的格子裡已經沒有同組的片，只剩沒載入那格說不準
+        for i = 0, 19 do
+            if i ~= 5 and i ~= 14 then
+                local sq, o = at(427, 430 - i), piece(427, 430 - i, "rp_01_" .. i)
+                for k = #sq.objects, 1, -1 do if sq.objects[k] == o then table.remove(sq.objects, k) end end
+            end
+        end
+        local far = at(427, 425)
+        squares["427,425,0"] = nil
+        at(427, 416):transmitRemoveItemFromSquare(piece(427, 416, "rp_01_14"))
+        squares["427,425,0"] = far
+        local v = Ledger.getRamp(427, 430, 0)
+        local okV = unbuild(81, 427, 425, "rp_01_5")
+        check(v and next(v) == nil and okV == "dismantled" and column(427) == 0 and Ledger.getRamp(427, 430, 0) == nil,
+            "坡道（Ramp）✗ 某片被砸時同組剩下的片所在的格子沒載入：只作廢（空表）、不刪鍵，之後照殘組拆光")
+        esq(427, 410, 1)
+        build(82, 427)
+        local Store = MinidoracatBuilder.Store
+        local realPut = Store.put
+        Store.put = function() return false end
+        at(427, 416):transmitRemoveItemFromSquare(piece(427, 416, "rp_01_14"))
+        Store.put = realPut
+        local kept = Ledger.getRamp(427, 430, 0)
+        local okK = unbuild(83, 427, 420, "rp_01_10")
+        check(kept and kept["Base.Plank"] == 20 and okK == "dismantled" and next(P:getCurrentSquare().dropped) == nil
+            and column(427) == 0 and Ledger.getRamp(427, 430, 0) == nil,
+            "坡道（Ramp）✗ 作廢寫不進帳本：留著原筆、不刪鍵；剩下的照殘組拆光、不退料")
+    end
+    -- 樓梯平台 addFloor 加進格子卻回 nil：整組失敗，三片、平台都不留，不扣料
+    do
+        fresh()
+        for _ = 1, 20 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end -- 前面拆掉的退料掉在地上
+        local start = stock()
+        local lsq = esq(429, 433, 1)
+        local af = lsq.addFloor
+        function lsq:addFloor(name) af(self, name) return nil end
+        P.pos.x, P.pos.y = 430.5, 432.5
+        local c = intentCode(84, "rpt_01_0", { 430, 433, 0, 0 })
+        sent = {}
+        local ok = c == nil and Server.complete(P, 84, 1)
+        local code = sent[1] and sent[1].args and sent[1].args.code
+        P.pos.y = 431.5
+        local left = #at(430, 433).objects + #at(431, 433).objects + #at(432, 433).objects + #lsq.objects
+        check(c == nil and ok == false and code == "INTERNAL" and left == 0 and stock() == start,
+            "坡道（Ramp）✗ 樓梯平台 addFloor 加進格子卻回 nil：整組失敗（INTERNAL），三片、平台都不留，不扣料")
     end
 
     -- 伺服器
@@ -17112,6 +17311,73 @@ end)()
         "坡道關掉時：整組照樣算蓋好；✗ 缺中段不算（不退回只看頭片）")
     PC.reset()
 
+    -- 6c. 蓋好的坡道之後中段或平台被拆（頭片那格物件數沒變）：不 reset、只跑 tick，STALE_MS 到了就不再是 done；
+    --     沒到之前不重算這一片（✗ 不是每幀整組重算）。坡道放在玩家身邊 NEAR 格內
+    pl = Plan.new("rampStale")
+    local rq = Plan.add(pl, 30, 30, 0, 0, 0, Plan.item(pl, "pp_ramp"))
+    SHORT, CODE = false, {}
+    local function nearAt(dx, dz) return sqAt(OX + 30 + dx, OY + 30, dz or 0) end
+    local function staleCase(breakIt)
+        for i, name in ipairs({ "pp_ramp", "pp_ramp_1", "pp_ramp_2" }) do nearAt(i - 1).objs = { tile(name) } end
+        local deck = nearAt(3, 1)
+        deck.objs, deck.floor = {}, true
+        PC.reset()
+        frame(nil)
+        local before = PC.state(rq)
+        breakIt()
+        evals = {}
+        frame(nil)
+        local early, earlyEvals = PC.state(rq), evals[(OX + 30) .. "," .. (OY + 30)]
+        T = T + PC.STALE_MS
+        frame(nil)
+        return before == "done" and early == "done" and earlyEvals == nil and PC.state(rq) == "ok"
+    end
+    local midGone = staleCase(function() nearAt(1).objs = {} end)
+    local deckGone = staleCase(function() nearAt(3, 1).floor = false end)
+    check(midGone and deckGone,
+        "坡道蓋好後中段或平台被拆（頭片還在）：STALE_MS 到了就不再是蓋好；沒到之前不重算（✗ 不每幀整組重算）")
+    PC.reset()
+
+    -- 6d. 蓋好的車庫門、雙開門之後非錨點那片被拆（錨點那格物件數沒變）：同 6c，不 reset、只跑 tick，
+    --     沒到 STALE_MS 不重算、到了就不再是 done
+    do
+        local GSET = { garage = true, members = { pp_garage = true, pp_garage_2 = true } }
+        local DSET = { members = { pp_dbl = true, pp_dbl_2 = true } }
+        local fakeDoorSet, realGroupCells, fakeCells = Entry.doorSet, Entry.groupCells, Entry.cells
+        ENT.pp_garage = { kind = "door", spr = "pp_garage" }
+        ENT.pp_dbl = { kind = "door", spr = "pp_dbl" }
+        Entry.doorSet = function(spr) return (spr.name == "pp_garage" and GSET) or (spr.name == "pp_dbl" and DSET) or nil end
+        Entry.groupCells = function() return { { 0, 0, 0 }, { 1, 0, 0 } } end -- 車庫門兩格沿 +x
+        Entry.cells = function(spr) -- 雙開門（不是車庫門，佔地走 Entry.cells）兩格沿 +y
+            if spr.name == "pp_dbl" then return { { 0, 0, 0, spr }, { 0, 1, 0, spr } } end
+            return fakeCells(spr)
+        end
+        local function doorCase(id, other, otherName)
+            pl = Plan.new("groupStale")
+            local dp = Plan.add(pl, 30, 30, 0, 0, 0, Plan.item(pl, id))
+            SHORT, CODE = false, {}
+            sqAt(OX + 30, OY + 30, 0).objs = { tile(id) }
+            sqAt(OX + 30 + other[1], OY + 30 + other[2], 0).objs = { tile(otherName) }
+            PC.reset()
+            frame(nil)
+            local before = PC.state(dp)
+            sqAt(OX + 30 + other[1], OY + 30 + other[2], 0).objs = {}
+            evals = {}
+            frame(nil)
+            local early, earlyEvals = PC.state(dp), evals[(OX + 30) .. "," .. (OY + 30)]
+            T = T + PC.STALE_MS
+            frame(nil)
+            return before == "done" and early == "done" and earlyEvals == nil and PC.state(dp) == "ok"
+        end
+        local garageGone = doorCase("pp_garage", { 1, 0 }, "pp_garage_2")
+        local dblGone = doorCase("pp_dbl", { 0, 1 }, "pp_dbl_2")
+        Entry.doorSet, Entry.groupCells, Entry.cells = fakeDoorSet, realGroupCells, fakeCells
+        ENT.pp_garage, ENT.pp_dbl = nil, nil
+        check(garageGone, "車庫門蓋好後非錨點那片被拆：STALE_MS 到了就不再是蓋好；沒到之前不重算（✗ 不每幀整組重算）")
+        check(dblGone, "雙開門蓋好後非錨點那片被拆：STALE_MS 到了就不再是蓋好；沒到之前不重算（✗ 不每幀整組重算）")
+        PC.reset()
+    end
+
     -- 7. Runner 的環境（假的建造佇列、材料箱、動作佇列、玩家狀態）
     local pushes = {}
     Q.push = function(_, id, anchors) pushes[#pushes + 1] = { id = id, anchors = anchors }; return #pushes end
@@ -17548,6 +17814,19 @@ end)()
             "合法短碼被剪掉一段：舊的碼與結果清掉、存檔與擺放鈕不能按")
         f.text = ""
         frame()
+        typeIn(short)
+        f.text = short:sub(1, #short - 6) -- 剪下後還沒到下一幀就按「檢查」
+        imp:check()
+        local cutChecked = imp.code == nil and imp.plan == nil and imp.err ~= nil
+        typeIn(short)
+        f.text = "" -- 剪光後還沒到下一幀就按「擺放」
+        local placed, realPlace = 0, L.placePlan
+        L.placePlan = function() placed = placed + 1 end
+        imp:finish("place")
+        L.placePlan = realPlace
+        check(cutChecked and placed == 0 and imp.plan == nil,
+            "剪下後還沒到下一幀就按「檢查」或「擺放」：照框裡現在的字，不用剪下前的碼")
+        frame()
         typeIn(short) -- 框裡有字時按貼上鈕：清框不能讓下一幀把剛收下的長碼當成玩家清了框
         clip = code
         imp:paste()
@@ -17666,11 +17945,13 @@ end)()
             "換檔名的改名斷在新檔寫好、舊檔還沒標刪除：照舊檔擺回")
         PM.clear()
         record("echo.txt", "Echo")
+        local copy = PF.duplicate("echo.txt")
+        check(copy and PF.head(copy).name == "Echo", "藍圖庫複製：副本保留同一個名稱")
         PM.renaming("echo.txt", "Foxtrot two")
         check(PF.rename("echo.txt", "Foxtrot two") == "foxtrottwo.txt" and PF.load("echo.txt") == nil, "換檔名改名：新檔寫好、舊檔標成刪除")
         check(PM.restore() == true and PM.plan().file == "foxtrottwo.txt" and PS.load().file == "foxtrottwo.txt"
             and PS.load().name == PS.nameKey("Foxtrot two") and PS.load().renameTo == nil,
-            "換檔名的改名斷在舊檔標刪除後、記錄還沒改：照要改成的名稱找回新檔並改好記錄")
+            "換檔名的改名斷在舊檔標刪除後、記錄還沒改（舊名稱有副本）：只照要改成的名稱找回新檔並改好記錄")
         PM.clear()
         planFile("golf.txt", "Golf")
         record("golf.txt", "Golf")
@@ -17682,6 +17963,22 @@ end)()
         PS.save = realSave
         check(nf == nil and PF.load("golf.txt") ~= nil and PF.load("golf.txt").name == "GOLF" and PS.load().renameTo == nil,
             "✗ 記錄寫不進「要改成的名稱」：不改名（藍圖檔不動）")
+        planFile("mike.txt", "Mike")
+        record("mike.txt", "Mike")
+        local realWriter = getFileWriter
+        getFileWriter = function(p, ...) -- 正式檔寫壞（開檔清空、字沒寫進去），備份與記錄照常
+            if p:sub(-9) == "/mike.txt" then
+                disk[p] = ""
+                return { write = noop, close = noop }
+            end
+            return realWriter(p, ...)
+        end
+        nf = L.rename("mike.txt", "MIKE")
+        getFileWriter = realWriter
+        check(nf == nil and PS.load().renameTo == "MIKE", "改名時藍圖正式檔寫壞：回失敗、記錄留著要改成的名稱")
+        check(PM.restore() == true and PM.plan().name == "MIKE" and PS.load().name == "MIKE" and PS.load().renameTo == nil,
+            "改名時正式檔寫壞、備份已是新名稱：重進照新名稱擺回並改好記錄")
+        PM.clear()
         planFile("india.txt", "India")
         rec("india.txt", "Juliet", "Kilo")
         toasts = {}

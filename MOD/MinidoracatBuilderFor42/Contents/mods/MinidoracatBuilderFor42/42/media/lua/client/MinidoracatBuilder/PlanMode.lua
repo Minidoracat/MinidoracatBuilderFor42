@@ -449,12 +449,12 @@ local function knownName(st, name)
     return key == st.name or key == st.renameTo
 end
 
--- 藍圖資料夾裡名稱是記錄認得的檔：剛好一個才回它的檔名
-local function fileNamed(st)
+-- 藍圖資料夾裡名稱合 match(名稱) 的檔：剛好一個才回它的檔名
+local function fileNamed(match)
     local found
     for _, f in ipairs(PlanFile.list()) do
         local head = PlanFile.head(f)
-        if head and knownName(st, head.name) then
+        if head and match(head.name) then
             if found then return nil end
             found = f
         end
@@ -472,11 +472,18 @@ function PM.restore()
     local plan, why = PlanFile.load(st.file)
     -- 正式檔與備份都不在資料夾裡：被刪掉了（例如在檔案總管刪的），不是一時打不開
     if not plan and why == "NO_FILE" and not PlanFile.exists(st.file) then why = "GONE" end
-    -- 檔不在、記錄有名稱：檔被改了名（藍圖庫以外的地方）時照名稱找回；藍圖庫改名換了檔名、還沒改記錄就斷掉時，
-    -- 舊檔已標成刪除，記錄有「要改成的名稱」也照名稱找。同名的剛好一張才接，零張或好幾張照舊算沒了
+    -- 檔不在、記錄有名稱：檔被改了名（藍圖庫以外的地方）時照記錄認得的名稱找回。藍圖庫改名換了檔名、還沒改記錄就斷掉時，
+    -- 舊檔已標成刪除，只找「要改成的名稱」：藍圖庫的複製保留原名稱，舊名稱可能還有一份副本。
+    -- 同名的剛好一張才接，零張或好幾張照舊算沒了
     local moved = false
-    if (why == "GONE" and st.name) or (why == "DELETED" and st.renameTo) then
-        local f = fileNamed(st)
+    local match
+    if why == "GONE" and st.name then
+        match = function(name) return knownName(st, name) end
+    elseif why == "DELETED" and st.renameTo then
+        match = function(name) return PlanStore.nameKey(name) == st.renameTo end
+    end
+    if match then
+        local f = fileNamed(match)
         local p2, why2 = nil, nil
         if f then p2, why2 = PlanFile.load(f) end
         if p2 then

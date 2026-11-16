@@ -283,11 +283,21 @@ local function rampClear(sq)
     return true
 end
 
+-- 一條格邊上有沒有牆、窗、門：北、西邊由這格自己持有（IsoGridSquare.java:3533-3565），旗標同 isSomethingTo 的三項
+-- （isWall＝collideN／W 而且不是窗、isWindow＝windowN／W、isDoor＝doorN／W，IsoGridSquare.java:655-661,788-842），
+-- 不需要另一側的格子
+local function edgeBlocked(sq, north)
+    if not sq then return false end
+    if north then return sq:has(F.collideN) or sq:has(F.windowN) or sq:has(F.doorN) end
+    return sq:has(F.collideW) or sq:has(F.windowW) or sq:has(F.doorW)
+end
+
 -- 坡道一片（Entry.cells；role＝platform 是坡頂上一層的平台，同樓梯的平台只要不實心）。比照樓梯：不在最高層、踩在地板上
 -- （z=0 的地面也算），不放在高草、樹、水、實心或擋放置的東西上，格上沒有人、沒有車，不擋到樓梯，格上原本的東西留得下
--- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門（isSomethingTo），
--- 不然走到坡頂過不去。格上已經有斜面的由 Place.check 開頭擋（slopeOk）。正上方有地板不擋：探針走得過去
--- （見 builder-dev placement.md「坡道」）
+-- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門，不然走到坡頂
+-- 過不去。那條邊照持有它的格子查（edgeBlocked）：往北、西上坡是坡頂格與它正上方那格，往南、東是前方格與平台格；
+-- 預覽時另一側的格子可能還沒載入，照樣查得到。格上已經有斜面的由 Place.check 開頭擋（slopeOk）。正上方有地板不擋：
+-- 探針走得過去（見 builder-dev placement.md「坡道」）
 local function rampOk(spr, sq, role)
     if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
@@ -298,10 +308,11 @@ local function rampOk(spr, sq, role)
     if not rampClear(sq) then return false end
     local dx, dy = Entry.rampTop(spr)
     if dx then
-        local cell = getCell()
-        local ahead, up, deck = cell:getGridSquare(x + dx, y + dy, z), cell:getGridSquare(x, y, z + 1),
-            cell:getGridSquare(x + dx, y + dy, z + 1)
-        if (ahead and sq:isSomethingTo(ahead)) or (up and deck and up:isSomethingTo(deck)) then return false end
+        local cell, ox, oy = getCell(), x, y
+        if dx + dy > 0 then ox, oy = x + dx, y + dy end -- 往南、東：那條邊是前方格的北、西邊
+        local own, ownUp = sq, cell:getGridSquare(ox, oy, z + 1)
+        if ox ~= x or oy ~= y then own = cell:getGridSquare(ox, oy, z) end
+        if edgeBlocked(own, dy ~= 0) or edgeBlocked(ownUp, dy ~= 0) then return false end
     end
     if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
     return not buildUtil.stairIsBlockingPlacement(sq, true)
@@ -507,8 +518,9 @@ function Place.dug(obj)
 end
 
 -- 帶本 MOD 記號的坡道一片：一般物件（不是 IsoThumpable，Place.build），記號 builderEntry＝那一組的頭片名，圖帶斜面屬性。
--- 記號被改過、圖和記號對不上的不算（只看物件與圖，不碰世界）。記號只決定右鍵選單列不列（Dismantle.kindOf）；伺服器認
--- 「是不是本 MOD 蓋的」、退多少只看頭片那格那一筆帳本（Place.refundOf），收哪些片照位置與圖名（Place.rampOrigin）
+-- 記號被改過、圖和記號對不上的不算（只看物件與圖，不碰世界）。記號只決定客戶端右鍵選單與一區拆除列不列
+-- （Dismantle.kindOf）；伺服器不看記號：找片照圖與位置（Dismantle.find、Place.rampOrigin），「是不是本 MOD 蓋的」、
+-- 退多少只看頭片那格那一筆帳本（Place.refundOf）
 function Place.ramp(obj)
     if instanceof(obj, "IsoThumpable") or not obj:hasModData() then return false end
     local e = obj:getModData().builderEntry

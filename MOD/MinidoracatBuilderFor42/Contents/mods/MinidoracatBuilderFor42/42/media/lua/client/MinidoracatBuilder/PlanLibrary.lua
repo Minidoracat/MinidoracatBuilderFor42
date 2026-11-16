@@ -720,16 +720,14 @@ local function retarget(file, nf, name)
 end
 
 -- 改名：回 新檔名，或 nil, 句子。檔名跟著改（PlanFile.rename：寫新檔、舊檔標成刪除）。
--- 地上那張是這個檔時，先在記錄寫下要改成的名稱（PM.renaming），寫檔與改記錄中間斷掉時讀回認得
+-- 地上那張是這個檔時，先在記錄寫下要改成的名稱（PM.renaming），寫檔與改記錄中間斷掉時讀回認得。
+-- 改名失敗也不清：存檔可能已經寫好新名稱的備份、只有正式檔沒寫成，下次讀回的是新名稱。
+-- 兩個名稱都認只到下一次存檔、讀回或改名（storePlan、PM.restore、PM.retarget 會清掉）
 function L.rename(file, name)
     local PM = B.PlanMode
-    local pending = PM and PM.renaming
-    if pending and not pending(file, Plan.cleanName(name)) then return nil, L.errText("WRITE", 0) end
+    if PM and PM.renaming and not PM.renaming(file, Plan.cleanName(name)) then return nil, L.errText("WRITE", 0) end
     local nf, why = PlanFile.rename(file, name)
-    if not nf then
-        if pending then pending(file, nil) end
-        return nil, L.errText(why, 0)
-    end
+    if not nf then return nil, L.errText(why, 0) end
     retarget(file, nf, Plan.cleanName(name))
     if used[file] then L.markUsed(nf, file) end
     if why == "OLD_LEFT" then L.tell(getText("IGUI_MBLD_Lib_OldLeft", file)) end
@@ -1315,8 +1313,14 @@ function Imp:typed(_, text)
     end
 end
 
+-- 文字欄的字和上次處理過的不同（剪下之後還沒到下一幀）：先照框裡現在的字重來
+local function sync(self)
+    if self.field then self:typed(self.field, self.field:getText()) end
+end
+
 -- 分享碼優先（已讀到的、再來是文字欄裡打到一半的）；都沒有才讀選的檔
 function Imp:check(pasted)
+    sync(self)
     self.pasted = pasted == true
     local file = self.fileDD:getSelected()
     local typed = self.field and self.field:getText() or ""
@@ -1387,6 +1391,7 @@ function Imp:render()
 end
 
 function Imp:finish(how)
+    sync(self)
     local plan = self.plan
     if not plan then return end
     if how == "store" then

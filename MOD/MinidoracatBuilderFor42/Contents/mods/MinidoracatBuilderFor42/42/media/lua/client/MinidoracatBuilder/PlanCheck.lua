@@ -1,10 +1,12 @@
 -- 藍圖每一片在世界上的狀態（只在客戶端、只給畫面與照圖蓋用）：地上的藍圖向 PlanMode 要，分幀算、由近到遠。
--- 「蓋好了」只看世界上那一格有沒有同一張圖（誰蓋的、地圖原有的都算；門開著、窗破了、多格物件的其他片都認回同一張），
+-- 「蓋好了」只看世界上有沒有同一張圖（誰蓋的、地圖原有的都算；門開著、窗破了、多格物件的其他片都認回同一張）：
+-- 一般項目看錨點那一格，車庫門、雙開門、坡道看整組每一格（坡道的平台格有任何地板就算）；
 -- 沒有才問 Check.item（帶游標預覽同一組 opts），能不能蓋不另外判斷。配方項目看 Recipes。
 -- 算完整張後只重查有變動的片：PlanCheck.touch 的格子、背包或技能變了（材料摘要每秒比一次）、沙盒設定變了、
 -- 玩家換樓層或走開 MOVE 格（重查還沒載入或太遠的片）、玩家身邊 NEAR 格內格上的物件數變了（每幀輪流比一段）。
 -- 會自己消失、又不改物件數的原因（PlanCheck.RECHECK：有人或車擋著、配方太暗）看不出來：身邊的片隔一段時間重查一次。
 -- 放不下（BLOCKED）的片也隔 STALE_MS 重查：撐它的東西可能蓋在別格、藍圖外，那一格的物件數比不到。
+-- 蓋好的多格組（車庫門、雙開門、坡道）也隔 STALE_MS 重查整組：物件數只比錨點那格，其他格被拆看不出來。
 -- 放不下、但旁邊還有會蓋的片的，細節碼報 WAIT（等旁邊先蓋好，見 waiting），狀態照舊是 blocked。
 -- 沒有地上的藍圖時 OnTick 第一行就離開。
 require "MinidoracatBuilder/Entry"
@@ -208,10 +210,10 @@ local function built(id, x, y, z, d, w, sq)
             local s = cell:getGridSquare(x + o[1], y + o[2], z + o[3])
             if not (s and eachTile(s, function(name) return set.members[name] == true end)) then return false end
         end
-        return true
+        return true, 0, 0, #offs > 1
     end
     -- 坡道一片代表整組：頭片在、中段或平台不在的殘組不算蓋好
-    if Entry.rampSet(spr) then return rampBuilt(cell, offs, x, y, z) end
+    if Entry.rampSet(spr) then return rampBuilt(cell, offs, x, y, z), 0, 0, true end
     return hasTile(sq, spr:getName())
 end
 
@@ -442,10 +444,11 @@ local function evaluate(player, p, r)
         return
     end
     local sq = cell:getGridSquare(x, y, z)
-    local ok, done, dx, dy = pcall(built, id, x, y, z, d, w, sq)
+    local ok, done, dx, dy, group = pcall(built, id, x, y, z, d, w, sq)
     -- 物件數看 built 查圖的那一格（配方片第一格有圖的可能不在錨點）：那一件被拆掉時 sweep 才看得出來
     r.wx, r.wy = ok and dx or 0, ok and dy or 0
     r.sig = sigOf((r.wx == 0 and r.wy == 0) and sq or cell:getGridSquare(x + r.wx, y + r.wy, z))
+    r.group = (ok and done and group) or nil -- 蓋好的多格組：sweep 隔 STALE_MS 重查整組
     if ok and done then
         r.s, r.c = "done", nil
         return
@@ -524,8 +527,8 @@ local function changed(now, player)
     end
 end
 
--- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查。RECHECK 的片到時間就重查（時鐘往回調時也查）。
--- 每幀都跑：表與欄位在迴圈外先取，間隔只在物件數沒變、有細節碼時才算
+-- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查。RECHECK 的片、放不下的片、蓋好的多格組到時間就重查
+-- （時鐘往回調時也查）。每幀都跑：表與欄位在迴圈外先取，間隔只在物件數沒變、有細節碼或是蓋好的多格組時才算
 local function sweep(player, now)
     local n = cur.n
     if n == 0 then return end
@@ -547,8 +550,8 @@ local function sweep(player, now)
                     -- 先比物件數再看到不到期：兩件事同時發生時也要連旁邊一起查
                     push(p)
                     PlanCheck.touch(sx, sy, z)
-                elseif c then
-                    local every = recheck[c] or (c == "BLOCKED" and stale)
+                elseif c or r.group then
+                    local every = c and (recheck[c] or (c == "BLOCKED" and stale)) or stale
                     local at = r.at or now -- 上次算這一片的時間（tick 記的）
                     if every and (now < at or now - at >= every) then push(p) end
                 end
