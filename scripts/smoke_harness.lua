@@ -11854,34 +11854,46 @@ print("情境（車庫門與雙開門）：整組一個項目、拖一排定寬�
     local unloaded = Dismantle.plan(d1, "door").incomplete
     squares["304,307,0"] = q4
     check(unloaded == "NOT_LOADED", "雙開門有片的格子沒載入：整組不拆（NOT_LOADED）")
-    -- 開關過的雙開門：引擎重建的第 2、3 片耐久照預設（IsoDoor.java:2715-2745），「殭屍敲不破門」開著時下一個 tick 補回
-    local function toggled(x)
-        local d = doorAt(x, 307, 0, true)
-        at(x, 307):transmitRemoveItemFromSquare(d)
-        d.hp = 500
-        at(x, 307).objects[#at(x, 307).objects + 1] = d
-        return d
+    -- 開關過的雙開門：照引擎的順序（IsoDoor.java:2650-2745）每片先翻開關狀態，第 2、3 片再從舊格移除（事件裡讀到的已是新
+    -- 狀態、位置還是舊格），在斜對角那一格建一片沒記號、耐久照預設的新物件。「殭屍敲不破門」開著時下一個 tick 補回
+    local function toggle()
+        local first = doorAt(301, 307, 0, true)
+        local open, pieces = not first.open, {}
+        for i = 1, 4 do pieces[i] = IsoDoor.getDoubleDoorObject(first, i) end
+        local t = DD.N[open]
+        for i, d in ipairs(pieces) do
+            d.open = open
+            if i == 2 or i == 3 then
+                d.sq:transmitRemoveItemFromSquare(d)
+                local sq = at(301 + t[1][i], 307 + t[2][i])
+                local n = IsoDoor.new(nil, sq, d.spr:getName(), true)
+                n.open = open
+                sq.objects[#sq.objects + 1] = n
+            end
+        end
+        return IsoDoor.getDoubleDoorObject(first, 2), IsoDoor.getDoubleDoorObject(first, 3)
     end
     local ticks = handlers.OnTick
     handlers.OnTick = {} -- 只看這一段掛上去的 tick（別的模組的 tick 要它們自己的假環境）
-    toggled(302)
-    toggled(303)
+    local offA, offB = toggle() -- 開
     fire("OnTick")
-    local offHooked, offA, offB = count("OnTick"), doorAt(302, 307, 0, true).hp, doorAt(303, 307, 0, true).hp
+    local offHooked, offHpA, offHpB = count("OnTick"), offA and offA.hp, offB and offB.hp
     sb.ZombieProofDoors = true
-    local onA, onB = toggled(302), toggled(303)
-    local early, hooked = onA.hp, count("OnTick")
+    local onA, onB = toggle() -- 關回來
+    local early, hooked = onA and onA.hp, count("OnTick")
     fire("OnTick")
-    local hpA, hpB, after = onA.hp, onB.hp, count("OnTick")
+    local hpA, hpB, after = onA and onA.hp, onB and onB.hp, count("OnTick")
     sb.ZombieProofDoors = nil
     handlers.OnTick = ticks
-    check(offHooked == 0 and offA == 500 and offB == 500, "雙開門開關、「殭屍敲不破門」關著：第 2、3 片耐久不動、不掛 tick（"
-        .. tostring(offHooked) .. "、" .. tostring(offA) .. "、" .. tostring(offB) .. "）")
+    check(offA ~= nil and offA ~= d2 and onA ~= offA and doorsAt(quad) == "hdd_01_2 hdd_01_3 hdd_01_10 hdd_01_11",
+        "夾具：開關兩次後四片回到原位，第 2、3 片是新物件")
+    check(offHooked == 0 and offHpA == 500 and offHpB == 500, "雙開門開關、「殭屍敲不破門」關著：第 2、3 片耐久不動、不掛 tick（"
+        .. tostring(offHooked) .. "、" .. tostring(offHpA) .. "、" .. tostring(offHpB) .. "）")
     check(early == 500 and hooked == 1 and hpA == 1000000000 and hpB == 1000000000,
         "雙開門開關、「殭屍敲不破門」開著：下一個 tick 第 2、3 片補回敲不破（" .. tostring(hpA) .. "、" .. tostring(hpB)
         .. "；兩片只掛一次 " .. tostring(hooked) .. "）")
     check(after == 0, "補完就摘掉 tick：不留每 tick 的成本")
-    onA.hp, onB.hp = 500, 500
+    for i = 1, 4 do IsoDoor.getDoubleDoorObject(d1, i).hp = 500 end
     -- 審查 C2：門每片至少收打壞會掉的五金（IsoDoor.destroy：門把 1、鉸鏈 0–2；三個材質都沒寫再掉木板 1–2）
     local function price(name, keys, m)
         local s = sprite(name, 9160, { flags = { "doorN" }, keys = keys })

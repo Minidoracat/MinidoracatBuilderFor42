@@ -1271,29 +1271,34 @@ function Place.clearDirt(kind, cells)
     end
 end
 
--- 本 MOD 蓋的雙開門開關時，第 2、3 片換成耐久照預設的新物件（IsoDoor.java:2715-2745）：沙盒「殭屍敲不破門」開著的話，
--- 下一個 tick（新的片建好之後）照第一片找回這兩片、補回耐久。兩端各自做（同 Place.migrate）；補完就摘掉 tick
+-- 雙開門開關時，第 2、3 片從舊格移除、在斜對角那一格建一片耐久照預設的新物件（IsoDoor.java:141-148,2650-2745）。沙盒
+-- 「殭屍敲不破門」開著的話，下一個 tick（新的片建好之後）在舊格周圍一圈找本 MOD 的門、補回耐久。移除當下那一片的開關
+-- 狀態已經翻過、位置還在舊格，照它推第一片會找錯格（getDoubleDoorObject，:2785-2816），所以當下不認是誰的門，只記位置。
+-- 兩端各自做（同 Place.migrate）；補完就摘掉 tick
 do
     local pending = {}
     local function flush()
         Events.OnTick.Remove(flush)
-        local list = pending
+        local list, cell = pending, getCell()
         pending = {}
-        for _, a in ipairs(list) do
-            if a:getSquare() then
-                for i = 2, 3 do
-                    local o = IsoDoor.getDoubleDoorObject(a, i)
-                    if o then Place.harden(o) end
+        for _, p in ipairs(list) do
+            for x = p[1] - 1, p[1] + 1 do
+                for y = p[2] - 1, p[2] + 1 do
+                    local sq = cell:getGridSquare(x, y, p[3])
+                    local objects = sq and sq:getObjects()
+                    for i = 0, (objects and objects:size() or 0) - 1 do
+                        local o = objects:get(i)
+                        if instanceof(o, "IsoDoor") and Place.ourDoor(o) then Place.harden(o) end
+                    end
                 end
             end
         end
     end
     function Place.reharden(obj)
-        if not proof("ZombieProofDoors") then return end
-        local a = Place.doorAnchor(obj)
-        if not (a and a:hasModData() and a:getModData().builderEntry) or pending[#pending] == a then return end
+        local sq = proof("ZombieProofDoors") and obj:getSquare()
+        if not sq then return end
         if #pending == 0 then Events.OnTick.Add(flush) end
-        pending[#pending + 1] = a
+        pending[#pending + 1] = { sq:getX(), sq:getY(), sq:getZ() }
     end
 end
 
