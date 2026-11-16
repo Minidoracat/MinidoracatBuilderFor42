@@ -1179,9 +1179,12 @@ function Imp.new(UI, pn)
     local th
     if UI.CAPABILITIES.textFieldSync == true then
         local bw = pasteBtn and pasteBtn.width + GAP or 0
+        -- onTextChange（同步）只涵蓋打字、刪除、貼上、清除；剪下、輸入法送出、截字不叫它，由每幀的 onChange 補
+        -- （框架 rev 28 交接檔「結果」）。兩個走同一條 typed，同一段字只處理一次（Imp.seen）
+        self.seen = ""
+        local function typed(f, text) self:typed(f, text) end
         self.field = UI.TextField.new({ x = PAD, y = y, width = innerW - bw, text = "", maxLength = Imp.TYPE_MAX,
-            placeholder = getText("IGUI_MBLD_Imp_CodeField"), theme = theme,
-            onTextChange = function(f, text) self:typed(f, text) end })
+            placeholder = getText("IGUI_MBLD_Imp_CodeField"), theme = theme, onTextChange = typed, onChange = typed })
         win:addChild(self.field)
         local rowH = self.field.height
         if pasteBtn then
@@ -1216,7 +1219,7 @@ function Imp.new(UI, pn)
     self.fileDD = UI.Dropdown.new({ x = PAD, y = y, width = innerW - checkBtn.width - GAP, options = opts,
         placeholder = getText(#opts > 0 and "IGUI_MBLD_Imp_FileHint" or "IGUI_MBLD_Imp_NoFiles"), theme = theme, target = self,
         onChange = function(t)
-            if t.field then t.field:setText("") end
+            t:clearField()
             t:setCode(nil)
             t:check()
         end })
@@ -1261,11 +1264,18 @@ function Imp:take(s)
     self:check(true)
 end
 
+-- 清空文字欄（setText 不觸發兩個回呼）：記成已處理過空字串，下一幀的 onChange 不會把剛收下的碼當成玩家清了框
+function Imp:clearField()
+    if not self.field then return end
+    self.field:setText("")
+    self.seen = ""
+end
+
 -- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦。
 -- 再按一次＝換成新的
 function Imp:paste()
     local s = L.paste()
-    if self.field then self.field:setText("") end
+    self:clearField()
     if not s or s == "" then
         self:setCode(nil)
         self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_ClipEmpty"), true
@@ -1274,13 +1284,17 @@ function Imp:paste()
     self:take(s)
 end
 
--- 文字欄的同步回呼（框架 TextField 的 onTextChange；貼上、打字、刪除的當下，複製之前）。
--- 超過 TYPE_MAX：先清框（框裡永遠不留長字串，就沒有東西能被複製）再照貼上鈕收。
--- 短的留在框裡：是完整的分享碼就直接採用；不是就當玩家還在打，不寫錯誤，按「檢查」才檢查
-function Imp:typed(field, text)
+-- 文字欄的回呼（同步的 onTextChange 與每幀的 onChange 都走這裡；同一段字只處理一次）。
+-- 超過 TYPE_MAX：先清框（框裡永遠不留長字串，就沒有東西能被複製）再照貼上鈕收；同步回呼拿到的字可能比 maxLength 長
+-- （截字要等 update），照長度判斷正好接住。
+-- 其餘的字就是框裡現在的字：是完整的分享碼就直接採用；不是（打到一半、剪掉了）就丟掉上次讀到的碼與結果、不寫錯誤，
+-- 按「檢查」才檢查框裡的字。分享碼的錯誤由 L.parseCode 回原因、不丟錯
+function Imp:typed(_, text)
     text = text or ""
+    if text == self.seen then return end
+    self.seen = text
     if #text > Imp.TYPE_MAX then
-        field:setText("")
+        self:clearField()
         return self:take(text)
     end
     if text ~= "" and L.parseCode(text) then

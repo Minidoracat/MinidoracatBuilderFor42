@@ -15990,6 +15990,13 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         "坡道（Ramp）轉向：1..4 回北、東、南、西的頭片；沒有配對面")
     check(face("rn_01_0", 1) == "rn_01_0" and face("rn_01_0", 2) == nil and face("rn_01_0", 3) == nil,
         "坡道（Ramp）轉向：✗ 圖塊組沒有那個方向回 nil")
+    do -- 藍圖轉向接真的 Entry（PlanMode.turnPiece 的坡道分支）
+        local tp = MinidoracatBuilder.PlanMode and MinidoracatBuilder.PlanMode.turnPiece
+        check(tp and tp({ d = 0 }, { id = "rp_01_0" }) == 2 and tp({ d = 2 }, { id = "rp_01_0" }) == 3
+            and tp({ d = 3 }, { id = "rp_01_0" }) == 4 and tp({ d = 4 }, { id = "rp_01_0" }) == 0
+            and tp({ d = 0 }, { id = "rp_01_48" }) == 1 and tp({ d = 0 }, { id = "rn_01_0" }) == nil,
+            "坡道（Ramp）藍圖轉向（真的 Entry）：北→東→南→西→回自己那張（0）；西向的頭片轉到北；✗ 沒有下一個方向回 nil")
+    end
     -- 成本
     local sprs = {}
     for k, o in ipairs(Entry.cells(Entry.sprite("rp_01_0"))) do sprs[k] = o[4] end
@@ -16863,9 +16870,14 @@ end)()
         Window = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height, title = o.title }) end },
         TileGrid = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height, items = {} }) end },
         Button = { new = function(o) return el({ title = o.title, target = o.target, onClick = o.onClick }) end },
-        TextField = { new = function(o)
-            return el({ x = o.x, y = o.y, width = o.width, text = o.text or "", field = true, maxLength = o.maxLength,
-                onTextChange = o.onTextChange })
+        TextField = { new = function(o) -- 照框架 rev 28：setText 不叫兩個回呼、同步 onChange 的比對基準
+            local f = el({ x = o.x, y = o.y, width = o.width, text = o.text or "", field = true, maxLength = o.maxLength,
+                onTextChange = o.onTextChange, onChange = o.onChange })
+            f.last = f.text
+            function f.setText(s, t)
+                s.text, s.last = t, t
+            end
+            return f
         end },
         Dropdown = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, options = o.options, onChange = o.onChange }) end,
             close = noop },
@@ -16987,9 +16999,16 @@ end)()
         check(f ~= nil and f.maxLength == imp.TYPE_MAX and imp.TYPE_MAX == 200 and btn and btn.y == f.y and btn.x > f.x
             and imp.status.y > f.y and imp.status.y + imp.status.height <= imp.fileDD.y,
             "有 textFieldSync：第一列文字欄＋貼上鈕，狀態行在第二列，不蓋到檔案清單")
-        local function typeIn(s) -- 原生框收到字（貼上、打字）：照框架同步呼叫 onTextChange
+        local function frame() -- 下一幀：框架每幀比對，字變了才叫 onChange
+            if f.text ~= f.last then
+                f.last = f.text
+                if f.onChange then f.onChange(f, f.text) end
+            end
+        end
+        local function typeIn(s) -- 原生框收到字（貼上、打字）：照框架同步呼叫 onTextChange，再過一幀
             f.text = s
             f.onTextChange(f, s)
+            frame()
         end
         typeIn(string.rep("A", 97746))
         check(#f.text == 0 and imp.code == nil and imp.err == "IGUI_MBLD_Imp_TooLong" and imp.plan == nil,
@@ -17011,6 +17030,27 @@ end)()
         typeIn(short)
         check(#short <= 200 and f.text == short and imp.code == short and imp.plan ~= nil and imp.plan.name == "S",
             "文字欄收到短的合法碼（" .. #short .. " 字）：留在框裡、直接採用")
+        local checks, realCheck = 0, imp.check
+        imp.check = function(...)
+            checks = checks + 1
+            return realCheck(...)
+        end
+        typeIn(string.rep("y", 10))
+        typeIn(short)
+        check(checks == 1 and imp.code == short, "同一段字 onTextChange 處理過，下一幀的 onChange 不再檢查一次")
+        imp.check = nil
+        f.text = "" -- 全選剪下：不叫 onTextChange，只有下一幀的 onChange
+        frame()
+        imp:check()
+        check(imp.code == nil and imp.plan == nil and imp.err == "IGUI_MBLD_Imp_Empty",
+            "打完短碼再剪下（只有 onChange）：按「檢查」不用舊碼，說沒有東西可檢查")
+        typeIn(short) -- 框裡有字時按貼上鈕：清框不能讓下一幀把剛收下的長碼當成玩家清了框
+        clip = code
+        imp:paste()
+        frame()
+        f.onChange(f, "")
+        check(imp.code == code and imp.plan ~= nil and f.text == "",
+            "✗ 貼上鈕讀進來的長碼：下一幀 onChange（框是空的）之後還在")
         typeIn(string.rep("x", 80))
         check(imp.err == nil and imp.plan == nil and imp.code == nil and #f.text == 80, "✗ 打到一半的 80 字亂碼：不顯示錯誤")
         imp:check()
