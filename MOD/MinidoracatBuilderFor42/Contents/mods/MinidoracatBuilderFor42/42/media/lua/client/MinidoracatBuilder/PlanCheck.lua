@@ -252,6 +252,7 @@ local function judge(player, r, sq)
     if ist ~= "ok" then return ist, icode end
     if isRecipe(id) then
         local R = recipesOf()
+        cur.recipes = true -- 這張圖有配方片：changed 開始每秒 Recipes.refresh
         local rec = R.get(id)
         if rec.cover then return "blocked", "COVER" end -- 牆面油漆、壁紙、灰泥：照圖蓋不了，要自己用原版游標
         if not Check.inReach(player, x, y, z) then return "far", "TOO_FAR" end
@@ -343,7 +344,15 @@ local function changed(now, player)
             requeue(function() return true end)
         end
         local S = Materials.summary(player)
-        if not Materials.same(cur.S, S) then
+        -- 配方片缺不缺讀原版的快取，容器裡的東西變了要 Recipes.refresh 才重算（第三個值是變過幾次）。建造視窗開著時它每秒
+        -- 呼叫，關著時沒人呼叫：拿到的工具、材料會一直判成缺，所以判過配方片的圖在這裡補
+        local gen = cur.rGen
+        if cur.recipes then
+            local _, _, n = recipesOf().refresh(player:getPlayerNum())
+            gen = n
+        end
+        if gen ~= cur.rGen or not Materials.same(cur.S, S) then
+            cur.rGen = gen
             requeue(function(r) return r.s == "ok" or r.s == "short" or r.c == "SKILL" or r.c == "DARK" end)
         end
         cur.S = S

@@ -211,11 +211,13 @@ local function probeOf(pn, player)
     return p.L
 end
 
--- 視窗每秒呼叫：換容器、重算看得到的清單。容器裡的東西變了，原版只留還選著、還在的那幾件（BaseCraftingLogic.java:
--- 587-624），新拿到的要 autoPopulateInputs 才填進去（同 sync；不然詳情選著同一個配方時「有」的數量停在舊的）。
+-- 視窗每秒呼叫（照圖蓋有配方片時 PlanCheck 也呼叫）：換容器、重算看得到的清單。容器裡的東西變了，原版只留還選著、還在的
+-- 那幾件（BaseCraftingLogic.java:587-624），新拿到的要 autoPopulateInputs 才填進去（同 sync；不然詳情選著同一個配方時
+-- 「有」的數量停在舊的）。
 -- 原版快取的 canPerform 也先查技能、學過與太暗（CraftRecipeData.canPerform），快取卻只在容器變了才重算：看得到的配方裡有哪個
 -- 「技能、學過夠不夠」變了（升級、學會），或太暗與否變了（開燈、拿起手電筒），就 setRecipes 清快取（:574-578；probe 的
--- 完整清單本來就空，只清快取），也回有變，視窗才會清掉方格的缺料標示（W.pump）。回 缺料要不要重算, 清單的 sig
+-- 完整清單本來就空，只清快取），也回有變，視窗才會清掉方格的缺料標示（W.pump）。
+-- 回 這一次有沒有變, 清單的 sig, 變過幾次（呼叫的不只一個：「有變」只有先呼叫的拿得到，各自比次數才不會漏）
 function Recipes.refresh(pn)
     local player = getSpecificPlayer(pn)
     if not player then return false, "" end
@@ -231,7 +233,8 @@ function Recipes.refresh(pn)
         if p.valid ~= nil then L:setRecipes(ArrayList.new()) end
         p.valid, changed = key, true
     end
-    return changed, s.sig
+    if changed then p.gen = (p.gen or 0) + 1 end
+    return changed, s.sig, p.gen or 0
 end
 
 -- 能不能蓋，同原版建造視窗的清單（ISRecipeScrollingListBox.lua:38-49）：回 技能與學過夠不夠, 材料與工具夠不夠。

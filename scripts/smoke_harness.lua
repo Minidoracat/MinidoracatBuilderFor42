@@ -8019,13 +8019,16 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     sb.KindWallOverlay = false
     check(not Recipes.shown(0).set["recipe:Base.PaintWall"], "管理員關掉的種類，配方也不列（使用者選 kinds）")
     sb.KindWallOverlay = nil
-    Recipes.refresh(0) -- 建好視窗用的 logic
+    local _, _, gen0 = Recipes.refresh(0) -- 建好視窗用的 logic
     local sig = Recipes.shown(0).sig
     rLearn.o.learned = true
     invVer = invVer + 1
-    local moved, sig2 = Recipes.refresh(0)
-    check(moved == true and sig2 ~= sig and Recipes.shown(0).set["recipe:Base.MetalWall"] and Recipes.refresh(0) == false,
+    local moved, sig2, gen1 = Recipes.refresh(0)
+    local movedAgain, _, gen2 = Recipes.refresh(0)
+    check(moved == true and sig2 ~= sig and Recipes.shown(0).set["recipe:Base.MetalWall"] and movedAgain == false,
         "Recipes.refresh：容器裡的東西變了回 true、沒變回 false；學會了就列出來、sig 跟著變")
+    check(gen1 == gen0 + 1 and gen2 == gen1,
+        "Recipes.refresh 的第三個值：變一次加一、沒變不動（視窗與照圖蓋各自比，先呼叫的不會把「有變」拿走）")
     rLearn.o.learned = nil
     Recipes.refresh(0)
 
@@ -13280,7 +13283,8 @@ end)()
             if d == 4 then return "pcw_01_0", 40, 40 end
             return d == 1 and "pcw_01_0" or "pcx_01_0"
         end,
-        state = function() return true, true end, dark = function() return B.Recipes.night == true end }
+        state = function() return true, true end, dark = function() return B.Recipes.night == true end,
+        refresh = function() return false, "", 0 end }
     local rIt = Plan.item(pl, "recipe:Base.PcWall")
     local rDone, rTurned = Plan.add(pl, 1, 1, 0, 1, 0, rIt), Plan.add(pl, 1, 1, 0, 2, 0, rIt)
     PC.tick(K)
@@ -13304,6 +13308,35 @@ end)()
     check(darkS == "blocked" and darkC == "DARK" and stillDark == "DARK" and st(rDark) == "ok",
         "配方太暗標 DARK；亮了隔一下重查變成能蓋（同一段時間內不重算）")
     Plan.remove(pl, { rDark })
+    -- 配方缺工具：拿到以後材料摘要沒變（那件工具不在摘要裡），原版的快取要 Recipes.refresh 才重算。建造視窗關著時沒人呼叫，
+    -- PlanCheck 每秒補一次、照「變過幾次」重查缺料的片（植入：不呼叫就一直 NO_MATERIAL，照圖蓋永遠挑不到那片）
+    local probe = { stale = true, gen = 3, calls = 0 }
+    B.Recipes.state = function() return true, not probe.stale end
+    B.Recipes.refresh = function()
+        probe.calls = probe.calls + 1
+        if probe.got then probe.stale, probe.got, probe.gen = false, nil, probe.gen + 1 end
+        return false, "", probe.gen -- 「有變」被別人（視窗）先拿走也要認得出來：只看第三個值
+    end
+    local rTool = Plan.add(pl, 3, 5, 0, 2, 0, rIt)
+    PC.tick(K)
+    clockStep = PC.SUMMARY_MS
+    getTimestampMs()
+    clockStep = 0
+    PC.tick(K)
+    PC.tick(K)
+    local toolS, toolC, before = st(rTool), select(2, PC.state(rTool)), probe.calls
+    probe.got = true -- 玩家拿到工具
+    PC.tick(K)
+    local sameSec = st(rTool)
+    clockStep = PC.SUMMARY_MS
+    getTimestampMs()
+    clockStep = 0
+    PC.tick(K)
+    PC.tick(K)
+    check(toolS == "short" and toolC == "NO_MATERIAL" and sameSec == "short" and st(rTool) == "ok" and before >= 1,
+        "配方缺工具標 NO_MATERIAL；拿到後下一次比摘要時 Recipes.refresh、變成能蓋（視窗關著也一樣；refresh "
+        .. tostring(probe.calls) .. " 次）")
+    Plan.remove(pl, { rTool })
     Plan.remove(pl, { rOff, rFar })
     Plan.remove(pl, { rDone, rTurned })
     B.Recipes = noRecipes

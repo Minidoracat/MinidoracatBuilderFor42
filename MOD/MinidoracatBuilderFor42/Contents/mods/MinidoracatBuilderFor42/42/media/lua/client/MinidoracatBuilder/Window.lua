@@ -1969,8 +1969,13 @@ function W.pump(panel)
         v.detailDirty = v.detailDirty or v.selName ~= nil -- 經驗照技能等級打折，等級變了材料不一定變
         -- 建造配方：原版的容器（背包、旁邊的容器與地上）裡的東西變了，配方的缺料標示也要重算；看得到的配方（學會新的、
         -- 升級換階的牆與地板）變了就重排分類與清單（Recipes.refresh）
-        local okR, moved, sig = pcall(Recipes.refresh, W.playerNum)
+        local okR, moved, sig, gen = pcall(Recipes.refresh, W.playerNum)
         if not okR then shortErr("recipes", moved) end
+        -- 照圖蓋也呼叫 Recipes.refresh：「有變」被它先拿走時，照變過幾次認
+        if okR then
+            moved = moved or (v.recipeGen ~= nil and gen ~= v.recipeGen)
+            v.recipeGen = gen
+        end
         -- 大多時候沒變：沒變就留著舊的缺料標示，不清掉（清掉後要好幾幀才補回，格子會閃）
         if not (S and M.same(v.S, S)) or (okR and moved) then
             v.S = S
