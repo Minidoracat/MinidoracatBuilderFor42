@@ -177,16 +177,17 @@ local function objAt(sq, name)
     return nil
 end
 
--- 那一格上和 name（當初放下的那張圖）同一組門（車庫門、雙開門）的那一片：開過就換了圖，照圖名找不到。比的是那一組
--- 第一片的圖（Entry.doorItem 開著、關著的圖都認），不比項目 ID：轉到另一面蓋的是另一組圖。沒有回 nil
+-- 那一格上和 name（當初放下的那張圖）同一組門（車庫門、雙開門）、同一個位置的那一片：開過就換了圖，照圖名找不到。比的是
+-- 那一片關著的圖（Entry.doorPart 開著、關著的圖都認）。不比項目 ID：轉到另一面蓋的是另一組圖；也不只比是不是同一組：
+-- 後來蓋的同款門，中段或尾片落在這一格時不是當初那一片。沒有回 nil
 local function doorAt(sq, name)
-    local head = Entry.doorItem(name)
-    if not head then return nil end
+    local part = Entry.doorPart(name)
+    if not part then return nil end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         local spr = instanceof(o, "IsoDoor") and o:getSprite()
-        if spr and Entry.doorItem(spr:getName()) == head then return o end
+        if spr and Entry.doorPart(spr:getName()) == part then return o end
     end
     return nil
 end

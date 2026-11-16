@@ -11103,9 +11103,11 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     -- 照實機：門轉到另一面蓋，放下的是另一組圖（u_01_16，開著 u_01_24），不是項目 ID 那一組（u_01_0）；
     -- 拿項目 ID 去比會找不到（doors-mp b1116-doors-ud3：undoLast 回 0）
     for i = 1, 6 do sqs[i].objects = {} end
-    local realDoorItem, realInstD = E.doorItem, instanceof
-    local HEAD = { u_01_0 = "u_01_0", u_01_8 = "u_01_0", u_01_16 = "u_01_16", u_01_24 = "u_01_16" }
-    E.doorItem = function(name) return HEAD[name] end
+    local realDoorPart, realInstD = E.doorPart, instanceof
+    -- 每一片（關著、開著）→ 那一片關著的圖。另一面那一組：頭片 u_01_16（開著 u_01_24）、中段 u_01_17（開著 u_01_25）
+    local PART = { u_01_0 = "u_01_0", u_01_8 = "u_01_0", u_01_16 = "u_01_16", u_01_24 = "u_01_16",
+        u_01_17 = "u_01_17", u_01_25 = "u_01_17" }
+    E.doorPart = function(name) return PART[name] end
     instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
     local door, other = fakeObj(sqs[1], "builder"), fakeObj(sqs[2], "builder")
     buildAll("u_01_0", { six[1], six[2] })
@@ -11121,7 +11123,16 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     check(kd == 1 and got and #got == 1 and got[1].obj == door and got[1].x == 41,
         "復原：開過的整組門（紀錄裡沒有物件、圖換成開著的）照同一組門認回來、送去拆；圖不相干的算不在")
     if got then gotDone({ done = 1, total = 1, skipped = {}, refund = {}, stopped = false, res = { [got[1]] = true } }) end
-    E.doorItem, instanceof = realDoorItem, realInstD
+    -- 那一格換成同款門的中段（原本那扇拆了，後來蓋的另一扇蓋過這一格）：不是當初那一片，不拆
+    -- （植入：只比是不是同一組，會把後來那扇整組拆掉）
+    buildAll("u_01_0", { six[1] })
+    rec = Q.last(P2)
+    rec[1].obj, rec[1].name = nil, "u_01_16"
+    function door:getSprite() return { getName = function() return "u_01_25" end } end
+    got = nil
+    local km = Q.undoLast(P2)
+    check(km == 0 and got == nil, "復原：那一格換成同款門的中段（後來蓋的另一扇）不認成當初那一片，不送拆除")
+    E.doorPart, instanceof = realDoorPart, realInstD
     for i = 1, 6 do sqs[i].objects = {} end
     Area.route, Dis.plan, C.dismantleMany = realRoute, realPlan, real.dm
     check(Q.undoLast(P2) == 0, "復原：沒有可復原的回 0")
@@ -11801,6 +11812,10 @@ print("情境（車庫門與雙開門）：整組一個項目、拖一排定寬�
         and Entry.doorItem("hgd_01_12") == "hgd_01_3" and Entry.doorItem("hdd_01_14") == "hdd_01_2"
         and Entry.doorItem("hdd_01_8") == "hdd_01_8" and Entry.doorItem("hbad_01_0") == nil,
         "擷取：任一片認回項目 ID、錨點（頭片那格）與寬度；開著的片也認得")
+    check(Entry.doorPart("hgd_01_3") == "hgd_01_3" and Entry.doorPart("hgd_01_11") == "hgd_01_3"
+        and Entry.doorPart("hgd_01_12") == "hgd_01_4" and Entry.doorPart("hdd_01_14") == "hdd_01_10"
+        and Entry.doorPart("hbad_01_0") == nil,
+        "整組門的片：開著、關著都認回那一片關著的圖（同一組的頭片、中段各是各的）；不成組回 nil")
     -- 預覽與伺服器同一份
     local function preview(e, a) return (Check.item(P, e, a[4], a, { preview = true, walk = true })) end
     check(preview("hgd_01_0", { 308, 306, 0, 0, 3 }) == nil and preview("hgd_01_0", { 308, 306, 0, 0, 99 }) == "BAD_REQUEST"
@@ -13220,6 +13235,12 @@ end)()
         sprite("blends_natural_01_8", 1308, { flags = { "FloorOverlay" } }),
         sprite("pcs_01_0", 1309, { flags = { "solidtrans" } }),
         sprite("pcr_01_0", 1310, { type = T.WestRoofB, keys = { RoofGroup = "1" } }) })
+    -- 同一格疊很多片用的 12 款屋頂（項目不同才不算同一片）
+    for i = 1, 12 do
+        local s = sprite("pcr_01_" .. i, 1310 + i, { type = T.WestRoofB, keys = { RoofGroup = "1" } })
+        spriteMap[s.name] = s
+        spriteOrder[#spriteOrder + 1] = s
+    end
     sb.DisabledTilesets = "pcx_01"
     local function obj(name, o)
         o = o or {}
@@ -13358,6 +13379,32 @@ end)()
         "在等旁邊：牆蓋好後 touch，上面的屋頂不再放不下；挨著的那片改等它")
     Plan.remove(pl, { wWall, wRoof, wNext, wLone, wOver, wA, wB })
     square(202, 205, 0)
+    -- 同一格疊很多片（12 款屋頂疊在一格、下面是還沒蓋的牆）：名單以格子為單位算，讀清單的次數跟片數成正比
+    -- （植入：每一片都把旁邊每一格的清單整張掃一遍，12 片就要讀三百多次）
+    local dense = {}
+    for i = 1, 12 do dense[i] = put("pcr_01_" .. i, 6, 7, 1) end
+    local dWall = put("pcw_01_0", 6, 7, 0)
+    for _ = 1, 3 do PC.tick(K) end
+    local realAt, reads, prox = Plan.at, 0, {}
+    Plan.at = function(...)
+        local list = realAt(...)
+        local p = prox[list]
+        if not p then
+            p = setmetatable({}, { __len = function() return #list end,
+                __index = function(_, j) reads = reads + 1; return list[j] end })
+            prox[list] = p
+        end
+        return p
+    end
+    clockStep = PC.WAIT_MS
+    getTimestampMs()
+    clockStep = 0
+    local denseWait = 0
+    for i = 1, 12 do if codeOf(dense[i]) == "WAIT" then denseWait = denseWait + 1 end end
+    Plan.at = realAt
+    check(denseWait == 12 and reads <= 60, "在等旁邊：同一格疊 12 片都在等下面的牆；清單只讀 " .. reads .. " 次（不隨片數平方長）")
+    Plan.remove(pl, dense)
+    Plan.remove(pl, { dWall })
     -- 配方片：照 Recipes.tile 那一面的圖認蓋好；換了面（植入：另一面也算就抓得到）不算
     local noRecipes = B.Recipes
     B.Recipes = { get = function(id) return id == "recipe:Base.PcWall" and { id = id } or nil end, all = function() end,
@@ -13375,6 +13422,15 @@ end)()
     local rOff, rFar = Plan.add(pl, 0, 1, 0, 3, 0, rIt), Plan.add(pl, 1, 1, 0, 4, 0, rIt)
     PC.tick(K)
     check(st(rOff) == "done" and st(rFar) ~= "done", "配方片：左上那格空著的面照有圖的那格認蓋好（錨點格沒有圖也算；那格沒有就不算）")
+    -- 那一件被拆掉（沒有 touch）：錨點格本來就沒有東西、物件數不變，要比有圖的那一格才認得出來
+    -- （植入：只比錨點格的物件數，拆掉了還一直算蓋好、照圖蓋不會重蓋）
+    local offWall = table.remove(squares["201,201,0"].objects, 1)
+    for _ = 1, 3 do PC.tick(K) end
+    local offGone = st(rOff)
+    squares["201,201,0"].objects[1] = offWall
+    for _ = 1, 3 do PC.tick(K) end
+    check(offGone ~= "done" and st(rOff) == "done",
+        "配方片：圖不在錨點格的那一面，那一件被拆掉後靠身邊輪流比認得出來；放回去也認回來")
     -- 配方太暗：天亮了背包沒變，隔 RECHECK.DARK 重查（植入：不重查就一直 DARK）
     B.Recipes.night = true
     local rDark = Plan.add(pl, 3, 5, 0, 2, 0, rIt)

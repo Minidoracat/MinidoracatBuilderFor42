@@ -217,6 +217,15 @@ function Entry.doorItem(name)
     return doorFirst(name)
 end
 
+-- 車庫門、雙開門任一片的圖名（關著、開著都可）→ 那一片關著的圖名（同一組、同一個位置的片才相同）；不成組回 nil
+function Entry.doorPart(name)
+    local head = Entry.doorItem(name)
+    local s = head and Entry.sprite(head)
+    local set = s and Entry.doorSet(s)
+    local c = set and set.closed[name]
+    return c and c:getName() or nil
+end
+
 -- 原版兩張一組、交替排的柵欄與圍牆，北向、西向各一對 { A, B }：BrokenFences.lua 註解寫「2-tile」的五族（8–11、32–35、64–67；
 -- BentFences.lua 的 stage 也照 ABAB 排），加上原版地圖上交替排的 8 對（48–51 帶刺高圍欄、80–83、88–91、112–115；
 -- 使用者 2026-11-12 選，離線掃 Muldraugh 相鄰兩件 97% 以上交替）。圖塊包的柵欄不猜。鐵絲網兩族（24/25、26/27、56/57、

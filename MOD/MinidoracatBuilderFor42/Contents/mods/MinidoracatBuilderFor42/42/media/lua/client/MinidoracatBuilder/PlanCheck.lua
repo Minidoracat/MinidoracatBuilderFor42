@@ -158,7 +158,7 @@ local function built(id, x, y, z, d, w, sq)
         if want == nil then return false end
         dx, dy = dx or 0, dy or 0
         local s = (dx == 0 and dy == 0) and sq or cell:getGridSquare(x + dx, y + dy, z)
-        return s ~= nil and eachTile(s, function(name) return name == want end)
+        return s ~= nil and eachTile(s, function(name) return name == want end), dx, dy
     end
     local entry = Entry.resolve(id)
     if not entry then return hasTile(sq, id) end -- 這裡關掉了，世界上照樣可能有
@@ -196,51 +196,68 @@ local function live(r)
     return s == nil or s == "ok" or s == "short" or s == "far" or (s == "blocked" and PlanCheck.RECHECK[r.c] ~= nil)
 end
 
--- 片 p 旁邊（AROUND）的每一片（不含自己）：fn 回 true 就停並回 true
-local function around(p, fn)
-    local at, plan = B.Plan.at, cur.plan
-    for _, a in ipairs(AROUND) do
-        local list = at(plan, p.x + a[1], p.y + a[2], p.z + a[3])
-        for j = 1, #list do
-            local q = list[j]
-            if q ~= p and fn(q) then return true end
-        end
-    end
-    return false
-end
-
 -- 放不下（BLOCKED：Place.check 沒說更細的原因）的片裡，在等旁邊的那些：{ [片] = true }。屋頂等牆、門等門框這類，
 -- 開工前就說「換一格或先清空」會讓人以為擺錯地方。從挨著會蓋的片的開始，一圈一圈往外標（屋頂也靠旁邊的屋頂撐）；
 -- 旁邊都蓋好了、或都蓋不了還放不下的不算（兩片互相挨著、各自被擋住的不會互相等）。
--- 片的狀態有變才重算，最多 WAIT_MS 一次（最大的藍圖一次要查幾萬格）
+-- 片的狀態有變才重算，最多 WAIT_MS 一次。以格子（Plan.at 回的那張清單）為單位，每格的清單最多各掃兩次：
+-- 同一格疊很多片時不會變成片數的平方
 local function waiting()
     if cur.wait and cur.wVer == cur.ver then return cur.wait end
     local now = getTimestampMs()
     if cur.wait and now >= cur.wAt and now - cur.wAt < PlanCheck.WAIT_MS then return cur.wait end
     cur.wVer, cur.wAt = cur.ver, now
-    local rec = cur.rec
-    local wait, todo, n = {}, {}, 0
-    local function isLive(q)
-        local r = rec[q]
-        return r ~= nil and live(r)
-    end
-    local function spread(q)
-        local r = rec[q]
-        if r and r.s == "blocked" and r.c == "BLOCKED" and not wait[q] then
-            wait[q] = true
-            n = n + 1
-            todo[n] = q
+    local rec, at, plan = cur.rec, B.Plan.at, cur.plan
+    local wait, alive, swept, todo, n = {}, {}, {}, {}, 0
+    -- 這一格有沒有還會蓋的片（放不下的片自己不算 live，不必排除自己）
+    local function hasLive(list)
+        local v = alive[list]
+        if v == nil then
+            v = false
+            for j = 1, #list do
+                local r = rec[list[j]]
+                if r and live(r) then
+                    v = true
+                    break
+                end
+            end
+            alive[list] = v
         end
-        return false
+        return v
     end
     for i = 1, cur.n do
         local p = cur.list[i]
         local r = rec[p]
-        if r.s == "blocked" and r.c == "BLOCKED" and around(p, isLive) then spread(p) end
+        if r.s == "blocked" and r.c == "BLOCKED" then
+            for k = 1, #AROUND do
+                local a = AROUND[k]
+                if hasLive(at(plan, p.x + a[1], p.y + a[2], p.z + a[3])) then
+                    wait[p] = true
+                    n = n + 1
+                    todo[n] = p
+                    break
+                end
+            end
+        end
     end
     local i = 1
     while i <= n do
-        around(todo[i], spread)
+        local p = todo[i]
+        for k = 1, #AROUND do
+            local a = AROUND[k]
+            local list = at(plan, p.x + a[1], p.y + a[2], p.z + a[3])
+            if not swept[list] then -- 掃過一次，這格放不下的片就都在名單裡了
+                swept[list] = true
+                for j = 1, #list do
+                    local q = list[j]
+                    local r = rec[q]
+                    if r and r.s == "blocked" and r.c == "BLOCKED" and not wait[q] then
+                        wait[q] = true
+                        n = n + 1
+                        todo[n] = q
+                    end
+                end
+            end
+        end
         i = i + 1
     end
     cur.wait = wait
@@ -355,8 +372,10 @@ local function evaluate(player, p, r)
         return
     end
     local sq = cell:getGridSquare(x, y, z)
-    r.sig = sigOf(sq)
-    local ok, done = pcall(built, id, x, y, z, d, w, sq)
+    local ok, done, dx, dy = pcall(built, id, x, y, z, d, w, sq)
+    -- 物件數看 built 查圖的那一格（配方片第一格有圖的可能不在錨點）：那一件被拆掉時 sweep 才看得出來
+    r.wx, r.wy = ok and dx or 0, ok and dy or 0
+    r.sig = sigOf((r.wx == 0 and r.wy == 0) and sq or cell:getGridSquare(x + r.wx, y + r.wy, z))
     if ok and done then
         r.s, r.c = "done", nil
         return
@@ -451,7 +470,7 @@ local function sweep(player, now)
                 if dt and (dt < 0 or dt >= every) then
                     r.at = now
                     push(p)
-                elseif sigOf(cell:getGridSquare(x, y, z)) ~= r.sig then
+                elseif sigOf(cell:getGridSquare(x + (r.wx or 0), y + (r.wy or 0), z)) ~= r.sig then
                     push(p)
                 end
             end
