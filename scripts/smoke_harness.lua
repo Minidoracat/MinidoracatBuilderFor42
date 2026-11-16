@@ -1980,7 +1980,11 @@ do
         function grid:setScrollOffset(o) self.offset = o end
         local v = { grid = grid, dim = {}, fh = 10, status = { width = 100 },
             search = { setText = function(_, t) searchText = t end },
+            UI = { Dropdown = { close = noop }, Text = { wrap = function(s) return { s } end, fit = function(s) return s end },
+                CAPABILITIES = {} },
             nav = { setGroups = noop, setSelected = noop }, cat = { setOptions = noop, setSelected = noop },
+            -- 搜完整圖塊名時頁籤、來源也換成「全部」（Window.lua syncJump）
+            tabs = { setSelected = noop, setItemEnabled = noop }, source = { setOptions = noop, setSelected = noop },
             clearBtn = { setVisible = noop, setX = noop, setY = noop, width = 10 } }
         local function idx(name)
             for i = 1, grid.items.n do if grid.items[i] == name then return i end end
@@ -2019,6 +2023,7 @@ do
         check(affKeep == false, "只看能蓋的：挑圖塊那一批沒做完就被重算換掉，仍照換了條件套")
         -- 材料篩選（使用者 2026-11-12 選 dropdown）：沒開「只看能蓋的」也分批；做完只留成本用到那種材料的。
         -- 這個假世界的成本全是木板：把第一項的分類快取成金屬（分類本身在情境四十三驗）
+        W.clearSearch() -- 走玩家的路：搜完整圖塊名前的頁籤會換回來（syncJump），下一行再換到「全部」
         W.onTab(v, "all")
         local totalN, seeded = grid.items.n, grid.items[1]
         v.mat = { [seeded] = { metal = true } }
@@ -2053,6 +2058,7 @@ do
         local eqBoth = drain()
         W.setMaterial("wood")
         local eqOnly, flagOnly = drain(), v.matEmpty
+        W.clearSearch()
         W.onTab(v, "all")
         local eOnly = drain()
         -- 同一桶材料混雜（審查 1112 Claude 第 2 輪）：要找的那張沒用到金屬、同桶另一張有（被缺料濾掉）→ 說材料；
@@ -15849,13 +15855,16 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     set("rm_01", 0, "N", 20, 9830)
     add("rm_01_0", 9830, { SlopedSurfaceDirection = "N", SlopedSurfaceHeightMax = "5", IsMoveAble = "" })
     local rugS = add("rpr_01_0", 9793, {}, { "FloorOverlay" })
-    -- 樓梯平台圖（原版一定有；前面情境換過圖塊表時這裡補上）與一組 W 型樓梯（底、中、頂）
+    -- 樓梯平台圖（原版一定有；前面情境換過圖塊表時這裡補上）與 W 型、N 型樓梯各一組（底、中、頂）
     if not spriteMap[Entry.STAIR_FLOOR] then add(Entry.STAIR_FLOOR, 9797) end
-    for i, t in ipairs({ T.stairsBW, T.stairsMW, T.stairsTW }) do
-        local name = "rpt_01_" .. (i - 1)
-        local s = sprite(name, 9797 + i, { type = t, keys = { BlocksPlacement = "" } })
-        spriteMap[name], added[#added + 1] = s, name
-        spriteOrder[#spriteOrder + 1] = s
+    for _, st in ipairs({ { "rpt_01_", 9797, { T.stairsBW, T.stairsMW, T.stairsTW } },
+        { "rptn_01_", 9989, { T.stairsBN, T.stairsMN, T.stairsTN } } }) do
+        for i, t in ipairs(st[3]) do
+            local name = st[1] .. (i - 1)
+            local s = sprite(name, st[2] + i, { type = t, keys = { BlocksPlacement = "" } })
+            spriteMap[name], added[#added + 1] = s, name
+            spriteOrder[#spriteOrder + 1] = s
+        end
     end
 
     -- 格子：移除時照引擎先觸發 OnObjectAboutToBeRemoved；退料掉在格上；getFloor 照引擎回第一個帶 solidfloor 的物件
@@ -15889,6 +15898,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
             function f:getSprite() return s end
             function f:getProperties() return s:getProperties() end
             function f:getAttachedAnimSprite() return nil end
+            function f:getOverlaySprite() return nil end
             function f:hasModData() return false end
             function f:getModData() return {} end
             function f:isStairsObject() return false end
@@ -15916,6 +15926,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         function o:isStairsObject() return false end
         function o:isObjectNoContainerOrEmpty() return true end
         function o:getAttachedAnimSprite() return nil end
+        function o:getOverlaySprite() return nil end
         function o:isBarricaded() return false end
         function o:getContainerCount() return 0 end
         return o
@@ -16619,6 +16630,123 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         P.pos.x, P.pos.y = 421.5, 431.5
     end
 
+    -- 框選含平台的坡道：頭片在框裡時藍圖只有頭片一項（平台跟著整組蓋）；照藍圖蓋回來整組含平台都在、只扣一組的料。
+    -- 頭片在框外時平台照一般地板收；沒有坡道通到的同圖地板也照一般地板收
+    do
+        fresh()
+        local Cap, Plan = MinidoracatBuilder.Capture, MinidoracatBuilder.Plan
+        local function capture(x1, y1, x2, y2)
+            local job = Cap.scan(x1, y1, x2, y2, 0)
+            while not Cap.step(job) do end
+            local r = Cap.build(job, "t")
+            local got = {}
+            Plan.each(r.plan, function(p)
+                got[#got + 1] = { id = r.plan.items[p.it].id, x = job.x1 + p.x, y = job.y1 + p.y, z = job.z0 + p.z, d = p.d }
+            end)
+            return got, r
+        end
+        for _ = 1, 40 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+        esq(480, 410, 1)
+        local okB = build(100, 480)
+        local whole, r1 = capture(479, 409, 481, 431)
+        local part = capture(480, 405, 480, 415)
+        P.pos.y = 431.5
+        local okU = unbuild(101, 480, 430, "rp_01_0")
+        local gone = column(480) == 0 and deck(480) == nil
+        esq(480, 410, 1) -- 假格子拆掉地板後 solidfloor 旗標不清（引擎照格上物件重算）：換一格新的
+        local p1 = whole[1]
+        local start = P.inv:count("Base.Plank")
+        P.pos.x = p1 and p1.x + 0.5 or P.pos.x
+        local c = p1 and intentCode(102, p1.id, { p1.x, p1.y, p1.z, p1.d })
+        sent = {}
+        local okR = p1 and c == nil and Server.complete(P, 102, 1)
+        check(okB and #whole == 1 and p1.id == "rp_01_0" and p1.x == 480 and p1.y == 430 and p1.z == 0 and r1.kinds == 1
+            and okU == "dismantled" and gone and okR and column(480) == 20 and deck(480) ~= nil
+            and start - P.inv:count("Base.Plank") == 20 and Ledger.getRamp(480, 430, 0, "N")["Base.Plank"] == 20,
+            "坡道（Ramp）✗ 框選含平台的坡道：藍圖只有頭片一項；照藍圖蓋回來 20 片加平台都在、只扣一組的料（木板 20）")
+        local own = esq(485, 410, 1)
+        own:addFloor("rp_01_23")
+        local lone = capture(484, 405, 486, 431)
+        check(#part == 1 and part[1].id == "rp_01_23" and part[1].y == 410 and part[1].z == 1
+            and #lone == 1 and lone[1].id == "rp_01_23" and lone[1].x == 485,
+            "坡道（Ramp）✗ 框選：頭片在框外時平台照一般地板收（只框到坡頂的片不收）；沒有坡道通到的同圖地板照一般地板收")
+        -- 樓梯（W 型 rpt_01：頂片 470、中片 471、底片 472，平台 469,405,1 補 STAIR_FLOOR）：同坡道，樓梯在框裡時不另收平台；
+        -- 底片不在框裡（樓梯不收）時平台照一般地板收
+        local function stair(x, y)
+            for dx = 0, 2 do -- 前面情境的 IsoThumpable 假物件沒有這兩個方法（Capture.square 會呼叫）
+                for _, o in ipairs(at(x + dx, y).objects) do
+                    o.getAttachedAnimSprite = o.getAttachedAnimSprite or function() return nil end
+                    o.getOverlaySprite = o.getOverlaySprite or function() return nil end
+                end
+            end
+            return #at(x, y).objects == 1 and #at(x + 1, y).objects == 1 and #at(x + 2, y).objects == 1
+        end
+        local function landing(sq)
+            for _, o in ipairs(sq.objects) do if o.name == Entry.STAIR_FLOOR then return o end end
+        end
+        fresh()
+        for _ = 1, 20 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+        local lsq = esq(469, 405, 1)
+        P.pos.x, P.pos.y = 471.5, 406.5
+        local s0 = P.inv:count("Base.Plank")
+        local sc = intentCode(110, "rpt_01_0", { 470, 405, 0, 0 })
+        sent = {}
+        local okS = sc == nil and Server.complete(P, 110, 1) and stair(470, 405) and landing(lsq) ~= nil
+        local cost = s0 - P.inv:count("Base.Plank")
+        local sWhole = capture(468, 404, 473, 406)
+        local sPart = capture(468, 404, 470, 406)
+        fresh()
+        -- 拿掉原來那座（前面情境的 IsoThumpable 假物件走不了本工具的拆除，直接從格子移除，照樣觸發移除事件）
+        for dx = 0, 2 do
+            local sq = at(470 + dx, 405)
+            for k = #sq.objects, 1, -1 do sq:transmitRemoveItemFromSquare(sq.objects[k]) end
+        end
+        lsq:transmitRemoveItemFromSquare(landing(lsq))
+        local sGone = not stair(470, 405) and landing(lsq) == nil
+        lsq = esq(469, 405, 1) -- 同上：假格子的 solidfloor 旗標不清
+        local q = sWhole[1]
+        local s1 = P.inv:count("Base.Plank")
+        local qc = q and intentCode(112, q.id, { q.x, q.y, q.z, q.d })
+        sent = {}
+        local okSR = q and qc == nil and Server.complete(P, 112, 1)
+        check(okS and cost > 0 and #sWhole == 1 and q.id == "rpt_01_0" and q.x == 470 and q.y == 405 and q.z == 0
+            and sGone and okSR and stair(470, 405) and landing(lsq) ~= nil
+            and s1 - P.inv:count("Base.Plank") == cost
+            and #sPart == 1 and sPart[1].id == Entry.STAIR_FLOOR and sPart[1].x == 469 and sPart[1].z == 1,
+            "坡道（Ramp）✗ 框選含平台的樓梯：藍圖只有樓梯一項，照藍圖蓋回來三片加平台都在、料和第一次一樣；底片在框外時平台照一般地板收")
+        local hx, hy, hz, px, py, pn = Place.deckOwner(Entry.STAIR_FLOOR, lsq)
+        local rx, _, _, _, _, rn = Place.deckOwner("rp_01_23", at(480, 410, 1))
+        local kindWas = sb.KindRamp
+        sb.KindRamp = false
+        local off = capture(479, 409, 481, 431)
+        sb.KindRamp = kindWas
+        check(hx == 470 and hy == 405 and hz == 0 and px == 472 and py == 405 and pn == "rpt_01_0" and rx == 480 and rn == "rp_01_0"
+            and Place.deckOwner(Entry.STAIR_FLOOR, at(480, 410, 1)) == nil and Place.deckOwner("rp_01_23", lsq) == nil
+            and #off == 1 and off[1].id == "rp_01_23" and off[1].z == 1,
+            "坡道（Ramp）✗ 平台認哪一組：圖和那一組會補的不同（坡道平台格查 STAIR_FLOOR、樓梯平台格查坡道平台圖）不算；坡道種類關掉（頭片收不進）時平台照一般地板收")
+        -- N 型（往北爬）：頂片 475,404、中片 405、底片 406，平台 475,403,1
+        fresh()
+        local nsq = esq(475, 403, 1)
+        P.pos.x, P.pos.y = 476.5, 405.5
+        local nc = intentCode(113, "rptn_01_0", { 475, 404, 0, 0 })
+        sent = {}
+        local okN = nc == nil and Server.complete(P, 113, 1) and landing(nsq) ~= nil
+        for y = 404, 406 do
+            for _, o in ipairs(at(475, y).objects) do
+                o.getAttachedAnimSprite = o.getAttachedAnimSprite or function() return nil end
+                o.getOverlaySprite = o.getOverlaySprite or function() return nil end
+            end
+        end
+        local nWhole = capture(474, 402, 476, 407)
+        local nPart = capture(474, 402, 476, 405)
+        local nx, ny, nz, nbx, nby = Place.deckOwner(Entry.STAIR_FLOOR, nsq)
+        check(okN and nx == 475 and ny == 404 and nz == 0 and nbx == 475 and nby == 406
+            and #nWhole == 1 and nWhole[1].id == "rptn_01_0" and nWhole[1].x == 475 and nWhole[1].y == 404
+            and #nPart == 1 and nPart[1].id == Entry.STAIR_FLOOR and nPart[1].y == 403 and nPart[1].z == 1,
+            "坡道（Ramp）✗ 框選含平台的 N 型樓梯：藍圖只有樓梯一項；底片在框外時平台照一般地板收")
+        P.pos.x, P.pos.y = 421.5, 431.5
+    end
+
     -- 伺服器
     fresh()
     check(intentCode(12, "rp_01_0", { 445, 430, 0, 0, 445, 420, 0, 0 }) == "BAD_REQUEST",
@@ -16688,29 +16816,32 @@ end)()
     for _, n in ipairs({ "roofs_01_22", "roofs_01_54", "mymod_roofs_45_122" }) do
         add(n, { type = T.WestRoofT, flags = { "solidfloor" }, keys = { RoofGroup = "1" }, mask = mask(22) })
     end
-    for _, o in pairs(F30.gable.off) do
-        add("walls_exterior_roofs_30_01_" .. o, { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
-            mask = mask(1000 + o) })
+    -- 山牆片同遊戲：E 系列（RiseE／FallE／PeakE）在格子西邊帶 WallW，S 系列（RiseS／FallS／PeakS）在北邊帶 WallN
+    local function capFlags(k, o, m)
+        if k:find("S%d*$") then
+            return { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" }, mask = mask(m) }
+        end
+        return { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" }, mask = mask(m) }
     end
-    for _, o in pairs(F45.gable.off) do
-        add("walls_exterior_roofs_01_" .. o, { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
-            mask = mask(2000 + o) })
-    end
+    for k, o in pairs(F30.gable.off) do add("walls_exterior_roofs_30_01_" .. o, capFlags(k, o, 1000 + o)) end
+    for k, o in pairs(F45.gable.off) do add("walls_exterior_roofs_01_" .. o, capFlags(k, o, 2000 + o)) end
     -- 屋脊頭第二種外形（同原版 walls_exterior_roofs_01@72）：PeakE1／PeakS1 換外形，其他同 @0。穀倉款是這種；
     -- bad_gable_01 的屋脊頭兩種都不像；late_gable_01 同 @0 但屋脊頭那張的遮罩晚到
     local function gableSet(ts, base, peak)
         for k, o in pairs(F45.gable.off) do
             local p1 = k == "PeakE1" or k == "PeakS1"
-            add(ts .. "_" .. (base + o), { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
-                mask = mask((p1 and peak or 2000) + o) })
+            add(ts .. "_" .. (base + o), capFlags(k, o, (p1 and peak or 2000) + o))
         end
     end
     gableSet("walls_exterior_roofs_01", 72, 2500)
     gableSet("location_barn_01", 24, 2500)
     gableSet("bad_gable_01", 0, 2250) -- 假遮罩差 500 的倍數是整個反過來；2250 和 2000、2500 都差 31 點以上
     gableSet("late_gable_01", 0, 2000)
+    gableSet("late_gable_02", 0, 2000) -- RoofPanel：選了山牆時遮罩還沒好
+    roofSet("late_roofs_30b", 0, F30.off) -- Window／RoofPanel.available：第一次還沒載好
     roofSet("late_roofs_30", 0, F30.off)
     lateMask["late_gable_01_15"], lateMask["late_roofs_30_3"] = true, true
+    lateMask["late_gable_02_15"], lateMask["late_roofs_30b_3"] = true, true
     add(Roof.FILL, { flags = { "solidfloor" } })
     check(Rules.classify(spriteMap["roofs_30_01_0"]) == "roof" and Rules.classify(spriteMap["walls_exterior_roofs_30_01_0"]) == "wall"
         and Rules.classify(spriteMap[Roof.FILL]) == "floor", "屋頂（Roof）假圖的種類：屋頂片、山牆片、天花板")
@@ -16768,28 +16899,46 @@ end)()
     local barn = Roof.gableFamily("location_barn_01")
     check(barn and barn.fam == "45" and barn.base == 24 and Roof.gableFamily("bad_gable_01") == nil,
         "屋頂（Roof）山牆：屋脊頭是第二種外形（原版 @72 那種，穀倉、二手衣店）的組也認得出；✗ 屋脊頭兩種都不像：認不出")
-    local lateG1, lateR1 = Roof.gableFamily("late_gable_01"), Roof.family("late_roofs_30_0")
+    local lateG1, lateGw = Roof.gableFamily("late_gable_01")
+    local lateR1, lateRw = Roof.family("late_roofs_30_0")
+    local notR, notRw = Roof.family("roofs_shallow_x_0")
     lateMask["late_gable_01_15"], lateMask["late_roofs_30_3"] = nil, nil
     local lateG2, lateR2 = Roof.gableFamily("late_gable_01"), Roof.family("late_roofs_30_0")
-    check(lateG1 == nil and lateR1 == nil and lateG2 and lateG2.base == 0 and lateR2 and lateR2.fam == "30",
-        "屋頂（Roof）✗ 貼圖遮罩還沒建好：山牆、屋頂這次都認不出也不快取；遮罩好了再問就認得出")
+    check(lateG1 == nil and lateGw == true and lateR1 == nil and lateRw == true and notR == nil and not notRw
+        and lateG2 and lateG2.base == 0 and lateR2 and lateR2.fam == "30",
+        "屋頂（Roof）✗ 貼圖遮罩還沒建好：山牆、屋頂這次都回 nil, true（還沒載好，和認不出的 nil 分得開）也不快取；遮罩好了再問就認得出")
 
+    -- 30 度：同 45 度，屋頂那一層每格都補一片天花板（不補時整間不算室內、牆畫成黑色，實機 b100f-roof-ch）
     local g, w = L(s30, "gable", "EW", 6, 8)
     local t = grid(g)
     local rows = true
     for x = 0, 5 do
+        rows = rows and both(t, x, 0, n30(29)) and both(t, x, 3, n30(26)) and both(t, x, 4, n30(3))
+            and both(t, x, 7, n30(0))
     end
+    check(g and w and w.HALF and total(g) == 96 and rows,
+        "屋頂（Roof）30 度雙斜 6×8：48 片同一層加每格一片天花板（共 96），北簷 N1、往內 N4，南半 S4、南簷 S1，warn.HALF")
     t = grid((L(s30, "gable", "EW", 4, 7)))
+    check(both(t, 0, 3, n30(99)) and both(t, 3, 3, n30(99)), "屋頂（Roof）30 度雙斜奇數跨距 7：中間那排是屋脊 PNS4")
     local _, c1 = L(s30, "gable", "EW", 4, 12)
     local _, c2 = L(s30, "gable", "NS", 1, 5)
     check(c1 == "TOO_WIDE" and c2 == "TOO_SMALL", "屋頂（Roof）30 度 ✗ 跨距 12：TOO_WIDE；✗ 1×5：TOO_SMALL")
     t = grid((L(s30, "hip", nil, 7, 7)))
+    check(both(t, 3, 3, n30(115)) and both(t, 0, 0, n30(93)) and both(t, 6, 6, n30(64))
+        and both(t, 0, 6, n30(80)) and both(t, 6, 0, n30(77)), "屋頂（Roof）30 度四坡 7×7：中心 Q4，四角各自的外角片")
     t = grid((L(s30, "hip", nil, 5, 9)))
     local ridge = true
+    for y = 2, 6 do ridge = ridge and both(t, 2, y, n30(107)) end
+    check(ridge and both(t, 2, 1, n30(28)), "屋頂（Roof）30 度四坡 5×9：中間一條屋脊 PWE3（兩端照屋脊），屋脊外是斜面")
     local tS, tN = grid((L(s30, "shed", "S", 3, 4))), grid((L(s30, "shed", "N", 3, 4)))
     local tE, tW = grid((L(s30, "shed", "E", 4, 3))), grid((L(s30, "shed", "W", 4, 3)))
+    check(both(tS, 1, 3, n30(0)) and both(tS, 1, 0, n30(3)) and both(tN, 1, 0, n30(29))
+        and both(tE, 3, 1, n30(13)) and both(tW, 0, 1, n30(16)), "屋頂（Roof）30 度單斜四個方向：低邊是 1 號片，往高處遞增")
     local hi, ch = L(s30, "shed", "S", 2, 25)
     t = grid((L(s30, "shed", "S", 2, 24)))
+    check(hi == nil and ch == "TOO_HIGH" and only(t, 0, 17, 1, n30(0)) and only(t, 0, 17, 0, Roof.FILL)
+        and only(t, 0, 0, 3, n30(5)) and only(t, 0, 0, 0, Roof.FILL),
+        "屋頂（Roof）30 度單斜每 6 格往上一層接（往上接的片底下那層只有天花板）；✗ 25 格要 5 層：TOO_HIGH")
     sb.DisabledTilesets = "roofs_30_01"
     local dg, dc = L(s30, "hip", nil, 4, 4)
     sb.DisabledTilesets = real.tiles
@@ -16799,6 +16948,7 @@ end)()
     local walls = 0
     for _, gg in ipairs(g) do if gg.id:find("^walls_") then walls = walls + #gg.cells end end
     check(walls == 16 and at(t, 0, 0, 0, "walls_exterior_roofs_30_01_13") and at(t, 0, 7, 0, "walls_exterior_roofs_30_01_0")
+        and at(t, 6, 0, 0, "walls_exterior_roofs_30_01_13") and total(g) == 112,
         "屋頂（Roof）30 度雙斜配山牆：兩端各一列 8 片（北端 FallE1、南端 RiseE1，東端在範圍外一格）")
     walls = 0
     for _, gg in ipairs(L(s30, "gable", "EW", 6, 8)) do if gg.id:find("^walls_") then walls = walls + 1 end end
@@ -16846,29 +16996,54 @@ end)()
     t = grid(g)
     check(total(g) == 9 and only(t, 1, 1, 0, n45(22)) and w == nil, "屋頂（Roof）45 度平頂 3×3：每格一張平頂片")
     t = grid((L(s45, "gable", "EW", 2, 5, g45)))
-    local tg = grid((L(s45, "gable", "EW", 2, 8, g45)))
+    local g8, w8 = L(s45, "gable", "EW", 2, 8, g45)
+    local tg = grid(g8)
     local gw = 0
     for k, l in pairs(tg) do
         if k:find("^0,") then for _, n in ipairs(l) do if n:find("^walls_") then gw = gw + 1 end end end
     end
     check(at(t, 0, 0, 0, "walls_exterior_roofs_01_8") and at(t, 0, 1, 0, "walls_exterior_roofs_01_9")
         and at(t, 0, 2, 0, "walls_exterior_roofs_01_16") and at(t, 0, 3, 0, "walls_exterior_roofs_01_1")
-        and at(t, 0, 4, 0, "walls_exterior_roofs_01_0") and gw == 6,
-        "屋頂（Roof）45 度山牆：跨距 5 是 FallE1、FallE2、PeakTwoPt5E、RiseE2、RiseE1；跨距 8 中段不放")
+        and at(t, 0, 4, 0, "walls_exterior_roofs_01_0") and gw == 6 and w8 and w8.GAP == 4,
+        "屋頂（Roof）45 度山牆：跨距 5 是 FallE1、FallE2、PeakTwoPt5E、RiseE2、RiseE1；跨距 8 中段底下沒有房子的牆可接時"
+            .. "不放、warn.GAP 記 4 格（兩端各 2 排）")
     sb.DisabledTilesets = "ceilings_01"
     t = grid((L(s45, "gable", "EW", 2, 4)))
     sb.DisabledTilesets = "ceilings_01;roofs_01"
     local left = {}
     for _, s in ipairs(Roof.shapes(s45)) do left[#left + 1] = s.id end
+    local left30 = #Roof.shapes(s30)
     sb.DisabledTilesets = real.tiles
+    check(only(t, 0, 0, 0, n45(22)) and table.concat(left, ",") == "flat" and left30 == 0 and #Roof.shapes(s30) == 3,
+        "屋頂（Roof）天花板被關掉改鋪平頂片；兩種都關掉時 45 度不給斜屋頂形狀；30 度沒有平頂片，天花板被關掉時一種都不給")
 
+    do -- fix3 (4)：30、45 度每種斜形狀、奇偶跨距，屋頂那一層每格都有天花板；平頂沒有（平頂片自己是地板）
         local miss, fills = nil, {}
+        local shapes = { { s45, "45", { { "gable", "EW" }, { "gable", "NS" }, { "hip" }, { "shed", "S" }, { "shed", "E" } } },
+            { s30, "30", { { "gable", "EW" }, { "gable", "NS" }, { "hip" }, { "shed", "N" }, { "shed", "E" }, { "shed", "S" },
+                { "shed", "W" } } } }
+        for _, f in ipairs(shapes) do
+            for _, c in ipairs(f[3]) do
+                for _, sz in ipairs({ { 3, 3 }, { 4, 8 }, { 5, 5 }, { 5, 9 }, { 6, 6 }, { 7, 7 } }) do
+                    local gr, ww = L(f[1], c[1], c[2], sz[1], sz[2])
+                    local tt, n = grid(gr), 0
+                    for _, gg in ipairs(gr or {}) do if gg.id == Roof.FILL then n = n + #gg.cells end end
+                    fills[f[2] .. c[1] .. (c[2] or "") .. sz[1] .. "x" .. sz[2]] = n
+                    for x = 0, sz[1] - 1 do
+                        for y = 0, sz[2] - 1 do
+                            if not miss and (not gr or not (ww and ww.HALF) or not at(tt, x, y, 0, Roof.FILL)) then
+                                miss = f[2] .. " " .. c[1] .. "/" .. tostring(c[2]) .. " " .. sz[1] .. "x" .. sz[2] .. " @" .. x .. "," .. y
+                            end
                         end
                     end
                 end
             end
         end
         local fl = grid((L(s45, "flat", nil, 4, 4)))
+        check(miss == nil and fills["45hip5x5"] == 25 and fills["45gableEW4x8"] == 32 and fills["30hip7x7"] == 49
+            and fills["30shedS5x9"] == 45 and not at(fl, 0, 0, 0, Roof.FILL),
+            "屋頂（Roof）30、45 度雙斜、四坡、單斜（奇偶跨距）屋頂層每格都補天花板、都有 warn.HALF（45 度四坡 5×5 補 25 片、"
+                .. "30 度四坡 7×7 補 49 片）；✗ 平頂不補" .. (miss and "；第一個漏的 " .. miss or ""))
     end
 
     do -- fix3 (1)(2)：樓上的牆疊在正下方同一條邊的牆上、往上一層接的屋頂片靠下面撐；助手排的片不管照什麼順序都蓋得起來
@@ -16942,10 +17117,11 @@ end)()
                 .. "補出格子後也放得下；✗ 四鄰往下一層只有天花板：兩端都擋")
 
         -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
+        local plainN = add("p2_plain_wall_1", { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" } })
         local function house(x0, y0, w, h)
             for x = x0, x0 + w - 1 do
-                select(2, cellAt(x, y0, 0)).wallN = obj(plain)
-                select(2, cellAt(x, y0 + h, 0)).wallN = obj(plain)
+                select(2, cellAt(x, y0, 0)).wallN = obj(plainN)
+                select(2, cellAt(x, y0 + h, 0)).wallN = obj(plainN)
             end
             for y = y0, y0 + h - 1 do
                 select(2, cellAt(x0, y, 0)).wallW = obj(plain)
@@ -16978,7 +17154,10 @@ end)()
         local cases = { { "30 雙斜 6×5＋山牆", s30, "gable", "EW", 6, 5, g30 }, { "30 單斜朝南 4×8＋山牆", s30, "shed", "S", 4, 8, g30 },
             { "45 雙斜 6×8", s45, "gable", "EW", 6, 8 }, { "45 雙斜 6×5＋山牆", s45, "gable", "EW", 6, 5, g45 },
             { "45 單斜朝南 4×4", s45, "shed", "S", 4, 4 }, { "45 單斜朝東 4×4", s45, "shed", "E", 4, 4 },
-            { "45 四坡 5×5", s45, "hip", nil, 5, 5 }, { "45 四坡 7×7", s45, "hip", nil, 7, 7 } }
+            { "45 四坡 5×5", s45, "hip", nil, 5, 5 }, { "45 四坡 7×7", s45, "hip", nil, 7, 7 },
+            { "45 雙斜 3×7＋山牆", s45, "gable", "EW", 3, 7, g45 }, { "45 雙斜 3×8＋山牆", s45, "gable", "EW", 3, 8, g45 },
+            { "45 雙斜 3×9＋山牆", s45, "gable", "EW", 3, 9, g45 }, { "45 雙斜南北 8×3＋山牆", s45, "gable", "NS", 8, 3, g45 },
+            { "45 單斜朝南 3×7＋山牆", s45, "shed", "S", 3, 7, g45 }, { "45 單斜朝東 7×3＋山牆", s45, "shed", "E", 7, 3, g45 } }
         local stuck
         for i, c in ipairs(cases) do
             local x0, y0 = 4000 + i * 20, 4000
@@ -16988,6 +17167,110 @@ end)()
         end
         check(stuck == nil, "屋頂（Roof＋Place）照圖蓋：30／45 度雙斜、單斜、四坡（含山牆、往上一層接、上一層平頂）"
             .. "每一片都蓋得起來" .. (stuck and "；卡住的 " .. stuck or ""))
+
+        -- 缺口（Main 2026-11-17，實機 roof-45-gable-8-gw）：配山牆時側面每一格從屋簷到屋頂線都要有牆。幾何條件：側面那格旁邊
+        -- 那格（範圍裡最靠那一邊的那格）有斜片在第 L 層＝第 0..L 層都要有牆類；只有上一層的平頂片（地板，第 1 層以上）在第 L 層
+        -- ＝第 0..L-1 層要有牆；那格沒有片（45 度朝北、朝西的坡面）照對稱那一格算
+        local function holes(groups, x0, y0, w, h, ns)
+            local kinds = {}
+            for _, gg in ipairs(groups or {}) do
+                local kd = Rules.classify(spriteMap[gg.id])
+                for _, c in ipairs(gg.cells) do
+                    local k = c[1] .. "," .. c[2]
+                    kinds[k] = kinds[k] or {}
+                    kinds[k][#kinds[k] + 1] = { kd, c[3] - 1 }
+                end
+            end
+            local function need(x, y) -- 這格的屋頂線：要牆的最高一層，沒有片回 nil
+                local top
+                for _, it in ipairs(kinds[x .. "," .. y] or {}) do
+                    local lv = it[1] == "roof" and it[2] or (it[1] == "floor" and it[2] >= 1 and it[2] - 1) or nil
+                    if lv and (top == nil or lv > top) then top = lv end
+                end
+                return top
+            end
+            local function hasWall(x, y, lv)
+                for _, it in ipairs(kinds[x .. "," .. y] or {}) do
+                    if it[1] == "wall" and it[2] == lv then return true end
+                end
+                return false
+            end
+            local n, len = 0, ns and w or h
+            for i = 0, len - 1 do
+                local sides = ns and { { x0 + i, y0, x0 + i, y0 }, { x0 + i, y0 + h, x0 + i, y0 + h - 1 } } -- 側面格, 旁邊那格
+                    or { { x0, y0 + i, x0, y0 + i }, { x0 + w, y0 + i, x0 + w - 1, y0 + i } }
+                for _, s in ipairs(sides) do
+                    local top = need(s[3], s[4])
+                    if top == nil then -- 對稱那一格（沿側面方向鏡射）
+                        local mx, my = s[3], s[4]
+                        if ns then mx = x0 + w - 1 - i else my = y0 + h - 1 - i end
+                        top = need(mx, my)
+                    end
+                    for lv = 0, top or -1 do
+                        if not hasWall(s[1], s[2], lv) then n = n + 1 end
+                    end
+                end
+            end
+            return n
+        end
+        local gapBad
+        for i, c in ipairs({ { "45 雙斜 3×7", "gable", "EW", 3, 7 }, { "45 雙斜 3×8", "gable", "EW", 3, 8 },
+            { "45 雙斜 3×9", "gable", "EW", 3, 9 }, { "45 雙斜南北 9×3", "gable", "NS", 9, 3 },
+            { "45 單斜朝南 3×8", "shed", "S", 3, 8 }, { "45 單斜朝東 8×3", "shed", "E", 8, 3 } }) do
+            local x0, y0 = 4000 + i * 20, 4400
+            house(x0, y0, c[4], c[5])
+            local gr, ww = Roof.layout(s45, c[2], c[3], x0, y0, x0 + c[4] - 1, y0 + c[5] - 1, 1, g45)
+            local hn = holes(gr, x0, y0, c[4], c[5], c[3] == "NS" or c[3] == "E")
+            local before = gapBad
+            gapBad = gapBad or ((hn > 0 or (ww and ww.GAP)) and c[1] .. " 缺 " .. hn .. " 格" or nil)
+            if not before and not gapBad then
+                local r = buildAll(gr)
+                if r ~= "ok" then gapBad = c[1] .. " 照圖蓋卡住 " .. r end
+            end
+        end
+        local x0, y0 = 4000, 4800
+        house(x0, y0, 3, 8)
+        local g30s, w30s = Roof.layout(s30, "shed", "S", x0, y0, x0 + 2, y0 + 7, 1, g30)
+        local h30 = holes(g30s, x0, y0, 3, 8, false)
+        local r30s = buildAll(g30s)
+        -- 往下一層那格的牆是門框、牆角或沒有：用同一邊最近的直牆（顏色同房子）
+        local fx, fy = 4000, 5200
+        house(fx, fy, 3, 8)
+        select(2, cellAt(fx, fy + 3, 0)).wallW = nil
+        local gf, wf = Roof.layout(s45, "gable", "EW", fx, fy, fx + 2, fy + 7, 1, g45)
+        local tf = {}
+        for _, gg in ipairs(gf or {}) do for _, cc in ipairs(gg.cells) do tf[cc[1] .. "," .. cc[2] .. "," .. cc[3] .. gg.id] = true end end
+        check(gapBad == nil and h30 == 0 and not (w30s and w30s.GAP) and r30s == "ok"
+            and tf[fx .. "," .. (fy + 3) .. ",1" .. plain:getName()] and holes(gf, fx, fy, 3, 8, false) == 0 and not (wf and wf.GAP),
+            "屋頂（Roof）45 度跨距 7、8、9 配山牆（東西、南北向）、45／30 度單斜往上接：側面每一格從屋簷到屋頂線都有牆或山牆片、"
+                .. "沒有 warn.GAP，照圖蓋每片都蓋得起來；底下那格沒有直牆時用同一邊最近的直牆" .. (gapBad and "；" .. gapBad or ""))
+
+        -- 屋頂範圍裡已經有地板的格子不補天花板（玩家鋪的、地圖原有的；Main 2026-11-17）：照圖蓋後地板圖沒被換掉
+        local floorSpr = add("p2_player_floor_0", { flags = { "solidfloor" } })
+        local px, py = 4000, 5600
+        house(px, py, 4, 4)
+        local own = { { px, py }, { px + 1, py + 2 }, { px + 3, py + 3 } }
+        for _, p in ipairs(own) do put("floor", floorSpr, p[1], p[2], 1) end
+        local gp, wp = Roof.layout(s30, "gable", "EW", px, py, px + 3, py + 3, 1, nil)
+        local fills, onOwn = 0, false
+        for _, gg in ipairs(gp or {}) do
+            if gg.id == Roof.FILL then
+                fills = #gg.cells
+                for _, cc in ipairs(gg.cells) do
+                    for _, p in ipairs(own) do if cc[1] == p[1] and cc[2] == p[2] then onOwn = true end end
+                end
+            end
+        end
+        local rb = buildAll(gp)
+        local kept = true
+        for _, p in ipairs(own) do
+            local s, o = cellAt(p[1], p[2], 1)
+            local nFill = 0
+            for _, ob in ipairs(s.objects) do if ob:getSprite() == spriteMap[Roof.FILL] then nFill = nFill + 1 end end
+            kept = kept and o.floor ~= nil and o.floor:getSprite() == floorSpr and nFill == 0
+        end
+        check(fills == 13 and not onOwn and wp and wp.HALF and rb == "ok" and kept,
+            "屋頂（Roof）範圍裡先有 3 格地板：那 3 格不補天花板（16 格補 13 片）；照圖蓋後那 3 格還是原本的地板")
         for k in pairs(opts) do squares[k] = nil end
     end
 
@@ -17010,6 +17293,7 @@ end)()
     local st = RP.st
     st.pn, st.set, st.shape, st.dir, st.gable, st.gableTs = 0, s30, "gable", "EW", nil, ""
     local okR = RP.release(100, 200, 105, 207)
+    check(okR and calls == 1 and total(last) == 96 and #toasts == 0, "屋頂（RoofPanel）放開：整批只叫一次 addMany（30 度 6×8 含天花板 96 片），不跳通知")
     local why = {}
     for _, code in ipairs({ "FULL", "TOO_WIDE", "TOO_HIGH", "OFF" }) do
         ret = { nil, code }
@@ -17030,6 +17314,46 @@ end)()
     local fixed = st.dir
     st.shape, st.dir = "gable", "EW"
     local p3 = RP.preview(100, 200, 103, 205)
+    check(p1 == p2 and #p1.cells == 48 and p1.cells[1].z == 1 and #p1.lines == 3 and p1.lines[2] == "IGUI_MBLD_Roof_Warn_HALF"
+        and fixed == "S" and #p3.lines == 3 and p3.lines[2] == "IGUI_MBLD_Roof_Warn_HALF",
+        "屋頂（RoofPanel）預覽：同一範圍回同一份、天花板同格不重複畫；30、45 度都補天花板多一行提示；✗ 45 度單斜選朝北夾回朝南")
+    -- 缺口補不了（底下沒有房子的牆）：預覽多一行說幾格；放開後也跳通知
+    st.gable, st.gableTs = g45, "walls_exterior_roofs_01"
+    local p4 = RP.preview(100, 200, 102, 207)
+    toasts = {}
+    local okGap = RP.release(100, 200, 102, 207)
+    local gapToast = toasts[1]
+    -- 選了山牆但它的貼圖還沒載好：留著選擇、不排（GABLE_WAIT），遮罩好了下一次預覽就認出來、照常排
+    local pickLate = RP.pickGable("late_gable_02")
+    local waitTs, waitG = st.gableTs, st.gable
+    local p5 = RP.preview(100, 200, 102, 207)
+    toasts = {}
+    local before5 = calls
+    local relLate = RP.release(100, 200, 102, 207)
+    local lateToast, lateCalls = toasts[1], calls - before5
+    lateMask["late_gable_02_15"] = nil
+    local p6 = RP.preview(100, 200, 102, 207)
+    check(p4.lines[3] == "IGUI_MBLD_Roof_Warn_GAP" and okGap and gapToast == "IGUI_MBLD_Roof_Warn_GAP",
+        "屋頂（RoofPanel）跨距 8 配山牆、底下沒有房子的牆：預覽多一行「有幾格要自己補牆」，放開加進藍圖後也跳這句")
+    check(pickLate and waitTs == "late_gable_02" and waitG == nil and p5.lines[1] == "IGUI_MBLD_Roof_Err_GABLE_WAIT"
+        and relLate == false and lateToast == "IGUI_MBLD_Roof_Err_GABLE_WAIT" and lateCalls == 0
+        and st.gable and st.gable.ts == "late_gable_02" and not st.gableWait and p6.lines[1] ~= "IGUI_MBLD_Roof_Err_GABLE_WAIT",
+        "屋頂（RoofPanel）選了山牆但貼圖還沒載好：選擇留著（不退回不放）、預覽與放開說「還在載入」、不加進藍圖；"
+            .. "遮罩好了下一次預覽就認出來照常排，不用重選")
+    st.gable, st.gableTs, st.gableWait = nil, "", false
+    B.PlanMode.addMany = nil
+    local avNo, avNoLate = RP.available("late_roofs_30b_0")
+    B.PlanMode.addMany = function(_, groups)
+        calls, last = calls + 1, groups
+        return ret[1], ret[2]
+    end
+    local av1, av1Late = RP.available("late_roofs_30b_0")
+    local avBad, avBadLate = RP.available("roofs_shallow_x_0")
+    lateMask["late_roofs_30b_3"] = nil
+    local av2, av2Late = RP.available("late_roofs_30b_0")
+    check(avNo == false and avNoLate == false and av1 == false and av1Late == true and avBad == false and avBadLate == false
+        and av2 == true and av2Late == false,
+        "屋頂（RoofPanel）available 第二個回傳：貼圖還沒載好是 true（呼叫的不要記住），認不出、沒有 addMany 是 false；載好後回 true")
 
     do -- 審查 RB1：平頂、四坡已選山牆；每一族 × 形狀 × 方向 × 有／沒有山牆 × 跨距都不丟錯
         local LEGAL = { TOO_SMALL = true, TOO_WIDE = true, ODD_SPAN = true, TOO_HIGH = true, DISABLED = true }
@@ -18918,12 +19242,85 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
             and opened[2] == "roofs_01_3",
             "屋頂助手鈕：available 回 true 才出現、占整套鈕那一格、焦點順序緊跟在它後面；按下開 RoofPanel.open(玩家, 名稱)")
         check(okAll and not wall and setBack, "✗ 換到不是屋頂的項目：屋頂助手鈕收起、整套鈕回來")
+        -- 貼圖遮罩還沒載好（available 回 false, true）：不記住，下一次重組詳情（約每秒）再判；載好了鈕就出現，不用換選擇
+        local lateCalls, loaded = 0, false
+        B.RoofPanel = { available = function()
+            lateCalls = lateCalls + 1
+            if loaded then return true, false end
+            return false, true
+        end, open = noop }
+        v.setKey = nil
+        local late1 = pick("roofs_01_3")
+        loaded = true
+        local late2 = pick("roofs_01_3")
+        local n2 = lateCalls
+        local late3 = pick("roofs_01_3")
+        check(okAll and not late1 and late2 and n2 == 2 and late3 and lateCalls == 2,
+            "屋頂助手鈕：第一次貼圖還沒載好時沒有鈕、不記住；同一項下一次重組詳情再判，載好了鈕出現（不用換選擇），之後不再重判")
+        B.RoofPanel = { available = function() return true end, open = function(pn, name) opened = { pn, name } end }
         place(380, 400) -- 窄版：屋頂助手和整套一樣只放圖示
         v.setKey = nil
         local narrowShown = pick("roofs_01_3")
         check(okAll and narrowShown and v.mode == "narrow" and v.roofBtn.title == "" and v.roofBtn.width == v.buildBtn.height
             and v.roofBtn.x == v.setBtn.x and v.roofBtn.y == v.setBtn.y, "窄版：屋頂助手鈕只有圖示、在整套鈕的位置")
         getTexture, getScriptManager = realTex, realSM
+
+        -- 搜完整圖塊名（listFor 不看頁籤、分類、來源）：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格一致；
+        -- 搜尋字不再是完整圖塊名時換回原本的。清單用假的 W.filter（真的 listFor 在「完整圖塊名（前後空白去掉）」那項驗）
+        local realFilter, realCats, realSources, realBucket = W.filter, W.categories, W.sources, B.Index.bucket
+        -- 目錄裡有 roofs_01_3（上面 world 建的圖）：玩家換分類時 leaveJump 才認得出它是完整圖塊名
+        B.Index.bucket = { roof = { roofs_01 = { n = 2, "roofs_01_3", "roofs_01_4" } } }
+        local LISTS = { all = { n = 3, "ramps_01_0", "roofs_30_01_0", "chair_01_0" }, ["k:ramp"] = { n = 1, "ramps_01_0" },
+            ["k:roof"] = { n = 1, "roofs_30_01_0" } }
+        W.filter = function(st)
+            if (st.query or "") == "roofs_01_3" then return { n = 2, "roofs_01_3", "roofs_01_4" }, "roofs_01_3" end
+            return LISTS[st.cat or "all"] or { n = 0 }, nil
+        end
+        W.categories = function()
+            return { { items = { { id = "all", label = "All" }, { id = "k:ramp", label = "Ramp" }, { id = "k:roof", label = "Roof" } } } }
+        end
+        W.sources = function() return { { id = "all" }, { id = "vanilla" } }, nil end
+        local shown, calls = {}, 0
+        for _, key in ipairs({ "tabs", "nav", "cat", "source" }) do
+            v[key].setSelected = function(_, id)
+                shown[key], calls = id, calls + 1
+            end
+        end
+        local function view(tab, cat, src)
+            return W.st.tab == tab and W.st.cat == cat and W.st.source == src and shown.tabs == tab and shown.nav == cat
+                and shown.cat == cat and shown.source == src
+        end
+        W.st.tab, W.st.cat, W.st.source, W.st.query, W.st.jumpPrev = "stairs", "k:ramp", "vanilla", "", nil
+        shown = { tabs = "stairs", nav = "k:ramp", cat = "k:ramp", source = "vanilla" }
+        local okJ, errJ = pcall(function()
+            W.refilter(false)
+            local before = calls == 0 and v.grid.items[1] == "ramps_01_0"
+            W.onQuery("roofs_01_3")
+            W.refilter(false) -- 搜尋防抖到時（W.pump）
+            local jumped = view("all", "all", "all") and v.grid.items.n == 2 and v.grid.items[1] == "roofs_01_3"
+            local n0 = calls
+            W.refilter(true) -- 每秒的重算：已經是「全部」，不再動畫面
+            local quiet = calls == n0
+            W.clearSearch()
+            local back = view("stairs", "k:ramp", "vanilla") and v.grid.items.n == 1 and v.grid.items[1] == "ramps_01_0"
+            check(before and jumped and quiet and back,
+                "搜完整圖塊名：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格列的那一桶一致；清掉搜尋字回原本的頁籤、分類、來源")
+            W.onQuery("roofs_01_3")
+            W.refilter(false)
+            W.setCat("k:roof") -- 玩家自己換分類：清掉完整圖塊名，照新分類列，不回搜之前的「坡道」
+            W.refilter(true)
+            check(W.st.query == "" and W.st.jumpPrev == nil and view("all", "k:roof", "all") and v.grid.items[1] == "roofs_30_01_0",
+                "✗ 搜完整圖塊名後玩家自己換分類：照新分類列，不跳回搜之前的頁籤、分類、來源")
+            W.st.tab, W.st.cat, W.st.source = "all", "all", "all"
+            calls = 0
+            W.onQuery("roofs_01_3")
+            W.refilter(false)
+            W.clearSearch()
+            check(calls == 0 and W.st.jumpPrev == nil and W.st.cat == "all",
+                "✗ 本來就是全部頁籤、全部分類、全部來源：搜完整圖塊名不記、不重設頁籤與下拉")
+        end)
+        if not okJ then check(false, "搜完整圖塊名的頁籤與下拉：" .. tostring(errJ)) end
+        W.filter, W.categories, W.sources, W.st.jumpPrev, B.Index.bucket = realFilter, realCats, realSources, nil, realBucket
     end
 
     MinidoracatUI, ISPanel, getTextManager, UIFont = real.ui, real.panel, real.tm, real.font
