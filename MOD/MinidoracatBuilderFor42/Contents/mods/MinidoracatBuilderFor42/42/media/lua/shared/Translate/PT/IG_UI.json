@@ -203,7 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Este servidor não tem este item (falta um mod ou tile).",
   "IGUI_MBLD_RunSkip_CLOSED": "O Build Anything não pode construir este item.",
   "IGUI_MBLD_RunSkip_FAR": "Longe demais ou não carregado. Aproxime-se e clique em \"Construir pelo projeto\".",
-  "IGUI_MBLD_RunSkip_WAIT": "À espera de que as peças ao lado sejam construídas primeiro, como as paredes sob um telhado ou o batente de uma porta. Depois já podem ser construídas.",
+  "IGUI_MBLD_RunSkip_WAIT": "À espera das peças ao lado, como as paredes sob um telhado ou o batente de uma porta. Assim que estiverem prontas, estas já podem ser construídas.",
   "IGUI_MBLD_RunBox_FAR": "Longe demais ou não carregada. Aproxime-se e tente de novo.",
   "IGUI_MBLD_RunBox_GONE": "A caixa desapareceu. Clique noutra com o botão direito para a escolher.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Fica na base de outra pessoa, por isso não pode tirar nada dela.",

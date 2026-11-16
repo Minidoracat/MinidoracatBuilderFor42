@@ -203,7 +203,7 @@
   "IGUI_MBLD_RunSkip_MISSING": "Ten serwer nie ma tego elementu (brakuje moda lub kafelka).",
   "IGUI_MBLD_RunSkip_CLOSED": "Build Anything nie może zbudować tego elementu.",
   "IGUI_MBLD_RunSkip_FAR": "Za daleko lub nie wczytano. Podejdź bliżej, a potem naciśnij „Buduj według projektu”.",
-  "IGUI_MBLD_RunSkip_WAIT": "Czekają, aż najpierw powstaną sąsiednie elementy, np. ściany pod dachem albo framuga drzwi. Potem da się je zbudować.",
+  "IGUI_MBLD_RunSkip_WAIT": "Najpierw muszą powstać sąsiednie elementy, np. ściany pod dachem albo framuga drzwi. Potem da się zbudować i te.",
   "IGUI_MBLD_RunBox_FAR": "Za daleko lub nie wczytano. Podejdź bliżej i spróbuj ponownie.",
   "IGUI_MBLD_RunBox_GONE": "Skrzyni już nie ma. Kliknij PPM inną skrzynię, by ją wybrać.",
   "IGUI_MBLD_RunBox_SAFEHOUSE": "Jest w cudzym schronieniu, więc nie możesz z niej brać.",
