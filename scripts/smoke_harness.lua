@@ -17137,39 +17137,70 @@ end)()
         return n
     end
 
-    -- 1. 4,096 片算完後改材料，預算一直超過：重排每幀看一段 256 片、16 幀看完（第 17 幀不再為重排讀時鐘）；
-    --    同時每幀只算一片，其餘積在佇列（busy() 是 true）。之後預算夠時算完，每片剛好一次
+    -- 1. 4,096 片算完後改材料，預算一直超過：重排每幀看一段（身邊 12 圈分 3 幀看完，第 3 幀接著看清單第一段，
+    --    之後每幀一段 256 片），18 幀看完（第 19 幀不再為重排讀時鐘）；同時每幀只算一片，其餘積在佇列（busy() 是 true）。
+    --    之後預算夠時算完，每片剛好一次
     local ready = bigPlan(nil)
     materialsChange()
     local frameReads = {}
-    for f = 1, 17 do
+    for f = 1, 19 do
         frame(2)
         frameReads[f] = reads
     end
     local scanFrames = 0
-    for f = 1, 16 do if frameReads[f] == 3 then scanFrames = scanFrames + 1 end end
+    for f = 1, 18 do if frameReads[f] == 3 then scanFrames = scanFrames + 1 end end
     local evaluated, backlog = sum(items), PC.busy()
-    check(ready and pl.n == 4096 and scanFrames == 16 and frameReads[17] == 2,
-        "重排分幀：預算超過時每幀只看一段 256 片（✗ 不是一幀 4,096 片），16 幀看完、第 17 幀不再排")
-    check(evaluated == 17 and backlog == true,
-        "重排分幀：超過預算的幀只算一片（17 幀算了 " .. evaluated .. " 片），佇列還有待算片時 busy() 是 true")
+    local nearOnly = true -- 算過的 19 片都在玩家（532,532）身邊 2 格內：身邊先排、由近到遠算（✗ 不是清單前段的遠片）
+    for k in pairs(items) do
+        local x, y = k:match("^(%-?%d+),(%-?%d+)$")
+        if math.max(math.abs(tonumber(x) - 532), math.abs(tonumber(y) - 532)) > 2 then nearOnly = false end
+    end
+    check(ready and pl.n == 4096 and scanFrames == 18 and frameReads[19] == 2,
+        "重排分幀：預算超過時每幀只看一段（✗ 不是一幀 4,096 片），身邊 3 幀＋清單 16 段共 18 幀看完、第 19 幀不再排")
+    check(evaluated == 19 and backlog == true,
+        "重排分幀：超過預算的幀只算一片（19 幀算了 " .. evaluated .. " 片），佇列還有待算片時 busy() 是 true")
+    check(nearOnly, "重排先排玩家身邊：前 19 幀算的都是身邊 2 格內的片（✗ 不是清單前段、離玩家遠的片）")
     settle(nil)
     local lo, hi = spread(pl)
     check(not PC.busy() and lo == 1 and hi == 1 and sum(items) == 4096 and allState(pl, "ok") == 0,
         "重排分幀：預算夠時把積壓算完，每片 Check.item 剛好一次、全部變能蓋")
 
-    -- 2. 時鐘不是每片都讀：走開 MOVE 格重排 far（沒有 far 的片），一幀讀 1＋4,096／256 次
+    -- 2. 時鐘不是每片都讀：走開 MOVE 格重排 far（沒有 far 的片），一幀讀 1＋身邊 2＋4,096／256 次
     K.pos.x = K.pos.x + PC.MOVE + 1
     frame(nil)
     local farReads = reads
     K.pos.x = 532.5
     frame(nil)
-    check(farReads == 1 + 4096 / 256 and not PC.busy(), "重排每 256 片才看一次時鐘（這一幀讀了 " .. farReads .. " 次）")
+    check(farReads == 1 + 2 + 4096 / 256 and not PC.busy(), "重排每 256 片（格）才看一次時鐘（這一幀讀了 " .. farReads .. " 次）")
+
+    -- 2b. 放下 4,096 片的藍圖：那一幀只建清單，片不一次全排（同步掃描照重排的分幀、身邊先排）。預算一直超過時
+    --     第 1 幀讀時鐘 4 次（tick 的 now、fresh 的 sAt、看完身邊 6 圈、算一片），之後每幀 3 次到 18 幀看完、第 19 幀 2 次；
+    --     第 1 幀算的是玩家腳下那片。之後預算夠時每片剛好一次
+    pl = Plan.new("place")
+    local pa = Plan.item(pl, "pp_a")
+    for i = 0, 4095 do Plan.add(pl, i % 64, math.floor(i / 64), 0, 0, 0, pa) end
+    SHORT, CODE = true, {}
+    PC.reset()
+    evals, items = {}, {}
+    local placeReads, firstEval = {}, nil
+    for f = 1, 19 do
+        frame(2)
+        placeReads[f] = reads
+        if f == 1 then firstEval = next(items) end
+    end
+    local placeScan = 0
+    for f = 2, 18 do if placeReads[f] == 3 then placeScan = placeScan + 1 end end
+    local placeBusy = PC.busy()
+    settle(nil)
+    lo, hi = spread(pl)
+    check(placeReads[1] == 4 and placeScan == 17 and placeReads[19] == 2 and firstEval == "532,532" and placeBusy
+        and lo == 1 and hi == 1 and sum(items) == 4096 and allState(pl, "short") == 0,
+        "放下 4,096 片的藍圖：片分 18 幀排進佇列（✗ 不是放下那一幀全排）、身邊先算；之後每片剛好一次")
 
     -- 3. 重排到一半、佇列裡還有待算片時加一片（rev 變、清單與佇列重建）：不漏、不重複、不越界
     ready = bigPlan("63,63")
     materialsChange()
-    for _ = 1, 8 do frame(2) end -- 看過 2,048 片、只算了 8 片，其餘積在佇列
+    for _ = 1, 8 do frame(2) end -- 看過身邊與清單前 1,536 片、只算了 8 片，其餘積在佇列
     local partial = sum(items)
     Plan.add(pl, 63, 63, 0, 0, 0, Plan.item(pl, "pp_a"))
     for _ = 1, 4 do frame(2) end
@@ -17181,7 +17212,7 @@ end)()
     -- 重排到一半拿掉一大半（清單變短、比目前索引還短）：沒出錯，留下的每片剛好一次，拿掉的不再算
     ready = bigPlan(nil)
     materialsChange()
-    for _ = 1, 4 do frame(2) end -- 看過前 1,024 片、算了 4 片
+    for _ = 1, 4 do frame(2) end -- 看過身邊與清單前 512 片、算了 4 片
     local drop = {}
     Plan.each(pl, function(p) if p.y < 8 or p.y >= 32 then drop[#drop + 1] = p end end)
     local function dropped()
@@ -17224,6 +17255,20 @@ end)()
         and sum(items) == 4096 + beforeAll and allState(pl, "ok") == 0 and not PC.busy(),
         "重排中 rev 變了、再併一張「全部」：每片都算到，只有請求前算過的再算一次" .. (fine and "" or " " .. tostring(err)))
     DG = "pp1"
+
+    -- 4c. 重排到一半、佇列還有待算片時藍圖搬走（原點變了：佇列重建）：搬過去的每片剛好一次（舊佇列不留重複），
+    --     搬之前算過的不再算
+    ready = bigPlan(nil)
+    materialsChange()
+    for _ = 1, 5 do frame(2) end
+    local beforeMove = sum(items)
+    OX = 600
+    fine, err = pcall(settle, nil)
+    lo, hi = spread(pl)
+    OX = 500
+    check(ready and fine and beforeMove == 5 and lo == 1 and hi == 1 and sum(items) == 4096 + beforeMove and not PC.busy(),
+        "重排到一半藍圖搬走：搬過去的每片剛好一次，舊佇列不留重複" .. (fine and "" or " " .. tostring(err)))
+    PC.reset()
 
     -- 5. 請求清掉：藍圖收起 busy() 是 false；換人從頭算、每片一次；reset 後 false
     ready = bigPlan(nil)
@@ -17433,6 +17478,100 @@ end)()
         and #sentReal.anchors >= 1,
         "Runner 配真的 PlanCheck：重排中、算過的片都缺料時照圖蓋開得了、挑不到片也等著；重算出能蓋的片就送")
     pushes = {}
+    PC.reset()
+
+    -- 照圖蓋開始後一直跑（每幀 PlanCheck 一次、Runner 一次）到送出第一批：回第一片的世界座標 "x,y"
+    local function firstSent(slow)
+        for _ = 1, 60 do
+            if pushes[1] then break end
+            frame(slow)
+            R.tick()
+        end
+        local a = pushes[1] and pushes[1].anchors[1]
+        return a and (a[1] .. "," .. a[2]) or nil
+    end
+    local fakeMaterials = function() return { need = {}, have = {}, tools = {} } end
+    local realMaterials2 = PC.materials
+    PC.materials = fakeMaterials -- Runner 總結用；這裡的假圖沒有成本表
+
+    -- 7c. 4,096 片、材料到了之後第 0～3 幀按照圖蓋（預算一直超過、每幀只算一片）：送出的第一片是玩家腳下那片，
+    --     和全部算完才按同一片（✗ 不是清單前段先算出來的遠片）。第 0 幀＝每秒一次的比對還沒看到就按
+    local function pressAfter(k)
+        R.stop()
+        bigPlan(nil)
+        pushes = {}
+        if k == nil then
+            materialsChange()
+            settle(nil)
+        elseif k == 0 then
+            SHORT, MG = false, MG + 1
+        else
+            materialsChange()
+            for _ = 1, k do frame(2) end
+        end
+        local started = R.start(K)
+        local at = firstSent(k ~= nil and 2 or nil)
+        R.stop()
+        return started == true and at or tostring(started) .. "/" .. tostring(at)
+    end
+    local nearRef = pressAfter(nil)
+    local nearPicks = { pressAfter(0), pressAfter(1), pressAfter(2), pressAfter(3) }
+    check(nearRef == "532,532" and nearPicks[1] == nearRef and nearPicks[2] == nearRef and nearPicks[3] == nearRef
+        and nearPicks[4] == nearRef,
+        "照圖蓋在材料到了之後第 0～3 幀按：第一片是玩家腳下那片，和全部算完才按同一片（" .. table.concat(nearPicks, " ") .. "）")
+
+    -- 7c'. 清單前段（離玩家遠）的片本來就能蓋、身邊的缺料；材料到了同一幀就按，而且 Runner 在 PlanCheck 之前先挑
+    --      （OnTick 的先後不保證）：先等身邊的片重算，送出的第一片是腳下那片（✗ 不先挑走舊狀態裡能蓋的遠片）
+    R.stop()
+    bigPlan(nil)
+    SHORT, CODE = false, {}
+    Plan.each(pl, function(p) if p.y >= 4 then CODE[(p.x + OX) .. "," .. (p.y + OY)] = "NO_MATERIAL" end end)
+    MG, T = MG + 1, T + PC.SUMMARY_MS
+    settle(nil)
+    local frontOk = allState(pl, "ok") == 4096 - 4 * 64
+    pushes, CODE, MG = {}, {}, MG + 1
+    local staleStart = R.start(K)
+    R.tick()
+    local staleAt = firstSent(2)
+    R.stop()
+    check(frontOk and staleStart == true and staleAt == "532,532",
+        "照圖蓋：遠處的片本來就能蓋、身邊的剛拿到料，同一幀按下先等身邊重算，第一片是腳下那片（送了 " .. tostring(staleAt) .. "）")
+
+    -- 7d. 剛拿到料就按照圖蓋（PlanCheck 每秒一次的比對還沒看到）：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），
+    --     重算完送出最近的能蓋的片；真的沒料（摘要沒變）時照舊回 NOTHING、不在重排
+    local function smallPress(k, give)
+        R.stop()
+        pl = Plan.new("mnGo")
+        local mi = Plan.item(pl, "pp_a")
+        for x = 30, 31 do for y = 30, 31 do Plan.add(pl, x, y, 0, 0, 0, mi) end end
+        SHORT, CODE = true, {}
+        PC.reset()
+        frame(nil)
+        local allShortNow = allState(pl, "short") == 0
+        if give then SHORT, MG = false, MG + 1 end
+        for _ = 1, k do -- 一幀 16 ms：30 幀還不到每秒一次的比對
+            T = T + 16
+            reads, slowAt = 0, nil
+            PC.tick(K)
+        end
+        pushes = {}
+        local started, why = R.start(K)
+        local busyNow = PC.busy()
+        local at = started and firstSent(nil)
+        R.stop()
+        return allShortNow, started, why, busyNow, at
+    end
+    local mnOk = true
+    for _, k in ipairs({ 0, 1, 30 }) do
+        local a, started, why, busyNow, at = smallPress(k, true)
+        if not (a and started == true and why == nil and busyNow and at == "531,531") then mnOk = false end
+    end
+    local na, nStarted, nWhy, nBusy = smallPress(1, false)
+    check(mnOk, "剛拿到料就按照圖蓋：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），重算完送最近的那片")
+    check(na and nStarted == nil and nWhy == "NOTHING" and nBusy == false,
+        "沒拿到料時按照圖蓋：照舊回 NOTHING、不在重排（反面）")
+    PC.materials = realMaterials2
+    pushes, SHORT, CODE = {}, false, {}
     PC.reset()
 
     -- 7b. Runner 配假的 PlanCheck：busy() 期間挑不到片不結束、不回 NOTHING；busy() 結束後真的沒有才 LEFT

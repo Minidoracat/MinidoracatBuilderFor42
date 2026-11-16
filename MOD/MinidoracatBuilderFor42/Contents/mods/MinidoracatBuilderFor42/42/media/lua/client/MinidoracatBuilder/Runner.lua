@@ -584,8 +584,9 @@ local function perBatch()
 end
 
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、離玩家最近的那片，再收同項目、同層、同疊放值最近的幾片。
--- 回 batch，"wait"（還有片沒算出狀態），或 nil（沒有能蓋的）
-local function pickBatch(player, plan)
+-- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。
+-- 回 batch，"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
+local function pickBatch(player, plan, settled)
     local PC = planCheck()
     local boxes = #Runner.boxes() > 0
     local px, py = player:getX(), player:getY()
@@ -603,7 +604,7 @@ local function pickBatch(player, plan)
         end
         if not (state == "ok" or (state == "short" and boxes)) then return end
         local id, x, y, z, d, o, w = resolve(p)
-        if not id then return end
+        if not id or (settled and not settled(x, y, z)) then return end
         local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id),
             dist = (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2 }
         cand[#cand + 1] = c
@@ -865,7 +866,10 @@ local function pick(player, plan)
     -- 等狀態時隔一下再挑；時鐘往回調時不等（家族 pitfalls）
     if st.nextPick and t < st.nextPick and st.nextPick - t <= RETRY_MS then return end
     st.nextPick = nil
-    local b = pickBatch(player, plan)
+    local PC = planCheck()
+    -- PlanCheck 重排掃描中：只挑比它近的片都重算過的片（等滿 BUSY_MAX_MS 就照舊什麼都挑）
+    local gate = PC.settled and not (st.busyFrom and t >= st.busyFrom and t - st.busyFrom >= Runner.BUSY_MAX_MS)
+    local b = pickBatch(player, plan, gate and PC.settled or nil)
     if b == "wait" then
         st.nextPick = t + RETRY_MS
         return
@@ -873,7 +877,6 @@ local function pick(player, plan)
     if b == "again" then return end
     if b then st.busyFrom = nil end
     -- 一批蓋完後的寬限內、或 PlanCheck 還在重排或待算（重排中的片 state 還是舊的）：挑不到不算蓋完，稍後再挑
-    local PC = planCheck()
     local busy = not b and PC.busy and PC.busy()
     if busy then
         st.busyFrom = st.busyFrom or t
@@ -939,6 +942,9 @@ function Runner.start(player)
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.busyFrom = nil
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
+    -- 剛拿到料、PlanCheck 每秒一次的比對還沒看到：先比一次。變了就在重排（busy），開始後等身邊的片重算完再挑，
+    -- 不先挑走舊狀態裡能蓋的遠片
+    if PC.refresh then PC.refresh(player) end
     local boxes, any = #Runner.boxes() > 0, false
     B.Plan.each(plan, function(p)
         if any then return end
