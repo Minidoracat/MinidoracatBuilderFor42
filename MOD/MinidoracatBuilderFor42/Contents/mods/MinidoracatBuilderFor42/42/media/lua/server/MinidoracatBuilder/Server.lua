@@ -24,7 +24,7 @@ MinidoracatBuilder.Server = Server
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
 local INTENT_TTL_MS = 180000          -- 收下後要先走過去（INTENT_REACH 100 格，繞路也夠；建造作弊不走）；每做完一項再延長
-local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流
+local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流；改了要和 client/Client.lua 的 Client.RATE_WINDOW_MS、Client.RATE_MAX 一起改（harness 釘住兩邊一致）
 local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
 local OVERLAP = { overlap = true }    -- 疊放的請求交給 Check.item 的 opts（只讀；沒有 preview，照伺服器的路走）

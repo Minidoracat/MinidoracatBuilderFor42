@@ -27,6 +27,14 @@ local SETTLE_END_MS = 2000 -- 一批蓋完後 PlanCheck 分幀重查四鄰與上
 -- PlanCheck.busy() 時挑不到片最多等多久（這一輪第一次因它延後起算，挑到片就歸零）：身邊的片會定時重排，萬一一直排不空，
 -- 超過就照沒在重排的路徑結束，不讓照圖蓋停在挑片看不出原因
 Runner.BUSY_MAX_MS = 10000
+-- 伺服器的限流（Client.RATE_WINDOW_MS、RATE_MAX，同 server/Server.lua）：照圖蓋送之前看這台客戶端最近一個窗送過幾個
+-- 建造、拆除請求（Client.recentSends：手動蓋、拖一排、拆除、照圖蓋都算），到上限減 RATE_SPARE 就先不送，
+-- 留幾個給玩家同時手動送的。多人連線時伺服器限流是不回覆（只能等 Queue 逾時），所以要先擋在這裡
+local RATE_SPARE = 2
+-- 還是被限流（別的請求也算在同一個額度裡）：不暫停、不通知，等 RATE_RETRY_MS 重挑（同一片還是最近的那片）；
+-- 連續被限流到 RATE_GIVE_UP_MS 才照「伺服器拒絕整批」暫停
+Runner.RATE_RETRY_MS = 1500
+Runner.RATE_GIVE_UP_MS = 15000
 local RECIPE = "recipe:"
 local NAILS, NAILS_BOX, PER_BOX = "Base.Nails", "Base.NailsBox", 100 -- 同 Materials：釘子盒一盒算 100 根
 
@@ -583,6 +591,12 @@ local function perBatch()
     return math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
 end
 
+-- 這台客戶端最近一個限流窗送過的請求已經到上限減 RATE_SPARE：這時不送
+local function rateFull(t)
+    local C = B.Client
+    return C.recentSends(t) >= C.RATE_MAX - RATE_SPARE
+end
+
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、離玩家最近的那片，再收同項目、同層、同疊放值最近的幾片。
 -- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。
 -- 回 batch，"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
@@ -772,6 +786,17 @@ local function batchDone(b, sum)
         st.placed[c.p] = true
         touch(c.x, c.y, c.z)
     end
+    if sum.refused == "RATE_LIMITED" then
+        -- 伺服器限流（玩家同時手動送的也算在額度裡）：等一下重挑，連續被限流到 RATE_GIVE_UP_MS 才暫停
+        local t = getTimestampMs()
+        if not st.rateFrom or t < st.rateFrom then st.rateFrom = t end
+        if t - st.rateFrom < Runner.RATE_GIVE_UP_MS then
+            st.rateUntil, st.state = t + Runner.RATE_RETRY_MS, "pick"
+            return
+        end
+        return halt("paused", "REFUSED", sum.refused, sum.extra)
+    end
+    st.rateFrom = nil
     if sum.refused then
         local i = sum.extra and tonumber(sum.extra.i) or 0
         if WHOLE[sum.refused] or i <= 0 or not b.sent[i] then
@@ -866,6 +891,11 @@ local function pick(player, plan)
     -- 等狀態時隔一下再挑；時鐘往回調時不等（家族 pitfalls）
     if st.nextPick and t < st.nextPick and st.nextPick - t <= RETRY_MS then return end
     st.nextPick = nil
+    -- 伺服器限流：剛被限流的等 RATE_RETRY_MS；自己最近一個窗送滿了也先不挑（挑批要掃整張藍圖，不每幀白挑）。
+    -- 時鐘往回調時不等
+    if st.rateUntil and t < st.rateUntil and st.rateUntil - t <= Runner.RATE_RETRY_MS then return end
+    st.rateUntil = nil
+    if rateFull(t) then return end
     local PC = planCheck()
     -- PlanCheck 重排掃描中：只挑比它近的片都重算過的片（等滿 BUSY_MAX_MS 就照舊什麼都挑）
     local gate = PC.settled and not (st.busyFrom and t >= st.busyFrom and t - st.busyFrom >= Runner.BUSY_MAX_MS)
@@ -940,7 +970,7 @@ function Runner.start(player)
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
     st.later = {}
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
-    st.busyFrom = nil
+    st.busyFrom, st.rateFrom, st.rateUntil = nil, nil, nil
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     -- 剛拿到料、PlanCheck 每秒一次的比對還沒看到：先比一次。變了就在重排（busy），開始後等身邊的片重算完再挑，
     -- 不先挑走舊狀態裡能蓋的遠片

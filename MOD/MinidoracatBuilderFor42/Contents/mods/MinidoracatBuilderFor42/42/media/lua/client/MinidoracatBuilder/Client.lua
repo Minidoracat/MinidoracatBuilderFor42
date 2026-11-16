@@ -25,6 +25,34 @@ Client.results = {}  -- 伺服器回覆（refused／placed／dismantle*），新
 -- Client.onResult(cmd, args)：排程設定（Queue.lua）；每則建造回覆（accepted／refused／placed）收進 results 之後呼叫
 local lastNonce = getTimestampMs() % 1000000
 
+-- 伺服器限流（server/Server.lua 的 RATE_WINDOW_MS、RATE_MAX：每人每 5 秒最多 20 個建造、拆除請求，多人連線時超過的
+-- 不收也不回覆）。那份在 server 目錄、客戶端讀不到：兩邊要一起改（harness 讀 Server.lua 釘住兩邊一致）。
+-- 建造（Client.build）、拆除（Client.dismantleMany）送出時各記一筆；照圖蓋送之前看最近一個窗的總數（手動送的也算）
+Client.RATE_WINDOW_MS, Client.RATE_MAX = 5000, 20
+local sends = {} -- 最近送出請求的時間（舊的在前）；分割畫面幾位玩家合算（寧可少送）
+
+-- 最近一個限流窗（含兩端，同 Server 的 rateOk）送過幾個請求。順便原地丟掉窗外的與時鐘往回調後「在未來」的紀錄
+function Client.recentSends(t)
+    t = t or getTimestampMs()
+    local n = 0
+    for i = 1, #sends do
+        local s = sends[i]
+        sends[i] = nil
+        if s <= t and t - s <= Client.RATE_WINDOW_MS then
+            n = n + 1
+            sends[n] = s
+        end
+    end
+    return n
+end
+
+-- 記一筆送出的請求（只留窗內的，不無限長）
+function Client.sent()
+    local t = getTimestampMs()
+    Client.recentSends(t)
+    sends[#sends + 1] = t
+end
+
 -- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；其他不站在 own（同一件的其他格）上，
 -- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
 -- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
@@ -76,6 +104,7 @@ function Client.build(player, e, cells, overlap)
     Client.pending = { n = n, e = e, entry = entry, kind = entry.kind, cells = cells, player = player }
     Client.pendingUnbuild = nil -- 每人只留一個請求：還沒輪完的拆除，收到回覆也不再排
     ISTimedActionQueue.clear(player)
+    Client.sent() -- 伺服器限流照請求數算（單機被限流的也算）
     if isClient() then
         sendClientCommand(player, MODULE, "intent", args)
     elseif not MinidoracatBuilder.Server.intent(player, args) then -- 單機：同一個 Lua 狀態，被拒當場就知道
@@ -375,7 +404,10 @@ function Client.dismantleMany(player, items, onDone)
     ISTimedActionQueue.clear(player)
     if #list == 0 then
         queueUnbuild(b)
-    elseif isClient() then
+        return n
+    end
+    Client.sent() -- 同建造：伺服器限流照請求數算
+    if isClient() then
         sendClientCommand(player, MODULE, "dismantle", { n = n, t = t })
     else
         MinidoracatBuilder.Server.dismantleIntent(player, { n = n, t = t }) -- 單機：當場回覆（Server.send 直接呼叫 onServerCommand）

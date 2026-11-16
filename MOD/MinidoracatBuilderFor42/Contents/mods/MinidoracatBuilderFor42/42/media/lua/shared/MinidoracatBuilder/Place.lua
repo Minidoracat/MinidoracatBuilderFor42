@@ -320,19 +320,37 @@ end
 
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
 -- 一樓（z＝0）不查支撐：原版地圖的屋簷、貼牆的邊緣裝飾、帳篷與碉堡頂都放在一樓（離線讀 Muldraugh 的 lotpack，z＝0 的
--- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆，或這格、四鄰有地板或屋頂
--- （四鄰有地板＝connectedWithFloor，不含斜坡）。照座標查、不要這格存在：客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
+-- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆、地板或屋頂片
+-- （45 度屋頂助手每格補的天花板、上一層的平頂片疊在它上面），四鄰往下一層有屋頂片（單斜往上一層接：那片正下方是空的，
+-- 靠斜下方的鄰片撐），或這格、四鄰有地板或屋頂（四鄰有地板＝connectedWithFloor，不含斜坡）。照座標查、不要這格存在：
+-- 客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
-local function supports(sq)
+local function roofPiece(sq)
     if not sq then return false end
-    if sq:has(F.solidfloor) then return true end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local s = objects:get(i):getSprite()
         if s and (Rules.typeCode(s:getType()) == "roof" or s:getProperties():has("RoofGroup")) then return true end
     end
     return false
+end
+local function supports(sq)
+    return sq ~= nil and (sq:has(F.solidfloor) or roofPiece(sq))
+end
+
+-- 樓上的牆沒有地板時另外兩種撐法（只認牆，kind＝wall；柱子不算）。山牆片和一般牆的屬性一樣（WallN／WallW＋wall），
+-- 伺服器分不出，所以照兩端都查得到的事實放行，兩種都沒有的照舊要地板（不浮空）：
+-- 一、正下方那格同一條邊有牆（getWall：牆、門框、窗框）：屋頂下的山牆疊在一樓的牆上，那一格在屋頂層沒有地板（地圖房子同樣）。
+-- 二、這條邊兩側的格子同一層有屋頂片：牆是那片屋頂的端牆。單斜往上一層接的山牆片正下方那層是空的（建築編輯器在那裡放整面
+-- 的別款牆），靠旁邊的屋頂片撐
+local function wallHeld(sq, kind, n, w)
+    if kind ~= "wall" or not (n or w) or sq:getZ() <= 0 then return false end
+    local cell, x, y, z = getCell(), sq:getX(), sq:getY(), sq:getZ()
+    local below = cell:getGridSquare(x, y, z - 1)
+    if below and (not n or below:getWall(true) ~= nil) and (not w or below:getWall(false) ~= nil) then return true end
+    return roofPiece(sq) or (n and roofPiece(cell:getGridSquare(x, y - 1, z)))
+        or (w and roofPiece(cell:getGridSquare(x - 1, y, z))) or false
 end
 function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
 function Place.roofAt(x, y, z, planned)
@@ -342,6 +360,10 @@ function Place.roofAt(x, y, z, planned)
     if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋（審查 1109 Claude）
     if z == 0 then return true end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
+    if supports(below) or roofPiece(cell:getGridSquare(x - 1, y, z - 1)) or roofPiece(cell:getGridSquare(x + 1, y, z - 1))
+        or roofPiece(cell:getGridSquare(x, y - 1, z - 1)) or roofPiece(cell:getGridSquare(x, y + 1, z - 1)) then
+        return true
+    end
     if planned and (planned[Place.key(x - 1, y, z)] or planned[Place.key(x + 1, y, z)]
         or planned[Place.key(x, y - 1, z)] or planned[Place.key(x, y + 1, z)]) then
         return true
@@ -353,7 +375,8 @@ end
 
 -- 地板：照原版 BuildRecipeCode.floor.OnIsValid（buildRecipeCode.lua:344-370）：正下方不是樓梯（HasStairsBelow），而且
 -- connectedWithFloor（IsoGridSquare.java:3452-3490：一樓一律可以；旁邊同一層有地板，或斜坡頂接到這格）。二樓以上另外：
--- 正下方那格有牆也撐得住，同屋頂（使用者 2026-11-09 選：站在下面往上鋪，不必先蓋樓梯）。照座標查、不要這格存在
+-- 正下方那格有牆也撐得住，同屋頂（使用者 2026-11-09 選：站在下面往上鋪，不必先蓋樓梯）；四鄰往下一層有屋頂片也撐得住：
+-- 45 度屋頂屋脊上一層的平頂片（帶 solidfloor，分類是地板）四周只有斜片在下一層，同層一片地板都還沒有。照座標查、不要這格存在
 -- （預覽時上一層的格子常常還沒建）；planned 同屋頂（同一排前面判定可蓋的地板格）
 local SIDES = { { -1, 0, "E" }, { 1, 0, "W" }, { 0, -1, "S" }, { 0, 1, "N" } } -- 鄰格與斜坡朝向（同 connectedWithFloor）
 function Place.floorAt(x, y, z, planned)
@@ -367,7 +390,7 @@ function Place.floorAt(x, y, z, planned)
         local n = cell:getGridSquare(nx, ny, z)
         if (n and n:has(F.solidfloor)) or (planned and planned[Place.key(nx, ny, z)]) then return true end
         local b = cell:getGridSquare(nx, ny, z - 1)
-        if b and b:getSlopedSurfaceHeight(IsoDirections[d[3]]) == 1 then return true end
+        if b and (b:getSlopedSurfaceHeight(IsoDirections[d[3]]) == 1 or roofPiece(b)) then return true end
     end
     return false
 end
@@ -671,7 +694,8 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
             or (w and buildUtil.stairIsBlockingPlacement(sq, true, false)) then
             return false
         end
-        if not floorUnder(sq) and not sq:hasFloor(n) then return false end -- 樓上的牆要踩在地板上（ISWoodenWall:isValid）
+        -- 樓上的牆要踩在地板上（ISWoodenWall:isValid），或疊在正下方同一條邊的牆上、靠著同一層的屋頂片（wallHeld）
+        if not floorUnder(sq) and not sq:hasFloor(n) and not wallHeld(sq, kind, n, w) then return false end
         if not n and not w then return not has(sq, F.WallSE, replacing) end -- 柱子
         return not ((n and edgeTaken(sq, true, replacing, dirtN)) or (w and edgeTaken(sq, false, replacing, dirtW))
             or splitsGrid(sq, n, w, replacing))

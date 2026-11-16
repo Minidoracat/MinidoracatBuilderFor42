@@ -3,7 +3,7 @@
 -- 認整套＝「編號模板位置＋外形」：原版的屋頂片照官方建築編輯器的固定模板排，MOD 會整個平移或自己排，所以先照模板位置
 -- 找候選、每片都要存在而且種類對，再比外形（只看屬性、只看編號、只比外形都不行；離線量測 roofproto-20261116）。
 -- 排法照建築編輯器的規則自己寫（30 度：所有片放在同一層、每 6 格升一層、屋脊與四角錐頂只有奇數跨距的片、山牆是牆片；
--- 45 度：每 3 格升一層，只有朝南、朝東的坡面有片，朝北、朝西那半邊補天花板片，跨距中間超過 3 格的鋪平頂片在上一層）。
+-- 45 度：每 3 格升一層，只有朝南、朝東的坡面有片，屋頂那一層每格都補天花板片，跨距中間超過 3 格的鋪平頂片在上一層）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Rules"
 
@@ -49,16 +49,17 @@ Roof.FAM = {
                 { "PeakE", 32, 1 }, { "PeakS", 40, 1 } }) },
     },
     -- 45 度：核心 20 片，原版 17 套模板相同、基準 0 或 32；+22 是平頂片（TOP1，不算核心）。建築編輯器只畫朝南、朝東的坡面
-    -- （PeakWE／PeakNS 只畫南、東半邊，北、西沒有片）；那半邊補天花板片（FILL）：實機探針補了天花板整間才算有屋頂、
-    -- 不漏雨（見 builder-dev roof.md）。
+    -- （PeakWE／PeakNS 只畫南、東半邊，北、西沒有片）。屋頂那一層每格都補天花板片（FILL），見 Roof.FILL。
     -- 跨距的一半超過 3 格（離屋簷 3 格以上）鋪平頂片在上一層（建築編輯器 depth Three 的平頂放在上一層的地板層，
     -- r43_buildingfloor.cpp:884-891），所以 45 度沒有跨距上限。
     -- 半格片：RS2／RE2（OnePt5S／E）＝+15／+14；RS3／RE3（TwoPt5）在 +71／+70 或 +47／+46，沒有的款照建築編輯器用 +15／+14
     -- 往西北移一格（BuildingTiles offset -1 -1）；OP2／OP3（OuterOnePt5／TwoPt5，四坡奇數短邊的屋脊頭與錐頂）在
     -- +65／+66 或 +41／+42，只有部分款有（set.half）。這幾片在辨識時找（set.pieces），不在模板裡。
-    -- 山牆 44 款，模板 18 片（建築編輯器 roof_caps 的位移，walls_exterior_roofs_01 與 _05 各列都一樣；參考圖用 _01），
-    -- 原版非燒毀款同片種最大差 4（location_shop_bargNclothes_01），不同片種最近差 10（PeakS 與 RiseS），容許取 4；
-    -- 燒毀款與 walls_logs 認不出（量測見 builder-dev roof.md）。
+    -- 山牆 44 款，模板 18 片（建築編輯器 roof_caps 的位移，walls_exterior_roofs_01 與 _05 各列都一樣；參考圖用 _01）。
+    -- 遊戲的遮罩是 alpha 不是 0 就算（PNGDecoder.markOpaquePixels），照這個量：屋脊頭 PeakE1／PeakS1 原版有兩種外形
+    -- （_01@0 與 _01@72 差 15／12 點；穀倉、二手衣店是 @72 那種），所以每個片種比 alt 那套也比；兩套取近的，原版非燒毀款
+    -- 同片種最大差 7（walls_exterior_roofs_04 PeakS1），不同片種最近差 10（PeakS1 與 RiseS1），容許取 7；
+    -- 燒毀款（差 8）與 walls_logs（差 9 以上）認不出（量測見 builder-dev roof.md）。
     -- 跨距 7 以上的山牆中段（建築編輯器的 CapGap，是別的牆圖塊組的整面牆）不放
     ["45"] = {
         ref = "roofs_01", tol = 20, rise = 3, kind = "roof",
@@ -66,14 +67,17 @@ Roof.FAM = {
             { "RS2", 15, 1, 0 }, { "TOP1", 22, 1, 0 }, { "SW", 24, 1, 3 }, { "NE", 27, -1, 3 } }),
         key = { face = { S = "S", E = "E" }, corner = { SE = "O", SW = "SW", NE = "NE" }, ridge = { NS = "RS", WE = "RE" },
             quad = "OP", triSE = "OP", flat = "TOP", half = { RS = true, RE = true, OP = true } },
-        gable = { ref = "walls_exterior_roofs_01", tol = 4, kind = "wall",
+        gable = { ref = "walls_exterior_roofs_01", alt = 72, tol = 7, kind = "wall",
             off = rows({ { "RiseE", 0, 1, 3 }, { "FallE", 8, 1, 3 }, { "RiseS", 11, -1, 3 }, { "FallS", 3, -1, 3 },
                 { "PeakE1", 15, 1, 0 }, { "PeakE2", 14, 1, 0 }, { "PeakE3", 16, 1, 0 },
                 { "PeakS1", 7, 1, 0 }, { "PeakS2", 6, 1, 0 }, { "PeakS3", 17, 1, 0 } }) },
     },
 }
 Roof.FAMILIES = { "30", "45" }
-Roof.FILL = "ceilings_01_0" -- 45 度沒有片的那半邊、半格片底下補的天花板（地圖房子屋頂層每格都疊這張；實測補了才算室內）
+-- 45 度屋頂那一層每一格補的天花板（平頂除外：平頂片自己是地板）。引擎替自建房間建房間要封閉而且屋頂過半
+-- （WorldRegionToMetaGrid.java:183），「有屋頂」照上面幾層有沒有 solidfloor 算（DataChunk.recalcRoofs），45 度的斜片沒有
+-- solidfloor；地圖房子屋頂層每格也都疊這張（實測見 builder-dev roof.md）
+Roof.FILL = "ceilings_01_0"
 
 -- 每族的核心片（照編號排，比對時先失敗的先跳出）；45 度的平頂片不算核心
 for _, spec in pairs(Roof.FAM) do
@@ -102,10 +106,13 @@ end
 local samples = {} -- "樣板組_編號" → 樣板取樣，false＝拿不到
 local cache, gableCache = {}, {} -- 圖塊組 → { 套, … }（認不出是空表）
 
--- 每 STEP px 取一點。ref 是 nil：回取樣（含寬高）；有 ref：邊取邊比，圖框不同或不同的點超過 tol 回 nil，對上回 true
+-- 每 STEP px 取一點。ref 是 nil：回取樣（含寬高）；有 ref：邊取邊比，圖框不同或不同的點超過 tol 回 nil，對上回 true。
+-- 貼圖還沒載好（有貼圖、沒有遮罩：Texture 的遮罩跟著貼圖資料建，Texture.java:1431-1438）回 nil, true＝晚點再認，
+-- 呼叫的不要把結果記下來
 local function sample(spr, ref, tol)
     local tex = spr:getTextureForCurrentFrame(IsoDirections.N)
     if not tex then return nil end
+    if tex:getMask() == nil then return nil, true end
     local w, h = tex:getWidthOrig(), tex:getHeightOrig()
     if ref and (w ~= ref.w or h ~= ref.h) then return nil end
     local out, n, bad = nil, 0, 0
@@ -125,20 +132,41 @@ local function sample(spr, ref, tol)
     return out or true
 end
 
+-- 回 樣板取樣（拿不到是 nil）, 還沒載好
 local function refSample(name)
     local s = samples[name]
     if s == nil then
         local spr = Entry.sprite(name)
-        s = spr and sample(spr, nil, 0) or false
+        local wait
+        if spr then s, wait = sample(spr, nil, 0) end
+        if wait then return nil, true end
+        s = s or false
         samples[name] = s
     end
-    return s or nil
+    return s or nil, false
 end
 
--- 一個圖塊組照一份模板（spec＝Roof.FAM[族] 或它的 gable）找整套：回基準編號的陣列
+-- 照一份模板（spec）比 spr 是不是片種 k：ref 那套對不上再比 alt 那套（同一個樣板組的另一個基準）。回 對上, 還沒載好
+local function matches(spr, spec, k)
+    local wait = false
+    for _, b in ipairs({ 0, spec.alt or false }) do
+        if b then
+            local ref, w1 = refSample(spec.ref .. "_" .. (b + spec.off[k]))
+            local ok, w2 = false, false
+            if ref then ok, w2 = sample(spr, ref, spec.tol) end
+            if ok then return true, false end
+            wait = wait or w1 or w2
+        end
+    end
+    return false, wait
+end
+
+-- 一個圖塊組照一份模板（spec＝Roof.FAM[族] 或它的 gable）找整套：回 基準編號的陣列, 還沒載好（true 時陣列不可信）
 local function scan(ts, spec)
     for _, k in ipairs(spec.core) do
-        if not refSample(spec.ref .. "_" .. spec.off[k]) then return {} end -- 原版樣板拿不到：不認
+        local ref, wait = refSample(spec.ref .. "_" .. spec.off[k])
+        if wait then return {}, true end
+        if not ref then return {}, false end -- 原版樣板拿不到：不認
     end
     local kinds = {} -- 編號 → 這張圖是不是要的種類（同一張會被好幾個基準問到）
     local function isKind(n)
@@ -161,8 +189,9 @@ local function scan(ts, spec)
         end
         if ok then
             for _, k in ipairs(spec.core) do
-                local spr = Entry.sprite(ts .. "_" .. (b + spec.off[k]))
-                if not sample(spr, refSample(spec.ref .. "_" .. spec.off[k]), spec.tol) then
+                local hit, wait = matches(Entry.sprite(ts .. "_" .. (b + spec.off[k])), spec, k)
+                if wait then return {}, true end
+                if not hit then
                     ok = false
                     break
                 end
@@ -170,28 +199,36 @@ local function scan(ts, spec)
         end
         if ok then out[#out + 1] = b end
     end
-    return out
+    return out, false
 end
 
--- 45 度在模板外的半格片（見 Roof.FAM["45"] 的說明）：照候選位置比外形，回 set.pieces（片種 → { 編號, dx, dy }）與 half
+-- 45 度在模板外的半格片（見 Roof.FAM["45"] 的說明）：照候選位置比外形，回 set.pieces（片種 → { 編號, dx, dy }）, half,
+-- 還沒載好
 local function extras(ts, b)
     local spec = Roof.FAM["45"]
+    local wait = false
     local function find(refNum, rels)
-        local ref = refSample(spec.ref .. "_" .. refNum)
+        local ref, w = refSample(spec.ref .. "_" .. refNum)
+        wait = wait or w
         for _, r in ipairs(rels) do
             local spr = ref and Entry.sprite(ts .. "_" .. (b + r))
-            if spr and Rules.classify(spr) == "roof" and sample(spr, ref, spec.tol) then return { r, 0, 0 } end
+            if spr and Rules.classify(spr) == "roof" then
+                local ok, w2 = sample(spr, ref, spec.tol)
+                wait = wait or w2
+                if ok then return { r, 0, 0 } end
+            end
         end
         return nil
     end
     local p = { RS3 = find(71, { 71, 47 }) or { 15, -1, -1 }, RE3 = find(70, { 70, 46 }) or { 14, -1, -1 },
         OP2 = find(65, { 65, 41 }), OP3 = find(66, { 66, 42 }) }
-    return p, p.OP2 ~= nil and p.OP3 ~= nil
+    return p, p.OP2 ~= nil and p.OP3 ~= nil, wait
 end
 
 -- 這張屋頂圖所屬的圖塊組認不認得出整套：回 { fam＝"30"｜"45", ts, base, half, top, pieces } 或 nil。half＝有沒有
 -- 四坡奇數短邊要的半格轉角片（30 度沒有這種片、也用不到），top＝有沒有平頂片，pieces＝45 度模板外的半格片。
--- 一組可能有好幾套（roofs_01 有 @0、@32）：先給模板範圍包住這張的那套，不然第一套。照圖塊組快取，第一次約 0.1 秒（推測）
+-- 一組可能有好幾套（roofs_01 有 @0、@32）：先給模板範圍包住這張的那套，不然第一套。照圖塊組快取，第一次約 0.1 秒（推測）；
+-- 有貼圖還沒載好時這次照認不出回、不快取，下次再認
 function Roof.family(name)
     local ts, num = tostring(name):match("^(.*)_(%d+)$")
     if not ts then return nil end
@@ -199,16 +236,22 @@ function Roof.family(name)
     if sets == nil then
         Rules.ensure()
         sets = {}
+        local late = false
         for _, fam in ipairs(Roof.FAMILIES) do
-            for _, b in ipairs(scan(ts, Roof.FAM[fam])) do
+            local bases, wait = scan(ts, Roof.FAM[fam])
+            late = late or wait
+            for _, b in ipairs(bases) do
                 local s = { fam = fam, ts = ts, base = b, half = false, top = false }
                 if fam == "45" then
-                    s.pieces, s.half = extras(ts, b)
+                    local w
+                    s.pieces, s.half, w = extras(ts, b)
+                    late = late or w
                     s.top = Entry.sprite(ts .. "_" .. (b + Roof.FAM["45"].off.TOP1)) ~= nil
                 end
                 sets[#sets + 1] = s
             end
         end
+        if late then return nil end
         cache[ts] = sets
     end
     num = tonumber(num)
@@ -218,7 +261,8 @@ function Roof.family(name)
     return sets[1]
 end
 
--- 山牆：牆的圖塊組（ts＝圖塊組名，例 walls_exterior_roofs_30_01）認不認得出一整套山牆片。回 { fam, ts, base } 或 nil
+-- 山牆：牆的圖塊組（ts＝圖塊組名，例 walls_exterior_roofs_30_01）認不認得出一整套山牆片。回 { fam, ts, base } 或 nil。
+-- 有貼圖還沒載好時照認不出回、不快取
 function Roof.gableFamily(ts)
     local hit = gableCache[ts]
     if hit == nil then
@@ -226,7 +270,9 @@ function Roof.gableFamily(ts)
         hit = false
         for _, fam in ipairs(Roof.FAMILIES) do
             local g = Roof.FAM[fam].gable
-            local bases = g and scan(ts, g) or {}
+            local bases, wait = {}, false
+            if g then bases, wait = scan(ts, g) end
+            if wait then return nil end
             if bases[1] then
                 hit = { fam = fam, ts = ts, base = bases[1] }
                 break
@@ -237,7 +283,7 @@ function Roof.gableFamily(ts)
     return hit or nil
 end
 
--- 45 度沒有片的那半邊要補的天花板：FILL 不成立（圖塊組被沙盒關掉、目錄不收）改鋪這一款的平頂片；都不成立回 nil
+-- 45 度每格要補的天花板：FILL 不成立（圖塊組被沙盒關掉、目錄不收）改鋪這一款的平頂片；都不成立回 nil
 local function fillName(set)
     if Entry.resolve(Roof.FILL) then return Roof.FILL end
     local top = set.top and set.ts .. "_" .. (set.base + Roof.FAM["45"].off.TOP1)
@@ -322,7 +368,7 @@ end
 -- 排出整個屋頂：set＝Roof.family 的回傳、shape＝Roof.shapes 的 id、dir＝它的方向之一（沒有方向的傳 nil）、
 -- x1..y2＝範圍（含兩端，世界座標）、z＝屋頂那一層、gable＝Roof.gableFamily 的回傳或 nil（不放山牆）。
 -- 回 groups, warn：groups＝{ { id＝圖名, cells＝{ { x, y, z, 0 }, … } }, … }（照第一次出現的順序；同一格可以有屋頂片和
--- 天花板各一片：藍圖只擋同一項目同一格（Plan.lua same），屋頂的判斷不看地板（Place.roofAt）），warn＝{ HALF＝補了天花板 }
+-- 天花板各一片：藍圖只擋同一項目同一格（Plan.lua same）），warn＝{ HALF＝補了天花板 }
 -- 或 nil；或 nil, 碼：TOO_SMALL 任一邊不到 2 格、TOO_WIDE 雙斜或四坡跨距超過上限（30 度 11 格；45 度沒有平頂片的款 6 格）、
 -- ODD_SPAN 45 度四坡奇數短邊 3、5 格而這一款沒有半格轉角片、TOO_HIGH 升超過藍圖的層數、
 -- DISABLED 要用的圖有一張 Entry.resolve 不成立（圖塊組、來源或種類被沙盒關掉；一片都不產生）
@@ -375,13 +421,12 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
         for x = x1, x2 do
             d.N, d.S, d.W, d.E = y - y1, y2 - y, x - x1, x2 - x
             local kk, m = role(spec, eaves, d)
+            -- 45 度（平頂除外）每格先補天花板：同格的屋頂片、上一層的平頂片與往上接的片都靠它撐（Place.roofAt）
+            if key.half and kk ~= key.flat then putFill(x, y) end
             if multi and m >= spec.rise then
                 put(set.ts, set.base, spec.off, nil, key.flat .. "1", x, y, 1)
-            elseif kk == nil then
-                putFill(x, y)
-            else
+            elseif kk ~= nil then
                 put(set.ts, set.base, spec.off, set.pieces, kk .. (m % spec.rise + 1), x, y, math.floor(m / spec.rise))
-                if key.half and key.half[kk] then putFill(x, y) end -- 半格片沒有 BlockRain
             end
         end
     end

@@ -16650,9 +16650,16 @@ end)()
     local real = { tiles = sb.DisabledTilesets, PM = B.PlanMode, toast = B.Messages.toast }
     -- 假圖：外形照模板位置 k 給一個固定的 8×8 點陣（同一片種在各款相同）；flip＝整個反過來（外形差 64 點）
     local added, nextId = {}, 40000
+    local lateMask = {} -- 圖名 → true：貼圖的遮罩還沒建好（getMask 回 nil，同引擎貼圖資料還沒載入）
     local function add(name, o)
         nextId = nextId + 1
         local s = sprite(name, nextId, o)
+        local getTex = s.getTextureForCurrentFrame
+        function s:getTextureForCurrentFrame(d) -- 假貼圖補 getMask（Texture.getMask，Texture.java:780）
+            local tex = getTex(self, d)
+            if tex then tex.getMask = function() if lateMask[name] then return nil end return true end end
+            return tex
+        end
         spriteMap[name], added[#added + 1] = s, name
         spriteOrder[#spriteOrder + 1] = s
         return s
@@ -16680,14 +16687,33 @@ end)()
     roofSet("roofs_01", 0, F45.off, { [64] = 64, [65] = 65, [66] = 66, [70] = 70, [71] = 71 })
     roofSet("roofs_01", 32, F45.off, { [41] = 65, [42] = 66, [46] = 70, [47] = 71 })
     roofSet("mymod_roofs_45", 100, F45.off)
+    -- 平頂片（TOP1，+22）同遊戲帶 solidfloor：Rules.classify 先看 solidfloor，所以分類是地板（實機 b100-roof-ch2 kind=floor）
+    for _, n in ipairs({ "roofs_01_22", "roofs_01_54", "mymod_roofs_45_122" }) do
+        add(n, { type = T.WestRoofT, flags = { "solidfloor" }, keys = { RoofGroup = "1" }, mask = mask(22) })
+    end
     for _, o in pairs(F30.gable.off) do
-        add("walls_exterior_roofs_30_01_" .. o, { type = T.wall, flags = { "collideW", "cutW" }, keys = { WallW = "" },
+        add("walls_exterior_roofs_30_01_" .. o, { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
             mask = mask(1000 + o) })
     end
     for _, o in pairs(F45.gable.off) do
-        add("walls_exterior_roofs_01_" .. o, { type = T.wall, flags = { "collideW", "cutW" }, keys = { WallW = "" },
+        add("walls_exterior_roofs_01_" .. o, { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
             mask = mask(2000 + o) })
     end
+    -- 屋脊頭第二種外形（同原版 walls_exterior_roofs_01@72）：PeakE1／PeakS1 換外形，其他同 @0。穀倉款是這種；
+    -- bad_gable_01 的屋脊頭兩種都不像；late_gable_01 同 @0 但屋脊頭那張的遮罩晚到
+    local function gableSet(ts, base, peak)
+        for k, o in pairs(F45.gable.off) do
+            local p1 = k == "PeakE1" or k == "PeakS1"
+            add(ts .. "_" .. (base + o), { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" },
+                mask = mask((p1 and peak or 2000) + o) })
+        end
+    end
+    gableSet("walls_exterior_roofs_01", 72, 2500)
+    gableSet("location_barn_01", 24, 2500)
+    gableSet("bad_gable_01", 0, 2250) -- 假遮罩差 500 的倍數是整個反過來；2250 和 2000、2500 都差 31 點以上
+    gableSet("late_gable_01", 0, 2000)
+    roofSet("late_roofs_30", 0, F30.off)
+    lateMask["late_gable_01_15"], lateMask["late_roofs_30_3"] = true, true
     add(Roof.FILL, { flags = { "solidfloor" } })
     check(Rules.classify(spriteMap["roofs_30_01_0"]) == "roof" and Rules.classify(spriteMap["walls_exterior_roofs_30_01_0"]) == "wall"
         and Rules.classify(spriteMap[Roof.FILL]) == "floor", "屋頂（Roof）假圖的種類：屋頂片、山牆片、天花板")
@@ -16714,6 +16740,10 @@ end)()
         local l = t[x .. "," .. y .. "," .. z]
         return l ~= nil and #l == 1 and l[1] == name
     end
+    local function both(t, x, y, name) -- 屋頂那一層這格剛好是 name 加一片天花板
+        local l = t[x .. "," .. y .. ",0"]
+        return l ~= nil and #l == 2 and at(t, x, y, 0, name) and at(t, x, y, 0, Roof.FILL)
+    end
     local function total(groups)
         local n = 0
         for _, g in ipairs(groups or {}) do n = n + #g.cells end
@@ -16738,6 +16768,14 @@ end)()
     local g30, g45 = Roof.gableFamily("walls_exterior_roofs_30_01"), Roof.gableFamily("walls_exterior_roofs_01")
     check(g30 and g30.fam == "30" and g45 and g45.fam == "45" and Roof.gableFamily("roofs_30_01") == nil,
         "屋頂（Roof）山牆：30、45 度牆組各認成自己那族；✗ 屋頂組不是山牆")
+    local barn = Roof.gableFamily("location_barn_01")
+    check(barn and barn.fam == "45" and barn.base == 24 and Roof.gableFamily("bad_gable_01") == nil,
+        "屋頂（Roof）山牆：屋脊頭是第二種外形（原版 @72 那種，穀倉、二手衣店）的組也認得出；✗ 屋脊頭兩種都不像：認不出")
+    local lateG1, lateR1 = Roof.gableFamily("late_gable_01"), Roof.family("late_roofs_30_0")
+    lateMask["late_gable_01_15"], lateMask["late_roofs_30_3"] = nil, nil
+    local lateG2, lateR2 = Roof.gableFamily("late_gable_01"), Roof.family("late_roofs_30_0")
+    check(lateG1 == nil and lateR1 == nil and lateG2 and lateG2.base == 0 and lateR2 and lateR2.fam == "30",
+        "屋頂（Roof）✗ 貼圖遮罩還沒建好：山牆、屋頂這次都認不出也不快取；遮罩好了再問就認得出")
 
     -- 30 度
     local g, w = L(s30, "gable", "EW", 6, 8)
@@ -16796,32 +16834,32 @@ end)()
     t = grid(g)
     rows = true
     for x = 0, 3 do
-        rows = rows and only(t, x, 0, 0, Roof.FILL) and only(t, x, 2, 0, Roof.FILL) and only(t, x, 3, 0, n45(2))
-            and only(t, x, 5, 0, n45(0))
+        rows = rows and only(t, x, 0, 0, Roof.FILL) and only(t, x, 2, 0, Roof.FILL) and both(t, x, 3, n45(2))
+            and both(t, x, 5, n45(0))
     end
-    check(rows and total(g) == 24 and w and w.HALF, "屋頂（Roof）45 度雙斜 6 格：南半 S3..S1，北半補天花板，warn.HALF")
+    check(rows and total(g) == 36 and w and w.HALF, "屋頂（Roof）45 度雙斜 6 格：南半 S3..S1，每格都補天花板（24＋12 片），warn.HALF")
     t = grid((L(s45, "gable", "EW", 3, 8)))
-    check(only(t, 1, 3, 1, n45(22)) and only(t, 1, 4, 1, n45(22)) and only(t, 1, 2, 0, Roof.FILL) and only(t, 1, 5, 0, n45(2)),
-        "屋頂（Roof）45 度雙斜跨距 8：中間兩排平頂片在上一層")
+    check(only(t, 1, 3, 1, n45(22)) and only(t, 1, 4, 1, n45(22)) and only(t, 1, 3, 0, Roof.FILL) and only(t, 1, 2, 0, Roof.FILL)
+        and both(t, 1, 5, n45(2)), "屋頂（Roof）45 度雙斜跨距 8：中間兩排平頂片在上一層，正下方那層補天花板")
     t = grid((L(s45, "gable", "EW", 2, 5)))
     local tm = grid((L(m45, "gable", "EW", 2, 5)))
-    check(at(t, 0, 2, 0, n45(71)) and at(t, 0, 2, 0, Roof.FILL) and only(t, 0, 3, 0, n45(1))
+    check(at(t, 0, 2, 0, n45(71)) and at(t, 0, 2, 0, Roof.FILL) and both(t, 0, 3, n45(1))
         and at(tm, -1, 1, 0, "mymod_roofs_45_115") and at(tm, 0, 2, 0, Roof.FILL),
         "屋頂（Roof）45 度雙斜奇數跨距 5：中間 TwoPt5＋同格天花板；沒有專用片的款用 +15 往西北移一格")
     t = grid((L(s45, "gable", "NS", 6, 2)))
-    check(only(t, 3, 0, 0, n45(3)) and only(t, 5, 1, 0, n45(5)) and only(t, 0, 0, 0, Roof.FILL),
-        "屋頂（Roof）45 度雙斜南北向：東半 E3..E1，西半補天花板")
+    check(both(t, 3, 0, n45(3)) and both(t, 5, 1, n45(5)) and only(t, 0, 0, 0, Roof.FILL),
+        "屋頂（Roof）45 度雙斜南北向：東半 E3..E1，每格補天花板")
     t = grid((L(s45, "hip", nil, 6, 6)))
-    check(only(t, 5, 5, 0, n45(8)) and only(t, 0, 5, 0, n45(24)) and only(t, 5, 0, 0, n45(29)) and only(t, 0, 0, 0, Roof.FILL)
-        and only(t, 3, 3, 0, n45(10)) and only(t, 2, 2, 0, Roof.FILL), "屋頂（Roof）45 度四坡 6×6：東南 Outer、西南 CornerSW、東北 CornerNE，西北補天花板")
+    check(both(t, 5, 5, n45(8)) and both(t, 0, 5, n45(24)) and both(t, 5, 0, n45(29)) and only(t, 0, 0, 0, Roof.FILL)
+        and both(t, 3, 3, n45(10)) and only(t, 2, 2, 0, Roof.FILL), "屋頂（Roof）45 度四坡 6×6：東南 Outer、西南 CornerSW、東北 CornerNE，西北只有天花板")
     t = grid((L(s45, "hip", nil, 5, 5)))
     local _, odd = L(m45, "hip", nil, 5, 5)
     local t7 = grid((L(m45, "hip", nil, 7, 7)))
     check(at(t, 2, 2, 0, n45(66)) and at(t, 2, 2, 0, Roof.FILL) and odd == "ODD_SPAN" and only(t7, 3, 3, 1, "mymod_roofs_45_122"),
         "屋頂（Roof）45 度四坡 5×5 中心 OuterTwoPt5；✗ 沒有半格轉角片的款：ODD_SPAN；7×7 中心是上一層的平頂")
     t = grid((L(s45, "shed", "S", 2, 4)))
-    check(only(t, 0, 3, 0, n45(0)) and only(t, 0, 1, 0, n45(2)) and only(t, 0, 0, 1, n45(0)),
-        "屋頂（Roof）45 度單斜朝南：每 3 格往上一層接")
+    check(both(t, 0, 3, n45(0)) and both(t, 0, 1, n45(2)) and only(t, 0, 0, 1, n45(0)) and only(t, 0, 0, 0, Roof.FILL),
+        "屋頂（Roof）45 度單斜朝南：每 3 格往上一層接，往上接那格的下面一層補天花板")
     g, w = L(s45, "flat", nil, 3, 3)
     t = grid(g)
     check(total(g) == 9 and only(t, 1, 1, 0, n45(22)) and w == nil, "屋頂（Roof）45 度平頂 3×3：每格一張平頂片")
@@ -16843,6 +16881,149 @@ end)()
     sb.DisabledTilesets = real.tiles
     check(only(t, 0, 0, 0, n45(22)) and table.concat(left, ",") == "flat",
         "屋頂（Roof）天花板被關掉改鋪平頂片；兩種都關掉時 45 度不給斜屋頂形狀")
+
+    do -- fix3 (4)：45 度每種斜形狀、奇偶跨距，屋頂那一層每格都有天花板；平頂沒有（平頂片自己是地板）
+        local miss, fills = nil, {}
+        for _, c in ipairs({ { "gable", "EW" }, { "gable", "NS" }, { "hip" }, { "shed", "S" }, { "shed", "E" } }) do
+            for _, sz in ipairs({ { 3, 3 }, { 4, 8 }, { 5, 5 }, { 5, 9 }, { 6, 6 }, { 7, 7 } }) do
+                local gr = L(s45, c[1], c[2], sz[1], sz[2])
+                local tt, n = grid(gr), 0
+                for _, gg in ipairs(gr or {}) do if gg.id == Roof.FILL then n = n + #gg.cells end end
+                fills[c[1] .. (c[2] or "") .. sz[1] .. "x" .. sz[2]] = n
+                for x = 0, sz[1] - 1 do
+                    for y = 0, sz[2] - 1 do
+                        if gr and not at(tt, x, y, 0, Roof.FILL) and not miss then
+                            miss = c[1] .. "/" .. tostring(c[2]) .. " " .. sz[1] .. "x" .. sz[2] .. " @" .. x .. "," .. y
+                        end
+                    end
+                end
+            end
+        end
+        local fl = grid((L(s45, "flat", nil, 4, 4)))
+        check(miss == nil and fills.hip5x5 == 25 and fills.gableEW4x8 == 32 and not at(fl, 0, 0, 0, Roof.FILL),
+            "屋頂（Roof）45 度雙斜、四坡、單斜（奇偶跨距）屋頂層每格都補天花板（四坡 5×5 補 25 片）；✗ 平頂不補"
+                .. (miss and "；第一個漏的 " .. miss or ""))
+    end
+
+    do -- fix3 (1)(2)：樓上的牆疊在正下方同一條邊的牆上、往上一層接的屋頂片靠下面撐；助手排的片不管照什麼順序都蓋得起來
+        local Place = B.Place
+        local opts = {}
+        local function cellAt(x, y, z) -- 建或拿格子；回 格子, 它的選項（flags、wallN、wallW、floor）
+            local k = x .. "," .. y .. "," .. z
+            if not opts[k] then
+                opts[k] = { flags = {} }
+                square(x, y, z, opts[k])
+            end
+            return squares[k], opts[k]
+        end
+        local function obj(spr) return { getSprite = function() return spr end } end
+        local function put(kind, spr, x, y, z)
+            local sq, o = cellAt(x, y, z)
+            local it = obj(spr)
+            sq.objects[#sq.objects + 1] = it
+            if kind == "floor" then
+                o.flags.solidfloor, o.floor = true, it
+            elseif kind == "wall" then
+                local n, w = Entry.edges(kind, spr)
+                if n then o.wallN = it end
+                if w then o.wallW = it end
+            end
+        end
+        local function fits(kind, spr, x, y, z)
+            return Place.check(kind, spr, (cellAt(x, y, z)), nil, nil, nil, nil, false) == true
+        end
+        -- 牆：一樓的西牆上面疊山牆片／一般牆；靠著同一層的屋頂片（伺服器分不出兩種牆，見 Place.lua wallHeld）
+        local gw, r30 = spriteMap["walls_exterior_roofs_30_01_13"], spriteMap["roofs_30_01_0"]
+        local plain = add("p2_plain_wall_0", { type = T.wall, flags = { "collideW", "cutW", "WallW" }, keys = { WallW = "" } })
+        local _, o0 = cellAt(3900, 3000, 0)
+        o0.wallW = obj(plain)
+        local _, oN = cellAt(3902, 3000, 0)
+        oN.wallN = obj(plain)
+        local _, oF = cellAt(3904, 3000, 1)
+        oF.flags.solidfloor, oF.floor = true, obj(spriteMap[Roof.FILL])
+        put("roof", r30, 3920, 3000, 2)
+        put("roof", r30, 3925, 3001, 2)
+        check(fits("wall", gw, 3900, 3000, 1) and fits("wall", plain, 3900, 3000, 1)
+            and not fits("wall", gw, 3901, 3000, 1) and not fits("wall", plain, 3901, 3000, 1)
+            and not fits("wall", gw, 3902, 3000, 1) and fits("wall", plain, 3904, 3000, 1),
+            "屋頂（Place）二樓沒有地板的牆：正下方同一條邊有牆可以蓋（山牆片、一般牆同規則）；✗ 底下沒有牆（浮空）、"
+                .. "✗ 底下的牆在另一條邊：擋；有地板照舊可以")
+        check(fits("wall", gw, 3920, 3000, 2) and fits("wall", gw, 3921, 3000, 2) and not fits("wall", gw, 3922, 3000, 2)
+            and not fits("wall", plain, 3925, 3000, 2),
+            "屋頂（Place）三樓沒有地板的西牆：這條邊兩側的格子同一層有屋頂片可以蓋（端牆）；✗ 屋頂片隔一格、在南邊那格：擋")
+        -- 屋頂：正下方有地板或屋頂片、斜下方鄰格有屋頂片可以；✗ 斜下方只有地板、什麼都沒有：擋
+        put("floor", spriteMap[Roof.FILL], 3910, 3000, 1)
+        put("roof", r30, 3912, 3000, 1)
+        put("roof", r30, 3914, 3001, 1)
+        put("floor", spriteMap[Roof.FILL], 3916, 3001, 1)
+        check(Place.roofAt(3910, 3000, 2) and Place.roofAt(3912, 3000, 2) and Place.roofAt(3914, 3000, 2)
+            and not Place.roofAt(3916, 3000, 2) and not Place.roofAt(3918, 3000, 2),
+            "屋頂（Place）二樓以上的屋頂片：正下方有天花板或屋頂片、斜下方鄰格有屋頂片可以；✗ 斜下方只有地板、"
+                .. "✗ 下面和旁邊都沒東西：擋")
+        -- 那一層還沒有格子（實機 b100-roof-ch2 的 check=nosq）：預覽不補格子，Check.item 改照座標問 roofAt／floorAt；
+        -- 伺服器 Place.square 補出格子後照 Place.check 逐片查（fits 先建格子，同伺服器）。45 度平頂片分類是地板
+        local cellZ2 = getCell()
+        local noSq = cellZ2:getGridSquare(3912, 3000, 2) == nil and cellZ2:getGridSquare(3914, 3000, 2) == nil
+            and cellZ2:getGridSquare(3930, 3000, 2) == nil and cellZ2:getGridSquare(3936, 3000, 2) == nil
+        put("roof", spriteMap["roofs_01_3"], 3930, 3001, 1)
+        put("floor", spriteMap[Roof.FILL], 3936, 3001, 1)
+        local flat = spriteMap["roofs_01_22"]
+        local preview = Place.floorAt(3930, 3000, 2) and not Place.floorAt(3936, 3000, 2)
+            and Place.roofAt(3914, 3000, 2) and not Place.roofAt(3918, 3000, 2)
+        check(noSq and Rules.classify(flat) == "floor" and preview and fits("floor", flat, 3930, 3000, 2)
+            and not fits("floor", flat, 3936, 3000, 2) and fits("roof", r30, 3914, 3000, 2),
+            "屋頂（Place）上一層還沒有格子：平頂片（地板）四鄰往下一層有斜片、屋頂片斜下方有屋頂片，預覽照座標判可蓋、"
+                .. "補出格子後也放得下；✗ 四鄰往下一層只有天花板：兩端都擋")
+
+        -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
+        local function house(x0, y0, w, h)
+            for x = x0, x0 + w - 1 do
+                select(2, cellAt(x, y0, 0)).wallN = obj(plain)
+                select(2, cellAt(x, y0 + h, 0)).wallN = obj(plain)
+            end
+            for y = y0, y0 + h - 1 do
+                select(2, cellAt(x0, y, 0)).wallW = obj(plain)
+                select(2, cellAt(x0 + w, y, 0)).wallW = obj(plain)
+            end
+        end
+        local function buildAll(groups)
+            local todo = {}
+            for _, gg in ipairs(groups or {}) do
+                local spr = spriteMap[gg.id]
+                for _, c in ipairs(gg.cells) do
+                    todo[#todo + 1] = { spr = spr, kind = Rules.classify(spr), x = c[1], y = c[2], z = c[3] }
+                end
+            end
+            local moved = true
+            while moved do
+                moved = false
+                for _, p in ipairs(todo) do
+                    if not p.done and fits(p.kind, p.spr, p.x, p.y, p.z) then
+                        put(p.kind, p.spr, p.x, p.y, p.z)
+                        p.done, moved = true, true
+                    end
+                end
+            end
+            for _, p in ipairs(todo) do
+                if not p.done then return p.spr:getName() .. "@" .. p.x .. "," .. p.y .. "," .. p.z end
+            end
+            return #todo > 0 and "ok" or "empty"
+        end
+        local cases = { { "30 雙斜 6×5＋山牆", s30, "gable", "EW", 6, 5, g30 }, { "30 單斜朝南 4×8＋山牆", s30, "shed", "S", 4, 8, g30 },
+            { "45 雙斜 6×8", s45, "gable", "EW", 6, 8 }, { "45 雙斜 6×5＋山牆", s45, "gable", "EW", 6, 5, g45 },
+            { "45 單斜朝南 4×4", s45, "shed", "S", 4, 4 }, { "45 單斜朝東 4×4", s45, "shed", "E", 4, 4 },
+            { "45 四坡 5×5", s45, "hip", nil, 5, 5 }, { "45 四坡 7×7", s45, "hip", nil, 7, 7 } }
+        local stuck
+        for i, c in ipairs(cases) do
+            local x0, y0 = 4000 + i * 20, 4000
+            house(x0, y0, c[5], c[6])
+            local r = buildAll((Roof.layout(c[2], c[3], c[4], x0, y0, x0 + c[5] - 1, y0 + c[6] - 1, 1, c[7])))
+            if r ~= "ok" and not stuck then stuck = c[1] .. "：" .. r end
+        end
+        check(stuck == nil, "屋頂（Roof＋Place）照圖蓋：30／45 度雙斜、單斜、四坡（含山牆、往上一層接、上一層平頂）"
+            .. "每一片都蓋得起來" .. (stuck and "；卡住的 " .. stuck or ""))
+        for k in pairs(opts) do squares[k] = nil end
+    end
 
     -- RoofPanel
     local calls, toasts, ret, last = 0, {}, { 5 }, nil
@@ -17542,23 +17723,30 @@ end)()
         PC.reset()
     end
 
-    -- 6g. touch 叫醒上下一層：下層格變動時重查正上方那一片，上層格變動時重查正下方那一片；不在 AROUND 的（上一層的旁邊）不查
+    -- 6g. touch 叫醒上下一層：下層格變動時重查正上方與上一層四鄰的片（單斜屋頂往上一層接時靠斜下方鄰格撐），
+    --     上層格變動時重查正下方與下一層四鄰的片；不在 AROUND 的（上一層隔兩格）不查
     do
         pl = Plan.new("touchZ")
         local zi = Plan.item(pl, "pp_a")
-        Plan.add(pl, 40, 40, 1, 0, 0, zi) -- 下層 (40,40,0) 的正上方
-        Plan.add(pl, 41, 40, 1, 0, 0, zi) -- 上一層的旁邊
+        Plan.add(pl, 40, 40, 1, 0, 0, zi) -- 下層 (40,40,0) 的正上方；也是下層 (40,41,0) 的斜上方
+        Plan.add(pl, 42, 40, 1, 0, 0, zi) -- 離 (40,41,0) 隔兩格的上一層
         Plan.add(pl, 45, 40, 0, 0, 0, zi) -- 上層 (45,40,1) 的正下方
+        Plan.add(pl, 45, 43, 0, 0, 0, zi) -- 上層 (45,42,1) 的斜下方
         SHORT, CODE = false, {}
         PC.reset()
         frame(nil)
+        local function ev(x, y) return evals[(OX + x) .. "," .. (OY + y)] end
         evals = {}
         PC.touch(OX + 40, OY + 40, 0)
         PC.touch(OX + 45, OY + 40, 1)
         frame(nil)
-        check(evals[(OX + 40) .. "," .. (OY + 40)] == 1 and evals[(OX + 45) .. "," .. (OY + 40)] == 1
-            and evals[(OX + 41) .. "," .. (OY + 40)] == nil,
-            "touch：下層格變動重查正上方那片、上層格變動重查正下方那片（上一層的旁邊不查）")
+        local straight = ev(40, 40) == 1 and ev(45, 40) == 1 and ev(42, 40) == nil and ev(45, 43) == nil
+        evals = {}
+        PC.touch(OX + 40, OY + 41, 0)
+        PC.touch(OX + 45, OY + 42, 1)
+        frame(nil)
+        check(straight and ev(40, 40) == 1 and ev(45, 43) == 1 and ev(42, 40) == nil and ev(45, 40) == nil,
+            "touch：下層格變動重查正上方與斜上方的片、上層格變動重查正下方與斜下方的片（隔兩格的不查）")
         PC.reset()
     end
 
@@ -17784,6 +17972,126 @@ end)()
     check(rampBatch and rampBatch.id == "pp_ramp" and #rampBatch.anchors == 1 and floorBatch and #floorBatch.anchors == 3
         and R.SEGMENT.ramp == R.SEGMENT.stairs,
         "Runner：坡道一批只送一組（地板照一批上限 3 片）；坡道和樓梯同一段")
+
+    -- 9. 伺服器限流：照圖蓋照這台客戶端最近一個窗送過的請求數節流（手動送的也算）、被限流時等一下重送、連續被限流才暫停。
+    --    假伺服器照 Server 的 rateOk 算（每人一個窗，窗從窗外的第一個請求起算 RATE_WINDOW_MS、含兩端，超過 RATE_MAX
+    --    不收），收下的瞬間蓋好；假的 Queue 照真的一樣經過 Client 的送出點記一筆（Client.build 裡的 Client.sent）
+    do
+        local fh = assert(io.open(MEDIA .. "/server/MinidoracatBuilder/Server.lua", "rb"))
+        local w, m = fh:read("*a"):match("local RATE_WINDOW_MS, RATE_MAX = (%d+), (%d+)")
+        fh:close()
+        local SW, SM = tonumber(w), tonumber(m) -- 假伺服器照 Server.lua 的值算
+        local RR, RG = R.RATE_RETRY_MS or 1500, R.RATE_GIVE_UP_MS or 15000
+        local CL = B.Client
+        check(SW == CL.RATE_WINDOW_MS and SM == CL.RATE_MAX,
+            "客戶端的限流常數和 Server.lua 的 RATE_WINDOW_MS、RATE_MAX 一致（伺服器那份客戶端讀不到，兩邊要一起改）")
+
+        local pushFake, realToast, Msg = Q.push, B.Messages.toast, B.Messages
+        local srvT0, srvN, sentAt, forced, toasts = nil, 0, {}, 0, 0
+        Q.push = function(_, _, anchors, _, _, opts)
+            if CL.sent then CL.sent() end
+            local ok
+            if not srvT0 or T - srvT0 > SW then
+                srvT0, srvN, ok = T, 1, true
+            else
+                srvN = srvN + 1
+                ok = srvN <= SM
+            end
+            if forced > 0 then forced, ok = forced - 1, false end
+            sentAt[#sentAt + 1] = { t = T, x = anchors[1][1], ok = ok }
+            if not ok then
+                opts.onDone({ owner = "plan", count = #anchors, placed = 0, refused = "RATE_LIMITED", stopped = true })
+                return nil, "RATE_LIMITED"
+            end
+            opts.onDone({ owner = "plan", count = #anchors, placed = #anchors, stopped = false })
+            return #sentAt
+        end
+        Msg.toast = function() toasts = toasts + 1 end
+        local function fresh(name, n, f)
+            R.stop()
+            pl = Plan.new(name)
+            local qi = Plan.item(pl, "pp_a")
+            S = {}
+            for x = 0, n - 1 do S[Plan.add(pl, x, 20, 0, 0, 0, qi)] = "ok" end
+            BUSY = false
+            T = T + SW + 1000 -- 前面的請求都出了窗
+            srvT0, srvN, sentAt, forced, toasts = nil, 0, {}, f, 0
+            return R.start(K)
+        end
+        sb.MaxCellsPerDrag = 1 -- 一片一個請求
+
+        -- 9a. 60 片、瞬間蓋好、每 0.1 秒挑一次：從頭蓋到完，中間不暫停、沒被限流，任一個窗送的請求不超過上限減 2
+        local started = fresh("rate60", 60, 0)
+        local t0, paused = T, false
+        for _ = 1, 600 do
+            run(1)
+            if R.state() == "paused" then paused = true end
+            if R.state() == "done" then break end
+        end
+        local okN, refusedN, worst = 0, 0, 0
+        for i, a in ipairs(sentAt) do
+            if a.ok then okN = okN + 1 else refusedN = refusedN + 1 end
+            local n = 0
+            for j = i, #sentAt do
+                if sentAt[j].t - a.t <= SW then n = n + 1 end
+            end
+            if n > worst then worst = n end
+        end
+        check(started == true and not paused and R.state() == "done" and (R.reason()) ~= "REFUSED" and okN == 60
+            and refusedN == 0 and worst == SM - 2,
+            "照圖蓋 60 片（瞬間蓋好）：從頭蓋到完不暫停、沒被限流，一個窗最多送 " .. worst .. " 個（上限 "
+            .. SM .. "，留 2 個），花 " .. (T - t0) .. " ms")
+
+        -- 9b. 伺服器回一次 RATE_LIMITED（玩家同時手動送的也算在額度裡）：不暫停、不通知，等 RATE_RETRY_MS 重送同一片，收下
+        fresh("rate1", 3, 1)
+        run(1)
+        local afterRefuse, toastsNow = R.state(), toasts
+        run(math.floor(RR / 100) - 2)
+        local beforeRetry = #sentAt
+        run(5)
+        local s1, s2 = sentAt[1], sentAt[2]
+        check(s1 and not s1.ok and afterRefuse == "pick" and toastsNow == 0 and beforeRetry == 1 and s2 and s2.ok
+            and s2.x == s1.x and s2.t - s1.t >= RR and R.state() ~= "paused" and toasts == 0,
+            "照圖蓋被限流一次：不暫停、不通知，等一下重送同一片、收下（✗ 不整批暫停）")
+
+        -- 9c. 一直被限流：RATE_GIVE_UP_MS 之前照樣等著重送、不通知；到了才暫停，原因是伺服器拒絕整批（RATE_LIMITED）
+        fresh("rateAll", 3, 1e9)
+        run(math.floor(RG / 100) - 5)
+        local midState, midWhy, midToasts, midSent = R.state(), R.reason(), toasts, #sentAt
+        local realRefusal, refusalCode = Msg.refusal, nil
+        Msg.refusal = function(code, ...) refusalCode = code; return realRefusal(code, ...) end
+        run(30)
+        local endWhy, endText = R.reason()
+        Msg.refusal = realRefusal
+        check(midState == "pick" and midWhy == nil and midToasts == 0 and midSent >= 5 and R.state() == "paused"
+            and endWhy == "REFUSED" and type(endText) == "string" and refusalCode == "RATE_LIMITED" and toasts == 1,
+            "照圖蓋一直被限流：" .. RG .. " ms 之前等著重送（送了 " .. midSent .. " 次）、不通知；到了才暫停並說原因")
+        R.stop()
+
+        -- 9d. 玩家手動送的建造、拆除也算在額度裡（多人連線時伺服器限流是不回覆，不能等被拒才知道）：同一個窗裡手動送了
+        --     8 個建造、2 個拆除之後，照圖蓋只再送到上限減 2（再送 8 個）；出了窗才繼續，也不暫停
+        fresh("rateMix", 20, 0)
+        local realIsClient, realSend = isClient, sendClientCommand
+        isClient = function() return true end
+        sendClientCommand = function() end
+        for i = 1, 8 do CL.build(K, "pp_a", { { OX + i, OY + 40, 0, 0 } }) end
+        for i = 1, 2 do
+            CL.dismantleMany(K, { { x = OX + i, y = OY + 41, z = 0, name = "pp_a", kind = "wall", north = true, own = {},
+                route = "builder" } })
+        end
+        isClient, sendClientCommand = realIsClient, realSend
+        local manual = CL.recentSends and CL.recentSends(T)
+        CL.pending, CL.pendingUnbuild = nil, nil -- 玩家的請求都做完了（不然照圖蓋算玩家動手、暫停）
+        run(30) -- 3 秒，手動送的那 10 個都還在窗裡
+        local inWindow = #sentAt
+        run(30) -- 手動送的出了窗
+        check(manual == 10 and inWindow == SM - 2 - 10 and #sentAt > inWindow and R.state() ~= "paused",
+            "手動送了 8 個建造、2 個拆除之後，照圖蓋同一個窗裡只再送 " .. inWindow .. " 個（上限減 2 共 "
+            .. (SM - 2) .. "）；出了窗才繼續、不暫停")
+        R.stop()
+        Q.push, Msg.toast, sb.MaxCellsPerDrag = pushFake, realToast, 8
+        pushes = {}
+    end
 
     B.PlanMode, B.PlanCheck, B.Recipes = real.PM, real.PC, real.rec
     getCell, getTimestampMs, instanceof, getSpecificPlayer = real.cell, real.clock, real.inst, real.specific

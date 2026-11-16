@@ -33,9 +33,11 @@ local MAX_BUCKET = 255
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 local FAR = { TOO_FAR = true, NOT_LOADED = true }
 local OFF = { DISABLED_KIND = true, DISABLED_SOURCE = true, DISABLED_TILESET = true }
--- 一片會靠到的格子：同一格、上下一層、四鄰（屋頂與上層地板靠下面的牆或旁邊的地板撐，門窗裝在那格的門框窗框上，
+-- 一片會靠到的格子：同一格、上下一層、四鄰，以及上下一層的四鄰（屋頂與上層地板靠下面的牆或旁邊的地板撐，
+-- 屋頂也靠斜下方鄰格的屋頂片撐：單斜屋頂往上一層接時，上面那片的正下方是空的；門窗裝在那格的門框窗框上，
 -- 窗簾要上面有屋頂）。touch 照它重查，waiting 照它找在等誰
-local AROUND = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 } }
+local AROUND = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 },
+    { 1, 0, 1 }, { -1, 0, 1 }, { 0, 1, 1 }, { 0, -1, 1 }, { 1, 0, -1 }, { -1, 0, -1 }, { 0, 1, -1 }, { 0, -1, -1 } }
 PlanCheck.WAIT_MS = 100 -- 「在等旁邊」的名單最多多久重算一次
 
 -- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep,
