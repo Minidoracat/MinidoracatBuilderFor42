@@ -77,7 +77,10 @@ local function rowOf(L, cr, info, bySprite)
     end
     local spr = main and Entry.sprite(main)
     if spr and Rules.classify(spr) then return nil end -- 本工具目錄已經列了這張圖：配方的地板照舊只列圖塊
-    local src = cr:getModID()
+    -- 來源照配方所在的 entity 認（同名）：配方自己的 getModID 是整批腳本解析完才填的，回的是最後載入那個腳本檔的 MOD
+    -- （CraftRecipeComponentScript.java:54-56、ScriptManager.java:1534,1633-1635），裝了帶腳本的 MOD 後每個配方都算成它
+    local owner = getScriptManager():getGameEntityScript(cr:getScriptObjectFullType())
+    local src = owner and owner:getModID() or cr:getModID()
     src = (src == nil or src == "pz-vanilla") and "vanilla" or src
     local name, cat = cr:getTranslationName() or cr:getName(), cr:getCategory()
     local ts = main and main:match("^(.*)_%d+$") or nil

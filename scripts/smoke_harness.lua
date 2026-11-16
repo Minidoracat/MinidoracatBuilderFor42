@@ -7818,13 +7818,20 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         function inp:isKeep() return keep end
         return inp
     end
+    -- 照引擎：entity 裡的配方，自己的 getModID 是整批腳本解析完才填的，一律回最後載入那個腳本檔的 MOD
+    -- （CraftRecipeComponentScript.java:54-56、ScriptManager.java:1534,1633-1635）；那個 entity 的 getModID 才是定義它的 MOD
+    local entityOf = {}
+    getScriptManager = function()
+        return { getGameEntityScript = function(_, full) return entityOf[full] end }
+    end
     local function recipe(full, o)
         local cr = { o = o }
+        entityOf[full] = { getModID = function() return o.mod or "pz-vanilla" end }
         function cr:getScriptObjectFullType() return full end
         function cr:getName() return (full:match("%.(.*)$")) end
         function cr:getTranslationName() return o.label end
         function cr:getCategory() return o.cat end
-        function cr:getModID() return o.mod or "pz-vanilla" end
+        function cr:getModID() return "Last_Loaded_Mod" end
         function cr:needToBeLearn() return o.learn == true end
         function cr:getOnAddToMenu() return o.onAdd end
         function cr:canBeDoneInDark() return o.inDark == true end
