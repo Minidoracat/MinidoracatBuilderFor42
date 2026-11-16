@@ -37,7 +37,7 @@ local AROUND = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 1, 0, 0 }, { -1, 0, 0
 PlanCheck.WAIT_MS = 100 -- 「在等旁邊」的名單最多多久重算一次
 
 -- { plan, rev, ox, oy, oz, list = { 片… }, n, rec = { [片] = 紀錄 }, q, S, sAt, digest, px, py, pz, sweep,
---   ver＝片的狀態變過幾次, wait, wVer, wAt＝waiting 的名單與算的時候 }
+--   ver＝片的狀態變過幾次, wait, wVer, wAt＝waiting 的名單與算的時候, rq＝還沒排完的重排請求（見 requeue） }
 local cur
 local canonMemo, itemMemo, memoDigest = {}, {}, nil
 
@@ -323,12 +323,41 @@ local function pop()
     return nil
 end
 
-local function requeue(pred)
-    for i = 1, cur.n do
-        local p = cur.list[i]
-        local r = cur.rec[p]
-        if pred(r) then push(p) end
+-- 重排只記請求，由 tick 的 drain 分幀照清單順序排：材料一變，4,096 片的藍圖一次全排要 8–15 ms（E2ERun9 big1～big3）。
+-- rq＝{ i＝下一個要看的清單索引, all, mat, far }。新請求併進旗標、從頭看；每片記看過哪一張請求（r.rq），
+-- 清單重建時從頭再走也不會重排同一張請求看過的片
+local DRAIN = 256 -- 每看這麼多片看一次時鐘；每幀至少看這麼多片（4,096 片最多 16 幀排完）
+local function requeue(kind)
+    local old = cur.rq
+    local rq = { i = 1, all = old and old.all, mat = old and old.mat, far = old and old.far }
+    rq[kind] = true
+    cur.rq = rq
+end
+
+-- 照請求把片排進佇列，看到時間到 stop 就停（至少看 DRAIN 片）。判斷式同原本三種重排：沙盒變了全部、
+-- 材料變了 ok／short／SKILL／DARK、走開了 far
+local function drain(stop)
+    local rq = cur.rq
+    if not rq then return end
+    local list, rec, n, i = cur.list, cur.rec, cur.n, rq.i
+    local all, mat, far = rq.all, rq.mat, rq.far
+    while i <= n do
+        local last = math.min(n, i + DRAIN - 1)
+        for j = i, last do
+            local p = list[j]
+            local r = rec[p]
+            if r.rq ~= rq then
+                r.rq = rq
+                local s = r.s
+                if all or (far and s == "far") or (mat and (s == "ok" or s == "short" or r.c == "SKILL" or r.c == "DARK")) then
+                    push(p)
+                end
+            end
+        end
+        i = last + 1
+        if getTimestampMs() >= stop then break end
     end
+    if i > n then cur.rq = nil else rq.i = i end
 end
 
 -- ===== 算一片 =====
@@ -412,6 +441,7 @@ local function sync(plan, ox, oy, oz, player)
         rec[p] = old[p] or { q = false }
     end)
     cur.list, cur.n = list, n
+    if cur.rq then cur.rq.i = 1 end -- 清單換了，索引作廢：從頭走（看過的片照 r.rq 略過）
     cur.ver = cur.ver + 1 -- 片多了、少了或搬了：旁邊是誰要重看
     for i = 1, n do
         local p = list[i]
@@ -419,7 +449,7 @@ local function sync(plan, ox, oy, oz, player)
         local it = plan.items[p.it]
         if r.q or not it or r.id ~= it.id or r.x ~= p.x + ox or r.y ~= p.y + oy or r.z ~= p.z + oz or r.d ~= p.d
             or r.o ~= p.o or r.w ~= p.w then
-            r.q = false -- 舊佇列裡的位置作廢：照新的距離重排
+            r.q, r.rq = false, cur.rq -- 舊佇列裡的位置作廢：照新的距離重排；這裡排了，重排請求不必再排一次
             push(p)
         end
     end
@@ -431,7 +461,7 @@ local function changed(now, player)
         local digest = Entry.digest()
         if digest ~= cur.digest then -- 沙盒的種類、來源、倍率變了：全部重算
             cur.digest = digest
-            requeue(function() return true end)
+            requeue("all")
         end
         local S = Materials.summary(player)
         -- 配方片缺不缺讀原版的快取，容器裡的東西變了要 Recipes.refresh 才重算（第三個值是變過幾次）。建造視窗開著時它每秒
@@ -443,48 +473,52 @@ local function changed(now, player)
         end
         if gen ~= cur.rGen or not Materials.same(cur.S, S) then
             cur.rGen = gen
-            requeue(function(r) return r.s == "ok" or r.s == "short" or r.c == "SKILL" or r.c == "DARK" end)
+            requeue("mat")
         end
         cur.S = S
     end
     local px, py, pz = math.floor(player:getX()), math.floor(player:getY()), math.floor(player:getZ())
     if pz ~= cur.pz or math.abs(px - cur.px) + math.abs(py - cur.py) >= PlanCheck.MOVE then
         cur.px, cur.py, cur.pz = px, py, pz
-        requeue(function(r) return r.s == "far" end)
+        requeue("far")
     end
 end
 
--- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查。RECHECK 的片到時間就重查（時鐘往回調時也查）
+-- 身邊 NEAR 格內的片，每幀輪流比一段格上的物件數；變了就重查。RECHECK 的片到時間就重查（時鐘往回調時也查）。
+-- 每幀都跑：表與欄位在迴圈外先取，間隔只在物件數沒變、有細節碼時才算
 local function sweep(player, now)
     local n = cur.n
     if n == 0 then return end
-    local cell, near = getCell(), PlanCheck.NEAR
+    local cell, near, recheck, stale, abs = getCell(), PlanCheck.NEAR, PlanCheck.RECHECK, PlanCheck.STALE_MS, math.abs
+    local list, rec, ox, oy, oz, i = cur.list, cur.rec, cur.ox, cur.oy, cur.oz, cur.sweep
     local px, py, pz = math.floor(player:getX()), math.floor(player:getY()), math.floor(player:getZ())
     for _ = 1, math.min(n, PlanCheck.SWEEP) do
-        local i = cur.sweep % n + 1
-        cur.sweep = i
-        local p = cur.list[i]
-        local r = cur.rec[p]
-        if r.s and not r.q and r.s ~= "far" then
-            local x, y, z = p.x + cur.ox, p.y + cur.oy, p.z + cur.oz
-            if math.abs(x - px) <= near and math.abs(y - py) <= near and math.abs(z - pz) <= 1 then
+        i = i % n + 1
+        local p = list[i]
+        local r = rec[p]
+        local s = r.s
+        if s and not r.q and s ~= "far" then
+            local x, y, z = p.x + ox, p.y + oy, p.z + oz
+            if abs(x - px) <= near and abs(y - py) <= near and abs(z - pz) <= 1 then
                 local sx, sy = x + (r.wx or 0), y + (r.wy or 0)
-                local every = r.c and (PlanCheck.RECHECK[r.c] or (r.c == "BLOCKED" and PlanCheck.STALE_MS))
-                local at = r.at or now -- 上次算這一片的時間（tick 記的）
+                local c = r.c
                 if sigOf(cell:getGridSquare(sx, sy, z)) ~= r.sig then
                     -- 連靠這一格撐的片一起重查：牆不是照圖蓋蓋的（手拖、別人、原版建造）時沒有人叫 touch。
                     -- 先比物件數再看到不到期：兩件事同時發生時也要連旁邊一起查
                     push(p)
                     PlanCheck.touch(sx, sy, z)
-                elseif every and (now < at or now - at >= every) then
-                    push(p)
+                elseif c then
+                    local every = recheck[c] or (c == "BLOCKED" and stale)
+                    local at = r.at or now -- 上次算這一片的時間（tick 記的）
+                    if every and (now < at or now - at >= every) then push(p) end
                 end
             end
         end
     end
+    cur.sweep = i
 end
 
--- 掛 OnTick：每幀最多 BUDGET_MS 毫秒，至少算一片
+-- 掛 OnTick：每幀最多 BUDGET_MS 毫秒，至少算一片（重排請求至少看 DRAIN 片）
 function PlanCheck.tick(player)
     local M = B.PlanMode; local plan = M and M.plan and M.plan(); if not plan then return end
     if not (player and M.origin) then return end
@@ -495,6 +529,7 @@ function PlanCheck.tick(player)
     local stop = now + PlanCheck.BUDGET_MS
     changed(now, player)
     sweep(player, now)
+    drain(stop)
     repeat
         local p, r = pop()
         if not p then return end
@@ -514,6 +549,20 @@ end
 function PlanCheck.reset()
     cur = nil
     memoDigest = nil
+end
+
+-- 還有片在重排或待算。只給 Runner 用：重排中的片 state 照樣回舊狀態（虛影不閃），挑不到片時要分得出是真的沒有、
+-- 還是還沒重算完。地上的藍圖不是算的那一張時回 false
+function PlanCheck.busy()
+    local M = B.PlanMode
+    if not (cur and M and M.plan and M.plan() == cur.plan) then return false end
+    if cur.rq then return true end
+    local q = cur.q
+    for k = q.lo, MAX_BUCKET do
+        local b = q.b[k]
+        if b and b.i <= b.n then return true end
+    end
+    return false
 end
 
 -- 世界座標這一格有變動：重查這格、上下一層與四鄰（AROUND）的片

@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Ramps",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "A 20-tile ramp that rises one level; people and vehicles can use it.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Allow building from blueprints",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "When on, players can have their character build a placed blueprint piece by piece, and fetch materials from supply boxes they pick. Every piece is still checked for distance, safehouse, materials and skill, just like building by hand.\nWhen off, building from blueprints can't start. Planning blueprints and the materials list still work.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",

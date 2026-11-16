@@ -9,14 +9,14 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 17
+Entry.VERSION = 18
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
 -- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門歸門（Entry.doorSet）。
--- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）
+-- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）；坡道（1.0.0）
 Entry.KINDS = { "floor", "floorOverlay", "water", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
-    "windowFrame", "windowObject", "curtain", "roof", "stairs", "furniture", "container", "solid", "well", "light",
+    "windowFrame", "windowObject", "curtain", "roof", "stairs", "ramp", "furniture", "container", "solid", "well", "light",
     "wallObject", "attached", "overlay", "plant" }
 Entry.BUILDABLE = {}
 -- 種類開關（沙盒每種一個勾選框，使用者 2026-10-31 選）：鍵＝Kind＋種類 ID 字首大寫，例 KindFloorOverlay。鍵名上線後不能改
@@ -110,6 +110,8 @@ function Entry.resolve(name)
     if kind == "stairs" and not Rules.stairsSet(IsoSpriteManager.instance:getNamedMap(), name) then
         return nil, "UNKNOWN"
     end
+    -- 坡道只收湊得成整組的頭片（目錄同一條規則，Catalog.scanSprite）
+    if kind == "ramp" and not Entry.rampSet(spr) then return nil, "UNKNOWN" end
     local grid = spr:getSpriteGrid()
     if grid and grid:getAnchorSprite() ~= spr then return nil, "UNKNOWN" end -- 多格只收原點
     -- 車庫門、雙開門只收湊得成整組的頭片、第 1 片（目錄同一條規則，Catalog.scanSprite）
@@ -264,11 +266,11 @@ end
 
 -- 這個名稱為什麼不能蓋、該改找哪一張（建造視窗搜完整圖塊名、右鍵挑圖塊用）。回 code, arg, alt：
 --   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 不能蓋的種類、
---     PART 多格的其他格（車庫門、雙開門的其他片也是）、STAIRS_SET 湊不成三格的樓梯片、DOOR_SET 湊不成整組的車庫門、雙開門、
---     DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
+--     PART 多格的其他格（車庫門、雙開門、坡道的其他片也是）、STAIRS_SET 湊不成三格的樓梯片、DOOR_SET 湊不成整組的車庫門、
+--     雙開門、RAMP_SET 湊不成整組的坡道片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
 --   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
 --   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、車庫門頭片與雙開門
---     第 1 片），能蓋才給。
+--     第 1 片、坡道的頭片），能蓋才給。
 --     那張也不能蓋時改給它能蓋的那張，不然 code／arg 改說它的原因（只往下查一層；nested 是內部用的）
 function Entry.why(name, nested)
     local entry, res = Entry.resolve(name)
@@ -305,6 +307,10 @@ function Entry.why(name, nested)
         code = alt and "PART" or "DOOR_SET"
     elseif kind == "stairs" then
         code, alt = "STAIRS_SET", stairsBottom(name)
+    elseif kind == "ramp" then
+        alt = Entry.rampHead(name)
+        if alt == name then alt = nil end -- 頭片自己湊得成整組卻解析不了：只剩管理員關掉，上面已經處理
+        code = alt and "PART" or "RAMP_SET"
     elseif kind then
         local grid = spr:getSpriteGrid()
         local anchor = grid and grid:getAnchorSprite()
@@ -514,6 +520,150 @@ local function siblingFace(entry, dir, p)
     return set and set[dir] or nil
 end
 
+-- ---------------------------------------------------------------- 坡道
+-- 一組＝同一個 tileset 連號的 n 片：頭片沒有 SlopedSurfaceHeightMin（引擎當 0），後一片的 Min＝前一片的 Max、方向相同，
+-- 最後一片的 Max＝100（原版 ramps_01：北 0–19、南 24–43、西 48–67、東 72–91，每片升 5，離線 dump 全部 .tiles）。
+-- 片 i（0 起）在頭片格＋i×上坡方向；上坡方向就是 SlopedSurfaceDirection（引擎算高度時那一邊是 Max，
+-- IsoGridSquare.java:10248-10257）。方向字串引擎用 IsoDirections.fromString（去頭尾空白、轉大寫再 valueOf，
+-- PropertyContainer.java:270-271、IsoDirections.java:32-34）讀，這裡同一種寫法，只收 N／E／S／W。
+-- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98（探針，temp/impl-1116/reports/Probe.md）
+Entry.RAMP_DECK = 1
+local RAMP_DIR = { N = { 0, -1, 1 }, E = { 1, 0, 2 }, S = { 0, 1, 3 }, W = { -1, 0, 4 } } -- dx, dy, Entry.face 的 d
+local function slope(spr)
+    local p = spr:getProperties()
+    local raw = p:get("SlopedSurfaceDirection")
+    if raw == nil then return nil end
+    local dir = tostring(raw):match("^%s*(.-)%s*$"):upper()
+    if not RAMP_DIR[dir] then return nil end
+    return dir, tonumber(p:get("SlopedSurfaceHeightMin")) or 0, tonumber(p:get("SlopedSurfaceHeightMax")) or 0
+end
+
+-- 圖塊組裡平台用的圖：第一張沒有斜面屬性的地板（原版 ramps_01_23）。這個 tileset 沒有坡道片回 nil，有坡道片卻沒有平片回 false。
+-- 圖塊表一個 session 不變，照 tileset 快取（掃到 STAIR_SCAN）
+local rampDecks = {}
+local function deckOf(tileset)
+    local c = rampDecks[tileset]
+    if c == nil then
+        local named, any, deck = IsoSpriteManager.instance:getNamedMap(), false, false
+        Rules.ensure()
+        for i = 0, STAIR_SCAN do
+            local name = tileset .. "_" .. i
+            if named:containsKey(name) then
+                local s = named:get(name)
+                local p = s:getProperties()
+                if p:has("SlopedSurfaceDirection") then
+                    any = true
+                elseif not deck and p:has(IsoFlagType.solidfloor) and Rules.classify(s) == "floor" then
+                    deck = name
+                end
+            end
+        end
+        c = any and { deck } or { nil }
+        rampDecks[tileset] = c
+    end
+    return c[1]
+end
+
+-- name 是某一組坡道的平台圖（Ledger 清平台的帳本用；Entry.STAIR_FLOOR 另外認）
+function Entry.isRampDeck(name)
+    local tileset = type(name) == "string" and name:match("^(.*)_%d+$")
+    return tileset ~= nil and deckOf(tileset) == name
+end
+
+local function rampChain(spr)
+    local dir, min, max = slope(spr)
+    if not dir or min ~= 0 or max <= 0 then return nil end
+    local name = spr:getName()
+    local tileset, num = name:match("^(.*)_(%d+)$")
+    if not tileset then return nil end
+    num = tonumber(num)
+    Rules.ensure()
+    local parts = { spr }
+    while max < 100 do
+        local s = Entry.sprite(tileset .. "_" .. (num + #parts))
+        if not s or #parts >= 100 then return nil end
+        local d2, lo, hi = slope(s)
+        if d2 ~= dir or lo ~= max or hi <= lo or Rules.classify(s) ~= "ramp" then return nil end
+        parts[#parts + 1] = s
+        max = hi
+    end
+    if max ~= 100 then return nil end
+    local m = RAMP_DIR[dir]
+    return { dir = dir, dx = m[1], dy = m[2], d = m[3], n = #parts, parts = parts,
+        deck = deckOf(tileset) or Entry.STAIR_FLOOR }
+end
+
+-- spr 是湊得成整組的頭片時回 { dir（"N" 等）, dx, dy（上坡方向）, d（Entry.face 的 1..4）, n, parts＝{ 各片 sprite },
+-- deck＝平台的圖名（同組的平片；沒有就 Entry.STAIR_FLOOR，外觀是推測，ramp-sp 截圖確認） }，否則 nil。照名稱快取
+local rampSets = {}
+function Entry.rampSet(spr)
+    local name = spr and spr:getName()
+    if not name then return nil end
+    local c = rampSets[name]
+    if c == nil then
+        c = rampChain(spr) or false
+        rampSets[name] = c
+    end
+    return c or nil
+end
+
+-- 坡道任一片的圖名 → 那一組的頭片名（往前連號找，頭片回自己）；不在湊得成整組的一組裡回 nil。照名稱快取
+local rampHeads = {}
+function Entry.rampHead(name)
+    local c = rampHeads[name]
+    if c ~= nil then return c or nil end
+    c = false
+    local spr = Entry.sprite(name)
+    local tileset, num
+    if type(name) == "string" then tileset, num = name:match("^(.*)_(%d+)$") end
+    local dir, lo
+    if spr then dir, lo = slope(spr) end
+    if dir and tileset then
+        num = tonumber(num)
+        local cur = num
+        while lo ~= 0 and num - cur < 100 do
+            local s = Entry.sprite(tileset .. "_" .. (cur - 1))
+            if not s then break end
+            local d2, lo2, hi2 = slope(s)
+            if d2 ~= dir or hi2 ~= lo then break end
+            cur, lo = cur - 1, lo2
+        end
+        local head = lo == 0 and tileset .. "_" .. cur
+        local set = head and Entry.rampSet(Entry.sprite(head))
+        if set and set.parts[num - cur + 1] == spr then c = head end
+    end
+    rampHeads[name] = c
+    return c or nil
+end
+
+-- 同一個 tileset 各方向的頭片（照編號排），第 k 組朝北的配第 k 組朝東…：一個 tileset 有好幾款時同一款轉向。照 tileset 快取
+local rampFaces = {}
+local function rampFace(entry, dir)
+    local t = rampFaces[entry.tileset]
+    if not t then
+        t = { N = {}, E = {}, S = {}, W = {} }
+        local named = IsoSpriteManager.instance:getNamedMap()
+        for i = 0, STAIR_SCAN do
+            local name = entry.tileset .. "_" .. i
+            local set = named:containsKey(name) and Entry.rampSet(named:get(name))
+            if set then
+                local l = t[set.dir]
+                l[#l + 1] = name
+            end
+        end
+        rampFaces[entry.tileset] = t
+    end
+    local set = Entry.rampSet(entry.spr)
+    local mine = set and t[set.dir]
+    for k = 1, mine and #mine or 0 do
+        if mine[k] == entry.name then
+            local other = t[dir][k]
+            return other and Entry.sprite(other) or nil
+        end
+    end
+    return nil
+end
+
 -- 朝向 d：0＝項目本身那一面；1..4＝N、E、S、W；5＝配對面（上面）。引擎替同組的每個成員寫「其他面的原點 − 自己」的
 -- Noffset 等，自己那一面不寫（IsoWorld.java:1295-1337），所以自己的 Facing 就是自己；引擎沒連起來的同名家具照
 -- siblingFace 配。查不到那一面回 nil。
@@ -533,7 +683,9 @@ function Entry.face(entry, d)
         if not dir then return nil end
         local p = entry.spr:getProperties()
         local off = tonumber(p:get(dir .. "offset"))
-        if off then
+        if entry.kind == "ramp" then
+            spr = rampFace(entry, dir)
+        elseif off then
             spr = Entry.sprite(entry.tileset .. "_" .. (entry.num + off))
         elseif p:get("Facing") == dir then
             spr = entry.spr
@@ -556,10 +708,21 @@ end
 -- 樓梯（項目＝底片）：原點是頂片，接著中片、底片，最後是上一層的平台（角色 top／mid／bottom／platform）。
 -- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:196-206,263-289）。
 -- 車庫門頭片照最短的 2 格（Entry.groupCells；拖一排的寬度由 Check.item 照請求另算），雙開門 4 格。
+-- 坡道（項目＝頭片）：原點是頭片，沿上坡方向一片一格，最後是坡頂往前、上一層的平台（角色 platform，Entry.RAMP_DECK 格）。
 function Entry.cells(spr)
     if Rules.grouped(spr:getProperties()) then
         local set = Entry.doorSet(spr)
         if set then return Entry.groupCells(set, 2) end
+    end
+    local ramp = Entry.rampSet(spr)
+    if ramp then
+        local out = {}
+        for i = 1, ramp.n do out[i] = { (i - 1) * ramp.dx, (i - 1) * ramp.dy, 0, ramp.parts[i] } end
+        local deck = Entry.sprite(ramp.deck) or spr
+        for k = 0, Entry.RAMP_DECK - 1 do
+            out[#out + 1] = { (ramp.n + k) * ramp.dx, (ramp.n + k) * ramp.dy, 1, deck, "platform" }
+        end
+        return out
     end
     if Rules.typeCode(spr:getType()) == "stairs" then
         local named = IsoSpriteManager.instance:getNamedMap()
@@ -619,9 +782,9 @@ function Entry.north(kind, spr)
 end
 
 -- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
--- 樓梯一個動作蓋整組
+-- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍
 local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100,
-    stairs = 200, roof = 120, post = 200 }
+    stairs = 200, ramp = 400, roof = 120, post = 200 }
 function Entry.duration(kind, player)
     local level = player and player:getPerkLevel(Perks.Woodwork) or 0
     return math.max(20, (TIME[kind] or 100) - level * 5)

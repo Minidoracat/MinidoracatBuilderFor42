@@ -271,11 +271,37 @@ function Ledger.forgetDoor(anchor)
     if k then L:del(k) end
 end
 
+-- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp"] = 整組的退料表，鍵是頭片那格（Place.rampOrigin；一格只放得下一片斜面，
+-- Place.check）。同車庫門不看 modData
+function Ledger.rampKey(x, y, z)
+    return x .. "," .. y .. "," .. z .. ",ramp"
+end
+
+-- Place.build 蓋好整組後記；帳本還沒建或滿了只記 log（之後拆不退料）
+function Ledger.putRamp(x, y, z, items)
+    local k = Ledger.instance and Ledger.rampKey(x, y, z)
+    local copy = {}
+    for ft, n in pairs(items) do copy[ft] = n end
+    if not (k and valid(copy, k) and L:put(k, copy)) then print(LOG .. "ramp ledger not ready or full; not recorded: " .. tostring(k)) end
+end
+
+function Ledger.getRamp(x, y, z)
+    return Ledger.instance and L:get(Ledger.rampKey(x, y, z)) or nil
+end
+
+function Ledger.forgetRamp(x, y, z)
+    if Ledger.instance then L:del(Ledger.rampKey(x, y, z)) end
+end
+
 local STAIR_FLOOR = MinidoracatBuilder.Entry.STAIR_FLOOR
+-- 樓梯、坡道補的平台（一般地板物件，Place.build 記的）被移除時清掉；坡道平台的圖照 tileset 認（Entry.isRampDeck）
 Events.OnObjectAboutToBeRemoved.Add(function(obj)
     if MinidoracatBuilder.Place.keyed(obj) then return MinidoracatBuilder.Ledger.forget(obj) end
     local spr = obj:getSprite()
-    if spr and spr:getName() == STAIR_FLOOR and not instanceof(obj, "IsoThumpable") then MinidoracatBuilder.Ledger.forget(obj) end
+    local name = spr and not instanceof(obj, "IsoThumpable") and spr:getName()
+    if name and (name == STAIR_FLOOR or (obj:isFloor() and MinidoracatBuilder.Entry.isRampDeck(name))) then
+        MinidoracatBuilder.Ledger.forget(obj)
+    end
 end)
 
 -- ---------------------------------------------------------------- 0.3.0 以前的燈（0.4.0 起發編號）

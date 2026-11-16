@@ -16,7 +16,8 @@ local Materials, Check, Place = MinidoracatBuilder.Materials, MinidoracatBuilder
 local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
 
 -- 本 MOD 蓋的片：Place 建的 IsoThumpable，或沒有 buildMaterials 的燈、家電（Place.keyed）、本工具挖的水面（Place.dug：一般
--- IsoObject 的地板，圖還是挖的那張），modData 的 builderEntry 有值；車庫門、雙開門（IsoDoor）看整組第一片的記號（Place.ourDoor）。
+-- IsoObject 的地板，圖還是挖的那張）、坡道片（Place.ramp：一般 IsoObject，記號是頭片名），modData 的 builderEntry 有值；
+-- 車庫門、雙開門（IsoDoor）看整組第一片的記號（Place.ourDoor）。
 -- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
 -- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
 -- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
@@ -26,7 +27,7 @@ local function mine(o)
     local e = o:getModData().builderEntry
     if not e then return false end
     local thump = instanceof(o, "IsoThumpable")
-    if not (thump or Place.keyed(o) or Place.dug(o)) then return false end
+    if not (thump or Place.keyed(o) or Place.dug(o) or Place.ramp(o)) then return false end
     if thump and o:isFloor() then
         local spr = o:getSprite()
         return spr ~= nil and spr:getName() == e, true
@@ -156,6 +157,55 @@ local function landingOf(top, west)
     return nil
 end
 
+-- 這一組坡道的平台：坡頂往前 Entry.RAMP_DECK 格、上一層那格圖＝set.deck 的一般地板（Entry.cells 的 platform）。照位置找，
+-- 本 MOD 補的記在伺服器帳本，拆不拆由伺服器決定（Server.dismantle 的 keepLanding）
+local function rampDecks(x, y, z, set)
+    local cell, out = getCell(), {}
+    for k = 0, Entry.RAMP_DECK - 1 do
+        local sq = cell:getGridSquare(x + (set.n + k) * set.dx, y + (set.n + k) * set.dy, z + 1)
+        local objects = sq and sq:getObjects()
+        for i = 0, (objects and objects:size() or 0) - 1 do
+            local o = objects:get(i)
+            local spr = o:getSprite()
+            if spr and spr:getName() == set.deck and not o:isStairsObject() and not instanceof(o, "IsoThumpable") then
+                out[#out + 1] = o
+                break
+            end
+        end
+    end
+    return out[1] and out or nil
+end
+
+-- 坡道：照頭片那格推整組各格（Place.rampOrigin），逐格找這一組那一片（同位置、同圖），本 MOD 的片收進 remove。
+-- 回 incomplete, partial, 平台：有一格沒載入 incomplete＝NOT_LOADED（不能拆一半又退料）；都載入但有片不見了或不是本 MOD
+-- 的 partial＝true（殘組：拆剩下本 MOD 的片、不退料；原版大錘不保證砸得掉一般物件的坡道片，不給拆會留下清不掉的斜面）
+local function rampParts(obj, remove)
+    local x, y, z, set = Place.rampOrigin(obj)
+    if not set then return "NOT_OURS", false, nil end
+    local cell, unloaded, partial = getCell(), false, false
+    for i = 1, set.n do
+        local sq = cell:getGridSquare(x + (i - 1) * set.dx, y + (i - 1) * set.dy, z)
+        local name, found = set.parts[i]:getName(), nil
+        local objects = sq and sq:getObjects()
+        for j = 0, (objects and objects:size() or 0) - 1 do
+            local o = objects:get(j)
+            local spr = o:getSprite()
+            if spr and spr:getName() == name then
+                found = o
+                break
+            end
+        end
+        if not sq then
+            unloaded = true
+        elseif found and Place.ramp(found) then
+            remove[#remove + 1] = found
+        else
+            partial = true
+        end
+    end
+    return unloaded and "NOT_LOADED" or nil, partial, rampDecks(x, y, z, set)
+end
+
 -- 雙開門第 1–4 片離第 1 片的格數 { x 偏移, y 偏移 }，[北向][開著]（IsoDoor.java:141-148，引擎是 private，照抄）
 local DOUBLE_POS = {
     [true] = { [false] = { { 0, 1, 2, 3 }, { 0, 0, 0, 0 } }, [true] = { { 0, 0, 3, 3 }, { 0, 1, 1, 0 } } },
@@ -197,12 +247,16 @@ local function doorGap(obj, list, garage)
     return "NOT_OURS"
 end
 
--- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = 平台或 nil,
--- foreign = true（同一組裡有不是本 MOD 蓋的片）, incomplete = 拒絕碼（整組門不完整，doorGap）}。同一組的片照「本 MOD 蓋的」
--- 收，不照各片自己的種類（建造時整組用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆（foreign）：
+-- 拆一件要移除哪些物件、照哪些物件的退料表退。回 { remove = { 物件 }, refund = { 物件 }, landing = { 平台 } 或 nil,
+-- foreign = true（同一組裡有不是本 MOD 蓋的片）, incomplete = 拒絕碼（整組門不完整、坡道有格沒載入）}。同一組的片照
+-- 「本 MOD 蓋的」收，不照各片自己的種類（建造時整組用原點的種類，Place.build）；同一組有不是本 MOD 蓋的片就整組不拆
+-- （foreign；坡道例外，見下）：
 --   樓梯：原版 buildUtil.getStairObjects 收三片（ISDismantleAction.lua:76-80），只照被點的那片退一次（三片的退料表都寫
 --     整組，Place.build），所以同方向的三片要一起拆。getStairObjects 也收同一格別方向的樓梯片，那些不算這一組。
 --     平台照 landingOf 找。
+--   坡道：整組各片（rampParts），退料照頭片那格那一筆帳本退一次（Place.refundOf，點哪一片都一樣）；平台照 rampDecks 找。
+--     殘組（rampParts 的 partial）照拆剩下本 MOD 的片、一律不退料（refund 是空的）；整組那筆帳本在片移除時清掉
+--     （Place.onAboutToBeRemoved），完整的一組退過一次後帳本也沒了，所以拆殘組不會多拿材料。
 --   多格：同一組的每一片（getSpriteGridObjectsIncludingSelf，ISDestroyCursor.lua:217），每片照自己的退料表退。引擎只看
 --     sprite grid 相同、不看是不是同一個原點（IsoObject.java:5410-5444），另用 isConnectedSpriteGridObject 對原點。
 --   其他：自己。
@@ -218,8 +272,13 @@ function Dismantle.plan(obj, kind)
                 if t == IsoObjectType.stairsTW or t == IsoObjectType.stairsTN then top = o:getSquare() end
             end
         end
-        if top then landing = landingOf(top, west) end
+        local l = top and landingOf(top, west)
+        if l then landing = { l } end
         refund[1] = obj
+    elseif kind == "ramp" then
+        local partial
+        incomplete, partial, landing = rampParts(obj, remove)
+        if not partial then refund[1] = obj end
     elseif kind == "door" then
         -- 車庫門、雙開門（單扇門 kindOf 不認）：整組拆（原版大錘也整組砸，ISDestroyStuffAction.lua:269-296），退料照第一片
         -- 那一筆帳本退一次（Place.refundOf）。不完整的一組不拆（doorGap）：一部分沒載入時只拆得到載入的那幾片、卻退整組；
@@ -366,7 +425,7 @@ Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFra
 -- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是
 -- 本工具拆的（Cost.refund 的 none／sheet）；水井與手壓水泵、植物、水面（使用者 2026-11-13 新增）不換，要先拆（水面是填平）再蓋。
 -- 在水面上蓋地板照「地板一律換」：Place.clearFloor 拆掉水面（不是替換，不退料），水面的記號跟著物件消失
-Dismantle.NO_REPLACE = { light = true, stairs = true, floorOverlay = true, wallOverlay = true, overlay = true,
+Dismantle.NO_REPLACE = { light = true, stairs = true, ramp = true, floorOverlay = true, wallOverlay = true, overlay = true,
     door = true, window = true, curtain = true, well = true, plant = true, water = true }
 
 -- 舊的那件會不會佔住新的要放的位置（佔住才換；不佔的照舊同格共存，Check.item 另用 Place.check 確認）：格邊的同組、

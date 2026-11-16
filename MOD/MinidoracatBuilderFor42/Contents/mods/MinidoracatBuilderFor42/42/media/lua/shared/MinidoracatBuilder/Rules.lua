@@ -418,6 +418,9 @@ local function kindOfProps(name, p, t)
     -- 也有帶 solidfloor 的（UMCTP、Constown 53 張，2026-11-07 Workshop keke），不當地板：往下照能不能搬分到家具或地面覆蓋
     local mt = p:get("MoveType")
     if p:has(solidfloor) and mt ~= "FloorRug" then -- 平屋頂地板也在這
+        -- 坡道（帶斜面屬性的地板片，原版 ramps_01；引擎照圖塊屬性算斜面，IsoGridSquare.java:10202-10268）。照屬性認，
+        -- 不寫死名稱；同一組裡沒有斜面屬性的平片照舊是地板。目錄只收湊得成整組的頭片（Entry.rampSet）
+        if p:has("SlopedSurfaceDirection") then return "ramp" end
         -- 水面（帶 water 旗標的地板，原版 blends_natural_02_0／5／6／7；使用者 2026-11-13 選做成種類 water，預設關）。照屬性認，
         -- 不寫死名稱：別的 MOD 的水面地板也收。岸邊疊圖片沒有 water 旗標、不是地板，照舊走下面的無限水
         if p:has(waterFlag) then return "water" end

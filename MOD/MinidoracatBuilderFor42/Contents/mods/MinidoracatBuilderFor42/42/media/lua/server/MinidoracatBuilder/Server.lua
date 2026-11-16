@@ -167,7 +167,7 @@ function Server.intent(player, args)
         local w = int(args.w, 2, math.max(2, maxItems)) -- 沙盒 MaxCellsPerDrag 最小可設 1，車庫門至少 2 格
         if not w or #anchors ~= 1 then return Server.refuse(player, n, 0, "BAD_REQUEST") end
         anchors[1][5] = w
-    elseif args.w ~= nil then
+    elseif args.w ~= nil or (entry.kind == "ramp" and #anchors ~= 1) then -- 坡道一組 20 多格，一個請求只放一組
         return Server.refuse(player, n, 0, "BAD_REQUEST")
     end
     for _, a in ipairs(anchors) do
@@ -245,7 +245,7 @@ local function drop(player, sq, refund)
     end
 end
 
--- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing 拆；
+-- 移除並補地：樓梯清掉平台格的 ConnectedToStairs（Place.build 記的，同向的樓梯才能再蓋），平台照 plan.landing（清單）拆；
 -- z ≤ 0 的地板拆了換泥土（原版 ISDismantleAction.lua:82-88）；本工具挖的水面填平、換回挖之前的地面（Place.fill）；
 -- 掛上去的地面覆蓋、牆面疊圖拿掉那張、清覆蓋帳本。移除時引擎丟的
 -- 例外 Kahlua 只記 log、不往上丟（MethodCaller.java:34-43），pcall 看不到：每片拆完確認已經不在格子上，還在就當失敗（不退料）。
@@ -277,7 +277,7 @@ local function removeAll(kind, plan)
         local lsq = getCell():getGridSquare(top:getX() - (west and 1 or 0), top:getY() - (west and 0 or 1), top:getZ() + 1)
         if lsq then lsq:getModData()["ConnectedToStairs" .. tostring(not west)] = nil end
     end
-    if plan.landing then plan.landing:getSquare():transmitRemoveItemFromSquare(plan.landing, false) end
+    for _, l in ipairs(plan.landing or {}) do l:getSquare():transmitRemoveItemFromSquare(l, false) end
     if kind == "floor" then
         for _, s in ipairs(squares) do
             if s:getZ() <= 0 and not s:getFloor() then
@@ -591,7 +591,7 @@ function Server.dismantleDuration(player, n, i)
     return Entry.duration(kind, player)
 end
 
--- 樓梯平台留著的情況：不是本 MOD 補的（帳本沒記：蓋樓梯時那格原本就有地板）、上面還有別的東西（同一格別的物件，或掛在
+-- 樓梯、坡道平台留著的情況：不是本 MOD 補的（帳本沒記：蓋的時候那格原本就有地板）、上面還有別的東西（同一格別的物件，或掛在
 -- 它上面的地面覆蓋：拆平台時覆蓋跟著消失、不退料，Overlays.drop）、或沒有 BUILD 權限。
 -- 平台不退料，留著只是一塊地板；安全屋照預覽查（只決定留不留，不推通知、不寫稽核）。
 local function keepLanding(player, l)
@@ -633,7 +633,13 @@ local function unbuildOne(player, x, y, z, name)
         if not mats then return "NOT_OURS", at end
         rollInto(refund, mats)
     end
-    if plan.landing and keepLanding(player, plan.landing) then plan.landing = nil end
+    if plan.landing then
+        local list = {}
+        for _, l in ipairs(plan.landing) do
+            if not keepLanding(player, l) then list[#list + 1] = l end
+        end
+        plan.landing = list[1] and list or nil
+    end
     local ok, err = pcall(removeAll, kind, plan)
     if not ok then
         print(LOG .. "dismantle failed e=" .. name .. ": " .. tostring(err))

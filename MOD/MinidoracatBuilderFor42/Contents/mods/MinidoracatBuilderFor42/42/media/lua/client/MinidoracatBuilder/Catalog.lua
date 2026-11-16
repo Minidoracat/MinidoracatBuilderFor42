@@ -48,6 +48,8 @@ local function scanSprite(spr, named)
     local key, raw
     if kind == "stairs" then
         if not Rules.stairsSet(named, name) then return end -- 只收湊得成三格的 B 片
+    elseif kind == "ramp" then
+        if not MinidoracatBuilder.Entry.rampSet(spr) then return end -- 只收湊得成整組的頭片（Entry.resolve 同一條）
     else
         local grid = spr:getSpriteGrid()
         if grid and grid:getAnchorSprite() ~= spr then return end -- 多格只收原點

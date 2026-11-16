@@ -104,10 +104,8 @@ local function canon(entry, d)
     return d
 end
 
--- 這幾格（世界座標 { x, y, z, d }）加進藍圖會不會超出上限：回 nil 或 FULL／TOO_WIDE／TOO_HIGH。重複的片不算
-function PM.overflow(plan, cells, id, o)
-    local n = plan.n
-    local x0, y0, z0, x1, y1, z1 = Plan.bounds(plan)
+-- 片數與包圍盒（藍圖座標）加上這幾格（世界座標 { x, y, z, d }）之後是多少。重複的片不算
+local function tally(plan, cells, id, o, n, x0, y0, z0, x1, y1, z1)
     local entry, last, d = tileEntry(id), nil, nil -- 一排的朝向多半相同：換了才重查
     for _, c in ipairs(cells) do
         local x, y, z = c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz
@@ -122,22 +120,28 @@ function PM.overflow(plan, cells, id, o)
             end
         end
     end
+    return n, x0, y0, z0, x1, y1, z1
+end
+
+local function limitWhy(n, x0, y0, z0, x1, y1, z1)
     if n > Plan.MAX_PIECES then return "FULL" end
     if x0 and (x1 - x0 >= Plan.MAX_SIDE or y1 - y0 >= Plan.MAX_SIDE) then return "TOO_WIDE" end
     if z0 and z1 - z0 >= Plan.MAX_LEVELS then return "TOO_HIGH" end
     return nil
 end
 
--- 記成一步：cells＝世界座標 { x, y, z, d[, w] }（w＝車庫門寬度）。回 加了幾片，或 nil, 原因碼
-local function record(id, cells, o)
-    local plan = S.plan
-    local why = PM.overflow(plan, cells, id, o)
-    if why then return nil, why end
+-- 這幾格（世界座標 { x, y, z, d }）加進藍圖會不會超出上限：回 nil 或 FULL／TOO_WIDE／TOO_HIGH。重複的片不算
+function PM.overflow(plan, cells, id, o)
+    local x0, y0, z0, x1, y1, z1 = Plan.bounds(plan)
+    return limitWhy(tally(plan, cells, id, o, plan.n, x0, y0, z0, x1, y1, z1))
+end
+
+-- 一種項目的格子加進藍圖（不開新的一步、不通知）。回 加了幾片
+local function addGroup(plan, id, cells, o)
     local okSrc, src = pcall(PlanFile.source, id)
     local it = Plan.item(plan, id, okSrc and src or nil)
     local entry, last, d = tileEntry(id), nil, nil
     local added = 0
-    Plan.begin(plan)
     for _, c in ipairs(cells) do
         if c[4] ~= last then last, d = c[4], canon(entry, c[4]) end
         local p, code = Plan.add(plan, c[1] - plan.ox, c[2] - plan.oy, c[3] - plan.oz, d, o, it, c[5])
@@ -147,6 +151,16 @@ local function record(id, cells, o)
             print(LOG .. "plan add refused e=" .. tostring(id) .. ": " .. tostring(code))
         end
     end
+    return added
+end
+
+-- 記成一步：cells＝世界座標 { x, y, z, d[, w] }（w＝車庫門寬度）。回 加了幾片，或 nil, 原因碼
+local function record(id, cells, o)
+    local plan = S.plan
+    local why = PM.overflow(plan, cells, id, o)
+    if why then return nil, why end
+    Plan.begin(plan)
+    local added = addGroup(plan, id, cells, o)
     Plan.commit(plan)
     fire()
     return added
@@ -161,6 +175,25 @@ function PM.addCells(playerNum, id, cells)
         return nil, why
     end
     return true
+end
+
+-- 屋頂助手（Roof.layout 的結果）：groups＝{ { id, cells＝{ { x, y, z, d[, w] }… } }… }，世界座標。整批算一步
+-- （上一步一次收回）；各組合在一起算上限，會超出就一片都不加。回 加了幾片，或 nil, OFF／FULL／TOO_WIDE／TOO_HIGH
+function PM.addMany(playerNum, groups)
+    if S.mode ~= "edit" or not S.plan then return nil, "OFF" end
+    local plan = S.plan
+    local n, x0, y0, z0, x1, y1, z1 = plan.n, Plan.bounds(plan)
+    for _, g in ipairs(groups) do
+        n, x0, y0, z0, x1, y1, z1 = tally(plan, g.cells, g.id, 0, n, x0, y0, z0, x1, y1, z1)
+    end
+    local why = limitWhy(n, x0, y0, z0, x1, y1, z1)
+    if why then return nil, why end
+    local added = 0
+    Plan.begin(plan)
+    for _, g in ipairs(groups) do added = added + addGroup(plan, g.id, g.cells, 0) end
+    Plan.commit(plan)
+    fire()
+    return added
 end
 
 -- ===== 建造游標的掛鉤（Cursor.hook；規劃開著時才掛） =====
@@ -242,6 +275,8 @@ end
 -- 只佔一條格邊的（牆、柵欄、門框、窗框、門、窗，含車庫門與雙開門）：北邊轉成右邊那格的西邊、西邊轉成北邊；
 -- 整組佔的格子先轉，再照新方向挑錨點（北向取 x 最小、西向取 y 最大，Entry.groupCells 的排法）。
 -- 其他有方向的：照 Facing 換到下一個方向，多格的對齊佔地的左上角。沒有方向的（地板、柱子）朝向不變。
+-- 坡道（一組一片、錨點是頭片）：照上坡方向換到下一個（Entry.face 的 1..4），位移不用修正：一整組沿上坡方向從頭片排開，
+-- 錨點轉過去之後整組跟著轉；坡道片沒有 Facing 屬性，所以不走上一條
 function PM.turnPiece(p, item)
     local id = item and item.id
     if type(id) ~= "string" then return nil end
@@ -257,6 +292,22 @@ function PM.turnPiece(p, item)
     end
     local entry = Entry.resolve(id)
     if not entry then return nil end
+    if entry.kind == "ramp" then
+        local cur = p.d
+        if cur == 0 then -- 項目自己那張圖：找它是哪個方向
+            for d = 1, 4 do
+                local f = Entry.face(entry, d)
+                if f and f:getName() == entry.name then
+                    cur = d
+                    break
+                end
+            end
+        end
+        if not cur or cur < 1 or cur > 4 then return nil end
+        local nd = cur % 4 + 1
+        if not Entry.face(entry, nd) then return nil end
+        return canon(entry, nd), 0, 0
+    end
     local spr = Entry.face(entry, p.d)
     if not spr then return nil end
     local offs = footprint(entry, spr, p.w)
@@ -349,10 +400,10 @@ local function storeEdit(edit)
 end
 
 local function storeForget(st)
-    st.file, st.ox, st.oy, st.oz, st.px, st.py, st.pz = nil, nil, nil, nil, nil, nil, nil
+    st.file, st.name, st.ox, st.oy, st.oz, st.px, st.py, st.pz = nil, nil, nil, nil, nil, nil, nil, nil
 end
 
--- 記錄換成這張的檔名與角；同一個檔、角變了時原本的角留在 prev（藍圖檔還沒寫成就斷掉時，讀回照藍圖檔認出舊版）
+-- 記錄換成這張的檔名、名稱與角；同一個檔、角變了時原本的角留在 prev（藍圖檔還沒寫成就斷掉時，讀回照藍圖檔認出舊版）
 local function storePlan(plan)
     return storeEdit(function(st)
         local x, y, z = corner(plan)
@@ -361,7 +412,7 @@ local function storePlan(plan)
         elseif st.ox and (st.ox ~= x or st.oy ~= y or st.oz ~= z) then
             st.px, st.py, st.pz = st.ox, st.oy, st.oz
         end
-        st.file, st.ox, st.oy, st.oz = plan.file, x, y, z
+        st.file, st.name, st.ox, st.oy, st.oz = plan.file, PlanStore.nameKey(plan.name), x, y, z
     end)
 end
 
@@ -392,7 +443,20 @@ end
 -- 讀不到的原因裡，只有這兩種可能下次就好了（檔案被鎖住、暫時打不開）：保留記錄、下次再試
 local RETRY = { READ = true, NO_FILE = true }
 
--- 進遊戲：讀回地上的藍圖。確定沒了（刪掉、壞了）才清記錄，並說一聲
+-- 藍圖資料夾裡名稱代號是 key 的檔：剛好一個才回它的檔名
+local function fileNamed(key)
+    local found
+    for _, f in ipairs(PlanFile.list()) do
+        local head = PlanFile.head(f)
+        if head and PlanStore.nameKey(head.name) == key then
+            if found then return nil end
+            found = f
+        end
+    end
+    return found
+end
+
+-- 進遊戲：讀回地上的藍圖。確定沒了（刪掉、壞了、檔名給了別張）才清記錄，並說一聲
 function PM.restore()
     S.plan, S.mode, S.drag, S.home, S.prev = nil, "none", nil, nil, nil
     setSel(nil)
@@ -402,6 +466,21 @@ function PM.restore()
     local plan, why = PlanFile.load(st.file)
     -- 正式檔與備份都不在資料夾裡：被刪掉了（例如在檔案總管刪的），不是一時打不開
     if not plan and why == "NO_FILE" and not PlanFile.exists(st.file) then why = "GONE" end
+    -- 檔不在、記錄有名稱：檔被改了名（藍圖庫以外的地方）時照名稱找回；同名的剛好一張才接，零張或好幾張照舊算沒了
+    if why == "GONE" and st.name then
+        local f = fileNamed(st.name)
+        local p2, why2 = nil, nil
+        if f then p2, why2 = PlanFile.load(f) end
+        if p2 then
+            plan, why = p2, nil
+            st.file = f
+            storeEdit(function(s) s.file = f end)
+        elseif f then
+            why = why2
+        end
+    end
+    -- 記錄的名稱和檔裡的不同：這個檔名已經給了另一張藍圖（原本那張刪掉後重用），不擺別張
+    if plan and st.name and PlanStore.nameKey(plan.name) ~= st.name then plan, why = nil, "NAME" end
     if not plan or st.ox == nil then
         why = why or "NO_POS"
         print(LOG .. "ground plan not restored f=" .. tostring(st.file) .. ": " .. tostring(why))
@@ -436,7 +515,12 @@ function PM.retarget(oldFile, ...)
     local st = PlanStore.load()
     if st.file == oldFile then
         hit = true
-        if newFile then st.file = newFile else storeForget(st) end
+        if newFile then
+            st.file = newFile
+            if newName then st.name = PlanStore.nameKey(Plan.cleanName(newName)) end
+        else
+            storeForget(st)
+        end
         if not PlanStore.save(st) then print(LOG .. "plan store save failed after rename f=" .. tostring(oldFile)) end
     end
     local plan = S.plan

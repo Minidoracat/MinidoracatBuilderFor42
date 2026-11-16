@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "경사로",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "20칸 길이로 한 층 올라가는 경사로입니다. 사람과 차량 모두 오를 수 있습니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "청사진대로 건축 허용",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "켜면 플레이어가 배치한 청사진을 캐릭터가 한 조각씩 짓게 하고, 지정한 상자에서 재료를 가져오게 할 수 있습니다. 모든 조각은 직접 지을 때와 똑같이 거리, 은신처, 재료, 기술을 확인합니다.\n끄면 청사진대로 건축을 시작할 수 없습니다. 청사진 계획과 재료 목록은 그대로 쓸 수 있습니다.",
     "Sandbox_MinidoracatBuilder": "Minidoracat 자유 건축",
@@ -80,7 +82,7 @@
     "Sandbox_MinidoracatBuilder_KindWell": "우물과 수동 펌프",
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "켜면 플레이어가 우물과 수동 펌프를 지을 수 있습니다. 물이 끝없이 나오고 깨끗하며, 단수된 뒤에도 쓸 수 있습니다. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindPlant": "식물",
+    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "관상용 식물, 풀, 들꽃. 장식용입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindWater": "물",
-    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "켜면 플레이어가 1층의 풀밭이나 흙 같은 자연 지면을 파서 물을 만들 수 있습니다. 삽만 있으면 되고 재료와 기술은 필요 없습니다. 물은 사람도 좀비도 지나갈 수 없고, 오염된 물을 얻을 수 있으며 낚시도 할 수 있습니다. 해체하면 원래 지면으로 돌아갑니다. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
-    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "관상용 식물, 풀, 들꽃. 장식용입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다."
+    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "켜면 플레이어가 1층의 풀밭이나 흙 같은 자연 지면을 파서 물을 만들 수 있습니다. 삽만 있으면 되고 재료와 기술은 필요 없습니다. 물은 사람도 좀비도 지나갈 수 없고, 오염된 물을 얻을 수 있으며 낚시도 할 수 있습니다. 해체하면 원래 지면으로 돌아갑니다. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다."
 }

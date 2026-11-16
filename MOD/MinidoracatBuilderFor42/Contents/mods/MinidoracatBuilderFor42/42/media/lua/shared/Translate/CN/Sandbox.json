@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "坡道",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "20 格长、升一层的坡道，人和车都能走。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "开放按图建造",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "开启后，玩家可以让角色按地上的蓝图一块块自动建造，也能指定材料箱让角色去取料。每一块照样检查距离、安全屋、材料和技能，和手动建造一样。\n关闭后无法开始按图建造，规划蓝图和材料表照常可用。",
     "Sandbox_MinidoracatBuilder": "Minidoracat 自由建造",

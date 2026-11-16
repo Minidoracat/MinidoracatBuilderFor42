@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Rampa",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "Rampa de 20 quadrados que sobe um andar; pessoas e veículos podem usá-la.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Permitir construir pelo projeto",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Quando ativado, os jogadores podem pôr a personagem a construir um projeto colocado, peça a peça, e a buscar materiais nas caixas que escolherem. Cada peça continua a ser verificada quanto a distância, base, materiais e habilidade, como ao construir à mão.\nDesativado: a construção pelo projeto não pode começar. Planear projetos e a lista de materiais continuam a funcionar.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
@@ -80,7 +82,7 @@
     "Sandbox_MinidoracatBuilder_KindWell": "Poços e bombas manuais",
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "Quando ativado, os jogadores podem construir poços e bombas manuais: água limpa infinita que continua a funcionar mesmo depois de a água ser cortada. Desativado por padrão.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Plantas",
+    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Plantas ornamentais, relva e flores silvestres. Só decoração.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
     "Sandbox_MinidoracatBuilder_KindWater": "Água",
-    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Quando ativado, os jogadores podem cavar solo natural, como relva ou terra, no nível do chão para criar água. Só precisa de uma pá: sem materiais e sem habilidade. A água bloqueia pessoas e zumbis, dá água contaminada e permite pescar. Ao desmontar, volta a ser o chão original. Desativado por padrão.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado.",
-    "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Plantas ornamentais, relva e flores silvestres. Só decoração.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado."
+    "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Quando ativado, os jogadores podem cavar solo natural, como relva ou terra, no nível do chão para criar água. Só precisa de uma pá: sem materiais e sem habilidade. A água bloqueia pessoas e zumbis, dá água contaminada e permite pescar. Ao desmontar, volta a ser o chão original. Desativado por padrão.\nDesativado: os jogadores não veem nem podem construir. O que já foi construído permanece e ainda pode ser desmontado."
 }

@@ -25,7 +25,7 @@ local ORDER = {
     floorOverlay = 1, wallOverlay = 1, wallObject = 1, windowObject = 1, attached = 1, overlay = 1,
     furniture = 2, container = 2, solid = 2, light = 2,
     wall = 3, fence = 3, post = 3, doorFrame = 3, windowFrame = 3,
-    stairs = 4, roof = 5, floor = 6, water = 6,
+    stairs = 4, ramp = 4, roof = 5, floor = 6, water = 6,
 }
 Area.ORDER = ORDER
 

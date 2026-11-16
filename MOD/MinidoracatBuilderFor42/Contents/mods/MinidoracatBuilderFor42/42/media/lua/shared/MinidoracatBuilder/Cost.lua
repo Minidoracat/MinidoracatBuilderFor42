@@ -25,6 +25,7 @@ local WOOD = {
     solid = { [PLANK] = 2, [NAILS] = 2 },
     stairs = { [PLANK] = 13, [NAILS] = 8 },                                 -- Wood_Stairs（整組，stairs/entity_carpentry_stairs.txt）
     roof = { [PLANK] = 1, [NAILS] = 2 },                                    -- 原版沒有屋頂配方：比照木地板，斜面多一根釘子
+    ramp = { [PLANK] = 1, [NAILS] = 1 },                                    -- 坡道每片：原版沒有配方，照木地板（Q2 選維持現價）
 }
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
@@ -117,7 +118,7 @@ local XP_PER_ITEM = 5
 -- 改照木頭收的照木頭。
 local SKILL = {
     wood = { floor = 1, wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 3, door = 3, window = 5, stairs = 6,
-        roof = 2 },
+        roof = 2, ramp = 1 },
     masonry = { wall = 2, post = 2, windowFrame = 2, doorFrame = 2, fence = 5 },
     metal = { wall = 3, post = 3, windowFrame = 3, doorFrame = 3, door = 3, fence = 3, stairs = 5 },
 }
@@ -507,10 +508,18 @@ end
 -- 樓梯例外：整組照配方收一次，放在第一格（頂片）；其他格（中片、底片、平台）不收，三片的 buildMaterials 都寫整組
 -- （Place.build），拆哪一片都照那片的 buildMaterials 退一次、整組移除。能蓋的樓梯三片都不能搬、沒有 CanScrap
 -- （Rules.classify、Rules.stairsSet），所以三片的拆除方式都和頂片一樣。
+-- 坡道同理：整組放在第一格（頭片），其他片與平台不收，退料記在伺服器帳本整組一筆（Place.build）。同一組各片只差斜面高度，
+-- 所以照頭片的單價 × 片數算一次（倍率乘在整組上再進位，不會每片各進位一次）
 function Cost.forCells(kind, sprites, multiplier)
     local each = {}
-    if kind == "stairs" then
-        local c = Cost.of(kind, sprites[1], multiplier)
+    local n = 0
+    if kind == "ramp" then
+        for _, spr in ipairs(sprites) do
+            if spr:getProperties():has("SlopedSurfaceDirection") then n = n + 1 end
+        end
+    end
+    if kind == "stairs" or n > 0 then
+        local c = Cost.of(kind, sprites[1], n > 0 and (multiplier or 1) * n or multiplier)
         each[1] = c
         for i = 2, #sprites do
             each[i] = { items = {}, tools = c.tools, perkOf = c.perkOf, chanceOf = {}, fee = {}, back = c.back,
@@ -593,7 +602,7 @@ end
 --     整組一起拆，退料記在伺服器帳本（Place.build、Dismantle.plan）。原版拆解只拆一片，拆了那組的帳本跟著清（Place.onAboutToBeRemoved）。
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
-    if kind == "water" then return "builder" end
+    if kind == "water" or kind == "ramp" then return "builder" end -- 坡道整組拆、退料記在帳本（Place.build）
     local p = spr:getProperties()
     local R = MinidoracatBuilder.Rules
     if kind == "door" and R.grouped(p) then return "builder" end

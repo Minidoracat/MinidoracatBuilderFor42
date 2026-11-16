@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Rampe",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "Rampe de 20 cases qui monte d'un étage ; utilisable à pied et en véhicule.\nDésactivé : les joueurs ne la voient pas et ne peuvent pas la construire. Ce qui est déjà construit reste en place et peut toujours être démonté.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Autoriser la construction de plans",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Activé, les joueurs peuvent faire construire un plan posé pièce par pièce par leur personnage, qui va aussi chercher les matériaux dans les caisses désignées. Chaque pièce est vérifiée comme pour une construction à la main : distance, abri, matériaux et compétence.\nDésactivé, la construction de plans ne peut pas démarrer. La planification et la liste des matériaux fonctionnent toujours.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",

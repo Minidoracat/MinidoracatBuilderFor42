@@ -105,6 +105,9 @@ option MinidoracatBuilder.KindRoof
 option MinidoracatBuilder.KindStairs
 {type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindStairs,}
 
+option MinidoracatBuilder.KindRamp
+{type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindRamp,}
+
 option MinidoracatBuilder.KindFurniture
 {type = boolean, default = true, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindFurniture,}
 

@@ -1144,6 +1144,7 @@ end
 
 local Imp = {}
 Imp.__index = Imp
+Imp.TYPE_MAX = 200 -- 文字欄裡最多留幾個字：更長的一進框就清掉、改走貼上鈕那條路（見 Imp:typed）
 
 function Imp.new(UI, pn)
     local theme = UI.Theme.create({ variant = "dark" })
@@ -1170,17 +1171,38 @@ function Imp.new(UI, pn)
         win:addChild(b)
         return b
     end
-    -- 第一列：從剪貼簿貼上＋讀到了什麼。不放可輸入的文字框：原生 Ctrl+C 會把框裡的字直接送進剪貼簿，太長會讓遊戲當掉
+    -- 第一列：分享碼文字欄（框架有同步回呼才放）＋從剪貼簿貼上；狀態行（讀到了什麼）在文字欄下面，沒有文字欄時在貼上鈕右邊。
+    -- 原生文字框的 Ctrl+C／X 直接把框裡的字送進剪貼簿，太長會讓遊戲當掉（實機 97,746 bytes 當），而貼上不看長度上限、
+    -- 上限要等 update 才截、同一輪按鍵可以接著全選加複製（UITextBox2.java:398-401,1235-1257、Core.java:1657-1661）。
+    -- 所以文字欄只在框架給得出同步的 onTextChange（貼上的當下、複製之前）時才放：超過 TYPE_MAX 當場清空（Imp:typed）
     local pasteBtn = (Clipboard and Clipboard.getClipboard) and button("IGUI_MBLD_Imp_Paste", nil, function(t) t:paste() end)
-    if pasteBtn then
+    local th
+    if UI.CAPABILITIES.textFieldSync == true then
+        local bw = pasteBtn and pasteBtn.width + GAP or 0
+        self.field = UI.TextField.new({ x = PAD, y = y, width = innerW - bw, text = "", maxLength = Imp.TYPE_MAX,
+            placeholder = getText("IGUI_MBLD_Imp_CodeField"), theme = theme,
+            onTextChange = function(f, text) self:typed(f, text) end })
+        win:addChild(self.field)
+        local rowH = self.field.height
+        if pasteBtn then
+            pasteBtn:setX(PAD + innerW - pasteBtn.width)
+            pasteBtn:setY(y)
+            rowH = math.max(rowH, pasteBtn.height)
+        end
+        y = y + rowH + GAP
+        self.status = L.textPanel(win, PAD, y, innerW, theme, font)
+    elseif pasteBtn then
         pasteBtn:setX(PAD)
         pasteBtn:setY(y)
         local tx = PAD + pasteBtn.width + GAP
         self.status = L.textPanel(win, tx, y, PAD + innerW - tx, theme, font)
+        th = pasteBtn.height
+    end
+    if self.status then
         -- 這一列的高度照兩種狀態裡較高的那個（翻譯長了就換行，不蓋到下面）
-        local th = math.max(L.setLines(self.status, { { getText("IGUI_MBLD_Imp_CodeRead", "60000"), "text" } }),
+        th = math.max(th or 0, L.setLines(self.status, { { getText("IGUI_MBLD_Imp_CodeRead", "60000"), "text" } }),
             L.setLines(self.status, { { getText("IGUI_MBLD_Imp_CodeHint"), "textMuted" } }))
-        y = y + math.max(pasteBtn.height, th) + GAP
+        y = y + th + GAP
     end
     -- 第二列：資料夾裡的檔＋檢查
     local checkBtn = button("IGUI_MBLD_Imp_Check", "primary", function(t) t:check() end)
@@ -1194,6 +1216,7 @@ function Imp.new(UI, pn)
     self.fileDD = UI.Dropdown.new({ x = PAD, y = y, width = innerW - checkBtn.width - GAP, options = opts,
         placeholder = getText(#opts > 0 and "IGUI_MBLD_Imp_FileHint" or "IGUI_MBLD_Imp_NoFiles"), theme = theme, target = self,
         onChange = function(t)
+            if t.field then t.field:setText("") end
             t:setCode(nil)
             t:check()
         end })
@@ -1231,26 +1254,55 @@ function Imp:tooLong()
     self:render()
 end
 
--- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦。
--- 再按一次＝換成新的
-function Imp:paste()
-    local s = L.paste()
-    if not s or s == "" then
-        self:setCode(nil)
-        self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_ClipEmpty"), true
-        return self:render()
-    end
+-- 收到一段分享碼（貼上鈕、文字欄裡太長的）：太長的不收，其餘檢查並寫出結果
+function Imp:take(s)
     if not L.fits(s) then return self:tooLong() end
     self:setCode(s)
     self:check(true)
 end
 
--- 分享碼優先；沒讀到分享碼才讀選的檔
+-- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦。
+-- 再按一次＝換成新的
+function Imp:paste()
+    local s = L.paste()
+    if self.field then self.field:setText("") end
+    if not s or s == "" then
+        self:setCode(nil)
+        self.plan, self.err, self.pasted = nil, getText("IGUI_MBLD_Imp_ClipEmpty"), true
+        return self:render()
+    end
+    self:take(s)
+end
+
+-- 文字欄的同步回呼（框架 TextField 的 onTextChange；貼上、打字、刪除的當下，複製之前）。
+-- 超過 TYPE_MAX：先清框（框裡永遠不留長字串，就沒有東西能被複製）再照貼上鈕收。
+-- 短的留在框裡：是完整的分享碼就直接採用；不是就當玩家還在打，不寫錯誤，按「檢查」才檢查
+function Imp:typed(field, text)
+    text = text or ""
+    if #text > Imp.TYPE_MAX then
+        field:setText("")
+        return self:take(text)
+    end
+    if text ~= "" and L.parseCode(text) then
+        self:setCode(text)
+        return self:check(true)
+    end
+    if self.code or self.plan or self.err then
+        self:setCode(nil)
+        self.plan, self.err = nil, nil
+        self:render()
+    end
+end
+
+-- 分享碼優先（已讀到的、再來是文字欄裡打到一半的）；都沒有才讀選的檔
 function Imp:check(pasted)
     self.pasted = pasted == true
     local file = self.fileDD:getSelected()
+    local typed = self.field and self.field:getText() or ""
     if self.code then
         self.plan, self.err = L.parseCode(self.code)
+    elseif typed ~= "" then
+        self.plan, self.err = L.parseCode(typed)
     elseif file then
         self.plan, self.err = L.loadFile(file)
     else
@@ -1357,7 +1409,7 @@ end
 -- 缺的圖查不到種類（圖不在），照圖塊名的開頭猜一個當預設，玩家可以換。shortcut: 只認原版常見的前綴，猜不到就是家具
 local GUESS = { { "^walls_", "wall" }, { "^floors_", "floor" }, { "^roofs_", "roof" }, { "^fixtures_doors_", "door" },
     { "^fixtures_windows_", "window" }, { "^fencing_", "fence" }, { "^fixtures_stairs_", "stairs" },
-    { "^lighting_", "light" } }
+    { "^lighting_", "light" }, { "^ramps_", "ramp" } }
 
 function L.guessKind(id)
     for _, g in ipairs(GUESS) do

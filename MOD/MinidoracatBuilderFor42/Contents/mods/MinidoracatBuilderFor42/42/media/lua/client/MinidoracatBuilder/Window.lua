@@ -54,7 +54,7 @@ W.TAB_KINDS = {
     wall = { "wall", "fence", "post", "wallOverlay" },
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
-    stairs = { "stairs" },
+    stairs = { "stairs", "ramp" },
     furniture = { "furniture", "container", "solid", "well" },
     light = { "light" },
     decor = { "wallObject", "attached", "overlay", "plant" },
@@ -501,13 +501,16 @@ W.SUB_KINDS = {
     floor = { "indoorFloor", "outdoorFloor", "flatRoof", "other" },
     door = { "plainDoor", "gate", "commercial", "other" },
     window = { "woodFrame", "whiteFrame", "metalFrame", "church", "commercial", "other" },
+    roof = { "slope30", "slope45", "shallow", "other" },
     container = true, -- 照原版容器顯示名分組，項目最多的 W.SUB_TOP 組＋other
 }
+-- 門框、窗框和牆在同一個圖塊組（帶洞的牆片）：同一組子種類、同一份關鍵字（NAME_SUBS 下面）、同一組標籤
+W.SUB_KINDS.doorFrame, W.SUB_KINDS.windowFrame = W.SUB_KINDS.wall, W.SUB_KINDS.wall
 W.SUB_TOP = 8
 local SUB_INDENT = "    " -- NavList 沒有縮排欄位：子種類的名稱前面補空白
 -- 只看名稱的種類（這幾類的圖沒有分得出來的屬性）：圖塊組名（圖塊名去掉結尾 _數字、轉小寫）照順序比 { 子種類, 組名裡的字… }，
--- 先中先算，都沒中是 other。牆、地板、門、窗的關鍵字是 2026-11-16 拿原版加正式服圖塊包的目錄量過才定的；
--- 「其他」超過一半的種類不分（屋頂照名稱分不出坡度或材質，其他占 57%，所以沒有）
+-- 先中先算，都沒中是 other。牆、地板、門、窗的關鍵字是 2026-11-16 拿原版加正式服圖塊包的目錄量過才定的；屋頂、門框、窗框
+-- 是 1.0.0 量的（含圖塊包時屋頂的「其他」47%：圖塊包的屋頂組名看不出坡度）
 local NAME_SUBS = {
     -- 路邊的漆線（street_trafficlines_curb_*）是標線，所以 trafficline 排在 curb 前面；地面交界的邊條（blends_*）歸路緣
     floorOverlay = {
@@ -523,7 +526,7 @@ local NAME_SUBS = {
         { "exteriorWall", "exterior" },
         { "commercial", "commercial", "industr", "location_", "garage" },
     },
-    -- 屋頂組裡的平面片是平屋頂；坡道（ramps_01）另做原型，結論出來前歸其他
+    -- 屋頂組裡的平面片是平屋頂；坡道片 1.0.0 起是自己的種類（ramp），留在地板的 ramps_* 是平台那種平片，歸其他
     floor = {
         { "flatRoof", "roof" },
         { "indoorFloor", "interior", "carpet" },
@@ -542,12 +545,23 @@ local NAME_SUBS = {
         { "church", "church" },
         { "commercial", "commercial", "location_", "industr" },
     },
+    -- 屋頂照坡度：組名帶 shallow 是緩坡、帶 _30_ 是 30 度（燒毀款、飾條照它的坡度）；45 度的組名沒有字樣，列出離線辨識
+    -- 認成 45 度整套的原版組（exact，整個組名相等才算：pineville_roofs_01 不是 roofs_01）。這幾組 80 號以後也混了
+    -- 緩坡片，但 roofs_03 的 80 號以後是 45 度片（看過對照圖），照組名分不開，整組歸 45 度
+    roof = {
+        { "shallow", "shallow" },
+        { "slope30", "_30_" },
+        { "slope45", exact = { roofs_01 = true, roofs_02 = true, roofs_03 = true, roofs_04 = true, roofs_05 = true,
+            roofs_burnt_01 = true } },
+    },
 }
+NAME_SUBS.doorFrame, NAME_SUBS.windowFrame = NAME_SUBS.wall, NAME_SUBS.wall
 local NAME_OF = {} -- [種類][圖塊組名] → 子種類：一組只比一次（地面覆蓋、牆幾千項，圖塊組約一百個）；同一組在不同種類可能不同
 for k in pairs(NAME_SUBS) do NAME_OF[k] = {} end
 local function nameSub(rules, ts)
     local low = ts:lower()
     for _, g in ipairs(rules) do
+        if g.exact and g.exact[low] then return g[1] end
         for i = 2, #g do
             if low:find(g[i], 1, true) then return g[1] end
         end
@@ -1479,17 +1493,23 @@ local function skillInfo(e)
     return getText("IGUI_MBLD_Detail_SkillShort", name, tostring(level), tostring(have)), false
 end
 
--- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3（上一層的平台不算）
-local function footprint(spr)
+-- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3、坡道沿上坡方向 n 格（上一層的平台都不算）
+local function footprint(spr, kind)
     local t = spr:getType()
     if B.Rules.typeCode(t) == "stairs" then
         if B.Rules.westStairs(t) then return 3, 1 end
         return 1, 3
     end
+    local ramp = kind == "ramp" and Entry.rampSet and Entry.rampSet(spr)
+    if ramp then
+        if ramp.dx ~= 0 then return ramp.n, 1 end
+        return 1, ramp.n
+    end
     local grid = spr:getSpriteGrid()
     if not grid then return 1, 1 end
     return grid:getWidth(), grid:getHeight()
 end
+W.footprint = footprint -- 離線測試用（同 W.runSubs）
 
 -- 寬、中版：預覽大圖（原比例＋佔地格線）、名稱、來源、佔地與朝向數、材料（圖示＋有／要）、工具、經驗、拆除方式
 local function detailFull(v, ops, e, total, costs, missing, tools)
@@ -1500,7 +1520,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     add(ops, { t = "box", x = 0, y = 0, w = dw, h = boxH, c = c.border or c.textFaint })
     local tex = texOf(v, e.name)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
-    local fw, fd = footprint(e.spr)
+    local fw, fd = footprint(e.spr, e.kind)
     local cell = math.max(6, math.floor(10 * s))
     if fw * fd > 1 then -- 1×1 不畫佔地格線（介面審查 #9）
         add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
@@ -1672,7 +1692,7 @@ local function detailRow(v, ops, e, total, missing, tools)
         nameW = nameW - getTextManager():MeasureStringX(v.font, s) - GAP
     end
     text(ops, Text.fit(Names.of(e.name, e.kind), nameW, v.font), x, y, c.text, v.font)
-    local fw, fd = footprint(e.spr)
+    local fw, fd = footprint(e.spr, e.kind)
     local parts = {}
     for ft, need in pairs(total.items) do
         parts[#parts + 1] = getText("IGUI_MBLD_RowItem", getItemName(ft) or ft, tostring(need))
@@ -1853,12 +1873,26 @@ local function prepareDetail(v)
     -- tileset，這裡每秒跑
     local setKey = (e or r) and (name .. "|" .. tostring(v.digest) .. "|" .. tostring(v.catAt) .. "|" .. tostring(v.recipeSig))
         or nil
-    if setKey ~= v.setKey then v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil end
+    if setKey ~= v.setKey then
+        v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil
+        -- 「屋頂助手」：選著屋頂、而且屋頂助手認得出這一項的整套才有（晚綁定：沒載入就沒有這顆）。認整套要掃一整組圖，
+        -- 和整套一樣只在換項目、目錄或設定時算。屋頂不是牆類、整套鈕一定按不了，所以占它的位置（W.layout 排在同一處）
+        local RP = B.RoofPanel
+        v.roofOn = e ~= nil and e.kind == "roof" and RP ~= nil and RP.available ~= nil and RP.available(name) == true
+    end
     local set = v.setInfo
     local key = set and set.button or "IGUI_MBLD_Set"
     v.setBtn:setTitle(v.mode == "narrow" and "" or getText(key))
     v.setBtn:setTooltip(getText(key .. "_Tip"))
     v.setBtn:setEnabled(set ~= nil)
+    v.roofBtn:setTitle(v.mode == "narrow" and "" or getText("IGUI_MBLD_Entry_Roof"))
+    local roof = v.roofOn == true
+    if v.roofBtn:getIsVisible() ~= roof then
+        v.roofBtn:setVisible(roof)
+        v.setBtn:setVisible(not roof)
+        local F = v.UI.Focus
+        if F and F.invalidate then F.invalidate(v.win) end -- 焦點正在被藏起來的那顆上時換到別處
+    end
     -- 「疊放」（W.toggleOverlap）：選著的項目是能疊的種類、伺服器沒關掉（MaxPerSquare 大於 1）、不在「換成」條件下才能按；
     -- 提示寫上限；伺服器關掉、這一項不能疊時寫原因（配方項目走原版游標，算不能疊；「換成」條件下照一般的提示）。
     -- 窄版只有圖示
@@ -1880,6 +1914,7 @@ local function prepareDetail(v)
     v.qSource:setEnabled(modSrc)
     v.qSource:setTooltip(src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
 end
+W.prepareDetail = prepareDetail -- 離線測試用（同 W.runSubs）
 
 -- 手把右搖桿捲詳情（使用者 2026-10-30 選）。框架只在焦點落在捲動容器裡或捲動目標上時捲（Focus.lua:1310-1323,1372），
 -- 焦點在方格時不捲，這裡補上；焦點在詳情或左邊分類（navBox 裡的 NavList）時交給框架，不重複捲。門檻、速度同框架
@@ -2123,9 +2158,11 @@ end
 
 -- ===== 動作 =====
 
--- 管理員關掉的種類（沙盒 Kind*）：頁籤裡的種類全關就停用那個頁籤（框架 Tabs:setItemEnabled，rev 12），選著的回「全部」
+-- 管理員關掉的種類（沙盒 Kind*）：頁籤裡的種類全關就停用那個頁籤（框架 Tabs:setItemEnabled，rev 12），選著的回「全部」。
+-- 框架有逐項提示（rev 28，CAPABILITIES.tabsItemTooltip）時，停用的頁籤滑鼠停上去說為什麼，重新啟用就清掉
 function W.refreshTabs(v)
     local s = Entry.settings()
+    local tip = v.UI.CAPABILITIES.tabsItemTooltip == true and getText("IGUI_MBLD_TabOff_Tip") or nil
     for i = 2, #W.TABS do
         local id, on = W.TABS[i], false
         for _, k in ipairs(W.TAB_KINDS[id]) do
@@ -2135,6 +2172,7 @@ function W.refreshTabs(v)
             end
         end
         v.tabs:setItemEnabled(id, on)
+        if tip then v.tabs:setItemTooltip(id, not on and tip or nil) end
         if not on and W.st.tab == id then
             W.st.tab = "all"
             v.tabs:setSelected("all", true)
@@ -2608,6 +2646,13 @@ function W.openPlans()
     if B.PlanLibrary then B.PlanLibrary.open(pn) end
 end
 
+-- 屋頂助手：照選著的屋頂開面板（RoofPanel.open，晚綁定）。按鈕只在 prepareDetail 認得出整套時才看得到
+function W.openRoof()
+    local RP, v = B.RoofPanel, W.v
+    local name = v and v.selName
+    if name and RP and RP.open then RP.open(W.playerNum, name) end
+end
+
 -- 拆除一區：開長方形游標（Area.start，同右鍵選單），視窗收起
 function W.startArea()
     local A = B.Area
@@ -2871,7 +2916,8 @@ function W.layout()
     v.pickBtn:setVisible(pick)
     local pw = pick and (v.pickBtn.width + GAP) or 0
     local ddW = math.max(math.floor(140 * s), math.min(math.floor(240 * s), math.floor(inner * 0.3)))
-    local cbW = v.only.width
+    -- 框架 Checkbox 的寬剛好是開關加字寬（MinidoracatUI Widgets/Controls.lua:727-733），三種排法都多留 6 px，字才不貼右邊
+    local cbW = v.only.width + math.floor(6 * s)
     local cbRow1 = mode ~= "narrow" and inner - pw - ddW - cbW - 2 * GAP >= math.floor(200 * s)
     local searchW = inner - pw - ddW - GAP - (cbRow1 and (cbW + GAP) or 0)
     if pick then
@@ -3006,9 +3052,11 @@ function W.layout()
         -- 兩顆並排放得下（各自的標題寬）就一列，不然各占一列
         local sy = by - btnH - GAP
         local ow = math.min(v.overW, math.floor((dw - GAP) / 2))
-        v.setBtn:setX(dx)
-        v.setBtn:setY(sy)
-        v.setBtn:setWidth(dw - ow - GAP)
+        for _, b in ipairs({ v.setBtn, v.roofBtn }) do -- 屋頂助手和整套占同一格，一次只顯示一顆（prepareDetail）
+            b:setX(dx)
+            b:setY(sy)
+            b:setWidth(dw - ow - GAP)
+        end
         v.overBtn:setX(dx + dw - ow)
         v.overBtn:setY(sy)
         v.overBtn:setWidth(ow)
@@ -3050,11 +3098,13 @@ function W.layout()
         v.favBtn:setX(bx - GAP - v.favW)
         v.favBtn:setY(by)
         v.favBtn:setWidth(v.favW)
-        -- 「整套」在最愛左邊、「疊放」再左邊，都只有圖示（標題在 prepareDetail 清掉）
+        -- 「整套」（或屋頂助手）在最愛左邊、「疊放」再左邊，都只有圖示（標題在 prepareDetail 清掉）
         local sx = bx - GAP - v.favW - GAP - btnH
-        v.setBtn:setX(sx)
-        v.setBtn:setY(by)
-        v.setBtn:setWidth(btnH)
+        for _, b in ipairs({ v.setBtn, v.roofBtn }) do
+            b:setX(sx)
+            b:setY(by)
+            b:setWidth(btnH)
+        end
         local ox = sx - GAP - btnH
         v.overBtn:setX(ox)
         v.overBtn:setY(by)
@@ -3186,7 +3236,9 @@ function W.create(UI)
             function() return B.Area ~= nil and not W.usingPad() end),
         entry("IGUI_MBLD_Entry_Plan", "clipboardCheck", function() Wn.togglePlan() end,
             function() return B.PlanMode ~= nil end, "chip"),
-        entry("IGUI_MBLD_Entry_Undo", "reload", function() Wn.undoLast(Wn.playerNum) end, function() return true end),
+        -- 框架 rev 28 才有 undo 圖示，舊框架照舊借 reload
+        entry("IGUI_MBLD_Entry_Undo", (UI.API_REVISION or 0) >= 28 and "undo" or "reload",
+            function() Wn.undoLast(Wn.playerNum) end, function() return true end),
     }
     v.planBtn, v.undoBtn = v.entry[3].btn, v.entry[4].btn
     v.undoBtn:setEnabled(false)
@@ -3234,6 +3286,12 @@ function W.create(UI)
     v.overBtn:setEnabled(false)
     win:addChild(v.overBtn)
     win:addChild(v.setBtn)
+    -- 「屋頂助手」（W.openRoof）：選著屋頂而且屋頂助手認得出整套時，取代整套鈕（同一格、焦點順序也在同一處）
+    v.roofBtn = UI.Button.new({ x = 0, y = 0, width = 100, title = getText("IGUI_MBLD_Entry_Roof"), icon = "house",
+        theme = theme, tooltip = getText("IGUI_MBLD_Entry_Roof_Tip"),
+        onClick = function() MinidoracatBuilder.Window.openRoof() end })
+    v.roofBtn:setVisible(false)
+    win:addChild(v.roofBtn)
     -- 最愛按鈕寬度照兩種標題較長的那個（窄版要固定寬）
     v.favBtn = button(v, getText("IGUI_MBLD_Fav_Remove"), nil, function() MinidoracatBuilder.Window.toggleFavorite() end)
     local favW = v.favBtn.width
@@ -3429,7 +3487,7 @@ if first then
     if news and news.WhatsNew then
         news.WhatsNew.register({
             modId = "MinidoracatBuilderFor42",
-            since = "0.12.0",
+            since = "1.0.0",
             name = "UI_MinidoracatBuilder_Options",
             text = "IGUI_MBLD_WhatsNew",
         })

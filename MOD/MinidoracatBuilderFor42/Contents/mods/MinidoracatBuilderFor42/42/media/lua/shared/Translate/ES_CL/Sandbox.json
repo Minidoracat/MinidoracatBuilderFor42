@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Rampas",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "Una rampa de 20 casillas que sube un nivel; la pueden usar personas y vehículos.\nDesactivado: los jugadores no lo ven ni lo pueden construir. Lo ya construido se queda y aún se puede desarmar.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Permitir construir según el plano",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Si está activado, los jugadores pueden hacer que su personaje construya pieza a pieza un plano colocado, y que saque materiales de las cajas que elijan. Cada pieza se sigue comprobando por distancia, refugio, materiales y habilidad, igual que al construir a mano.\nSi está desactivado, no se puede empezar a construir según el plano. Trazar planos y la lista de materiales siguen funcionando.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",

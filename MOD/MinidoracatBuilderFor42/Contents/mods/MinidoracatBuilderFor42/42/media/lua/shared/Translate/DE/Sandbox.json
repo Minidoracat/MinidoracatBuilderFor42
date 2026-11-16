@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Rampe",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "Eine 20 Kacheln lange Rampe, eine Etage hoch; für Menschen und Fahrzeuge.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Bauen nach Plan erlauben",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Wenn an, können Spieler ihren Charakter einen gesetzten Bauplan Teil für Teil bauen lassen; er holt Material auch aus ausgewählten Kisten. Jedes Teil wird weiterhin auf Entfernung, Safehouse, Material und Fähigkeit geprüft, genau wie beim Bauen von Hand.\nWenn aus, kann Bauen nach Plan nicht starten. Baupläne planen und die Materialliste funktionieren weiterhin.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",

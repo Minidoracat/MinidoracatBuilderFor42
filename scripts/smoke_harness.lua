@@ -309,6 +309,17 @@ square = function(x, y, z, o)
     sq.removeHere = removeHere
     function sq:connectedWithFloor() return true end
     function sq:getSlopedSurfaceHeight() return 0 end -- 照引擎：不是斜坡回 0（IsoGridSquare.java:10288-10292）
+    -- 照引擎：格子屬性有 SlopedSurfaceDirection 才算（IsoGridSquare.java:10202-10208），屬性由格上物件的圖合起來；o.slope＝直接設
+    function sq:hasSlopedSurface()
+        if o.slope then return true end
+        for _, v in ipairs(self.objects) do
+            local s = type(v) == "table" and v.getSprite and v:getSprite()
+            local p = s and s.getProperties and s:getProperties()
+            if p and p:has("SlopedSurfaceDirection") then return true end
+        end
+        return false
+    end
+    function sq:AddTileObject(obj) self.objects[#self.objects + 1] = obj end -- 坡道片（Place.build）；照引擎排在最後
     function sq:RecalcProperties() end
     function sq:getCell() return getCell() end
     function sq:clearWater() end
@@ -9239,7 +9250,7 @@ print("情境四十六：左欄子種類（使用者 2026-11-13 選 cat=three）
         "子種類（植物）：能搬的是觀賞植物，其他是草與野花")
     check(W.subOf("container", nil) == "other" and W.subOf("container", P({ keys = { container = "crate" } })) == "n:Crate"
         and W.subOf("container", P({ keys = { container = "woodcrate" } })) == "n:Crate"
-        and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("roof", P({})) == nil,
+        and W.subOf("container", P({ keys = { container = "mystery" } })) == "other" and W.subOf("stairs", P({})) == nil,
         "子種類（容器）：照原版顯示名（同名的型別同一組），沒有 IGUI_ContainerTitle_ 翻譯的歸其他；別的種類沒有子種類")
     check(W.subOf("floorOverlay", nil, "street_trafficlines_curb_white_full_3") == "marking"
         and W.subOf("floorOverlay", nil, "street_curbs_01_blend_dirt_12") == "curb"
@@ -12059,7 +12070,7 @@ print("情境（車庫門與雙開門）：整組一個項目、拖一排定寬�
 end)()
 
 -- ===== 子種類 =====
-print("情境（子種類）：牆、地板、門、窗照圖塊組名分子種類；屋頂不分（其他占 57%）")
+print("情境（子種類）：牆、地板、門、窗照圖塊組名分子種類（屋頂、門框、窗框 1.0.0 起也分，見「介面零星」段）")
 ;(function()
     local W = MinidoracatBuilder.Window
     local function all(kind, cases)
@@ -12100,8 +12111,8 @@ print("情境（子種類）：牆、地板、門、窗照圖塊組名分子種�
         fixtures_windows_01_8 = "other", fixtures_windows_ddd_01_3 = "other",
     })
     check(ok, "子種類（窗）：木框、金屬框、白框、教堂（教堂的店面窗也算）、商用與工業，其他 " .. why)
-    check(W.SUB_KINDS.roof == nil and W.subOf("roof", nil, "roofs_30_01_3") == nil and W.subOf("roof", nil, "roofs_burnt_01_1") == nil,
-        "屋頂不分子種類（照名稱分，其他超過一半）")
+    check(W.SUB_KINDS.stairs == nil and W.subOf("stairs", nil, "fixtures_stairs_01_0") == nil,
+        "樓梯不分子種類（不在 W.SUB_KINDS、subOf 回 nil）")
     local labels = true
     for _, k in ipairs({ "wall", "floor", "door", "window" }) do
         local list = W.SUB_KINDS[k]
@@ -15791,6 +15802,1635 @@ end)()
     clockStep, ISTimedActionQueue, luautils, ISInventoryTransferAction = real.step, real.q, real.lu, real.xfer
     MinidoracatUI, Core, Keyboard, getSpecificPlayer = real.ui, real.core, real.kb, real.specific
     sb.AllowAutoBuild, sb.MaxCellsPerDrag = real.auto, real.max
+end)()
+
+-- ===== 坡道（Ramp） =====
+print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、放置與撤回、拆除、坡道格上只放格邊的東西、伺服器")
+;(function()
+    local Place, Ledger, Dismantle, Floors = MinidoracatBuilder.Place, MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle,
+        MinidoracatBuilder.Floors
+    local real = { inst = instanceof, obj = IsoObject, max = sb.MaxCellsPerDrag, dist = sb.MaxDistance, roll = HARNESS_ROLL,
+        kind = sb.KindRamp }
+    -- 照引擎：類別以自己的 class 認；標頭的假 IsoThumpable 沒寫 class，用它特有的 set 表認
+    instanceof = function(o, cls)
+        if type(o) ~= "table" then return false end
+        if o.class then return o.class == cls end
+        return cls == "IsoThumpable" and o.set ~= nil
+    end
+    sb.MaxCellsPerDrag, sb.MaxDistance, HARNESS_ROLL = 6, 6, "max"
+    -- 圖塊（照原版 ramps_01）：rp_01 北 0–19、南 24–43、西 48–67、東 72–91，頭片沒有 Min、每片升 5；23 只有 solidfloor（平台）。
+    -- rn_01 只有朝北一組；rq_01 0–19 第 7 片 Min 接不上、30–48 少最後一片（Max 只到 95）
+    local added = {}
+    local function add(name, id, keys, flags)
+        local s = sprite(name, id, { flags = flags or { "solidfloor" }, keys = keys or {} })
+        spriteMap[name], added[#added + 1] = s, name
+        spriteOrder[#spriteOrder + 1] = s
+        return s
+    end
+    local function set(ts, base, dir, n, id, badAt)
+        for i = 0, n - 1 do
+            local keys = { SlopedSurfaceDirection = dir, SlopedSurfaceHeightMax = tostring(5 * (i + 1)) }
+            if i > 0 then keys.SlopedSurfaceHeightMin = tostring(i == badAt and 5 * i + 5 or 5 * i) end
+            add(ts .. "_" .. (base + i), id + i, keys)
+        end
+    end
+    set("rp_01", 0, "N", 20, 9600)
+    set("rp_01", 24, " s ", 20, 9624) -- 方向字串照引擎去空白、轉大寫（IsoDirections.fromString）
+    set("rp_01", 48, "W", 20, 9648)
+    set("rp_01", 72, "E", 20, 9672)
+    add("rp_01_23", 9623)
+    set("rn_01", 0, "N", 20, 9700)
+    set("rq_01", 0, "N", 20, 9730, 7)
+    set("rq_01", 30, "N", 19, 9760)
+    local floorS = add("rpf_01_0", 9790)
+    local crateS = add("rpc_01_0", 9791, { container = "crate" }, {})
+    local wallS = add("rpw_01_0", 9792, { WallN = "" }, { "WallN" })
+
+    -- 格子：移除時照引擎先觸發 OnObjectAboutToBeRemoved；退料掉在格上；getFloor 照引擎回第一個帶 solidfloor 的物件
+    -- （IsoGridSquare.java:4637-4646；坡道片也是）；AddTileObject 記放置順序，failAt 那一格放進去之後丟錯
+    local order, failAt = {}, nil
+    local function esq(x, y, z, o)
+        local sq = square(x, y, z, o)
+        local orig, addFloor = sq.transmitRemoveItemFromSquare, sq.addFloor
+        sq.dropped = {}
+        function sq:transmitRemoveItemFromSquare(obj, safely)
+            fire("OnObjectAboutToBeRemoved", obj)
+            return orig(self, obj, safely)
+        end
+        function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
+        function sq:AddTileObject(obj)
+            self.objects[#self.objects + 1] = obj
+            order[#order + 1] = obj.spr:getName()
+            if failAt == self then error("injected failure after AddTileObject") end
+        end
+        function sq:getFloor()
+            for _, v in ipairs(self.objects) do
+                local s = type(v) == "table" and v.getSprite and v:getSprite()
+                local p = s and s.getProperties and s:getProperties()
+                if p and p:has(F.solidfloor) then return v end
+            end
+            return nil
+        end
+        function sq:addFloor(name) -- 平台：補上一般地板物件該有的方法
+            local f = addFloor(self, name)
+            local s = spriteMap[name]
+            function f:getSprite() return s end
+            function f:getProperties() return s:getProperties() end
+            function f:getAttachedAnimSprite() return nil end
+            function f:hasModData() return false end
+            function f:getModData() return {} end
+            function f:isStairsObject() return false end
+            function f:isFloor() return true end
+            function f:getTextureName() return name end
+            function f:getType() return T.normal end
+            return f
+        end
+        return sq
+    end
+    for x = 418, 446 do for y = 405, 436 do esq(x, y, 0) end end
+    local function at(x, y, z) return squares[x .. "," .. y .. "," .. (z or 0)] end
+    -- 假 IsoObject（坡道片）：照引擎 IsoObject(cell, square, sprite)（IsoObject.java:327-331）
+    IsoObject = { new = function(_, sq, spr)
+        local o = { class = "IsoObject", spr = spr, sq = sq, md = {} }
+        function o:getSprite() return self.spr end
+        function o:getProperties() return self.spr:getProperties() end
+        function o:getSquare() return self.sq end
+        function o:getModData() return self.md end
+        function o:hasModData() return next(self.md) ~= nil end
+        function o:transmitCompleteItemToClients() self.sent = true end
+        function o:isFloor() return true end
+        function o:getTextureName() return self.spr:getName() end
+        function o:getType() return T.normal end
+        function o:isStairsObject() return false end
+        function o:isObjectNoContainerOrEmpty() return true end
+        function o:getAttachedAnimSprite() return nil end
+        function o:isBarricaded() return false end
+        function o:getContainerCount() return 0 end
+        return o
+    end }
+    local function piece(x, y, name)
+        for _, o in ipairs(at(x, y).objects) do if o.spr and o.spr:getName() == name then return o end end
+        return nil
+    end
+    -- 一欄（北向，頭片在 y=430）放了幾片、各片記號
+    local function column(x)
+        local n, marked, plain = 0, true, true
+        for i = 0, 19 do
+            local o = piece(x, 430 - i, "rp_01_" .. i)
+            if o then
+                n = n + 1
+                marked = marked and o.md.builderEntry == "rp_01_0"
+                plain = plain and o.class == "IsoObject" and not instanceof(o, "IsoThumpable")
+            end
+        end
+        return n, marked, plain
+    end
+    local function deck(x)
+        local sq = at(x, 410, 1)
+        for _, o in ipairs(sq and sq.objects or {}) do if o.name == "rp_01_23" then return o end end
+        return nil
+    end
+    local P = player({ id = 9601, x = 421.5, y = 431.5, woodwork = 10, here = at(421, 431) })
+    P.inv:add(item("Base.Hammer", { HAMMER = true }))
+    for _ = 1, 200 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+    local function stock() return P.inv:count("Base.Plank") .. "/" .. P.inv:count("Base.Nails") end
+    local function intentCode(n, e, c)
+        sent = {}
+        Server.intent(P, { n = n, e = e, c = c, v = Entry.digest() })
+        return sent[1] and sent[1].cmd == "refused" and sent[1].args.code or nil
+    end
+    local function build(n, x)
+        P.pos.x = x + 0.5
+        local code = intentCode(n, "rp_01_0", { x, 430, 0, 0 })
+        if code then return false, code end
+        sent = {}
+        local ok = Server.complete(P, n, 1)
+        return ok, sent[1] and sent[1].args.code
+    end
+    -- 回最後一則回覆的指令名（dismantled／dismantleSkipped／dismantleRefused）與原因碼；退料掉在玩家腳下（P:getCurrentSquare）
+    local function unbuild(n, x, y, name)
+        P.pos.x = x + 0.5
+        P:getCurrentSquare().dropped = {}
+        sent = {}
+        Server.dismantleIntent(P, { n = n, t = { x, y, 0, name } })
+        if not (sent[1] and sent[1].cmd == "dismantleAccepted") then return sent[1] and sent[1].cmd, sent[1] and sent[1].args.code end
+        sent = {}
+        Server.dismantle(P, n, 1)
+        local last = sent[#sent]
+        return last and last.cmd, last and last.args.code
+    end
+
+    -- 分類
+    check(Rules.classify(spriteMap.rp_01_5) == "ramp" and Rules.classify(spriteMap.rp_01_23) == "floor",
+        "坡道（Ramp）分類：帶 SlopedSurfaceDirection 的地板片回 ramp；✗ 同組只有 solidfloor 的平片照舊是地板")
+    -- 整組
+    local function cellsOf(name)
+        local out = {}
+        for k, o in ipairs(Entry.cells(Entry.sprite(name))) do
+            out[k] = o[1] .. "," .. o[2] .. "," .. o[3] .. ":" .. o[4]:getName() .. (o[5] and ":" .. o[5] or "")
+        end
+        return out
+    end
+    local cN, cS, cW, cE = cellsOf("rp_01_0"), cellsOf("rp_01_24"), cellsOf("rp_01_48"), cellsOf("rp_01_72")
+    check(Entry.resolve("rp_01_0") and #cN == 21 and cN[1] == "0,0,0:rp_01_0" and cN[20] == "0,-19,0:rp_01_19"
+        and cN[21] == "0,-20,1:rp_01_23:platform" and cS[20] == "0,19,0:rp_01_43" and cS[21] == "0,20,1:rp_01_23:platform"
+        and cW[20] == "-19,0,0:rp_01_67" and cW[21] == "-20,0,1:rp_01_23:platform" and cE[1] == "0,0,0:rp_01_72"
+        and cE[20] == "19,0,0:rp_01_91" and cE[21] == "20,0,1:rp_01_23:platform" and Entry.RAMP_DECK == 1,
+        "坡道（Ramp）整組：頭片解析得到；四個方向第 1、20 片沿上坡方向排、坡頂往前一格上一層是平台（" .. cS[21] .. "）")
+    check(Entry.resolve("rp_01_5") == nil and Entry.why("rp_01_5") == "PART" and select(3, Entry.why("rp_01_5")) == "rp_01_0"
+        and Entry.rampHead("rp_01_43") == "rp_01_24" and Entry.rampHead("rp_01_23") == nil,
+        "坡道（Ramp）✗ 非頭片解析不到，原因 PART、指回頭片；平片不是坡道片")
+    check(Entry.resolve("rq_01_0") == nil and Entry.why("rq_01_0") == "RAMP_SET" and Entry.why("rq_01_10") == "RAMP_SET"
+        and Entry.why("rq_01_30") == "RAMP_SET" and Entry.rampSet(Entry.sprite("rq_01_30")) == nil,
+        "坡道（Ramp）✗ Min／Max 接不上、少最後一片：湊不成整組，原因 RAMP_SET")
+    -- 轉向
+    local function face(name, d) local s = Entry.face(Entry.resolve(name), d) return s and s:getName() end
+    check(face("rp_01_0", 1) == "rp_01_0" and face("rp_01_0", 2) == "rp_01_72" and face("rp_01_0", 3) == "rp_01_24"
+        and face("rp_01_0", 4) == "rp_01_48" and face("rp_01_48", 1) == "rp_01_0" and face("rp_01_0", 5) == nil,
+        "坡道（Ramp）轉向：1..4 回北、東、南、西的頭片；沒有配對面")
+    check(face("rn_01_0", 1) == "rn_01_0" and face("rn_01_0", 2) == nil and face("rn_01_0", 3) == nil,
+        "坡道（Ramp）轉向：✗ 圖塊組沒有那個方向回 nil")
+    -- 成本
+    local sprs = {}
+    for k, o in ipairs(Entry.cells(Entry.sprite("rp_01_0"))) do sprs[k] = o[4] end
+    local c1, c0 = Cost.forCells("ramp", sprs, 1), Cost.forCells("ramp", sprs, 0)
+    check(c1[1].items["Base.Plank"] == 20 and c1[1].items["Base.Nails"] == 20 and next(c1[2].items) == nil
+        and next(c1[20].items) == nil and next(c1[21].items) == nil and Cost.refund("ramp", spriteMap.rp_01_5) == "builder",
+        "坡道（Ramp）成本：倍率 1 第一格＝20 片合計（木板 20、釘子 20），其他片與平台不收；拆除照帳本（builder）")
+    check(next(c0[1].items) == nil and c0[1].tools[1] == "HAMMER" and c1[1].tools[1] == "HAMMER",
+        "坡道（Ramp）成本：✗ 倍率 0 材料是空的，工具（鐵鎚）還在")
+
+    -- 能不能蓋（第 424 欄；預覽先在上一層還沒有格子時查）
+    local PV = { preview = true, walk = true }
+    P.pos.x = 424.5
+    check(Check.item(P, "rp_01_0", 0, { 424, 430, 0 }, PV) == nil,
+        "坡道（Ramp）預覽：✗ 平台那格上一層還沒有格子也不回 NO_UPPER（平台有角色，伺服器會蓋）")
+    esq(424, 410, 1)
+    local function item424() return Check.item(P, "rp_01_0", 0, { 424, 430, 0 }) end
+    check(item424() == nil, "坡道（Ramp）能不能蓋：乾淨的 20 格加平台通過")
+    local s6, s7 = at(424, 425), at(424, 424)
+    local rs, rv = s6.isSomethingTo, at(424, 426).isVehicleIntersecting
+    function s6:isSomethingTo(o) return o == s7 end
+    local code, e = item424()
+    s6.isSomethingTo = rs
+    check(code == "BLOCKED" and e.y == 424, "坡道（Ramp）✗ 第 6、7 格之間有牆：BLOCKED，指第 7 格（y=" .. tostring(e and e.y) .. "）")
+    local s5 = at(424, 426)
+    function s5:isVehicleIntersecting() return true end
+    local cv, ev = item424()
+    s5.isVehicleIntersecting = rv
+    s7.moving = { {} }
+    local co, eo = item424()
+    s7.moving = {}
+    s7.objects[#s7.objects + 1] = IsoObject.new(nil, s7, spriteMap.rn_01_3)
+    local cs = item424()
+    table.remove(s7.objects)
+    local hole = at(424, 415)
+    squares["424,415,0"] = nil
+    local cl, el = item424()
+    squares["424,415,0"] = hole
+    check(cv == "VEHICLE" and ev.y == 426 and co == "OCCUPIED" and eo.y == 424 and cs == "BLOCKED" and cl == "NOT_LOADED"
+        and el.y == 415 and item424() == nil,
+        "坡道（Ramp）✗ 路線上有車 VEHICLE、有人 OCCUPIED、格上已有斜面 BLOCKED、伺服器某格沒載入 NOT_LOADED，都指那一格")
+
+    -- 放置（第 421 欄）：20 個一般物件、記號、頭片到最後一片的順序、平台、帳本整組一筆
+    esq(421, 410, 1)
+    order = {}
+    check(stock() == "200/200", "坡道（Ramp）起始材料 200/200")
+    local okA = build(1, 421)
+    local n, marked, plain = column(421)
+    local A1, A10 = piece(421, 430, "rp_01_0"), piece(421, 421, "rp_01_9")
+    local rec = Ledger.getRamp(421, 430, 0)
+    check(okA == true and n == 20 and marked and plain and A1.sent and table.concat(order, " ") == table.concat(
+        (function() local t = {} for i = 0, 19 do t[#t + 1] = "rp_01_" .. i end return t end)(), " ")
+        and stock() == "180/180",
+        "坡道（Ramp）放置：20 片都是一般物件（✗ 不是 IsoThumpable）、記號是頭片名、照頭片到最後一片的順序放、送給玩家、扣料")
+    check(deck(421) ~= nil and Ledger.get(deck(421)) ~= nil and next(Ledger.get(deck(421))) == nil and rec
+        and rec["Base.Plank"] == 20 and rec["Base.Nails"] == 20 and Place.refundOf(A10)
+        and Place.refundOf(A10)["Base.Plank"] == 20 and Place.ramp(A10)
+        and Dismantle.kindOf(A10) == "ramp",
+        "坡道（Ramp）放置：平台在、帳本記平台空表；整組退料一筆（木板 20、釘子 20）記在頭片格，哪一片查都同一筆")
+    -- ✗ 放到一半丟錯：撤回後格上 0 片、帳本沒有那筆、沒扣料
+    esq(427, 410, 1)
+    failAt = at(427, 421)
+    local okU = build(2, 427)
+    failAt = nil
+    check(okU == false and column(427) == 0 and Ledger.getRamp(427, 430, 0) == nil and deck(427) == nil and stock() == "180/180",
+        "坡道（Ramp）✗ 放到第 10 片丟錯：Place.undo 之後一片不留、帳本沒有那筆、沒有平台、沒扣料")
+
+    -- 坡道格上只放格邊的東西（探針 2e）；地板換不掉坡道片、框選不把坡道片收成地板
+    local s = at(421, 425)
+    check(not Place.check("floor", floorS, s, P) and not Place.check("container", crateS, s, P)
+        and not Place.check("furniture", crateS, s, P) and not Place.check("stairs", floorS, s, P, "bottom")
+        and not Place.check("water", floorS, s, P) and not Place.check("ramp", spriteMap.rp_01_0, s, P)
+        and Place.check("wall", wallS, s, P) and Place.check("container", crateS, at(419, 425), P),
+        "坡道（Ramp）坡道格：✗ 地板、容器、家具、樓梯、水面、坡道都不放；牆（格邊）照放；平地照放容器")
+    P.pos.x = 421.5
+    check(Check.item(P, "rpf_01_0", 0, { 421, 425, 0 }) == "BLOCKED" and piece(421, 425, "rp_01_5") ~= nil,
+        "坡道（Ramp）✗ 換地板：坡道格上蓋地板 BLOCKED，坡道片不被當成舊地板換掉")
+    require "MinidoracatBuilder/Capture"
+    local Cap = MinidoracatBuilder.Capture
+    local res = { pieces = {}, n = 0, seen = {}, skip = {}, skipped = 0 }
+    for i = 0, 19 do Cap.tile(res, "rp_01_" .. i, 421, 430 - i, 0, 0) end
+    check(res.n == 1 and res.pieces[1].id == "rp_01_0" and res.pieces[1].y == 430 and res.skipped == 0,
+        "坡道（Ramp）✗ 框選：整組只收頭片一項（坡道），其他片不收成地板、不算不收")
+    local Names = MinidoracatBuilder.Names
+    check(not Names or Names.of("rp_01_7", "ramp") == Names.of("rp_01_0", "ramp"), "坡道（Ramp）名稱：其他片照頭片叫")
+
+    -- 拆除：點中間一片整組拆、照帳本退一次、平台跟著拆
+    local okD, codeD = unbuild(3, 421, 421, "rp_01_9")
+    local drop = P:getCurrentSquare().dropped
+    check(okD == "dismantled" and column(421) == 0 and drop["Base.Plank"] == 20 and drop["Base.Nails"] == 20
+        and Ledger.getRamp(421, 430, 0) == nil and deck(421) == nil and Ledger.get({ getSquare = function() return at(421, 410, 1) end,
+            getSprite = function() return spriteMap.rp_01_23 end }) == nil,
+        "坡道（Ramp）拆除：點第 10 片整組 20 片都拆、照帳本退一次（木板 20）、帳本清掉、平台拆掉（" .. tostring(codeD) .. "）")
+    -- ✗ 舊版當地板蓋的坡道片（IsoThumpable、isFloor）照地板拆
+    local old = { class = "IsoThumpable", md = { builderEntry = "rp_01_5" } }
+    function old:getSprite() return spriteMap.rp_01_5 end
+    function old:hasModData() return true end
+    function old:getModData() return self.md end
+    function old:isFloor() return true end
+    function old:isDismantable() return true end
+    check(Dismantle.kindOf(old) == "floor" and not Place.ramp(old), "坡道（Ramp）✗ 舊版當地板蓋的坡道片（IsoThumpable）照地板拆")
+
+    -- 拆除的反面：混了不是本 MOD 的片、少一片、缺片那格沒載入（殘組照拆剩下本 MOD 的片、不退料；沒載入照舊拒絕）
+    esq(442, 410, 1)
+    build(4, 442)
+    local D1, D15 = piece(442, 430, "rp_01_0"), piece(442, 416, "rp_01_14")
+    local function has(list, o) for _, v in ipairs(list) do if v == o then return true end end return false end
+    D15.md.builderEntry = nil
+    local pf = Dismantle.plan(D1, "ramp")
+    D15.md.builderEntry = "rp_01_0"
+    local hold = at(442, 416)
+    hold.removeHere(D15)
+    local pm = Dismantle.plan(piece(442, 420, "rp_01_10"), "ramp")
+    squares["442,416,0"] = nil
+    local pu = Dismantle.plan(D1, "ramp")
+    local okU2, codeU2 = unbuild(5, 442, 430, "rp_01_0")
+    squares["442,416,0"] = hold
+    hold.objects[#hold.objects + 1] = D15
+    local pok = Dismantle.plan(D1, "ramp")
+    check(#pf.remove == 19 and not has(pf.remove, D15) and #pf.refund == 0 and not pf.foreign and pf.incomplete == nil
+        and #pm.remove == 19 and #pm.refund == 0 and pm.incomplete == nil and not pm.foreign,
+        "坡道（Ramp）殘組：少一片、或混了一片不是本 MOD 的（✗ 那片不在 remove 裡）時 remove 是剩下的 19 片、refund 空")
+    check(pu.incomplete == "NOT_LOADED" and okU2 == "dismantleSkipped" and codeU2 == "NOT_LOADED" and column(442) == 20
+        and next(P:getCurrentSquare().dropped) == nil and Ledger.getRamp(442, 430, 0) ~= nil,
+        "坡道（Ramp）✗ 缺片那格沒載入：照舊 NOT_LOADED，一片都不拆、不退料、帳本還在")
+    check(#pok.remove == 20 and pok.refund[1] == D1 and pok.incomplete == nil and not pok.foreign and #pok.landing == 1,
+        "坡道（Ramp）完整：20 片加平台，照頭片那筆退")
+    -- 混了一片不是本 MOD 的：照拆剩下 19 片、0 退料、帳本那筆清掉（那時還在）、那一片留著、平台照同一條規則收
+    D15.md.builderEntry = nil
+    local okP, _ = unbuild(6, 442, 430, "rp_01_0")
+    local n442 = column(442)
+    check(okP == "dismantled" and next(sent[#sent].args.refund) == nil and next(P:getCurrentSquare().dropped) == nil
+        and n442 == 1 and piece(442, 416, "rp_01_14") == D15 and Ledger.getRamp(442, 430, 0) == nil and deck(442) == nil,
+        "坡道（Ramp）殘組（混了別人的片）：拆掉本 MOD 的 19 片、不退料、帳本那筆清掉，✗ 別人的那片不動")
+    -- 少一片（被別的方式拆掉，帳本跟著清）：點中間任一片照拆剩下 19 片、0 退料
+    esq(430, 410, 1)
+    build(15, 430)
+    at(430, 416):transmitRemoveItemFromSquare(piece(430, 416, "rp_01_14"))
+    local ledgerGone = Ledger.getRamp(430, 430, 0) == nil
+    local okM = unbuild(16, 430, 420, "rp_01_10")
+    check(ledgerGone and okM == "dismantled" and column(430) == 0 and next(P:getCurrentSquare().dropped) == nil
+        and Ledger.getRamp(430, 430, 0) == nil and deck(430) == nil,
+        "坡道（Ramp）殘組（少一片）：點任一片拆掉剩下 19 片和平台、不退料（帳本那筆已清，不會重複退）")
+
+    -- 平台留著：蓋之前那格已經有地板（不是本 MOD 補的）、上面有別的東西
+    esq(433, 410, 1):addFloor("rp_01_23")
+    esq(436, 410, 1)
+    local okB = build(6, 433)
+    local okC = build(7, 436)
+    at(436, 410, 1).objects[#at(436, 410, 1).objects + 1] = { name = "chair" }
+    unbuild(8, 433, 430, "rp_01_0")
+    unbuild(9, 436, 430, "rp_01_0")
+    check(okB and okC and column(433) == 0 and column(436) == 0 and deck(433) ~= nil and deck(436) ~= nil,
+        "坡道（Ramp）✗ 平台那格原本就有地板、平台上有別的東西：拆坡道時平台留著")
+
+    -- ✗ 拆地板：坡道片底下本 MOD 的地板拆掉後，坡道片還在（格上還有 solidfloor，不補泥土、不 clearFloor）
+    esq(439, 410, 1)
+    build(10, 439)
+    local fsq = at(439, 430)
+    local fl = { class = "IsoThumpable", md = { builderEntry = "rpf_01_0" }, mats = { ["Base.Plank"] = "1" } }
+    function fl:getSprite() return floorS end
+    function fl:getProperties() return floorS:getProperties() end
+    function fl:getSquare() return fsq end
+    function fl:hasModData() return true end
+    function fl:getModData() return self.md end
+    function fl:isFloor() return true end
+    function fl:isDismantable() return true end
+    function fl:getBuildMaterials() return self.mats end
+    function fl:hasBuildMaterials() return true end
+    function fl:isObjectNoContainerOrEmpty() return true end
+    function fl:isBarricaded() return false end
+    function fl:getTextureName() return "rpf_01_0" end
+    function fl:getType() return T.normal end
+    function fl:isStairsObject() return false end
+    function fl:getAttachedAnimSprite() return nil end
+    function fl:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
+    function fl:isConnectedSpriteGridObject(o) return o == self end
+    table.insert(fsq.objects, 1, fl)
+    if Floors then Floors.put(fl, { ["Base.Plank"] = 1 }) end
+    local okF = unbuild(11, 439, 430, "rpf_01_0")
+    check(okF == "dismantled" and piece(439, 430, "rp_01_0") ~= nil and column(439) == 20 and Ledger.getRamp(439, 430, 0) ~= nil,
+        "坡道（Ramp）✗ 拆地板：拆掉坡道片底下的地板，坡道片不被當成地板一起拆、帳本那筆還在")
+
+    -- 伺服器
+    check(intentCode(12, "rp_01_0", { 445, 430, 0, 0, 445, 420, 0, 0 }) == "BAD_REQUEST",
+        "坡道（Ramp）✗ 一個請求帶兩個錨點：BAD_REQUEST")
+    local d1 = Entry.digest()
+    sb.KindRamp = false
+    local d2 = Entry.digest()
+    check(intentCode(13, "rp_01_0", { 445, 430, 0, 0 }) == "DISABLED" and d1 ~= d2,
+        "坡道（Ramp）✗ 沙盒 KindRamp=false：DISABLED，Entry.digest() 跟著變")
+
+    instanceof, IsoObject, sb.MaxCellsPerDrag, sb.MaxDistance, HARNESS_ROLL, sb.KindRamp = real.inst, real.obj, real.max,
+        real.dist, real.roll, real.kind
+    local gone = {}
+    for _, name in ipairs(added) do spriteMap[name], gone[name] = nil, true end
+    for i = #spriteOrder, 1, -1 do if gone[spriteOrder[i].name] then table.remove(spriteOrder, i) end end
+end)()
+
+-- ===== 屋頂助手（Roof） =====
+;(function()
+    print("屋頂助手（Roof 認整套與排法、RoofPanel 預覽與整批加進藍圖）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Roof"
+    require "MinidoracatBuilder/RoofPanel"
+    local Roof, RP = B.Roof, B.RoofPanel
+    local F30, F45 = Roof.FAM["30"], Roof.FAM["45"]
+    local real = { tiles = sb.DisabledTilesets, PM = B.PlanMode, toast = B.Messages.toast }
+    -- 假圖：外形照模板位置 k 給一個固定的 8×8 點陣（同一片種在各款相同）；flip＝整個反過來（外形差 64 點）
+    local added, nextId = {}, 40000
+    local function add(name, o)
+        nextId = nextId + 1
+        local s = sprite(name, nextId, o)
+        spriteMap[name], added[#added + 1] = s, name
+        spriteOrder[#spriteOrder + 1] = s
+        return s
+    end
+    local function mask(k, flip)
+        return function(x, y)
+            local v = ((k * 1103 + math.floor(x / 8) * 151 + math.floor(y / 8) * 37) * 2654435) % 1000 < 500
+            if flip then return not v end
+            return v
+        end
+    end
+    local function roof(name, k, flip) add(name, { type = T.WestRoofT, keys = { RoofGroup = "1" }, mask = mask(k, flip) }) end
+    local function roofSet(ts, base, off, extra, skip, flipK)
+        for k, o in pairs(off) do
+            if k ~= skip then roof(ts .. "_" .. (base + o), o, k == flipK) end
+        end
+        for rel, k in pairs(extra or {}) do roof(ts .. "_" .. (base + rel), k) end
+    end
+    roofSet("roofs_30_01", 0, F30.off)
+    roofSet("mymod_roofs_30", 7, F30.off)
+    roofSet("bad30_miss", 0, F30.off, nil, "Q3")
+    roofSet("bad30_flip", 0, F30.off, nil, nil, "PNS2")
+    for i = 0, 7 do roof("roofs_shallow_x_" .. i, i) end
+    -- 45 度：roofs_01 兩套（@0 半格片在 64–71、@32 在 41–47），MOD 套沒有半格片
+    roofSet("roofs_01", 0, F45.off, { [64] = 64, [65] = 65, [66] = 66, [70] = 70, [71] = 71 })
+    roofSet("roofs_01", 32, F45.off, { [41] = 65, [42] = 66, [46] = 70, [47] = 71 })
+    roofSet("mymod_roofs_45", 100, F45.off)
+    for _, o in pairs(F30.gable.off) do
+        add("walls_exterior_roofs_30_01_" .. o, { type = T.wall, flags = { "collideW", "cutW" }, keys = { WallW = "" },
+            mask = mask(1000 + o) })
+    end
+    for _, o in pairs(F45.gable.off) do
+        add("walls_exterior_roofs_01_" .. o, { type = T.wall, flags = { "collideW", "cutW" }, keys = { WallW = "" },
+            mask = mask(2000 + o) })
+    end
+    add(Roof.FILL, { flags = { "solidfloor" } })
+    check(Rules.classify(spriteMap["roofs_30_01_0"]) == "roof" and Rules.classify(spriteMap["walls_exterior_roofs_30_01_0"]) == "wall"
+        and Rules.classify(spriteMap[Roof.FILL]) == "floor", "屋頂（Roof）假圖的種類：屋頂片、山牆片、天花板")
+
+    local function L(set, shape, dir, w, h, gable)
+        return Roof.layout(set, shape, dir, 100, 200, 100 + w - 1, 200 + h - 1, 1, gable)
+    end
+    local function grid(groups) -- "x,y,z"（相對 100,200,1）→ { 圖名, … }
+        local t = {}
+        for _, g in ipairs(groups or {}) do
+            for _, c in ipairs(g.cells) do
+                local k = (c[1] - 100) .. "," .. (c[2] - 200) .. "," .. (c[3] - 1)
+                t[k] = t[k] or {}
+                table.insert(t[k], g.id)
+            end
+        end
+        return t
+    end
+    local function at(t, x, y, z, name) -- 那一格有沒有這張
+        for _, n in ipairs(t[x .. "," .. y .. "," .. z] or {}) do if n == name then return true end end
+        return false
+    end
+    local function only(t, x, y, z, name)
+        local l = t[x .. "," .. y .. "," .. z]
+        return l ~= nil and #l == 1 and l[1] == name
+    end
+    local function total(groups)
+        local n = 0
+        for _, g in ipairs(groups or {}) do n = n + #g.cells end
+        return n
+    end
+    local function n30(o) return "roofs_30_01_" .. o end
+    local function n45(o) return "roofs_01_" .. o end
+
+    -- 辨識
+    local s30, m30 = Roof.family("roofs_30_01_5"), Roof.family("mymod_roofs_30_10")
+    check(s30 and s30.fam == "30" and s30.ts == "roofs_30_01" and s30.base == 0 and m30 and m30.base == 7,
+        "屋頂（Roof）辨識：原版 30 度整套基準 0；MOD 整套平移到 7 也認得出")
+    check(Roof.family("bad30_miss_0") == nil and Roof.family("bad30_flip_0") == nil and Roof.family("roofs_shallow_x_0") == nil
+        and Roof.family("walls_exterior_roofs_30_01_0") == nil,
+        "屋頂（Roof）✗ 模板少一片、一片外形差超過容許、緩坡（只有 8 片）、牆組：都認不出")
+    local s45, s45b, m45 = Roof.family("roofs_01_3"), Roof.family("roofs_01_40"), Roof.family("mymod_roofs_45_105")
+    check(s45 and s45.fam == "45" and s45.base == 0 and s45b and s45b.base == 32 and s45.half and s45b.half
+        and s45.pieces.RS3[1] == 71 and s45b.pieces.RS3[1] == 47 and s45b.pieces.OP3[1] == 42 and s45.top,
+        "屋頂（Roof）辨識 45 度：roofs_01 兩套照編號給包住的那套，半格片在 64–71／41–47 各自找到")
+    check(m45 and m45.base == 100 and not m45.half and m45.pieces.RS3[1] == 15 and m45.pieces.RS3[2] == -1
+        and m45.pieces.RS3[3] == -1, "屋頂（Roof）45 度沒有半格片的款：half＝false，TwoPt5 用 +15 往西北移一格")
+    local g30, g45 = Roof.gableFamily("walls_exterior_roofs_30_01"), Roof.gableFamily("walls_exterior_roofs_01")
+    check(g30 and g30.fam == "30" and g45 and g45.fam == "45" and Roof.gableFamily("roofs_30_01") == nil,
+        "屋頂（Roof）山牆：30、45 度牆組各認成自己那族；✗ 屋頂組不是山牆")
+
+    -- 30 度
+    local g, w = L(s30, "gable", "EW", 6, 8)
+    local t = grid(g)
+    local rows = true
+    for x = 0, 5 do
+        rows = rows and only(t, x, 0, 0, n30(29)) and only(t, x, 3, 0, n30(26)) and only(t, x, 4, 0, n30(3))
+            and only(t, x, 7, 0, n30(0))
+    end
+    check(g and w == nil and total(g) == 48 and rows,
+        "屋頂（Roof）30 度雙斜 6×8：48 片同一層，北簷 N1、往內 N4，南半 S4、南簷 S1")
+    t = grid((L(s30, "gable", "EW", 4, 7)))
+    check(only(t, 0, 3, 0, n30(99)) and only(t, 3, 3, 0, n30(99)), "屋頂（Roof）30 度雙斜奇數跨距 7：中間那排是屋脊 PNS4")
+    local _, c1 = L(s30, "gable", "EW", 4, 12)
+    local _, c2 = L(s30, "gable", "NS", 1, 5)
+    check(c1 == "TOO_WIDE" and c2 == "TOO_SMALL", "屋頂（Roof）30 度 ✗ 跨距 12：TOO_WIDE；✗ 1×5：TOO_SMALL")
+    t = grid((L(s30, "hip", nil, 7, 7)))
+    check(only(t, 3, 3, 0, n30(115)) and only(t, 0, 0, 0, n30(93)) and only(t, 6, 6, 0, n30(64))
+        and only(t, 0, 6, 0, n30(80)) and only(t, 6, 0, 0, n30(77)), "屋頂（Roof）30 度四坡 7×7：中心 Q4，四角各自的外角片")
+    t = grid((L(s30, "hip", nil, 5, 9)))
+    local ridge = true
+    for y = 2, 6 do ridge = ridge and only(t, 2, y, 0, n30(107)) end
+    check(ridge and only(t, 2, 1, 0, n30(28)), "屋頂（Roof）30 度四坡 5×9：中間一條屋脊 PWE3（兩端照屋脊），屋脊外是斜面")
+    local tS, tN = grid((L(s30, "shed", "S", 3, 4))), grid((L(s30, "shed", "N", 3, 4)))
+    local tE, tW = grid((L(s30, "shed", "E", 4, 3))), grid((L(s30, "shed", "W", 4, 3)))
+    check(only(tS, 1, 3, 0, n30(0)) and only(tS, 1, 0, 0, n30(3)) and only(tN, 1, 0, 0, n30(29))
+        and only(tE, 3, 1, 0, n30(13)) and only(tW, 0, 1, 0, n30(16)), "屋頂（Roof）30 度單斜四個方向：低邊是 1 號片，往高處遞增")
+    local hi, ch = L(s30, "shed", "S", 2, 25)
+    t = grid((L(s30, "shed", "S", 2, 24)))
+    check(hi == nil and ch == "TOO_HIGH" and only(t, 0, 17, 1, n30(0)) and only(t, 0, 0, 3, n30(5)),
+        "屋頂（Roof）30 度單斜每 6 格往上一層接；✗ 25 格要 5 層：TOO_HIGH")
+    sb.DisabledTilesets = "roofs_30_01"
+    local dg, dc = L(s30, "hip", nil, 4, 4)
+    sb.DisabledTilesets = real.tiles
+    check(dg == nil and dc == "DISABLED", "屋頂（Roof）✗ 沙盒關掉要用的圖塊組：DISABLED，一片都不給")
+    g = L(s30, "gable", "EW", 6, 8, g30)
+    t = grid(g)
+    local walls = 0
+    for _, gg in ipairs(g) do if gg.id:find("^walls_") then walls = walls + #gg.cells end end
+    check(walls == 16 and at(t, 0, 0, 0, "walls_exterior_roofs_30_01_13") and at(t, 0, 7, 0, "walls_exterior_roofs_30_01_0")
+        and at(t, 6, 0, 0, "walls_exterior_roofs_30_01_13") and total(g) == 64,
+        "屋頂（Roof）30 度雙斜配山牆：兩端各一列 8 片（北端 FallE1、南端 RiseE1，東端在範圍外一格）")
+    walls = 0
+    for _, gg in ipairs(L(s30, "gable", "EW", 6, 8)) do if gg.id:find("^walls_") then walls = walls + 1 end end
+    check(walls == 0, "屋頂（Roof）山牆選不放：沒有牆片")
+
+    -- 45 度
+    local ids, dirs = {}, {}
+    for _, s in ipairs(Roof.shapes(s45)) do
+        ids[#ids + 1] = s.id
+        if s.id == "shed" then dirs = s.dirs end
+    end
+    check(table.concat(ids, ",") == "gable,hip,shed,flat" and table.concat(dirs, ",") == "S,E",
+        "屋頂（Roof）45 度形狀：雙斜、四坡、單斜、平頂；✗ 單斜沒有朝北、朝西")
+    g, w = L(s45, "gable", "EW", 4, 6)
+    t = grid(g)
+    rows = true
+    for x = 0, 3 do
+        rows = rows and only(t, x, 0, 0, Roof.FILL) and only(t, x, 2, 0, Roof.FILL) and only(t, x, 3, 0, n45(2))
+            and only(t, x, 5, 0, n45(0))
+    end
+    check(rows and total(g) == 24 and w and w.HALF, "屋頂（Roof）45 度雙斜 6 格：南半 S3..S1，北半補天花板，warn.HALF")
+    t = grid((L(s45, "gable", "EW", 3, 8)))
+    check(only(t, 1, 3, 1, n45(22)) and only(t, 1, 4, 1, n45(22)) and only(t, 1, 2, 0, Roof.FILL) and only(t, 1, 5, 0, n45(2)),
+        "屋頂（Roof）45 度雙斜跨距 8：中間兩排平頂片在上一層")
+    t = grid((L(s45, "gable", "EW", 2, 5)))
+    local tm = grid((L(m45, "gable", "EW", 2, 5)))
+    check(at(t, 0, 2, 0, n45(71)) and at(t, 0, 2, 0, Roof.FILL) and only(t, 0, 3, 0, n45(1))
+        and at(tm, -1, 1, 0, "mymod_roofs_45_115") and at(tm, 0, 2, 0, Roof.FILL),
+        "屋頂（Roof）45 度雙斜奇數跨距 5：中間 TwoPt5＋同格天花板；沒有專用片的款用 +15 往西北移一格")
+    t = grid((L(s45, "gable", "NS", 6, 2)))
+    check(only(t, 3, 0, 0, n45(3)) and only(t, 5, 1, 0, n45(5)) and only(t, 0, 0, 0, Roof.FILL),
+        "屋頂（Roof）45 度雙斜南北向：東半 E3..E1，西半補天花板")
+    t = grid((L(s45, "hip", nil, 6, 6)))
+    check(only(t, 5, 5, 0, n45(8)) and only(t, 0, 5, 0, n45(24)) and only(t, 5, 0, 0, n45(29)) and only(t, 0, 0, 0, Roof.FILL)
+        and only(t, 3, 3, 0, n45(10)) and only(t, 2, 2, 0, Roof.FILL), "屋頂（Roof）45 度四坡 6×6：東南 Outer、西南 CornerSW、東北 CornerNE，西北補天花板")
+    t = grid((L(s45, "hip", nil, 5, 5)))
+    local _, odd = L(m45, "hip", nil, 5, 5)
+    local t7 = grid((L(m45, "hip", nil, 7, 7)))
+    check(at(t, 2, 2, 0, n45(66)) and at(t, 2, 2, 0, Roof.FILL) and odd == "ODD_SPAN" and only(t7, 3, 3, 1, "mymod_roofs_45_122"),
+        "屋頂（Roof）45 度四坡 5×5 中心 OuterTwoPt5；✗ 沒有半格轉角片的款：ODD_SPAN；7×7 中心是上一層的平頂")
+    t = grid((L(s45, "shed", "S", 2, 4)))
+    check(only(t, 0, 3, 0, n45(0)) and only(t, 0, 1, 0, n45(2)) and only(t, 0, 0, 1, n45(0)),
+        "屋頂（Roof）45 度單斜朝南：每 3 格往上一層接")
+    g, w = L(s45, "flat", nil, 3, 3)
+    t = grid(g)
+    check(total(g) == 9 and only(t, 1, 1, 0, n45(22)) and w == nil, "屋頂（Roof）45 度平頂 3×3：每格一張平頂片")
+    t = grid((L(s45, "gable", "EW", 2, 5, g45)))
+    local tg = grid((L(s45, "gable", "EW", 2, 8, g45)))
+    local gw = 0
+    for k, l in pairs(tg) do
+        if k:find("^0,") then for _, n in ipairs(l) do if n:find("^walls_") then gw = gw + 1 end end end
+    end
+    check(at(t, 0, 0, 0, "walls_exterior_roofs_01_8") and at(t, 0, 1, 0, "walls_exterior_roofs_01_9")
+        and at(t, 0, 2, 0, "walls_exterior_roofs_01_16") and at(t, 0, 3, 0, "walls_exterior_roofs_01_1")
+        and at(t, 0, 4, 0, "walls_exterior_roofs_01_0") and gw == 6,
+        "屋頂（Roof）45 度山牆：跨距 5 是 FallE1、FallE2、PeakTwoPt5E、RiseE2、RiseE1；跨距 8 中段不放")
+    sb.DisabledTilesets = "ceilings_01"
+    t = grid((L(s45, "gable", "EW", 2, 4)))
+    sb.DisabledTilesets = "ceilings_01;roofs_01"
+    local left = {}
+    for _, s in ipairs(Roof.shapes(s45)) do left[#left + 1] = s.id end
+    sb.DisabledTilesets = real.tiles
+    check(only(t, 0, 0, 0, n45(22)) and table.concat(left, ",") == "flat",
+        "屋頂（Roof）天花板被關掉改鋪平頂片；兩種都關掉時 45 度不給斜屋頂形狀")
+
+    -- RoofPanel
+    local calls, toasts, ret, last = 0, {}, { 5 }, nil
+    B.PlanMode = { addMany = function(_, groups)
+            calls, last = calls + 1, groups
+            return ret[1], ret[2]
+        end, planning = function() return true end, level = function() return 1 end, toggle = function() return true end,
+        setLevel = function() end }
+    B.Messages.toast = function(_, text) toasts[#toasts + 1] = text end
+    local av = RP.available("roofs_30_01_5") and RP.available("roofs_01_3") and not RP.available("roofs_shallow_x_0")
+    B.PlanMode.addMany = nil
+    local noAdd = RP.available("roofs_30_01_5")
+    B.PlanMode.addMany = function(_, groups)
+        calls, last = calls + 1, groups
+        return ret[1], ret[2]
+    end
+    check(av and noAdd == false, "屋頂（RoofPanel）available：認得出整套才給；✗ 沒有 PlanMode.addMany 不給")
+    local st = RP.st
+    st.pn, st.set, st.shape, st.dir, st.gable, st.gableTs = 0, s30, "gable", "EW", nil, ""
+    local okR = RP.release(100, 200, 105, 207)
+    check(okR and calls == 1 and total(last) == 48 and #toasts == 0, "屋頂（RoofPanel）放開：整批只叫一次 addMany，不跳通知")
+    local why = {}
+    for _, code in ipairs({ "FULL", "TOO_WIDE", "TOO_HIGH", "OFF" }) do
+        ret = { nil, code }
+        toasts = {}
+        RP.release(100, 200, 105, 207)
+        why[#why + 1] = toasts[1]
+    end
+    ret = { 5 }
+    toasts = {}
+    local before = calls
+    RP.release(100, 200, 100, 205)
+    check(table.concat(why, ",") == "IGUI_MBLD_Roof_Err_FULL,IGUI_MBLD_Roof_Err_PLAN_WIDE,IGUI_MBLD_Roof_Err_TOO_HIGH,"
+        .. "IGUI_MBLD_Roof_Err_OFF" and toasts[1] == "IGUI_MBLD_Roof_Err_TOO_SMALL" and calls == before,
+        "屋頂（RoofPanel）✗ addMany 失敗：面板自己說屋頂的句子；排不出來不叫 addMany")
+    local p1, p2 = RP.preview(100, 200, 105, 207), RP.preview(100, 200, 105, 207)
+    st.set, st.shape, st.dir = s45, "shed", "N"
+    RP.fix()
+    local fixed = st.dir
+    st.shape, st.dir = "gable", "EW"
+    local p3 = RP.preview(100, 200, 103, 205)
+    check(p1 == p2 and #p1.cells == 48 and p1.cells[1].z == 1 and #p1.lines == 2 and fixed == "S" and #p3.lines == 3
+        and p3.lines[2] == "IGUI_MBLD_Roof_Warn_HALF",
+        "屋頂（RoofPanel）預覽：同一範圍回同一份；45 度補天花板多一行；✗ 45 度單斜選朝北夾回朝南")
+
+    st.pn, st.set, st.shape, st.dir, st.gable, st.gableTs = nil, nil, nil, nil, nil, ""
+    B.PlanMode, B.Messages.toast, sb.DisabledTilesets = real.PM, real.toast, real.tiles
+    local gone = {}
+    for _, name in ipairs(added) do spriteMap[name], gone[name] = nil, true end
+    for i = #spriteOrder, 1, -1 do if gone[spriteOrder[i].name] then table.remove(spriteOrder, i) end end
+end)()
+
+-- ===== 藍圖檢查分幀（PlanPerf） =====
+;(function()
+    print("藍圖檢查分幀（PlanCheck 重排分幀、busy、sweep；Runner 重排中不誤判沒得蓋、坡道一批一片）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanCheck"
+    require "MinidoracatBuilder/Queue"
+    require "MinidoracatBuilder/PlanStore"
+    require "MinidoracatBuilder/Runner"
+    local Plan, PC, R, Q, PS = B.Plan, B.PlanCheck, B.Runner, B.Queue, B.PlanStore
+    local real = { PM = B.PlanMode, PC = B.PlanCheck, rec = B.Recipes, cell = getCell, clock = getTimestampMs,
+        inst = instanceof, item = Check.item, summary = Materials.summary, same = Materials.same, resolve = Entry.resolve,
+        face = Entry.face, alt = Entry.alternate, cells = Entry.cells, doorSet = Entry.doorSet, why = Entry.why,
+        digest = Entry.digest, push = Q.push, cancel = Q.cancel, busy = Q.busy, load = PS.load, ui = MinidoracatUI,
+        core = Core, q = ISTimedActionQueue, specific = getSpecificPlayer, max = sb.MaxCellsPerDrag }
+    B.Recipes = nil
+    -- 時鐘：一幀裡第 slowAt 次讀時鐘時已經超過預算（2＝重排看完第一段就到時間），其餘的讀都還在預算內。
+    -- 讀時鐘的順序：tick 的 now、drain 每段一次、算片的迴圈每片一次（fresh 會多讀一次 sAt，那幾幀不用 slowAt）
+    local T, reads, slowAt = 9000000, 0, nil
+    getTimestampMs = function()
+        reads = reads + 1
+        if reads == slowAt then return T + 100 end
+        return T
+    end
+    -- 假世界：evals＝每格被 evaluate 幾次（每片算一次讀一次 getChunkForGridSquare），items＝Check.item 被叫幾次
+    local evals, items, SQS, CODE, SHORT = {}, {}, {}, {}, true
+    local function sqAt(x, y, z)
+        local k = x .. "," .. y .. "," .. z
+        local s = SQS[k]
+        if not s then
+            s = { objs = {} }
+            function s:getObjects() return javaList(self.objs) end
+            SQS[k] = s
+        end
+        return s
+    end
+    local cellObj = {
+        getChunkForGridSquare = function(_, x, y) local k = x .. "," .. y; evals[k] = (evals[k] or 0) + 1; return true end,
+        getGridSquare = function(_, x, y, z) return sqAt(x, y, z) end,
+    }
+    getCell = function() return cellObj end
+    instanceof = function() return false end
+    local function tile(name) return { getSprite = function() return { getName = function() return name end } end } end
+    local ENT = { pp_a = { kind = "floor", spr = "pp_a" }, pp_ramp = { kind = "ramp", spr = "pp_ramp" } }
+    Entry.resolve = function(id) return ENT[id] end
+    Entry.face = function(e) return { getName = function() return e.spr end, name = e.spr } end
+    Entry.alternate = function(s) return s end
+    Entry.cells = function(spr) return { { 0, 0, 0, spr.name } } end
+    Entry.doorSet = function() return nil end
+    Entry.why = function() return "UNKNOWN" end
+    local DG = "pp1"
+    Entry.digest = function() return DG end
+    Check.item = function(_, _, _, a)
+        local k = a[1] .. "," .. a[2]
+        items[k] = (items[k] or 0) + 1
+        return CODE[k] or (SHORT and "NO_MATERIAL" or nil)
+    end
+    local MG = 1
+    Materials.summary = function() return { gen = MG } end
+    Materials.same = function(a, b) return a ~= nil and b ~= nil and a.gen == b.gen end
+    local OX, OY = 500, 500
+    local pl
+    B.PlanMode = { plan = function() return pl end, origin = function() return OX, OY, 0 end, playerNum = 0 }
+    local K = player({ id = 91, x = 532.5, y = 532.5 })
+    local function frame(slow)
+        reads, slowAt = 0, slow
+        PC.tick(K)
+    end
+    -- 跑到 busy() 變 false：回跑了幾幀（上限 200，沒停表示卡住）
+    local function settle(slow)
+        local f = 0
+        repeat
+            f = f + 1
+            frame(slow)
+        until not PC.busy() or f >= 200
+        return f
+    end
+    local function sum(t)
+        local n = 0
+        for _, v in pairs(t) do n = n + v end
+        return n
+    end
+    -- 每片 Check.item 幾次：最少、最多
+    local function spread(plan)
+        local lo, hi = math.huge, 0
+        Plan.each(plan, function(p)
+            local n = items[(p.x + OX) .. "," .. (p.y + OY)] or 0
+            if n < lo then lo = n end
+            if n > hi then hi = n end
+        end)
+        return lo, hi
+    end
+    local function allState(plan, want)
+        local bad = 0
+        Plan.each(plan, function(p) if PC.state(p) ~= want then bad = bad + 1 end end)
+        return bad
+    end
+    -- 64×64 一層地板（skip＝不放的那一格 "x,y"），全部算完（缺料）再清掉計數
+    local function bigPlan(skipKey)
+        pl = Plan.new("perf")
+        local it = Plan.item(pl, "pp_a")
+        for i = 0, 4095 do
+            local x, y = i % 64, math.floor(i / 64)
+            if x .. "," .. y ~= skipKey then Plan.add(pl, x, y, 0, 0, 0, it) end
+        end
+        SHORT, CODE = true, {}
+        PC.reset()
+        frame(nil)
+        local ok = not PC.busy() and allState(pl, "short") == 0
+        evals, items = {}, {}
+        return ok
+    end
+    -- 材料變了：下一次比摘要（SUMMARY_MS 後）時重排
+    local function materialsChange()
+        SHORT, MG, T = false, MG + 1, T + PC.SUMMARY_MS
+    end
+
+    -- 1. 4,096 片算完後改材料：第一幀只排一段，跑到 busy() 變 false 時每片都重算過一次，最多 16 幀
+    local ready = bigPlan(nil)
+    materialsChange()
+    frame(2)
+    local first, busy1 = sum(items), PC.busy()
+    local frames = 1 + settle(2)
+    local lo, hi = spread(pl)
+    check(ready and pl.n == 4096 and first == 256 and first ~= 4096 and busy1 == true,
+        "重排分幀：4,096 片材料一變，第一幀只排 256 片（不是 4,096），busy() 是 true（第一幀算了 " .. first .. " 片）")
+    check(not PC.busy() and frames <= 16 and lo == 1 and hi == 1 and sum(items) == 4096 and allState(pl, "ok") == 0,
+        "重排分幀：" .. frames .. " 幀排完（≤ 16），每片 Check.item 剛好一次，全部變能蓋")
+
+    -- 2. 時鐘不是每片都讀：走開 MOVE 格重排 far（沒有 far 的片），一幀讀 1＋4,096／256 次
+    K.pos.x = K.pos.x + PC.MOVE + 1
+    frame(nil)
+    local farReads = reads
+    K.pos.x = 532.5
+    frame(nil)
+    check(farReads == 1 + 4096 / 256 and not PC.busy(), "重排每 256 片才看一次時鐘（這一幀讀了 " .. farReads .. " 次）")
+
+    -- 3. 重排到一半加一片（rev 變、清單重建）：不漏、不重複、不越界
+    ready = bigPlan("63,63")
+    materialsChange()
+    for _ = 1, 8 do frame(2) end
+    local half = sum(items)
+    Plan.add(pl, 63, 63, 0, 0, 0, Plan.item(pl, "pp_a"))
+    local fine, err = pcall(settle, 2)
+    lo, hi = spread(pl)
+    check(ready and half == 2048 and fine and pl.n == 4096 and lo == 1 and hi == 1 and sum(items) == 4096
+        and allState(pl, "ok") == 0 and not PC.busy(),
+        "重排到一半加一片：每片（含新的）剛好一次、全部能蓋" .. (fine and "" or " " .. tostring(err)))
+    -- 重排到一半拿掉一大半（清單變短、比目前索引還短）：沒出錯，留下的每片剛好一次
+    ready = bigPlan(nil)
+    materialsChange()
+    for _ = 1, 4 do frame(2) end -- 看過前 1,024 片（y 0..15）
+    local drop = {}
+    Plan.each(pl, function(p) if p.y < 8 or p.y >= 32 then drop[#drop + 1] = p end end)
+    Plan.remove(pl, drop)
+    fine, err = pcall(settle, 2)
+    lo, hi = spread(pl)
+    check(ready and fine and pl.n == 1536 and lo == 1 and hi == 1 and sum(items) == 512 + 1536 and allState(pl, "ok") == 0,
+        "重排到一半拿掉 2,560 片：留下的每片剛好一次，拿掉的沒看過的不算" .. (fine and "" or " " .. tostring(err)))
+
+    -- 4. 重排到一半又來「全部」（沙盒變了）：從頭來，最後每片都涵蓋；前半重算第二次
+    ready = bigPlan(nil)
+    materialsChange()
+    for _ = 1, 8 do frame(2) end
+    DG, T = "pp2", T + PC.SUMMARY_MS
+    settle(2)
+    lo, hi = spread(pl)
+    local firstRow, lastRow = items[OX .. "," .. OY], items[(OX + 63) .. "," .. (OY + 63)]
+    check(ready and lo == 1 and hi == 2 and firstRow == 2 and lastRow == 1 and sum(items) == 4096 + 2048
+        and allState(pl, "ok") == 0 and not PC.busy(),
+        "重排到一半沙盒又變：從頭排，每片都算到（已重算的前半再算一次）")
+    DG = "pp1"
+
+    -- 5. 請求清掉：藍圖收起 busy() 是 false；換人從頭算、每片一次；reset 後 false
+    ready = bigPlan(nil)
+    materialsChange()
+    frame(2)
+    local was = PC.busy()
+    local keep = pl
+    pl = nil
+    local putAway = PC.busy()
+    pl = keep
+    local back = PC.busy()
+    local K2 = player({ id = 92, x = 532.5, y = 532.5 })
+    evals, items = {}, {}
+    reads, slowAt = 0, nil
+    PC.tick(K2)
+    lo, hi = spread(pl)
+    local swapped = not PC.busy() and lo == 1 and hi == 1
+    PC.reset()
+    check(ready and was and not putAway and back and swapped and not PC.busy(),
+        "藍圖收起時 busy() 是 false、拿回來接著排；換人從頭算每片一次；reset 後 false")
+
+    -- 6. sweep：done、ok 的片時間到不重查（反面）；BLOCKED 到 STALE_MS 照樣重查；物件數變了連旁邊一起查
+    pl = Plan.new("sweep")
+    local it = Plan.item(pl, "pp_a")
+    for x = 30, 34 do Plan.add(pl, x, 30, 0, 0, 0, it) end
+    SHORT, CODE = false, { [(OX + 34) .. "," .. (OY + 30)] = "BLOCKED" }
+    sqAt(OX + 30, OY + 30, 0).objs = { tile("pp_a") } -- 蓋好了
+    PC.reset()
+    frame(nil)
+    local function at(x) return (OX + x) .. "," .. (OY + 30) end
+    local s30, s31, s34 = PC.state(Plan.at(pl, 30, 30, 0)[1]), PC.state(Plan.at(pl, 31, 30, 0)[1]),
+        PC.state(Plan.at(pl, 34, 30, 0)[1])
+    evals = {}
+    T = T + 60000
+    frame(nil)
+    check(s30 == "done" and s31 == "ok" and s34 == "blocked" and evals[at(30)] == nil and evals[at(31)] == nil
+        and evals[at(32)] == nil and evals[at(34)] == 1,
+        "sweep：蓋好、能蓋的片時間到不重查（反面）；放不下的 STALE_MS 到了照樣重查")
+    evals = {}
+    sqAt(OX + 32, OY + 30, 0).objs = { tile("pp_junk") }
+    frame(nil)
+    check(evals[at(31)] == 1 and evals[at(32)] == 1 and evals[at(33)] == 1 and evals[at(30)] == nil and evals[at(34)] == nil,
+        "sweep：格上物件數變了，那片連四鄰一起重查（隔一格的不查）")
+    PC.reset()
+
+    -- 7. Runner：busy() 期間挑不到片不結束、不回 NOTHING；busy() 結束後真的沒有才 LEFT
+    local S, BUSY = {}, true
+    B.PlanCheck = {
+        resolve = function(p) local x = pl.items[p.it]; return x and x.id, p.x + OX, p.y + OY, p.z, p.d, p.o, p.w end,
+        state = function(p) return S[p] end,
+        busy = function() return BUSY end,
+        touch = function() end,
+    }
+    local pushes = {}
+    Q.push = function(_, id, anchors) pushes[#pushes + 1] = { id = id, anchors = anchors }; return #pushes end
+    Q.cancel = function() end
+    Q.busy = function() return 0 end
+    PS.load = function() return { boxes = {} } end
+    MinidoracatUI = { v1 = { Toast = { show = function() end } } }
+    Core = { getTileScale = function() return 1 end }
+    ISTimedActionQueue = { isPlayerDoingAction = function() return false end, clear = function() end,
+        hasAction = function() return false end, add = function() end }
+    function K:isAsleep() return false end
+    function K:getStats() return { getNumChasingZombies = function() return 0 end } end
+    function K:isAttackStarted() return false end
+    function K:isAiming() return false end
+    function K:isJustMoved() return false end
+    getSpecificPlayer = function() return K end
+    local function run(n)
+        for _ = 1, n do
+            T = T + 100
+            R.tick()
+        end
+    end
+    R.stop()
+    pl = Plan.new("run")
+    local a1 = Plan.add(pl, 0, 0, 0, 0, 0, Plan.item(pl, "pp_a"))
+    local a2 = Plan.add(pl, 1, 0, 0, 0, 0, Plan.item(pl, "pp_a"))
+    S[a1], S[a2] = "short", "short"
+    BUSY = false
+    local n1, c1 = R.start(K)
+    BUSY = true
+    local n2 = R.start(K)
+    run(10)
+    local during, why = R.state(), R.reason()
+    S[a2] = "ok" -- 重算完：一片變能蓋
+    run(3)
+    local sent = pushes[1]
+    R.stop()
+    check(n1 == nil and c1 == "NOTHING" and n2 == true and during == "pick" and why == nil and sent and #sent.anchors == 1,
+        "Runner：沒在重排時回 NOTHING（對照）；重排中 start 不回 NOTHING、挑不到片不結束，重算出能蓋的片就送")
+    pushes = {}
+    S[a2] = "short"
+    BUSY = true
+    R.start(K)
+    run(5)
+    local waited = R.state()
+    BUSY = false
+    run(5)
+    check(waited == "pick" and R.state() == "done" and (R.reason()) == "LEFT" and #pushes == 0,
+        "Runner：busy() 期間不發 LEFT（反面），busy() 結束後真的沒有才 LEFT")
+    -- busy() 一直是 true：等到 BUSY_MAX_MS 照沒在重排的路徑結束；不到就不結束（反面）
+    pushes = {}
+    BUSY = true
+    R.start(K)
+    run(math.floor(R.BUSY_MAX_MS / 100) - 5)
+    local before, beforeWhy = R.state(), R.reason()
+    run(10)
+    check(before == "pick" and beforeWhy == nil, "Runner：busy() 一直是 true，不到 BUSY_MAX_MS 不結束（反面）")
+    check(R.state() == "done" and (R.reason()) == "LEFT" and #pushes == 0,
+        "Runner：busy() 一直是 true，等滿 BUSY_MAX_MS 照舊路徑結束（LEFT）")
+    BUSY = false
+
+    -- 8. 坡道一批一片（伺服器只收一個錨點）；同款地板照一批上限
+    sb.MaxCellsPerDrag = 8
+    pl = Plan.new("ramp")
+    local ri = Plan.item(pl, "pp_ramp")
+    S = {}
+    for x = 0, 2 do S[Plan.add(pl, x, 0, 0, 0, 0, ri)] = "ok" end
+    BUSY = false
+    Check.item = function() return nil end
+    R.start(K)
+    run(1)
+    local rampBatch = pushes[1]
+    R.stop()
+    pushes = {}
+    pl = Plan.new("floor")
+    local fi = Plan.item(pl, "pp_a")
+    S = {}
+    for x = 0, 2 do S[Plan.add(pl, x, 5, 0, 0, 0, fi)] = "ok" end
+    R.start(K)
+    run(1)
+    local floorBatch = pushes[1]
+    R.stop()
+    check(rampBatch and rampBatch.id == "pp_ramp" and #rampBatch.anchors == 1 and floorBatch and #floorBatch.anchors == 3
+        and R.SEGMENT.ramp == R.SEGMENT.stairs,
+        "Runner：坡道一批只送一組（地板照一批上限 3 片）；坡道和樓梯同一段")
+
+    B.PlanMode, B.PlanCheck, B.Recipes = real.PM, real.PC, real.rec
+    getCell, getTimestampMs, instanceof, getSpecificPlayer = real.cell, real.clock, real.inst, real.specific
+    Check.item, Materials.summary, Materials.same = real.item, real.summary, real.same
+    Entry.resolve, Entry.face, Entry.alternate, Entry.cells, Entry.doorSet, Entry.why, Entry.digest =
+        real.resolve, real.face, real.alt, real.cells, real.doorSet, real.why, real.digest
+    Q.push, Q.cancel, Q.busy, PS.load = real.push, real.cancel, real.busy, real.load
+    MinidoracatUI, Core, ISTimedActionQueue, sb.MaxCellsPerDrag = real.ui, real.core, real.q, real.max
+end)()
+
+-- ===== 快選列、匯入框、記錄（HotbarImport） =====
+;(function()
+    print("快選列、匯入框、記錄（收合與記憶、空排不佔位、文字欄同步回呼、記錄多記名稱、addMany、坡道轉向）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Plan"
+    require "MinidoracatBuilder/PlanFile"
+    require "MinidoracatBuilder/PlanStore"
+    require "MinidoracatBuilder/PlanLibrary"
+    require "MinidoracatBuilder/PlanMode"
+    local Plan, PF, PS, L, PM, H, W = B.Plan, B.PlanFile, B.PlanStore, B.PlanLibrary, B.PlanMode, B.Hotbar, B.Window
+    local real = { reader = getFileReader, writer = getFileWriter, list = listFilesInZomboidLuaDirectory, ui = MinidoracatUI,
+        panel = ISPanel, tm = getTextManager, font = UIFont, top = getPlayerScreenTop, left = getPlayerScreenLeft,
+        sw = getPlayerScreenWidth, sh = getPlayerScreenHeight, text = getText, world = getWorld, core = getCore,
+        spec = getSpecificPlayer, cell = getCell, joypad = Joypad, clip = Clipboard, wui = W.ui, current = H.current,
+        setOf = W.setOf, recipes = B.Recipes, recent = B.Recent.list, PC = B.PlanCheck, toast = B.Messages.toast,
+        resolve = B.Entry.resolve, face = B.Entry.face, runner = B.Runner, hook = {} }
+    for k, v in pairs(B.Cursor.hook) do real.hook[k] = v end
+    getText = function(k, ...)
+        local a = { ... }
+        return #a == 0 and k or k .. "(" .. table.concat(a, ",") .. ")"
+    end
+    -- 假磁碟（照引擎：寫入一開檔就清空，讀不到回 nil）
+    local disk = {}
+    getFileWriter = function(p, _, append)
+        if not append then disk[p] = "" end
+        return { write = function(_, s) disk[p] = (disk[p] or "") .. s end, close = function() end }
+    end
+    getFileReader = function(p)
+        if disk[p] == nil then return nil end
+        local lines, i, pos, text = {}, 0, 1, disk[p]
+        while pos <= #text do
+            local e = text:find("\n", pos, true) or (#text + 1)
+            lines[#lines + 1] = text:sub(pos, e - 1)
+            pos = e + 1
+        end
+        return { readLine = function() i = i + 1; return lines[i] end, close = function() end }
+    end
+    listFilesInZomboidLuaDirectory = function(dir)
+        local names = {}
+        for p in pairs(disk) do
+            local name = p:sub(#dir + 2)
+            if p:sub(1, #dir + 1) == dir .. "/" and not name:find("/", 1, true) then names[#names + 1] = name end
+        end
+        table.sort(names)
+        return javaList(names)
+    end
+    getWorld = function() return { getWorld = function() return "hi_world" end } end
+    getCore = function() return { getGameMode = function() return { toString = function() return "Sandbox" end } end } end
+    UIFont = UIFont or { Small = 0, Medium = 1 }
+    getTextManager = function()
+        return { getFontHeight = function() return 16 end, MeasureStringX = function(_, _, s) return #s * 7 end }
+    end
+    getPlayerScreenTop, getPlayerScreenLeft = function() return 0 end, function() return 0 end
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 1920 end, function() return 1080 end
+
+    -- 假框架：元件只記狀態；視窗有框架的滑鼠、手把方法（快選列在實例上包它們）
+    local noop = function() end
+    local E = { initialise = noop, addToUIManager = noop, removeFromUIManager = noop, bringToTop = noop, setYScroll = noop,
+        scrollToIndex = noop }
+    function E.addChild(s, c) s.children[#s.children + 1] = c end
+    function E.clearChildren(s) s.children = {} end
+    function E.setX(s, v) s.x = v end
+    function E.setY(s, v) s.y = v end
+    function E.getX(s) return s.x end
+    function E.getY(s) return s.y end
+    function E.setWidth(s, v) s.width = v end
+    function E.setHeight(s, v) s.height = v end
+    function E.getIsVisible(s) return s.visible end
+    function E.setVisible(s, v) s.visible = v end
+    function E.setEnabled(s, v) s.enabled = v end
+    function E.setTitle(s, t) s.title = t end
+    function E.getText(s) return s.text end
+    function E.setText(s, t) s.text = t end
+    function E.contentWidth(s) return s.width - 12 end
+    function E.contentTop() return 24 end
+    function E.setItems(s, items) s.items = items end
+    function E.getItems(s) return s.items end
+    function E.setSelectedIndex(s, i) s.sel = i end
+    function E.getSelected(s) return s.selected end
+    local baseJoy, baseDown, baseUp = {}, 0, 0
+    function E.onMouseDown() baseDown = baseDown + 1 return true end
+    function E.onMouseUp() baseUp = baseUp + 1 return true end
+    function E.onJoypadDown(_, b) baseJoy[#baseJoy + 1] = b end
+    local function el(o)
+        o.x, o.y, o.width, o.height = o.x or 0, o.y or 0, o.width or 60, o.height or 20
+        o.children, o.visible, o.enabled = o.children or {}, true, true
+        return setmetatable(o, { __index = E })
+    end
+    local col = { r = 1, g = 1, b = 1 }
+    local focus = { took = 0, released = 0 }
+    local UI = { API_MAJOR = 1, API_REVISION = 30,
+        CAPABILITIES = { window = true, tileGrid = true, textWrap = true, dialog = true },
+        Theme = { create = function() return { colors = { text = col, textMuted = col, warning = col, success = col } } end },
+        Text = { fit = function(s) return s end, wrap = function(s) return { s } end },
+        Focus = { takeJoypad = function() focus.took = focus.took + 1 end,
+            releaseJoypad = function() focus.released = focus.released + 1 end, clear = noop, invalidate = noop },
+        Window = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height, title = o.title }) end },
+        TileGrid = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height, items = {} }) end },
+        Button = { new = function(o) return el({ title = o.title, target = o.target, onClick = o.onClick }) end },
+        TextField = { new = function(o)
+            return el({ x = o.x, y = o.y, width = o.width, text = o.text or "", field = true, maxLength = o.maxLength,
+                onTextChange = o.onTextChange })
+        end },
+        Dropdown = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, options = o.options, onChange = o.onChange }) end,
+            close = noop },
+        ScrollPanel = { new = function(o) return el({ x = o.x, y = o.y, width = o.width, height = o.height }) end } }
+    MinidoracatUI = { v1 = UI }
+    W.ui = function() return UI end
+    ISPanel = { new = function(_, x, y, w, h) return el({ x = x, y = y, width = w, height = h }) end,
+        setVisible = E.setVisible, addToUIManager = noop }
+
+    do -- 快選列
+        local HOTBAR = "MinidoracatBuilder/hotbar.txt"
+        local cur, recent, set = "r_1", { n = 2, "r_1", "r_2" }, { list = { n = 1, "r_3" }, chip = "set" }
+        B.Recipes = { byId = { r_1 = { name = "One" }, r_2 = { name = "Two" }, r_3 = { name = "Three" } },
+            get = function() return {} end, icon = function() return nil end, cursor = function() return nil end }
+        B.Recent.list = function() return recent end
+        W.setOf = function() return set end
+        local function reopen() -- 重開遊戲：模組重新載入（收合狀態要重讀檔）
+            H.hide()
+            assert(loadfile(MEDIA .. "/client/MinidoracatBuilder/Hotbar.lua"))()
+            H.current = function() return cur end
+            H.show(0)
+        end
+        local made = {} -- 建過的視窗（最後一個是顯示中的那個）
+        UI.Window.new = function(o)
+            local w = el({ x = o.x, y = o.y, width = o.width, height = o.height, title = o.title })
+            made[#made + 1] = w
+            return w
+        end
+        disk[HOTBAR] = nil
+        reopen()
+        local win = made[#made]
+        local g1, g2 = win.children[2], win.children[3]
+        check(H.collapsed() == false and g1.visible and g2.visible and win.height > 24 and win.title == "IGUI_MBLD_Hotbar_Title",
+            "快選列：沒有 hotbar.txt 當展開，兩排都排")
+        local openH, bottom = win.height, win.y + win.height
+        check(H.toggle() == true and not g1.visible and not g2.visible and win.height == 24 and win.y + win.height == bottom
+            and win.title == "IGUI_MBLD_Hotbar_Collapsed(One)" and disk[HOTBAR] == "1\n",
+            "快選列：收合＝兩排不顯示、高＝標題列、下緣不動、標題寫目前項目、記進 hotbar.txt")
+        cur = "r_2"
+        win.children[1].prerender(win.children[1])
+        check(win.title == "IGUI_MBLD_Hotbar_Collapsed(Two)", "快選列：收合中換項目，標題跟著換（每幀的檢查照跑）")
+        check(H.toggle() == false and g1.visible and g2.visible and win.height == openH and win.y + win.height == bottom
+            and win.title == "IGUI_MBLD_Hotbar_Title" and disk[HOTBAR] == "0\n", "快選列：再一次恢復兩排、高度、標題")
+        H.toggle()
+        reopen()
+        win = made[#made]
+        check(H.collapsed() == true and win.height == 24 and not win.children[2].visible, "快選列：重開讀回收合")
+        disk[HOTBAR] = "garbage\n"
+        reopen()
+        check(H.collapsed() == false, "快選列：讀不懂的 hotbar.txt 當展開")
+        win = made[#made]
+        g1, g2 = win.children[2], win.children[3]
+        -- 滑鼠：標題列按一下收合；拖動（按下到放開視窗動了）不算；按在標題列下面不算
+        win:onMouseDown(30, 5)
+        win.x = win.x + 40
+        win:onMouseUp(30, 5)
+        check(H.collapsed() == false and g1.visible and baseDown == 1 and baseUp == 1, "✗ 拖動標題列後放開不收合（框架照樣收到按下、放開）")
+        win:onMouseDown(30, 40)
+        win:onMouseUp(30, 40)
+        check(H.collapsed() == false, "✗ 按在標題列下面不收合")
+        win:onMouseDown(30, 5)
+        win:onMouseUp(30, 5)
+        check(H.collapsed() == true and win.height == 24, "快選列：標題列按一下（沒拖動）收合")
+        -- 收合中被拖到畫面最上面再展開：不跑出畫面
+        win.y = 0
+        win:onMouseDown(30, 5)
+        win:onMouseUp(30, 5)
+        check(H.collapsed() == false and win.y >= 0 and win.height == openH, "快選列：貼著畫面上緣展開，視窗不跑出畫面")
+        -- 手把：收合中按右搖桿（Hotbar.focus）先展開再拿焦點；焦點在快選列時再按＝收合並交回游標
+        Joypad = { RStickButton = 9, AButton = 1 }
+        H.toggle()
+        focus.took = 0
+        H.focus(0)
+        check(H.collapsed() == false and focus.took == 1 and g1.visible, "快選列：收合中 Hotbar.focus 先展開再拿焦點")
+        focus.released = 0
+        win:onJoypadDown(9, {})
+        check(H.collapsed() == true and focus.released == 1 and #baseJoy == 0, "快選列：焦點在快選列時按右搖桿＝收合並交回焦點")
+        win:onJoypadDown(1, {})
+        check(H.collapsed() == true and baseJoy[1] == 1, "✗ 其他鍵照原本交給框架、不切收合")
+        H.toggle()
+        -- 最近用的空的：第一排不佔位；兩排都空只剩標題列
+        recent = { n = 0 }
+        H.refresh()
+        check(not g1.visible and g2.visible and g2.y == 24 + 4 + 16 + 2, "快選列：最近用的是空的，只排第二排（排在最上面）")
+        recent = { n = 1, "r_1" }
+        H.refresh()
+        check(g1.visible and g2.visible and g2.y > g1.y, "✗ 有最近用的：兩排都排")
+        recent, set = { n = 0 }, nil
+        H.refresh()
+        check(not g1.visible and not g2.visible and win.height == 24, "快選列：兩排都空只剩標題列")
+        H.hide()
+        H.current = real.current
+    end
+
+    do -- 匯入框文字欄
+        B.PlanCheck = { item = function() return "ok" end }
+        local clip = ""
+        Clipboard = { getClipboard = function() return clip end, setClipboard = noop }
+        local function fieldOf(imp)
+            for _, c in ipairs(imp.win.children) do if c.field then return c end end
+            return nil
+        end
+        local function pasteBtnOf(imp)
+            for _, c in ipairs(imp.win.children) do if c.title == "IGUI_MBLD_Imp_Paste" then return c end end
+            return nil
+        end
+        UI.CAPABILITIES.textFieldSync = nil
+        L.import(0)
+        local imp = L.imp
+        local btn = pasteBtnOf(imp)
+        check(fieldOf(imp) == nil and imp.field == nil and btn ~= nil and imp.status.y == btn.y,
+            "✗ 框架沒有 textFieldSync：不建文字欄，貼上鈕與狀態行同一列（照舊）")
+        L.closeImport()
+        UI.CAPABILITIES.textFieldSync = true
+        L.import(0)
+        imp = L.imp
+        local f = fieldOf(imp)
+        btn = pasteBtnOf(imp)
+        check(f ~= nil and f.maxLength == imp.TYPE_MAX and imp.TYPE_MAX == 200 and btn and btn.y == f.y and btn.x > f.x
+            and imp.status.y > f.y and imp.status.y + imp.status.height <= imp.fileDD.y,
+            "有 textFieldSync：第一列文字欄＋貼上鈕，狀態行在第二列，不蓋到檔案清單")
+        local function typeIn(s) -- 原生框收到字（貼上、打字）：照框架同步呼叫 onTextChange
+            f.text = s
+            f.onTextChange(f, s)
+        end
+        typeIn(string.rep("A", 97746))
+        check(#f.text == 0 and imp.code == nil and imp.err == "IGUI_MBLD_Imp_TooLong" and imp.plan == nil,
+            "文字欄收到 97,746 字：框內清空、走太長的原因、不收")
+        local big = Plan.new("Big")
+        local i = 0
+        local code = PF.share(big, false)
+        while #code < 5000 do
+            i = i + 1
+            Plan.add(big, i % 60, math.floor(i / 60), 0, 0, 0, Plan.item(big, "hi_long_item_name_" .. i .. "_0"))
+            code = PF.share(big, false)
+        end
+        typeIn(code)
+        check(#code >= 5000 and #f.text == 0 and imp.code == code and imp.plan ~= nil and imp.plan.n == big.n and imp.err == nil,
+            "文字欄收到 5,000 字的合法碼：框內清空、碼照全文收下並檢查")
+        local small = Plan.new("S")
+        Plan.add(small, 0, 0, 0, 0, 0, Plan.item(small, "a_0"))
+        local short = PF.share(small, false)
+        typeIn(short)
+        check(#short <= 200 and f.text == short and imp.code == short and imp.plan ~= nil and imp.plan.name == "S",
+            "文字欄收到短的合法碼（" .. #short .. " 字）：留在框裡、直接採用")
+        typeIn(string.rep("x", 80))
+        check(imp.err == nil and imp.plan == nil and imp.code == nil and #f.text == 80, "✗ 打到一半的 80 字亂碼：不顯示錯誤")
+        imp:check()
+        check(imp.err ~= nil and imp.err:find("IGUI_MBLD_PlanErr_", 1, true) == 1 and imp.plan == nil, "按「檢查」才把框裡的字當分享碼、顯示錯誤")
+        clip = short
+        imp:paste()
+        check(f.text == "" and imp.code == short and imp.plan ~= nil, "貼上鈕照舊：清掉文字欄、收剪貼簿的碼")
+        typeIn("abc")
+        imp.fileDD.onChange(imp)
+        check(f.text == "" and imp.code == nil, "選資料夾裡的檔：清掉文字欄")
+        L.closeImport()
+        UI.CAPABILITIES.textFieldSync = nil
+        check(L.guessKind("ramps_01_0") == "ramp" and L.guessKind("ramps_01_72") == "ramp", "缺的圖照名稱猜種類：ramps_ 開頭猜坡道")
+    end
+
+    MinidoracatUI = nil -- 規劃工具列不出（同規劃那段）
+    W.ui = real.wui
+    local toasts = {}
+    B.Messages.toast = function(_, t) toasts[#toasts + 1] = t end
+    B.PlanCheck = { reset = noop, state = function() return nil end }
+    B.Runner = nil
+    local P = player({ x = 50.5, y = 50.5, z = 0 })
+    getSpecificPlayer = function(pn) return pn == 0 and P or nil end
+    local drags = {}
+    getCell = function()
+        local c = real.cell()
+        c.getDrag = function(_, pn) return drags[pn] end
+        c.setDrag = function(_, o, pn) drags[pn] = o end
+        return c
+    end
+
+    do -- 記錄多記名稱（PlanStore 檔、PM.restore）
+        local path = PS.DIR .. "/" .. PS.worldId() .. ".txt"
+        check(PS.nameKey("My hut 1") == "My_20hut_201" and PS.nameKey("") == "", "名稱代號：只剩英數與 _")
+        check(PS.save({ file = "alpha.txt", name = PS.nameKey("Alpha"), ox = 1, oy = 2, oz = 0, hidden = false, boxes = {}, seen = {} })
+            == true, "記錄寫得進去")
+        local st = PS.load()
+        check(st.file == "alpha.txt" and st.name == "Alpha" and st.ox == 1 and disk[path]:find("\nname\tAlpha\n", 1, true) ~= nil,
+            "記錄有 name 行：寫了讀得回來")
+        disk[path] = "MBLDWORLD\t1\nfile\talpha.txt\npos\t1\t2\t0\nhidden\t0\nEND\n"
+        st = PS.load()
+        check(st.file == "alpha.txt" and st.name == nil and st.ox == 1, "沒有 name 行的舊記錄照讀")
+        disk[path] = "MBLDWORLD\t1\nfile\talpha.txt\nname\tA\tB\nEND\n"
+        check(PS.load().file == nil, "✗ name 行格式不對：整份當壞檔")
+
+        local function planFile(file, name)
+            local p = Plan.new(name)
+            Plan.add(p, 0, 0, 0, 0, 0, Plan.item(p, "a_0"))
+            p.ox, p.oy, p.oz = 0, 0, 0
+            assert(PF.save(p, file))
+        end
+        local function record(file, name)
+            assert(PS.save({ file = file, name = name and PS.nameKey(name) or nil, ox = 10, oy = 10, oz = 0, boxes = {}, seen = {} }))
+        end
+        planFile("alpha.txt", "Alpha")
+        record("alpha.txt", "Alpha")
+        check(PM.restore() == true and PM.plan().name == "Alpha" and PM.origin() == 10, "restore：記錄的名稱和檔裡的一樣，照擺")
+        PM.plan().name = "Alpha two"
+        PM.save()
+        check(PS.load().name == PS.nameKey("Alpha two"), "存檔時記錄跟著寫名稱")
+        PM.retarget("alpha.txt", "alpha2.txt", "Renamed")
+        st = PS.load()
+        check(st.file == "alpha2.txt" and st.name == "Renamed", "藍圖庫改名：記錄的檔名與名稱一起改")
+        PM.clear()
+        record("alpha.txt", "Other")
+        toasts = {}
+        check(PM.restore() == false and PM.plan() == nil and toasts[1] == "IGUI_MBLD_PlanLost" and PS.load().file == nil
+            and PS.load().name == nil, "✗ 檔名被別張重用（名稱不同）：不擺、說藍圖不見了、清記錄")
+        planFile("alpha.txt", "Alpha") -- 上面存檔時檔裡的名稱改成了 Alpha two
+        record("alpha.txt", nil)
+        check(PM.restore() == true and PM.plan().name == "Alpha", "沒有名稱的舊記錄：照舊只看檔名")
+        PM.clear()
+        planFile("bravo2.txt", "Bravo")
+        record("bravo.txt", "Bravo")
+        check(PM.restore() == true and PM.plan().file == "bravo2.txt" and PS.load().file == "bravo2.txt"
+            and PS.load().name == "Bravo", "檔不在、剛好一個同名的檔：接回那個檔並存回記錄")
+        PM.clear()
+        planFile("twin1.txt", "Twin")
+        planFile("twin2.txt", "Twin")
+        record("twin.txt", "Twin")
+        toasts = {}
+        check(PM.restore() == false and PM.plan() == nil and toasts[1] == "IGUI_MBLD_PlanLost" and PS.load().file == nil,
+            "✗ 檔不在、同名的有兩個：不接，照舊說不見了並清記錄")
+        record("nobody.txt", "Nobody")
+        check(PM.restore() == false and PS.load().file == nil, "✗ 檔不在、沒有同名的：照舊說不見了")
+    end
+
+    do -- PM.addMany（屋頂助手整批加入）
+        local groups = { { id = "hi_roof_01_0", cells = { { 50, 50, 1, 0 }, { 51, 50, 1, 0 }, { 52, 50, 1, 0 } } },
+            { id = "hi_roof_01_8", cells = { { 50, 51, 1, 0 }, { 51, 51, 1, 0 } } } }
+        local n, why = PM.addMany(0, groups)
+        check(n == nil and why == "OFF", "✗ 規劃沒開：回 OFF")
+        PM.toggle(0)
+        local plan = PM.plan()
+        check(PM.addMany(0, groups) == 5 and plan.n == 5 and plan.items[Plan.at(plan, 0, 0, 1)[1].it].id == "hi_roof_01_0"
+            and plan.items[Plan.at(plan, 0, 1, 1)[1].it].id == "hi_roof_01_8", "addMany：兩組不同項目一次加入")
+        check(PM.undo() and plan.n == 0 and not PM.undo(), "addMany：整批是一步，上一步一次全收回")
+        local a, b = {}, {}
+        for k = 0, 3999 do a[#a + 1] = { 50 + k % 64, 50 + math.floor(k / 64), 0, 0 } end
+        for k = 0, 96 do b[#b + 1] = { 50 + k % 64, 50 + math.floor(k / 64), 1, 0 } end
+        check(PM.overflow(plan, a, "hi_a_01_0", 0) == nil and PM.overflow(plan, b, "hi_b_01_0", 0) == nil,
+            "（前提）兩組各自都不超過上限")
+        n, why = PM.addMany(0, { { id = "hi_a_01_0", cells = a }, { id = "hi_b_01_0", cells = b } })
+        check(n == nil and why == "FULL" and plan.n == 0, "✗ 合起來超過 4,096 片：回 FULL、一片都不加")
+        n, why = PM.addMany(0, { groups[1], { id = "hi_c_01_0", cells = { { 50 + 70, 50, 1, 0 } } } })
+        check(n == nil and why == "TOO_WIDE" and plan.n == 0, "✗ 合起來超過每邊 64 格：回 TOO_WIDE、一片都不加")
+        PM.toggle(0)
+        check(PM.plan() == nil and PM.state() == "none", "（收尾）空的藍圖關掉規劃就丟掉")
+    end
+
+    do -- 坡道片轉向（假的 Entry：一組坡道頭片四個方向 1..4＝北東南西）
+        local heads = { "ramps_01_0", "ramps_01_72", "ramps_01_24", "ramps_01_48" }
+        local sprOf = {}
+        for _, h in ipairs(heads) do sprOf[h] = { getName = function() return h end } end
+        local missing = {}
+        B.Entry.resolve = function(id)
+            if sprOf[id] then return { kind = "ramp", name = id, spr = sprOf[id] } end
+            return real.resolve(id)
+        end
+        B.Entry.face = function(entry, d)
+            if entry.kind ~= "ramp" then return real.face(entry, d) end
+            if d == 0 then return entry.spr end
+            if missing[d] then return nil end
+            return sprOf[heads[d]]
+        end
+        local plan = Plan.new("R")
+        local it = Plan.item(plan, "ramps_01_0")
+        Plan.add(plan, 0, 0, 0, 0, 0, it)
+        Plan.add(plan, 3, 0, 0, 0, 0, it)
+        local function pieces()
+            local out = {}
+            Plan.each(plan, function(p) out[#out + 1] = p end)
+            table.sort(out, function(p, q) return p.x * 100 + p.y < q.x * 100 + q.y end)
+            return out
+        end
+        Plan.rotate(plan, pieces(), PM.turnPiece)
+        local ps = pieces()
+        check(ps[1].x == 0 and ps[1].y == 0 and ps[2].x == 0 and ps[2].y == 3 and ps[1].d == 2 and ps[2].d == 2,
+            "坡道：朝北的一組轉一次變朝東（d＝2），位置跟著轉")
+        for _ = 1, 3 do Plan.rotate(plan, pieces(), PM.turnPiece) end
+        ps = pieces()
+        check(ps[1].x == 0 and ps[1].y == 0 and ps[2].x == 3 and ps[2].y == 0 and ps[1].d == 0 and ps[2].d == 0,
+            "坡道：轉四次回原樣（朝向記回 0）")
+        missing[2] = true
+        check(PM.turnPiece({ d = 0 }, { id = "ramps_01_0" }) == nil, "✗ 圖塊組沒有下一個方向的坡道：回 nil")
+    end
+
+    for k in pairs(B.Cursor.hook) do B.Cursor.hook[k] = nil end
+    for k, v in pairs(real.hook) do B.Cursor.hook[k] = v end
+    getFileReader, getFileWriter, listFilesInZomboidLuaDirectory = real.reader, real.writer, real.list
+    MinidoracatUI, ISPanel, getTextManager, UIFont = real.ui, real.panel, real.tm, real.font
+    getPlayerScreenTop, getPlayerScreenLeft, getPlayerScreenWidth, getPlayerScreenHeight = real.top, real.left, real.sw, real.sh
+    getText, getWorld, getCore, getSpecificPlayer, getCell = real.text, real.world, real.core, real.spec, real.cell
+    Joypad, Clipboard, W.ui, H.current, W.setOf = real.joypad, real.clip, real.wui, real.current, real.setOf
+    B.Recipes, B.Recent.list, B.PlanCheck, B.Messages.toast, B.Runner = real.recipes, real.recent, real.PC, real.toast, real.runner
+    B.Entry.resolve, B.Entry.face = real.resolve, real.face
+    L.imp = nil
+end)()
+
+-- ===== 介面零星（WindowMisc） =====
+print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進樓梯頁籤；只看能蓋的留邊；停用頁籤提示；復原圖示；屋頂助手鈕")
+;(function()
+    local B = MinidoracatBuilder
+    local W, Entry = B.Window, B.Entry
+    local noop = function() end
+    local real = { ui = MinidoracatUI, panel = ISPanel, tm = getTextManager, font = UIFont, top = getPlayerScreenTop,
+        left = getPlayerScreenLeft, sw = getPlayerScreenWidth, sh = getPlayerScreenHeight, v = W.v, wui = W.ui,
+        rampSet = Entry.rampSet, roofPanel = B.RoofPanel, kindLight = SandboxVars.MinidoracatBuilder.KindLight,
+        tab = W.st.tab, sel = W.st.cat, query = W.st.query, source = W.st.source }
+
+    -- 子種類：照圖塊組名（只看名稱，不查圖）
+    local function all(kind, cases)
+        local bad = {}
+        for name, want in pairs(cases) do
+            local got = W.subOf(kind, nil, name)
+            if got ~= want then bad[#bad + 1] = name .. "→" .. tostring(got) end
+        end
+        return #bad == 0, table.concat(bad, ", ")
+    end
+    local ok, why = all("roof", {
+        roofs_30_01_5 = "slope30", roofs_30_10_89 = "slope30", roofs_burnt_30_01_3 = "slope30", roofs_accents_30_01_2 = "slope30",
+        roofs_01_3 = "slope45", roofs_05_120 = "slope45", roofs_burnt_01_2 = "slope45", ROOFS_03_1 = "slope45",
+        roofs_shallow_01_3 = "shallow",
+        pineville_roofs_01_3 = "other", roofs_ddd_03_1 = "other", roofs_accents_01_2 = "other", industry_bunker_01_0 = "other",
+        e_roof_snow_1_3 = "other", ["recipe:Base.Thing"] = "other",
+    })
+    check(ok, "子種類（屋頂）：_30_ 是 30 度、列出的原版組是 45 度、shallow 是緩坡；✗ 名稱只是包含 roofs_01 的組、沒列的組歸其他 " .. why)
+    ok, why = all("doorFrame", {
+        walls_interior_house_01_5 = "interiorWall", walls_exterior_house_05_3 = "exteriorWall", walls_logs_1 = "woodWall",
+        location_shop_mall_01_2 = "commercial", pert_walls_01_0 = "other", fixtures_doors_frames_01_3 = "other",
+    })
+    check(ok, "子種類（門框）：照牆的關鍵字（室內、外牆、木牆、商用），認不出的歸其他 " .. why)
+    ok, why = all("windowFrame", {
+        walls_exterior_wooden_02_4 = "woodWall", walls_interior_house_06_9 = "interiorWall", walls_exterior_house_13_7 = "exteriorWall",
+        location_trailer_01_3 = "commercial", walls_double_window_ddd_01_2 = "other",
+    })
+    check(ok, "子種類（窗框）：照牆的關鍵字，認不出的歸其他 " .. why)
+    ok, why = all("wall", { walls_exterior_roofs_01_3 = "gable", location_barn_01_7 = "woodWall", roofs_01_3 = "gable",
+        walls_interior_house_01_5 = "interiorWall" })
+    local ok2, why2 = all("floor", { roofs_01_22 = "flatRoof", pineville_roofs_09_3 = "flatRoof", ramps_01_23 = "other",
+        floors_interior_carpet_01_3 = "indoorFloor" })
+    check(ok and ok2, "✗ 牆、地板既有的子種類不變（roofs_01 在牆是山牆、在地板是平屋頂：45 度的組名清單只給屋頂用）" .. why .. why2)
+    check(W.SUB_KINDS.doorFrame == W.SUB_KINDS.wall and W.SUB_KINDS.windowFrame == W.SUB_KINDS.wall
+        and table.concat(W.SUB_KINDS.roof, ",") == "slope30,slope45,shallow,other",
+        "門框、窗框和牆同一組子種類與標籤；屋頂照 30 度、45 度、緩坡、其他的順序列")
+    do -- runSubs：屋頂也只看名稱，不查圖；沒有的子種類（門框沒有山牆）不列
+        local realSprite, realRefilter, realSt = Entry.sprite, W.refilter, W.st
+        local looked = 0
+        Entry.sprite = function(...) looked = looked + 1 return realSprite(...) end
+        W.st = { query = "", tab = "all", cat = "all", source = "all", recent = { n = 0 } }
+        W.refilter = noop
+        local v = { nav = { setGroups = noop, setSelected = noop }, cat = { setOptions = noop, setSelected = noop }, subs = {} }
+        W.v = v
+        local names = { n = 5, "roofs_shallow_01_0", "roofs_01_3", "roofs_30_02_1", "roofs_30_02_2", "pert_roofs_01_4" }
+        v.subJob = { kind = "roof", src = "all", list = names, i = 0, of = {} }
+        local okRun = pcall(W.runSubs, v)
+        local frames = { n = 3, "walls_interior_house_01_1", "location_shop_mall_01_0", "walls_interior_house_02_3" }
+        v.subJob = { kind = "doorFrame", src = "all", list = frames, i = 0, of = {} }
+        local okRun2 = pcall(W.runSubs, v)
+        Entry.sprite, W.refilter, W.st = realSprite, realRefilter, realSt
+        local function ids(k)
+            local out = {}
+            for i, it in ipairs(v.subs[k] and v.subs[k].items or {}) do out[i] = it.id .. "=" .. it.n end
+            return table.concat(out, ",")
+        end
+        check(okRun and okRun2 and looked == 0 and ids("roof") == "slope30=2,slope45=1,shallow=1,other=1"
+            and ids("doorFrame") == "interiorWall=2,commercial=1",
+            "屋頂、門框的子種類：不查圖、照顯示順序列、沒有的不列 " .. ids("roof") .. " / " .. ids("doorFrame"))
+    end
+
+    -- 坡道進「樓梯與坡道」頁籤（Entry.KINDS 有 ramp 時「每個種類都在某個頁籤」那項也會過）
+    local inStairs, inAll = false, false
+    for _, k in ipairs(W.TAB_KINDS.stairs) do inStairs = inStairs or k == "ramp" end
+    for _, k in ipairs(W.TAB_KINDS.all) do inAll = inAll or k == "ramp" end
+    check(inStairs and inAll, "坡道在樓梯頁籤，也在「全部」裡")
+
+    -- 佔地：坡道照上坡方向是 n×1 或 1×n（Entry.rampSet 是 P1 的，晚綁定；這裡用假的）
+    local rampSpr = sprite("ramps_01_0", 9901)
+    local plain = sprite("plain_01_0", 9902)
+    Entry.rampSet = function(spr)
+        if spr == rampSpr then return { dir = "N", dx = 0, dy = -1, n = 20, parts = {}, deck = "ramps_01_23" } end
+        return nil
+    end
+    local fw1, fd1 = W.footprint(rampSpr, "ramp")
+    Entry.rampSet = function() return { dir = "W", dx = -1, dy = 0, n = 20, parts = {}, deck = "ramps_01_23" } end
+    local fw2, fd2 = W.footprint(rampSpr, "ramp")
+    local fw3, fd3 = W.footprint(plain, "floor") -- 不是坡道不問 rampSet
+    Entry.rampSet = nil
+    local fw4, fd4 = W.footprint(rampSpr, "ramp") -- 坡道模組還沒有 rampSet：照一般 1×1
+    Entry.rampSet = real.rampSet -- Entry.cells 也用它：後面的詳情測試要真的
+    check(fw1 == 1 and fd1 == 20 and fw2 == 20 and fd2 == 1 and fw3 == 1 and fd3 == 1 and fw4 == 1 and fd4 == 1,
+        "詳情的佔地：坡道南北向 1×20、東西向 20×1；✗ 別的種類、沒有 Entry.rampSet 時照 1×1")
+
+    -- 停用頁籤的提示：框架有 tabsItemTooltip 才呼叫 setItemTooltip
+    do
+        local tabs = { on = {}, tips = {}, calls = 0 }
+        function tabs.setItemEnabled(s, id, on) s.on[id] = on end
+        function tabs.setItemTooltip(s, id, t)
+            s.calls = s.calls + 1
+            s.tips[id] = t or false
+        end
+        tabs.setSelected = noop
+        local v = { UI = { CAPABILITIES = {} }, tabs = tabs }
+        SandboxVars.MinidoracatBuilder.KindLight = false
+        local okOld = pcall(W.refreshTabs, v)
+        check(okOld and tabs.on.light == false and tabs.calls == 0,
+            "✗ 框架沒有 tabsItemTooltip：照樣停用頁籤，不呼叫 setItemTooltip、不出錯")
+        v.UI.CAPABILITIES.tabsItemTooltip = true
+        W.refreshTabs(v)
+        check(tabs.on.light == false and tabs.tips.light == "IGUI_MBLD_TabOff_Tip" and tabs.tips.floor == false,
+            "有 tabsItemTooltip：停用的頁籤收到提示，啟用的收到 nil")
+        SandboxVars.MinidoracatBuilder.KindLight = nil
+        W.refreshTabs(v)
+        check(tabs.on.light == true and tabs.tips.light == false, "頁籤重新啟用：提示清成 nil")
+    end
+
+    -- 用假的框架建一次視窗：復原圖示、只看能蓋的留邊、屋頂助手鈕
+    local col = { r = 1, g = 1, b = 1, a = 1 }
+    local M = {}
+    function M.setX(s, x) s.x = x end
+    function M.setY(s, y) s.y = y end
+    function M.setWidth(s, w) s.width = w end
+    function M.setHeight(s, h) s.height = h end
+    function M.getWidth(s) return s.width end
+    function M.getHeight(s) return s.height end
+    function M.getX(s) return s.x end
+    function M.getY(s) return s.y end
+    function M.perRow() return 1 end
+    function M.setVisible(s, on) s.visible = on end
+    function M.getIsVisible(s) return s.visible end
+    function M.setTitle(s, t) s.title = t end
+    function M.setEnabled(s, on) s.enabled = on end
+    function M.fitWidth(s) s.width = #(s.title or "") * 7 + 20 + (s.icon and 22 or 0) end
+    function M.addChild(s, c)
+        s.children[#s.children + 1] = c
+        c.parent = s
+    end
+    function M.contentTop() return 24 end
+    function M.contentWidth(s) return s.width - 12 end
+    function M.getItems(s) return s.items end
+    function M.setItems(s, items) s.items = items end
+    local function el(o)
+        o.x, o.y, o.width, o.height = o.x or 0, o.y or 0, o.width or 100, o.height or 24
+        o.children, o.visible, o.items = {}, true, o.items or { n = 0 }
+        return setmetatable(o, { __index = function(_, k) return M[k] or noop end })
+    end
+    local inval = 0
+    local UI = { API_MAJOR = 1, API_REVISION = 27, CAPABILITIES = { opaqueWindow = true },
+        Theme = { create = function() return { colors = setmetatable({}, { __index = function() return col end }) } end },
+        Text = { fit = function(s) return s end, wrap = function(s) return { s } end },
+        Focus = { invalidate = function() inval = inval + 1 end },
+        Window = { new = function(o)
+            return el({ x = o.x, y = o.y, width = o.width, height = o.height, minWidth = o.minWidth, minHeight = o.minHeight })
+        end },
+        Button = { new = function(o)
+            local b = el({ width = o.width, height = o.height, title = o.title, icon = o.icon, style = o.style })
+            if not o.width then b:fitWidth() end
+            return b
+        end },
+        TextField = { new = function(o) return el({ width = o.width }) end },
+        Dropdown = { new = function(o) return el({ width = o.width or 120 }) end, close = noop },
+        Checkbox = { new = function(o) return el({ width = 42 + #o.label * 7, height = 20, label = o.label }) end },
+        SliderRow = { new = function(o) return el({ width = o.width }) end },
+        Tabs = { new = function(o)
+            local w = 0
+            for _, it in ipairs(o.items) do w = w + #it.label * 7 + 24 end
+            return el({ width = w, height = 26 })
+        end },
+        NavList = { new = function(o) return el({ width = o.width }) end },
+        ScrollPanel = { new = function(o) return el({ width = o.width, height = o.height }) end },
+        TileGrid = { new = function(o) return el({ width = o.width, height = o.height, rowHeight = 50, scrollOffset = 0 }) end } }
+    MinidoracatUI = { v1 = UI }
+    W.ui = function() return UI end
+    ISPanel = { new = function(_, x, y, w, h) return el({ x = x, y = y, width = w, height = h }) end }
+    UIFont = UIFont or { Small = 0, Medium = 1 }
+    getTextManager = function()
+        return { getFontHeight = function() return 16 end, MeasureStringX = function(_, _, s) return #s * 7 end }
+    end
+    getPlayerScreenTop, getPlayerScreenLeft = function() return 0 end, function() return 0 end
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 1920 end, function() return 1080 end
+    W.st.tab, W.st.cat, W.st.query, W.st.source = "all", "all", "", "all"
+    W.v = nil
+    local okC, v27 = pcall(W.create, UI)
+    check(okC and v27.undoBtn.icon == "reload", "復原圖示：框架 rev 27 照舊用 reload " .. tostring(okC and "" or v27))
+    UI.API_REVISION = 28
+    W.v = nil
+    local okC2, v = pcall(W.create, UI)
+    check(okC2 and v.undoBtn.icon == "undo", "復原圖示：框架 rev 28 用 undo " .. tostring(okC2 and "" or v))
+
+    if okC2 then
+        -- 「只看能蓋的」：三種排法（第一列靠右、滑桿那一列、自己一列）字的右緣都離內容區右邊至少 6 px
+        local PAD = 8
+        local function place(ww, wh)
+            v.win.width, v.win.height = ww, wh
+            W.layout()
+            local o, row = v.only, "row4"
+            if o.y < v.rowSlider.y then row = "row1" elseif o.y < v.tabs.y then row = "slider" end
+            return row, ww - PAD - (o.x + o.width)
+        end
+        local r1, m1 = place(1100, 700)
+        local r2, m2 = place(700, 400)
+        local r3, m3 = place(380, 400)
+        check(r1 == "row1" and r2 == "slider" and r3 == "row4" and m1 >= 6 and m2 >= 6 and m3 >= 6,
+            "只看能蓋的：三種排法右邊都留至少 6 px（" .. r1 .. " " .. m1 .. "、" .. r2 .. " " .. m2 .. "、" .. r3 .. " " .. m3 .. "）")
+
+        -- 屋頂助手鈕：選著屋頂、而且 RoofPanel.available 回 true 才有，占整套鈕的位置
+        world({ sprite("roofs_01_3", 9903, { type = T.WestRoofB, keys = { RoofGroup = "1" } }),
+            sprite("walls_interior_house_01_1", 9904, { type = T.wall, flags = { "collideW", "cutW" } }) })
+        local realTex, realSM = getTexture, getScriptManager
+        getTexture = function() return nil end -- 詳情的預覽圖、材料圖示：沒有貼圖
+        getScriptManager = function()
+            return setmetatable({ FindItem = function() return nil end }, { __index = realSM and realSM() or nil })
+        end
+        place(1100, 700)
+        local okAll = true
+        local function pick(name) -- 回：屋頂助手鈕出現、整套鈕藏起來
+            v.selName = name
+            local okP, err = pcall(W.prepareDetail, v)
+            if not okP then print("    prepareDetail: " .. tostring(err)) end
+            okAll = okAll and okP
+            return v.roofBtn.visible == true and v.setBtn.visible == false
+        end
+        B.RoofPanel = nil
+        local noPanel = pick("roofs_01_3")
+        local asked
+        B.RoofPanel = { available = function(name) asked = name return false end, open = noop }
+        v.setKey = nil
+        local notAvail = pick("roofs_01_3")
+        local opened
+        B.RoofPanel = { available = function() return true end, open = function(pn, name) opened = { pn, name } end }
+        v.setKey = nil
+        inval = 0
+        local shown = pick("roofs_01_3")
+        local sameSpot = v.roofBtn.x == v.setBtn.x and v.roofBtn.y == v.setBtn.y and v.roofBtn.width == v.setBtn.width
+        local order = 0
+        for i, c in ipairs(v.win.children) do
+            if c == v.setBtn then order = i elseif c == v.roofBtn then order = order > 0 and i - order or -1 end
+        end
+        W.openRoof()
+        local wall = pick("walls_interior_house_01_1")
+        local setBack = v.setBtn.visible == true
+        check(okAll and not noPanel and not notAvail and asked == "roofs_01_3",
+            "✗ 沒有 RoofPanel、或 available 回 false：詳情沒有屋頂助手鈕（整套鈕照舊在）")
+        check(okAll and shown and sameSpot and order == 1 and inval >= 1 and opened and opened[1] == W.playerNum
+            and opened[2] == "roofs_01_3",
+            "屋頂助手鈕：available 回 true 才出現、占整套鈕那一格、焦點順序緊跟在它後面；按下開 RoofPanel.open(玩家, 名稱)")
+        check(okAll and not wall and setBack, "✗ 換到不是屋頂的項目：屋頂助手鈕收起、整套鈕回來")
+        place(380, 400) -- 窄版：屋頂助手和整套一樣只放圖示
+        v.setKey = nil
+        local narrowShown = pick("roofs_01_3")
+        check(okAll and narrowShown and v.mode == "narrow" and v.roofBtn.title == "" and v.roofBtn.width == v.buildBtn.height
+            and v.roofBtn.x == v.setBtn.x and v.roofBtn.y == v.setBtn.y, "窄版：屋頂助手鈕只有圖示、在整套鈕的位置")
+        getTexture, getScriptManager = realTex, realSM
+    end
+
+    MinidoracatUI, ISPanel, getTextManager, UIFont = real.ui, real.panel, real.tm, real.font
+    getPlayerScreenTop, getPlayerScreenLeft, getPlayerScreenWidth, getPlayerScreenHeight = real.top, real.left, real.sw, real.sh
+    W.v, W.ui, Entry.rampSet, B.RoofPanel = real.v, real.wui, real.rampSet, real.roofPanel
+    SandboxVars.MinidoracatBuilder.KindLight = real.kindLight
+    W.st.tab, W.st.cat, W.st.query, W.st.source = real.tab, real.sel, real.query, real.source
 end)()
 
 print()

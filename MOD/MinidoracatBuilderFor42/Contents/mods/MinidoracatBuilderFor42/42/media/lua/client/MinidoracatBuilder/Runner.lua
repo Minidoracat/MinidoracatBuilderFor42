@@ -24,15 +24,18 @@ local WAIT_MS = 3000   -- 挑批時還有片沒算出狀態（PlanCheck 分幀�
 local RETRY_MS = 250   -- 等狀態時多久再挑一次
 local SETTLE_MS = 300  -- 拿料的動作佇列空了這麼久才看拿到沒有
 local SETTLE_END_MS = 2000 -- 一批蓋完後 PlanCheck 分幀重查四鄰與上一層：這段時間內挑不到不算蓋完，等重查完再挑
+-- PlanCheck.busy() 時挑不到片最多等多久（這一輪第一次因它延後起算，挑到片就歸零）：身邊的片會定時重排，萬一一直排不空，
+-- 超過就照沒在重排的路徑結束，不讓照圖蓋停在挑片看不出原因
+Runner.BUSY_MAX_MS = 10000
 local RECIPE = "recipe:"
 local NAILS, NAILS_BOX, PER_BOX = "Base.Nails", "Base.NailsBox", 100 -- 同 Materials：釘子盒一盒算 100 根
 
--- 六段順序：地板與地面覆蓋 → 牆、柱、門框、窗框、柵欄 → 樓梯 → 門、窗、窗簾 → 屋頂 → 家具、容器、燈、掛牆物與其他。
+-- 六段順序：地板與地面覆蓋 → 牆、柱、門框、窗框、柵欄 → 樓梯、坡道 → 門、窗、窗簾 → 屋頂 → 家具、容器、燈、掛牆物與其他。
 -- 鍵＝Rules 的種類（Entry.KINDS）；車庫門、雙開門歸 door，配方項目照 Recipes 的 kind。harness 檢查每個種類都有段。
 Runner.SEGMENT = {
     floor = 1, floorOverlay = 1, water = 1,
     wall = 2, fence = 2, post = 2, doorFrame = 2, windowFrame = 2,
-    stairs = 3,
+    stairs = 3, ramp = 3,
     door = 4, window = 4, curtain = 4, windowObject = 4,
     roof = 5,
     furniture = 6, container = 6, solid = 6, well = 6, light = 6, wallObject = 6, wallOverlay = 6, attached = 6,
@@ -616,18 +619,20 @@ local function pickBatch(player, plan)
     end
     st.waitFrom = nil
     if not best then return nil end
-    local garage = false
+    local garage, one = false, false
     if best.id:sub(1, #RECIPE) ~= RECIPE then
         local e = Entry.resolve(best.id)
         local set = e and e.kind == "door" and Entry.doorSet(e.spr)
         garage = set and set.garage or false
+        one = garage or (e and e.kind == "ramp") or false
         if garage and not best.w then
             skip(best.p, "GARAGE_WIDTH")
             return "again"
         end
     end
-    -- 同項目、同層、同疊放值最近的幾片（逐筆插入，最多 max 片）。車庫門一扇一次（伺服器只收一個錨點，Doors 的回報）
-    local max = garage and 1 or perBatch()
+    -- 同項目、同層、同疊放值最近的幾片（逐筆插入，最多 max 片）。車庫門一扇、坡道一組一次（伺服器只收一個錨點，
+    -- 多個回 BAD_REQUEST）
+    local max = one and 1 or perBatch()
     local list = {}
     for _, c in ipairs(cand) do
         if c.id == best.id and c.z == best.z and c.o == best.o then
@@ -866,7 +871,16 @@ local function pick(player, plan)
         return
     end
     if b == "again" then return end
-    if not b and st.lastDone and t >= st.lastDone and t - st.lastDone < SETTLE_END_MS then
+    if b then st.busyFrom = nil end
+    -- 一批蓋完後的寬限內、或 PlanCheck 還在重排或待算（重排中的片 state 還是舊的）：挑不到不算蓋完，稍後再挑
+    local PC = planCheck()
+    local busy = not b and PC.busy and PC.busy()
+    if busy then
+        st.busyFrom = st.busyFrom or t
+        if t < st.busyFrom then st.busyFrom = t end -- 時鐘往回調
+        busy = t - st.busyFrom < Runner.BUSY_MAX_MS
+    end
+    if not b and ((st.lastDone and t >= st.lastDone and t - st.lastDone < SETTLE_END_MS) or busy) then
         st.nextPick = t + RETRY_MS
         return
     end
@@ -923,6 +937,7 @@ function Runner.start(player)
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
     st.later = {}
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
+    st.busyFrom = nil
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     local boxes, any = #Runner.boxes() > 0, false
     B.Plan.each(plan, function(p)
@@ -931,6 +946,7 @@ function Runner.start(player)
         if s == nil or s == "ok" or (s == "short" and boxes) then any = true end
     end)
     if not any and standingOn(player, plan) then any = true end -- 只剩腳下那一片：走開就能蓋
+    if not any and PC.busy and PC.busy() then any = true end -- 還在重排或待算：開始後挑不到會等它算完
     if not any then
         summary, summaryAt = buildSummary(), getTimestampMs()
         return nil, "NOTHING"

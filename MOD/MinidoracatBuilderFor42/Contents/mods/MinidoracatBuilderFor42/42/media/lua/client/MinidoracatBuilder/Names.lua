@@ -52,6 +52,9 @@ local function compose(name, kind, short)
     if r then return r.name end
     local spr = Entry.sprite(name)
     if not spr then return name end
+    -- 坡道的其他片（拆除選單、一區拆除列的是被點的那片）照那一組的頭片叫，和目錄同一個名稱
+    local head = Entry.rampHead(name)
+    if head and head ~= name then return compose(head, "ramp", short) end
     local p = spr:getProperties()
     local custom, shown = p:get("CustomName"), nil
     if custom then
@@ -79,6 +82,8 @@ local function compose(name, kind, short)
     if Rules.typeCode(t) == "stairs" then -- 樓梯沒有朝向可選，各組只有一個方向：名稱帶往哪邊爬
         shown = shown .. getText("IGUI_MBLD_Sep") .. Names.face(Rules.westStairs(t) and 4 or 1)
     end
+    local ramp = Entry.rampSet(spr) -- 坡道各方向是不同的頭片：名稱帶往哪邊爬
+    if ramp then shown = shown .. getText("IGUI_MBLD_Sep") .. Names.face(ramp.d) end
     return shown
 end
 

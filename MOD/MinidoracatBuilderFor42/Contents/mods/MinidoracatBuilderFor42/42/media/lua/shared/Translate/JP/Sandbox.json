@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "スロープ",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "長さ 20 タイルで 1 階分上がるスロープ。人も車も通れます。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "設計図からの建築を許可",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "オンにすると、プレイヤーは設置した設計図をキャラクターに 1 パーツずつ建てさせたり、指定した材料箱から材料を取りに行かせたりできます。各パーツは手で建てるときと同じく、距離、セーフハウス、材料、スキルを確認します。\nオフにすると設計図からの建築は開始できません。設計図の計画と材料リストは引き続き使えます。",
     "Sandbox_MinidoracatBuilder": "Minidoracat 自由建築",

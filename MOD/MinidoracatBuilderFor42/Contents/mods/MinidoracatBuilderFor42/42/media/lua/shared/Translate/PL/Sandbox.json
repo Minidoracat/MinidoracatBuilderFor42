@@ -1,4 +1,6 @@
 {
+    "Sandbox_MinidoracatBuilder_KindRamp": "Rampa",
+    "Sandbox_MinidoracatBuilder_KindRamp_tooltip": "Rampa o długości 20 pól, wznosi się o jeden poziom; mogą z niej korzystać ludzie i pojazdy.\nWyłączone: gracze tego nie widzą i nie mogą tego budować. To, co już zbudowano, zostaje i nadal można to rozmontować.",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild": "Zezwól na budowanie według projektu",
     "Sandbox_MinidoracatBuilder_AllowAutoBuild_tooltip": "Gdy włączone, gracze mogą kazać postaci budować postawiony projekt element po elemencie i pobierać materiały z wybranych skrzyń. Każdy element nadal jest sprawdzany pod kątem odległości, schronienia, materiałów i umiejętności, tak jak przy budowaniu ręcznym.\nGdy wyłączone, budowanie według projektu się nie uruchomi. Planowanie projektów i lista materiałów nadal działają.",
     "Sandbox_MinidoracatBuilder": "Minidoracat Build Anything",
