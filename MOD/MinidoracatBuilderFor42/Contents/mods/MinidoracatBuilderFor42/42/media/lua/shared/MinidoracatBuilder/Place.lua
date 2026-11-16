@@ -1271,13 +1271,39 @@ function Place.clearDirt(kind, cells)
     end
 end
 
+-- 本 MOD 蓋的雙開門開關時，第 2、3 片換成耐久照預設的新物件（IsoDoor.java:2715-2745）：沙盒「殭屍敲不破門」開著的話，
+-- 下一個 tick（新的片建好之後）照第一片找回這兩片、補回耐久。兩端各自做（同 Place.migrate）；補完就摘掉 tick
+do
+    local pending = {}
+    local function flush()
+        Events.OnTick.Remove(flush)
+        local list = pending
+        pending = {}
+        for _, a in ipairs(list) do
+            if a:getSquare() then
+                for i = 2, 3 do
+                    local o = IsoDoor.getDoubleDoorObject(a, i)
+                    if o then Place.harden(o) end
+                end
+            end
+        end
+    end
+    function Place.reharden(obj)
+        if not proof("ZombieProofDoors") then return end
+        local a = Place.doorAnchor(obj)
+        if not (a and a:hasModData() and a:getModData().builderEntry) or pending[#pending] == a then return end
+        if #pending == 0 then Events.OnTick.Add(flush) end
+        pending[#pending + 1] = a
+    end
+end
+
 -- 移出世界前：
 --   掛著圖的那一件（地板、牆）：圖跟著消失，覆蓋帳本清掉那一件的（只在伺服器，Overlays.drop）。
 --   IsoThumpable：一樓以下的地板清掉這一格的地板帳本（不管是不是本 MOD 蓋的）；本 MOD 蓋的清掉退料表：
 --     原版拆解、打壞都先讀退料表再移除（ISMoveableSpriteProps.lua:4323-4357、ISBuildingObject.lua:51-69），已經移除的
 --     物件不該再退料。
 --   車庫門任何一片、雙開門第 1、4 片（拆、砸、殭屍打壞、原版拆解）：整組那一筆帳本清掉，剩下的片不再退料（只在伺服器）。
---     雙開門第 2、3 片開關時會被移除再重建（IsoDoor.java:2650-2754），不算。
+--     雙開門第 2、3 片開關時會被移除再重建（IsoDoor.java:2650-2754），不算；重建的片耐久照預設，交給 Place.reharden。
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
@@ -1285,7 +1311,8 @@ function Place.onAboutToBeRemoved(obj)
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
     if instanceof(obj, "IsoDoor") then
         local Ledger, i = MinidoracatBuilder.Ledger, IsoDoor.getDoubleDoorIndex(obj)
-        local a = Ledger and i ~= 2 and i ~= 3 and Place.doorAnchor(obj)
+        if i == 2 or i == 3 then return Place.reharden(obj) end
+        local a = Ledger and Place.doorAnchor(obj)
         if a then Ledger.forgetDoor(a) end
         return
     end
@@ -1409,7 +1436,7 @@ end
 function Place.migrate(obj)
     if not (obj:hasModData() and obj:getModData().builderEntry) then
         -- 雙開門第 2、3 片開關過就換成沒記號、耐久照預設的新物件（IsoDoor.java:2738-2742）：照第一片認，讀檔時重套「殭屍敲不破門」
-        -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）
+        -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）；同一場裡開關的由 Place.reharden 補
         if instanceof(obj, "IsoDoor") and Place.ourDoor(obj) then Place.harden(obj) end
         return
     end
