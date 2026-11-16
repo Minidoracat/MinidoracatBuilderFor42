@@ -136,18 +136,24 @@ end
 
 -- ---------------------------------------------------------------- 總結
 
--- 沒蓋的片：{ left, short＝{ n, need＝{ [fullType]＝還差幾個 }, tools＝{ 缺的工具標籤 } }, blocked＝{ [碼]＝片數 },
+-- 整張藍圖：{ n＝片數, done＝蓋好的（PlanCheck 算出蓋好的，或這一輪送出後伺服器回蓋好、PlanCheck 還沒重查的）, left＝沒蓋的,
+-- short＝{ n, need＝{ [fullType]＝還差幾個 }, tools＝{ 缺的工具標籤 } }, blocked＝{ [碼]＝片數 },
 -- skill＝{ n, perks＝{ [技能]＝要幾級 } }, boxes＝{ [第幾個材料箱]＝跳過的原因 } }
 local function buildSummary()
     local PM, PC = B.PlanMode, planCheck()
     local plan = PM and PM.plan and PM.plan()
-    local out = { left = 0, short = { n = 0, need = {}, tools = {} }, blocked = {}, skill = { n = 0, perks = {} }, boxes = {} }
+    local out = { n = 0, done = 0, left = 0, short = { n = 0, need = {}, tools = {} }, blocked = {}, skill = { n = 0, perks = {} },
+        boxes = {} }
     for i, why in pairs(st.badIndex or {}) do out.boxes[i] = why end
     if not (plan and PC and PC.state) then return out end
     local P = B.Plan
     P.each(plan, function(p)
         local state, detail = PC.state(p)
-        if state == "done" or st.placed[p] then return end
+        out.n = out.n + 1
+        if state == "done" or st.placed[p] then
+            out.done = out.done + 1
+            return
+        end
         out.left = out.left + 1
         local sk = st.skip[p]
         local code = sk and sk.code
@@ -241,15 +247,19 @@ local function halt(state, code, detail, extra, quiet)
     if not active() and st.state ~= "paused" then return end
     cancelOurs()
     st.state, st.reason, st.detail, st.extra = state, code, detail, extra
-    summary, summaryAt = buildSummary(), getTimestampMs()
+    -- 全部蓋好時藍圖已經收起（PM.clear 在 halt 之前）：沿用收起前算的那一份，通知的片數才是這張的
+    local plan = B.PlanMode and B.PlanMode.plan and B.PlanMode.plan()
+    if plan or not summary then summary = buildSummary() end
+    summaryAt = getTimestampMs()
     if not quiet and st.player then
         local lines = { reasonText(code, detail, extra) }
         if code == "LEFT" then
             for _, l in ipairs(summaryLines(summary)) do lines[#lines + 1] = l end
         end
-        local c = B.PlanCheck and B.PlanCheck.counts and B.PlanCheck.counts()
-        local title = getText("IGUI_MBLD_Run_Title")
-        if c and c.n then title = getText("IGUI_MBLD_Run_Progress", tostring(c.done or 0), tostring(c.n)) end
+        -- 片數照這一份總結（伺服器回蓋好、PlanCheck 還沒重查的也算；PlanCheck.counts 在藍圖收起或改過還沒同步時是 0）。
+        -- 藍圖不在了、也沒有收起前的那一份（PLAN_GONE）：只寫「照圖蓋」，不寫 0／0
+        local title = summary.n > 0 and getText("IGUI_MBLD_Run_Progress", tostring(summary.done), tostring(summary.n))
+            or getText("IGUI_MBLD_Run_Title")
         -- 通知只照寬度斷行，不認換行或 <LINE>（UI 框架 Toast 的 wrapText）：幾段用空白接
         Messages.toast(st.player, table.concat(lines, " "), title, 12)
     end

@@ -17901,6 +17901,66 @@ end)()
     pushes, SHORT, CODE = {}, false, {}
     PC.reset()
 
+    -- 7e. 結束通知的標題寫這張藍圖的片數：全部蓋好（藍圖跟著收起）是「蓋好 N／N」（✗ 不是 0／0）；藍圖改了而暫停
+    --     （PlanCheck 還沒同步）照實寫蓋好幾片（✗ 不是 0／N）；剩下蓋不了的（LEFT）照實寫。假伺服器收下就回蓋好
+    do
+        local realToastT, realGetText, realPush7, realMat7 = B.Messages.toast, getText, Q.push, PC.materials
+        PC.materials = fakeMaterials -- Runner 總結用；這裡的假圖沒有成本表
+        local titles = {}
+        B.Messages.toast = function(_, _, title) titles[#titles + 1] = title end
+        getText = function(k, ...)
+            local a = { ... }
+            return #a > 0 and (k .. ":" .. table.concat(a, "/")) or k
+        end
+        Q.push = function(_, _, anchors, _, _, opts)
+            pushes[#pushes + 1] = { anchors = anchors }
+            opts.onDone({ owner = "plan", count = #anchors, placed = #anchors, stopped = false })
+            return #pushes
+        end
+        B.PlanMode.clear = function() pl = nil; PC.reset(); return true end -- 同 PM.clear：收起藍圖、PlanCheck 重來
+        sb.MaxCellsPerDrag = 2
+        local function runTitle(n, blocked, edit)
+            R.stop()
+            pl = Plan.new("title")
+            local ti = Plan.item(pl, "pp_a")
+            SHORT, CODE = false, {}
+            for x = 1, n do
+                Plan.add(pl, 30 + x, 30, 0, 0, 0, ti)
+                if x > n - blocked then CODE[(OX + 30 + x) .. "," .. (OY + 30)] = "BLOCKED" end
+            end
+            PC.reset()
+            settle(nil)
+            pushes, titles = {}, {}
+            R.start(K)
+            for _ = 1, 100 do
+                if edit and pushes[1] then
+                    Plan.add(pl, 40, 40, 0, 0, 0, ti) -- 藍圖改了：PlanCheck 還沒同步這一幀就看到
+                    R.tick()
+                    break
+                end
+                frame(nil)
+                R.tick()
+                if R.state() == "done" or R.state() == "paused" then break end
+            end
+            local st7, why7 = R.state(), (R.reason())
+            R.stop()
+            return st7, why7, titles[1]
+        end
+        local dState, dWhy, dTitle = runTitle(5, 0, false)
+        local eState, eWhy, eTitle = runTitle(5, 0, true)
+        local lState, lWhy, lTitle = runTitle(5, 2, false)
+        B.Messages.toast, getText, Q.push, B.PlanMode.clear, sb.MaxCellsPerDrag = realToastT, realGetText, realPush7, nil, 8
+        PC.materials = realMat7
+        SHORT, CODE, pushes = false, {}, {}
+        PC.reset()
+        check(dState == "done" and dWhy == "DONE" and dTitle == "IGUI_MBLD_Run_Progress:5/5",
+            "照圖蓋全部蓋好（藍圖跟著收起）：通知標題是蓋好 5／5（✗ 不是 0／0；收到 " .. tostring(dTitle) .. "）")
+        check(eState == "paused" and eWhy == "EDIT" and eTitle == "IGUI_MBLD_Run_Progress:2/6",
+            "照圖蓋中藍圖改了而暫停：通知標題照實寫蓋好 2／6（✗ 不是 0／6；收到 " .. tostring(eTitle) .. "）")
+        check(lState == "done" and lWhy == "LEFT" and lTitle == "IGUI_MBLD_Run_Progress:3/5",
+            "照圖蓋剩下蓋不了的（LEFT）：通知標題蓋好 3／5（收到 " .. tostring(lTitle) .. "）")
+    end
+
     -- 7b. Runner 配假的 PlanCheck：busy() 期間挑不到片不結束、不回 NOTHING；busy() 結束後真的沒有才 LEFT
     local S, BUSY = {}, true
     B.PlanCheck = {
