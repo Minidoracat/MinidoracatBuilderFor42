@@ -13403,6 +13403,26 @@ end)()
     square(202, 205, 0)
     square(204, 206, 0)
     square(206, 204, 0)
+    -- 隔一段時間的重查剛好到期、那一格的物件數也變了：照樣連旁邊的片一起重查
+    -- （植入：先看到不到期，到期就只重查自己，旁邊那片要再等一輪 STALE_MS）
+    local sDue = put("pcr_01_0", 3, 0, 1)
+    waitNow()
+    clockStep = PC.STALE_MS - 1000
+    getTimestampMs()
+    clockStep = 0
+    local sNext = put("pcr_01_0", 4, 0, 1)
+    waitNow()
+    clockStep = 1000 -- sDue 到期，sNext 還沒
+    getTimestampMs()
+    clockStep = 0
+    local sBefore = codeOf(sNext)
+    square(203, 200, 1)
+    squares["203,200,1"].objects[1] = obj("pcr_01_0")
+    waitNow()
+    check(sBefore == "BLOCKED" and st(sDue) == "done" and st(sNext) ~= "blocked",
+        "放不下的片：重查到期和物件數變了同時發生，旁邊靠它撐的片也跟著重查")
+    Plan.remove(pl, { sDue, sNext })
+    squares["203,200,1"] = nil
     -- 同一格疊很多片（12 款屋頂疊在一格、下面是還沒蓋的牆）：名單以格子為單位算，讀清單的次數跟片數成正比
     -- （植入：每一片都把旁邊每一格的清單整張掃一遍，12 片就要讀三百多次）
     local dense = {}

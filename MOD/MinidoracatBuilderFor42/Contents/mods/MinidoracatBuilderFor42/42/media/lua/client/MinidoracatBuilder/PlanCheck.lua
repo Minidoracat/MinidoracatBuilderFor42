@@ -468,16 +468,16 @@ local function sweep(player, now)
         if r.s and not r.q and r.s ~= "far" then
             local x, y, z = p.x + cur.ox, p.y + cur.oy, p.z + cur.oz
             if math.abs(x - px) <= near and math.abs(y - py) <= near and math.abs(z - pz) <= 1 then
+                local sx, sy = x + (r.wx or 0), y + (r.wy or 0)
                 local every = r.c and (PlanCheck.RECHECK[r.c] or (r.c == "BLOCKED" and PlanCheck.STALE_MS))
-                if every and not r.at then r.at = now end -- 第一次看到只記時間：剛算完的不馬上再算一次
-                local dt = every and now - r.at
-                if dt and (dt < 0 or dt >= every) then
-                    r.at = now
+                local at = r.at or now -- 上次算這一片的時間（tick 記的）
+                if sigOf(cell:getGridSquare(sx, sy, z)) ~= r.sig then
+                    -- 連靠這一格撐的片一起重查：牆不是照圖蓋蓋的（手拖、別人、原版建造）時沒有人叫 touch。
+                    -- 先比物件數再看到不到期：兩件事同時發生時也要連旁邊一起查
                     push(p)
-                elseif sigOf(cell:getGridSquare(x + (r.wx or 0), y + (r.wy or 0), z)) ~= r.sig then
-                    -- 連靠這一格撐的片一起重查：牆不是照圖蓋蓋的（手拖、別人、原版建造）時沒有人叫 touch
+                    PlanCheck.touch(sx, sy, z)
+                elseif every and (now < at or now - at >= every) then
                     push(p)
-                    PlanCheck.touch(x + (r.wx or 0), y + (r.wy or 0), z)
                 end
             end
         end
@@ -500,6 +500,7 @@ function PlanCheck.tick(player)
         if not p then return end
         local s, c = r.s, r.c
         evaluate(player, p, r)
+        r.at = now -- sweep 隔一段時間重查的片從這裡起算：剛算完的不馬上再算一次
         if r.s ~= s or r.c ~= c then cur.ver = cur.ver + 1 end
     until getTimestampMs() >= stop
 end
