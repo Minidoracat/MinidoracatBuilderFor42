@@ -273,6 +273,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
+[*] [b]Walls from the second floor up[/b]: a floor underneath is enough; without one, a wall can still go up when the square right below has a wall on the same edge (stacked on the wall below), or when the squares on both sides of that edge have roof pieces on the same level (gable walls, for example). Otherwise it still needs a floor first.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
@@ -354,7 +355,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:07-roof-en.jpg}}
 [list]
 [*] [b]On the ground floor too[/b]: eaves, roof trims and other roof pieces can go on the level of the walls, as on the vanilla map, with no support check. Not allowed in basements.
-[*] [b]From the second floor up[/b]: needs a wall below, or a floor or roof beside it holding it up.
+[*] [b]From the second floor up[/b]: needs a wall below, or a floor or roof beside it holding it up; a roof piece or ceiling right below, or a roof piece beside it one level down, also holds it, so roof pieces and flat tops that step up a level can be built in order.
 [*] [b]Above stairs[/b]: not allowed directly above stairs.
 [*] [b]Which level[/b]: the cursor builds one level up at the same spot on screen by default.
 [*] [b]Changing level[/b]: PgUp/PgDn switches between one level up and this level. If your keyboard has no such keys, rebind them under Options, Key Bindings, "Minidoracat Build Anything".
@@ -728,9 +729,9 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [h3]Rules[/h3]
 [list]
 [*] [b]Area size[/b]: at least 2 tiles per side. 30-degree Gable and Hip roofs span up to 11 tiles; 45-degree sets without flat tops span up to 6.
-[*] [b]45-degree roofs[/b]: only the south and east slopes are drawn; ceiling tiles fill the hidden half and go under half tiles, so the whole room stays dry. Add gable walls to close the sides.
+[*] [b]45-degree roofs[/b]: only the south and east slopes are drawn; every tile underneath gets a ceiling tile, which an enclosed room needs to count as indoors and stay dry. That means more pieces and materials than the slopes alone, for example 36 pieces for a 6×4 45-degree Gable, 40 for a 5×5 Hip and 32 for a 4×4 Shed. Add gable walls to close the sides.
 [*] [b]45-degree Hip roofs[/b]: for sets without half tiles, the short side must be even, or 7 tiles or more.
-[*] [b]Indoors[/b]: sloped roofs only keep rain out; to count as indoors, lay a floor under the roof.
+[*] [b]30-degree roofs and indoors[/b]: no ceiling tiles are added. It stays dry underneath, but the game doesn't treat it as a room; the panel suggests laying a floor under the roof.
 [*] [b]When it can't be added[/b]: going past the blueprint limits (64 tiles per side, 4 floors, 4,096 pieces) or needing tiles the server turned off shows a notice with the reason, and nothing is added.
 [*] [b]Gamepad[/b]: dragging an area needs a mouse.
 [/list]
@@ -781,6 +782,8 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]Pieces two or more floors away from you[/b]: count as too far and are skipped this round; go up or down to that floor and press it again.
 [*] [b]Wall paint, wallpaper and plaster[/b]: can't be built from a blueprint and are skipped.
 [*] [b]A piece of a set taken down[/b]: when a ramp, garage door or double door in the blueprint is already built and one of its pieces is taken down (for example smashed with a sledgehammer) while you are nearby, the blueprint marks that piece as not built again within 5 seconds.
+[*] [b]Checking a big blueprint[/b]: when you place a blueprint, get materials, the server settings change or you move away, checking which pieces can be built is spread over several frames, starting with the pieces around you. Pressing Build from blueprint right after getting materials waits for the nearby pieces to be checked instead of saying there is nothing to build.
+[*] [b]Sending too fast[/b]: building from a blueprint slows itself down based on the build and dismantle requests sent in the last few seconds, counting the ones you send by hand. If the server still says it's too frequent, it waits and resends by itself, and only pauses after about 15 seconds of that.
 [/list]
 [h3]Pausing and stopping[/h3]
 [list]
@@ -1131,6 +1134,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Once a rain-proof roof is built, the square below is no longer outdoors.
 [*] For the room to count as indoors (temperature), the level above also needs a floor.
+[*] Roofs from the Roof Helper in the 45-degree style get a ceiling tile under every tile, which an enclosed room needs to count as indoors; 30-degree sloped roofs keep rain off, but the game doesn't treat the space under them as a room.
 [/list]
 [h3]Why do I get little or no XP?[/h3]
 [list]
