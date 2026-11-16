@@ -614,7 +614,10 @@ local function sweep(player, now)
                     push(p)
                     PlanCheck.touch(sx, sy, z)
                 elseif c or r.group then
-                    local every = c and (recheck[c] or (c == "BLOCKED" and stale)) or stale
+                    -- 有細節碼的只有 RECHECK 與 BLOCKED 定時重查（缺料、缺工具、技能不夠等要等材料或技能變了才重排）；
+                    -- 沒有細節碼的是蓋好的多格組（r.group）。不能寫成 c and (…) or stale：c 不在表裡時會變成 stale
+                    local every = stale
+                    if c then every = recheck[c] or (c == "BLOCKED" and stale) end
                     local at = r.at or now -- 上次算這一片的時間（tick 記的）
                     if every and (now < at or now - at >= every) then push(p) end
                 end
@@ -672,14 +675,23 @@ function PlanCheck.busy()
     return false
 end
 
--- 掃描中（重排、同步還沒看完）時，世界座標這一格的片挑不挑得：比它近的片（佇列距離）都已排進佇列、算完了。
--- 照圖蓋在掃描中只挑這種片：身邊的片還沒重算時，不先挑走已經算出能蓋的遠片。沒在掃描時回 true
+-- 掃描中（重排、同步還沒看完）時，世界座標這一格的片挑不挑得：它和比它近的片（佇列距離）都已排進佇列、算完了
+-- （掃描的 ring 是下一圈、還沒看；身邊看完時只到 RING 圈）。照圖蓋在掃描中只挑這種片：身邊的片還沒重算時，
+-- 不先挑走已經算出能蓋的遠片。沒在掃描時回 true
 function PlanCheck.settled(x, y, z)
     local M = B.PlanMode
     if not (cur and (cur.rq or cur.ss) and M and M.plan and M.plan() == cur.plan) then return true end
+    local q = cur.q
+    local lo = q.lo
+    while lo <= MAX_BUCKET do -- 最低的桶可能已經取空（pop 下次才往後走）：往後找到還有片的桶
+        local b = q.b[lo]
+        if b and b.i <= b.n then break end
+        lo = lo + 1
+    end
+    q.lo = lo
     local k = dist(x, y, z)
     local ss, rq = cur.ss, cur.rq
-    return k <= cur.q.lo and not (ss and k > (ss.ring or RING + 1)) and not (rq and k > (rq.ring or RING + 1))
+    return k < lo and not (ss and k >= (ss.ring or RING + 1)) and not (rq and k >= (rq.ring or RING + 1))
 end
 
 -- 照圖蓋按下時：材料摘要先比一次（不等每秒一次的比對），剛拿到的料馬上排重排，Runner.start 看 busy() 就知道要等
