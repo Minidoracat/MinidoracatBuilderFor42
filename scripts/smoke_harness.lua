@@ -15585,6 +15585,38 @@ end)()
         and sL.boxes[1] == "HEAVY" and sL.short.n == 1 and looked == 0,
         "材料箱：開工時背不動的片先放著，前一片蓋好、背包輕了再回去拿；反面：還是背不動就收尾並寫背包太重；無關的東西不檢查")
     R.stop()
+
+    -- 旁邊沒地方站的箱子：整輪跳過、改去下一個；每個箱子這一趟只掃一遍（不因前面的箱子走不到而重掃）
+    local scans = {}
+    local function counted(x)
+        local c = crate(square(x, 100, 0), stock("Base.Plank", 1, 1))
+        local get = c.getItems
+        c.getItems = function(self)
+            scans[self] = (scans[self] or 0) + 1
+            return get(self)
+        end
+        return c
+    end
+    local n1, n2, n3 = counted(145), counted(146), counted(147)
+    K.load = 0
+    newPlan()
+    store = { boxes = {} }
+    R.addBox(n1)
+    R.addBox(n2)
+    R.addBox(n3)
+    put("rn_wall", 48, 0, 0)
+    S[shortAt(48, { ["Base.Plank"] = 1 })] = "short"
+    local walk0 = luautils.walkToContainer
+    luautils.walkToContainer = function(c) return c == n3 end
+    actions = {}
+    R.start(K)
+    run(1)
+    luautils.walkToContainer = walk0
+    local sN = R.summary()
+    check(R.state() == "fetch" and #actions == 1 and actions[1].src == n3 and sN.boxes[1] == "NO_ROOM"
+        and sN.boxes[2] == "NO_ROOM" and sN.boxes[3] == nil and scans[n1] == 1 and scans[n2] == 1 and scans[n3] == 1,
+        "材料箱：旁邊沒地方站的箱子整輪跳過、改去下一個；每個箱子一趟只掃一遍")
+    R.stop()
     K.getMaxWeight, K.load = maxW, 0
 
     -- 遊戲暫停：暫停時引擎不送 OnTick，照圖蓋在 OnTickEvenPaused 看

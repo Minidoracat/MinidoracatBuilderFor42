@@ -384,32 +384,46 @@ local function usable(item)
     return not item:isFluidContainer() or item:isEmptyOfFluid()
 end
 
--- 從能開的點名箱子（cands，近的在前）挑這一批缺的。sets＝{ { [fullType]＝數量 }… }，一片一組、照蓋的順序。
--- 一組要的東西在這些箱子裡湊得齊、整組背得動才挑：照箱子裡的順序拿到滿的話只會拿到排前面那一種（負重剩 6 拿兩片
--- 木板就滿），一片都配不齊。重量照真的那幾件算（另一個箱子只有釘子盒時算整盒）。
--- 回 挑到的 { it, k＝第幾個箱子 }…、有沒有背不動的組、各箱子有沒有這一批要的東西
-local function choose(player, cands, sets)
-    -- 只記這一批要的種類、最多要的件數：箱子裡無關的東西不進表
+-- 這一批要的種類各最多幾件（sets＝{ { [fullType]＝數量 }… }，一片一組）；要釘子時另算幾盒釘子盒
+local function wanted(sets)
     local want = {}
     for _, set in ipairs(sets) do
         for ft, n in pairs(set) do want[ft] = (want[ft] or 0) + n end
     end
     if want[NAILS] then want[NAILS_BOX] = (want[NAILS_BOX] or 0) + math.ceil(want[NAILS] / PER_BOX) end
-    local stock, at, has = {}, {}, {} -- at＝各種類挑到第幾個
-    for k, c in ipairs(cands) do
-        local items = c.container:getItems()
-        for i = 0, items:size() - 1 do
-            local it = items:get(i)
-            local ft = it:getFullType()
-            if want[ft] and usable(it) then
-                has[k] = true
-                local q = stock[ft]
-                if not q then
-                    q = {}
-                    stock[ft], at[ft] = q, 1
-                end
-                if #q < want[ft] then q[#q + 1] = { it = it, k = k } end
+    return want
+end
+
+-- 一個箱子裡這一批要的東西：{ it, ft, c＝這個箱子 }…，每種最多記要的件數，無關的東西不進表
+local function scan(c, want)
+    local found, n = {}, {}
+    local items = c.container:getItems()
+    for i = 0, items:size() - 1 do
+        local it = items:get(i)
+        local ft = it:getFullType()
+        if want[ft] and (n[ft] or 0) < want[ft] and usable(it) then
+            n[ft] = (n[ft] or 0) + 1
+            found[#found + 1] = { it = it, ft = ft, c = c }
+        end
+    end
+    return found
+end
+
+-- 從能開的點名箱子（cands，近的在前）挑這一批缺的，一片一組、照蓋的順序。
+-- 一組要的東西在這些箱子裡湊得齊、整組背得動才挑：照箱子裡的順序拿到滿的話只會拿到排前面那一種（負重剩 6 拿兩片
+-- 木板就滿），一片都配不齊。重量照真的那幾件算（另一個箱子只有釘子盒時算整盒）。
+-- 箱子只掃一遍記在 c.found：前面的箱子走不到、重新挑時不重掃。回 挑到的 { it, ft, c }…、有沒有背不動的組
+local function choose(player, cands, sets, want)
+    local stock, at = {}, {} -- at＝各種類挑到第幾個
+    for _, c in ipairs(cands) do
+        c.found = c.found or scan(c, want)
+        for _, e in ipairs(c.found) do
+            local q = stock[e.ft]
+            if not q then
+                q = {}
+                stock[e.ft], at[e.ft] = q, 1
             end
+            if #q < want[e.ft] then q[#q + 1] = e end
         end
     end
     local room = player:getMaxWeight() - player:getInventory():getCapacityWeight()
@@ -452,7 +466,7 @@ local function choose(player, cands, sets)
             room, spare = room - w, left
         end
     end
-    return out, heavy, has
+    return out, heavy
 end
 
 local function boxKey(b) return b.x .. "," .. b.y .. "," .. b.z .. "," .. b.index end
@@ -490,36 +504,40 @@ local function startFetch(player, sets)
             boxFailed(o, why, true)
         end
     end
-    local inv = player:getInventory()
+    local inv, want = player:getInventory(), wanted(sets)
     while cands[1] do
-        local picks, heavy, has = choose(player, cands, sets)
+        local picks, heavy = choose(player, cands, sets, want)
         if not picks[1] then
-            for k, c in ipairs(cands) do boxFailed(c.o, heavy and has[k] and "HEAVY" or "EMPTY") end
+            -- 各箱子的原因是這一批的概括：有要的東西但背不動＝HEAVY，其餘＝EMPTY
+            for _, c in ipairs(cands) do boxFailed(c.o, heavy and c.found[1] and "HEAVY" or "EMPTY", false) end
             return false, heavy
         end
-        local k = picks[1].k
+        local c = picks[1].c
         for _, g in ipairs(picks) do
-            if g.k < k then k = g.k end
+            if g.c.o.d < c.o.d then c = g.c end
         end
-        local c = cands[k]
         if luautils.walkToContainer(c.container, player:getPlayerNum()) then
             local before, actions = {}, {}
             for _, g in ipairs(picks) do
-                if g.k == k then
-                    local ft = g.it:getFullType()
-                    before[ft] = inv:getCountTypeRecurse(ft)
+                if g.c == c then
+                    before[g.ft] = inv:getCountTypeRecurse(g.ft)
                     actions[#actions + 1] = ISInventoryTransferAction:new(player, g.it, c.container, inv)
                     ISTimedActionQueue.add(actions[#actions])
                 end
             end
             st.fetch = { box = c.o.b, i = c.o.i, before = before, actions = actions }
             if st.badIndex then st.badIndex[c.o.i] = nil end
-            return true
+            return true, false
         end
         boxFailed(c.o, "NO_ROOM", true)
-        table.remove(cands, k)
+        for k, x in ipairs(cands) do
+            if x == c then
+                table.remove(cands, k)
+                break
+            end
+        end
     end
-    return false
+    return false, false
 end
 
 -- 拿料的動作做完：一件都沒拿到（上鎖、安全屋、被別人拿走…原版動作的 isValid 擋下）就跳過這個箱子
