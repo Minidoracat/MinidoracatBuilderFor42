@@ -22,7 +22,7 @@
   "IGUI_MBLD_Roof_Hint": "Arraste sobre a área da casa no chão. O telhado fica no andar escolhido acima e entra no projeto de uma vez; um único Desfazer remove tudo. Telhados inclinados só protegem da chuva; para contar como ambiente fechado, coloque um piso sob o telhado.",
   "IGUI_MBLD_Roof_Hint45": "Telhados de 45 graus só desenham as águas sul e leste. Adicione oitões para fechar os lados",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 peças",
-  "IGUI_MBLD_Roof_Warn_HALF": "O forro cobre a metade escondida e vai sob as meias peças, para o cômodo inteiro ficar seco",
+  "IGUI_MBLD_Roof_Warn_HALF": "Cada quadrado do telhado ganha um forro embaixo. Um cômodo com paredes precisa dele para contar como ambiente fechado e ficar seco.",
   "IGUI_MBLD_Roof_Err_TOO_SMALL": "Área pequena demais: pelo menos 2 quadrados por lado",
   "IGUI_MBLD_Roof_Err_TOO_WIDE": "Vão largo demais: telhados de duas e quatro águas de 30 graus vão até 11 quadrados; os de 45 graus sem peças planas no topo, até 6",
   "IGUI_MBLD_Roof_Err_ODD_SPAN": "Este conjunto de 45 graus não tem meias peças: o lado curto de um telhado de quatro águas precisa ser par, ou ter 7 quadrados ou mais",

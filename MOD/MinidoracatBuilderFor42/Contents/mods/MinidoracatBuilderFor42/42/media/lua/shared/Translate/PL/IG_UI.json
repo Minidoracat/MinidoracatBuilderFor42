@@ -22,7 +22,7 @@
   "IGUI_MBLD_Roof_Hint": "Przeciągnij po obrysie domu na ziemi. Dach trafi na piętro wybrane wyżej i zostanie dodany do projektu jedną partią; jedno cofnięcie usuwa go w całości. Dach spadzisty chroni tylko przed deszczem; aby pomieszczenie liczyło się jako wnętrze, połóż pod dachem podłogę.",
   "IGUI_MBLD_Roof_Hint45": "Dachy 45° mają grafikę tylko połaci południowej i wschodniej. Dodaj szczyty, by zamknąć boki",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3×%4, elementy: %5",
-  "IGUI_MBLD_Roof_Warn_HALF": "Płyty sufitowe wypełnią ukrytą połowę i trafią pod elementy połówkowe, by w całym pomieszczeniu było sucho",
+  "IGUI_MBLD_Roof_Warn_HALF": "Pod każdym polem dachu pojawia się płyta sufitowa. Dzięki niej pomieszczenie otoczone ścianami liczy się jako wnętrze i nie przecieka",
   "IGUI_MBLD_Roof_Err_TOO_SMALL": "Za mały obszar: co najmniej 2 pola na bok",
   "IGUI_MBLD_Roof_Err_TOO_WIDE": "Za duża rozpiętość: dachy dwuspadowe i kopertowe 30° do 11 pól; komplety 45° bez płaskich elementów górnych do 6",
   "IGUI_MBLD_Roof_Err_ODD_SPAN": "Ten komplet 45° nie ma elementów połówkowych: krótszy bok dachu kopertowego musi być parzysty albo mieć co najmniej 7 pól",

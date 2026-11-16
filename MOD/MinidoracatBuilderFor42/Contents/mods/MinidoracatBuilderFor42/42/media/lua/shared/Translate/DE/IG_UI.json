@@ -22,7 +22,7 @@
   "IGUI_MBLD_Roof_Hint": "Zieh über die Grundfläche des Hauses. Das Dach kommt auf die oben gewählte Etage und wird als eine Gruppe zum Bauplan hinzugefügt; einmal „Zurück“ entfernt alles. Schrägdächer halten nur Regen ab; damit der Raum als drinnen zählt, leg unter dem Dach einen Boden.",
   "IGUI_MBLD_Roof_Hint45": "45-Grad-Dächer zeichnen nur die Süd- und Ostseite. Füg Giebelwände hinzu, um die Seiten zu schließen",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 Teile",
-  "IGUI_MBLD_Roof_Warn_HALF": "Deckenteile füllen die verdeckte Hälfte und kommen unter Halbteile, damit der ganze Raum trocken bleibt",
+  "IGUI_MBLD_Roof_Warn_HALF": "Unter jede Dachkachel kommt ein Deckenteil. Ein geschlossener Raum braucht es, um als drinnen zu zählen und trocken zu bleiben.",
   "IGUI_MBLD_Roof_Err_TOO_SMALL": "Bereich zu klein: mindestens 2 Kacheln pro Seite",
   "IGUI_MBLD_Roof_Err_TOO_WIDE": "Spannweite zu groß: 30-Grad-Sattel- und Walmdächer bis 11 Kacheln, 45-Grad-Sets ohne Flachteile bis 6",
   "IGUI_MBLD_Roof_Err_ODD_SPAN": "Dieses 45-Grad-Set hat keine Halbteile: Die kurze Seite eines Walmdachs muss gerade sein oder mindestens 7 Kacheln lang",

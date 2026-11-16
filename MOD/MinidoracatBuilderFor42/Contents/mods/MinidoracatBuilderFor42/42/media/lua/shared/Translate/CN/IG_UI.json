@@ -22,7 +22,7 @@
   "IGUI_MBLD_Roof_Hint": "拖出房子在地上的范围，屋顶排在上面选的楼层，整批加进蓝图，撤销一次就整个收回。斜屋顶只挡雨，要算室内请在屋顶下铺一层地板。",
   "IGUI_MBLD_Roof_Hint45": "45 度屋顶只画朝南、朝东的坡面，建议配山墙把侧面封起来",
   "IGUI_MBLD_Roof_Preview": "%1 · %2 %3×%4，共 %5 块",
-  "IGUI_MBLD_Roof_Warn_HALF": "看不到坡面的那半边和半格块底下会补天花板，这样整间才不漏雨",
+  "IGUI_MBLD_Roof_Warn_HALF": "屋顶底下每一格都会补一块天花板，墙围好的房间这样才算室内、不漏雨",
   "IGUI_MBLD_Roof_Err_TOO_SMALL": "范围太小：每边至少 2 格",
   "IGUI_MBLD_Roof_Err_TOO_WIDE": "跨度太宽：30 度的双坡、四坡最多跨 11 格；没有平顶块的 45 度款最多 6 格",
   "IGUI_MBLD_Roof_Err_ODD_SPAN": "这款 45 度屋顶没有半格块：四坡的短边要是偶数，或 7 格以上",

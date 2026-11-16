@@ -22,7 +22,7 @@
   "IGUI_MBLD_Roof_Hint": "Tracez l'emprise de la maison. Le toit est posé à l'étage choisi ci-dessus et ajouté au plan en un seul lot ; une seule annulation le retire entièrement. Un toit en pente ne fait qu'arrêter la pluie ; pour que la pièce compte comme intérieure, posez un sol sous le toit.",
   "IGUI_MBLD_Roof_Hint45": "Les toits à 45 degrés ne dessinent que les pans sud et est. Ajoutez des murs pignons pour fermer les côtés",
   "IGUI_MBLD_Roof_Preview": "%1 %2 %3x%4, %5 pièces",
-  "IGUI_MBLD_Roof_Warn_HALF": "Du plafond est ajouté sur la moitié cachée et sous les demi-pièces, pour que toute la pièce reste au sec",
+  "IGUI_MBLD_Roof_Warn_HALF": "Chaque case du toit reçoit un plafond en dessous. Une pièce fermée en a besoin pour compter comme intérieure et rester au sec.",
   "IGUI_MBLD_Roof_Err_TOO_SMALL": "Zone trop petite : au moins 2 cases par côté",
   "IGUI_MBLD_Roof_Err_TOO_WIDE": "Portée trop grande : 11 cases max. pour les toits à deux ou quatre pans à 30 degrés, 6 pour les ensembles à 45 degrés sans pièces plates",
   "IGUI_MBLD_Roof_Err_ODD_SPAN": "Cet ensemble à 45 degrés n'a pas de demi-pièces : le petit côté d'un toit à quatre pans doit être pair, ou d'au moins 7 cases",
