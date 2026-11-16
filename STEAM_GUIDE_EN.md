@@ -341,13 +341,13 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [/list]
 [h3]Ramps[/h3]
 [list]
-[*] [b]Where[/b]: the Ramp kind on the Stairs & ramps tab, one item per direction; press R (gamepad LB/RB) while placing to change direction.
+[*] [b]Where[/b]: the Ramp kind on the Stairs & ramps tab, one item per direction; press R (gamepad LB/RB) while placing to change direction. Ramp tiles in tile packs that can be disassembled or picked up as in vanilla don't form a set and aren't listed.
 [*] [b]A 20-tile set[/b]: the whole ramp goes down at once, 20 tiles long and rising one level; if the level above has no floor at the top, a landing is added.
 [*] [b]Who can use it[/b]: people and vehicles; to keep driving on the level above, extend the landing with more floor.
-[*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it, and the box points out which tile.
+[*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it; so does furniture, a container or the like already on a tile of its path (floors, floor overlays and wall overlays don't count), and a wall, window or door on the edge between the top piece and the landing. The box points out which tile.
 [*] [b]What can go on a ramp[/b]: only edge pieces such as walls, fences, posts, door and window frames, doors, windows, curtains and things hung on walls; floors, furniture, containers and stairs can't.
 [*] [b]Materials[/b]: the whole set is paid at once; the details show the price.
-[*] [b]Dismantling[/b]: any piece takes down the whole set and materials come back once; the landing stays if something is on it. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down, but returns nothing.
+[*] [b]Dismantling[/b]: any piece takes down the whole set and materials come back once. The landing stays while something is on it or another ramp or stairs still lead up to it; it goes with the last set. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down, but returns nothing.
 [*] [b]Ramp pieces built as floors in older versions[/b]: stay floors and are dismantled as floors.
 [/list]
 [h3]Roofs[/h3]
@@ -634,8 +634,8 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]XP[/b]: dismantling gives none.
 [*] [b]Stairs[/b]: all three steps go together, and materials come back once.
 [*] [b]Garage doors and double doors[/b]: the whole set goes together, and materials come back once; not while a piece isn't loaded yet or is missing. The tools needed go by the pieces that are actually there.
-[*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it.
-[*] [b]Ramps[/b]: the whole set goes and materials come back once; the landing stays if something is on it. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down but returns nothing.
+[*] [b]Stair landing[/b]: the landing added with the stairs goes too, unless something is on it or a ramp leads up to it.
+[*] [b]Ramps[/b]: the whole set goes and materials come back once; the landing stays while something is on it or another ramp or stairs still lead up to it. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down but returns nothing.
 [*] [b]Multi-tile furniture[/b]: goes as one piece.
 [*] [b]Ground floors[/b]: turn back into dirt.
 [*] [b]Built with the build cheat[/b]: no materials back.
@@ -720,7 +720,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]Shape[/b]: Gable, Hip or Shed; 45-degree sets also have Flat.
 [*] [b]Direction[/b]: for Gable, pick Ridge east-west or Ridge north-south; for Shed, pick which way the low side faces: all four for 30-degree sets, only south or east for 45-degree sets.
-[*] [b]Gable walls[/b]: pick a wall set from Gable Walls to close the triangles at both ends of the roof; the default is None. If that set isn't a complete gable set or its pitch doesn't match the roof, it goes back to None and says why.
+[*] [b]Gable walls[/b]: pick a wall set from Gable Walls to close the triangles at both ends of the roof; the default is None. Only Gable and Shed roofs get gable walls: with Hip or Flat the list is disabled, and your pick is kept for when you switch back. If that set isn't a complete gable set or its pitch doesn't match the roof, it goes back to None and says why.
 [*] [b]Floor[/b]: the panel says "Roof on floor N"; change it with + and -.
 [*] [b]Drag an area[/b]: press it, then hold the left mouse button and drag over the house's footprint; the box by the mouse shows the shape, size and piece count. Let go and the roof is added to the blueprint as one batch.
 [*] [b]Taking it back[/b]: one planning Undo (Ctrl+Z) removes the whole roof.
@@ -780,6 +780,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]What can't be built this round[/b]: pieces short on materials or skill, blocked, too far or not available here are skipped and the rest go on; when nothing more can be built, one summary says how many are left and why. Fix that and press Build from blueprint again to build only the rest.
 [*] [b]Pieces two or more floors away from you[/b]: count as too far and are skipped this round; go up or down to that floor and press it again.
 [*] [b]Wall paint, wallpaper and plaster[/b]: can't be built from a blueprint and are skipped.
+[*] [b]A piece of a set taken down[/b]: when a ramp, garage door or double door in the blueprint is already built and one of its pieces is taken down (for example smashed with a sledgehammer) while you are nearby, the blueprint marks that piece as not built again within 5 seconds.
 [/list]
 [h3]Pausing and stopping[/h3]
 [list]
@@ -804,7 +805,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]Open[/b]: press Blueprints in the build window when no blueprint is on the ground; the Plan Blueprint toolbar and the blueprint panel have Library too.
 [*] [b]Where they are kept[/b]: each blueprint is a file on your computer, shared by every save and every server; Open folder opens the blueprint folder. There's no limit on how many.
-[*] [b]Backups[/b]: every blueprint has a .cfg backup with the same name next to it; if saving is cut off halfway, you still get a whole version back next time you load.
+[*] [b]Backups[/b]: every blueprint has a .cfg backup with the same name next to it; if saving is cut off halfway, you still get a whole version back next time you load. If a rename is cut off halfway (a disconnect or crash), the blueprint is still found next time you load.
 [*] [b]File names[/b]: files you put in the folder yourself can only use letters and numbers in the name; others aren't listed, and the title row says how many files weren't listed.
 [*] [b]The list[/b]: Name, Size, Pieces, Can't build, Last used; search by name, sort by Recently used, Name or Pieces.
 [*] [b]For each blueprint[/b]: Place, Share, Rename, Duplicate, Delete (asks first, with the name and piece count).
