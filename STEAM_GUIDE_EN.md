@@ -44,6 +44,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Search[/b]: by name, tileset, source mod or full tile name.
 [*] [b]Full tile names[/b]: search a full name (blends_street_01_101, for example), and if it is in the list, that item is selected.
+[*] [b]Tabs and kinds during a full-name search[/b]: when a full name is found, the tab, kind and source all show All; clear the search or type something else and they go back to what you had.
 [*] [b]Leaving a full-name search[/b]: switching to another tab, kind, tileset or source clears the full name from the search bar and lists by the new choice.
 [*] [b]Other looks of a tile[/b]: an open door, a smashed window, a closed curtain, one square of a multi-square object and the like select the item they belong to.
 [*] [b]Tiles you can't build[/b]: searching a full name tells you why, for example which build recipe it belongs to or which kind the admin turned off.
@@ -345,10 +346,10 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Where[/b]: the Ramp kind on the Stairs & ramps tab, one item per direction; press R (gamepad LB/RB) while placing to change direction. Ramp tiles in tile packs that can be disassembled or picked up as in vanilla don't form a set and aren't listed.
 [*] [b]A 20-tile set[/b]: the whole ramp goes down at once, 20 tiles long and rising one level; if the level above has no floor at the top, a landing is added.
 [*] [b]Who can use it[/b]: people and vehicles; to keep driving on the level above, extend the landing with more floor.
-[*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it; so does furniture, a container or the like already on a tile of its path (floors, floor overlays and wall overlays don't count), and a wall, window or door on the edge between the top piece and the landing. The box points out which tile.
+[*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it; so does furniture, a container or the like already on a tile of its path (floors, floor overlays and wall overlays don't count), and a wall, window or door on the edge between the top piece and the landing, even an open door (placing the ramp first and adding the door afterwards works). The box points out which tile.
 [*] [b]What can go on a ramp[/b]: only edge pieces such as walls, fences, posts, door and window frames, doors, windows, curtains and things hung on walls; floors, furniture, containers and stairs can't.
 [*] [b]Materials[/b]: the whole set is paid at once; the details show the price.
-[*] [b]Dismantling[/b]: any piece takes down the whole set and materials come back once. The landing stays while something is on it or another ramp or stairs still lead up to it; it goes with the last set. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down, but returns nothing.
+[*] [b]Dismantling[/b]: any piece takes down the whole set and materials come back once. The landing stays while something is on it or another ramp or stairs still lead up to it; it goes with the last set. It can't be dismantled while a piece is unloaded; a set with a missing piece still comes down, but returns nothing, and so does a ramp that has been burned.
 [*] [b]Ramp pieces built as floors in older versions[/b]: stay floors and are dismantled as floors.
 [/list]
 [h3]Roofs[/h3]
@@ -714,14 +715,15 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [h3]Opening it[/h3]
 [list]
 [*] [b]How[/b]: select a sloped roof piece in the build window; the Full set button in the details becomes Roof helper (icon only in a narrow window). Press it to open the Roof Helper panel.
-[*] [b]Which roofs[/b]: only 30-degree and 45-degree roof sets that can be recognized as a full set have the button; others don't.
+[*] [b]Which roofs[/b]: only 30-degree and 45-degree roof sets that can be recognized as a full set have the button; others don't. When the server turns ceilings off, 30-degree sets don't have it either. Right after you join a game, the button may take a moment to appear.
 [*] [b]Planning turns on[/b]: if you aren't planning yet, pressing it starts planning, and the roof goes one level above the one you stand on by default.
 [/list]
 [h3]The panel[/h3]
 [list]
 [*] [b]Shape[/b]: Gable, Hip or Shed; 45-degree sets also have Flat.
 [*] [b]Direction[/b]: for Gable, pick Ridge east-west or Ridge north-south; for Shed, pick which way the low side faces: all four for 30-degree sets, only south or east for 45-degree sets.
-[*] [b]Gable walls[/b]: pick a wall set from Gable Walls to close the triangles at both ends of the roof; the default is None. Only Gable and Shed roofs get gable walls: with Hip or Flat the list is disabled, and your pick is kept for when you switch back. If that set isn't a complete gable set or its pitch doesn't match the roof, it goes back to None and says why.
+[*] [b]Gable walls[/b]: pick a wall set from Gable Walls to close the triangles at both ends of the roof; the default is None. Only Gable and Shed roofs get gable walls: with Hip or Flat the list is disabled, and your pick is kept for when you switch back. If that set isn't a complete gable set or its pitch doesn't match the roof, it goes back to None and says why; while the gable tiles are still loading, the panel asks you to wait before dragging.
+[*] [b]Full walls under the gable[/b]: with gable walls on, the middle of a 45-degree roof spanning 7 tiles or more, and the sides of a Shed roof where it steps up a level, get full walls copied from the house wall one level down on that edge, in the same color as the house. Where no house wall can be found along the whole edge, those tiles are left empty, and the panel and a notice say how many you need to wall yourself.
 [*] [b]Floor[/b]: the panel says "Roof on floor N"; change it with + and -.
 [*] [b]Drag an area[/b]: press it, then hold the left mouse button and drag over the house's footprint; the box by the mouse shows the shape, size and piece count. Let go and the roof is added to the blueprint as one batch.
 [*] [b]Taking it back[/b]: one planning Undo (Ctrl+Z) removes the whole roof.
@@ -729,9 +731,9 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [h3]Rules[/h3]
 [list]
 [*] [b]Area size[/b]: at least 2 tiles per side. 30-degree Gable and Hip roofs span up to 11 tiles; 45-degree sets without flat tops span up to 6.
-[*] [b]45-degree roofs[/b]: only the south and east slopes are drawn; every tile underneath gets a ceiling tile, which an enclosed room needs to count as indoors and stay dry. That means more pieces and materials than the slopes alone, for example 36 pieces for a 6×4 45-degree Gable, 40 for a 5×5 Hip and 32 for a 4×4 Shed. Add gable walls to close the sides.
+[*] [b]Ceilings[/b]: 30-degree and 45-degree sloped roofs get a ceiling tile under every tile, which an enclosed room needs to count as indoors and stay dry; tiles that already have a floor on the roof's level get none. That means more pieces and materials: a 30-degree roof has twice as many pieces as tiles (for example 96 for a 6×8 Gable, not counting gable walls), and a 45-degree 6×4 Gable has 36 and a 5×5 Hip 40.
+[*] [b]45-degree roofs[/b]: only the south and east slopes are drawn; add gable walls to close the sides.
 [*] [b]45-degree Hip roofs[/b]: for sets without half tiles, the short side must be even, or 7 tiles or more.
-[*] [b]30-degree roofs and indoors[/b]: no ceiling tiles are added. It stays dry underneath, but the game doesn't treat it as a room; the panel suggests laying a floor under the roof.
 [*] [b]When it can't be added[/b]: going past the blueprint limits (64 tiles per side, 4 floors, 4,096 pieces) or needing tiles the server turned off shows a notice with the reason, and nothing is added.
 [*] [b]Gamepad[/b]: dragging an area needs a mouse.
 [/list]
@@ -847,6 +849,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]How[/b]: press Capture a building in the library, then hold the left button and drag a rectangle, up to 64 tiles per side; on release it reads 4 floors up from your floor. Buildings from the map and ones anyone built both work.
 [*] [b]Result[/b]: how many pieces of how many kinds can be kept, and how many were left out and why; type a name and press Save Blueprint, then place it from the library.
 [*] [b]Left out[/b]: things turned off on this server, fixtures with special functions, trees, plants and crops, natural ground (grass, dirt), multi-tile objects sticking out of the area, and tiles Build Anything can't build; items on the ground, what's inside containers, vehicles and corpses aren't kept either.
+[*] [b]Landings from ramps and stairs[/b]: when a whole ramp or staircase is inside the area, its landing isn't kept separately, and the ramp or stairs add it again when built from the blueprint; when only the top part is inside, the landing is kept as a regular floor.
 [*] [b]Over 4,096 pieces[/b]: only part is kept; select a smaller area and save it in parts to keep everything.
 [*] [b]Garage doors that are too wide[/b]: kept anyway, but if they are wider than this server allows in one build they can't be built here; servers with a higher limit can build them.
 [*] [b]Reading goes wrong[/b]: a notice says so and nothing is saved; select a different area and try again.
@@ -1055,7 +1058,7 @@ end)
 [*] [b]Pieces that can't turn when rotating 90°[/b]: wall corners, stairs and furniture with one facing move but keep their facing.
 [*] [b]The server's address changed[/b]: place the blueprint on the ground again from the library; blueprint files aren't affected.
 [*] [b]No area selection with a gamepad[/b]: Capture a building needs a mouse.
-[*] [b]Roof Helper[/b]: roof styles that can't be recognized as a full set don't get the button; 45-degree roofs only draw the south and east slopes; dragging an area needs a mouse.
+[*] [b]Roof Helper[/b]: roof styles that can't be recognized as a full set don't get the button; 45-degree roofs only draw the south and east slopes; dragging an area needs a mouse; the first time you pick a given roof or gable wall set, the game pauses briefly, once per set; tiles under the gable with no house wall to copy need walls built by hand.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
@@ -1134,7 +1137,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Once a rain-proof roof is built, the square below is no longer outdoors.
 [*] For the room to count as indoors (temperature), the level above also needs a floor.
-[*] Roofs from the Roof Helper in the 45-degree style get a ceiling tile under every tile, which an enclosed room needs to count as indoors; 30-degree sloped roofs keep rain off, but the game doesn't treat the space under them as a room.
+[*] Sloped roofs from the Roof Helper, 30-degree and 45-degree, get a ceiling tile under every tile (except tiles that already have a floor on the roof's level), which an enclosed room needs to count as indoors.
 [/list]
 [h3]Why do I get little or no XP?[/h3]
 [list]
