@@ -4,6 +4,7 @@
 -- 算完整張後只重查有變動的片：PlanCheck.touch 的格子、背包或技能變了（材料摘要每秒比一次）、沙盒設定變了、
 -- 玩家換樓層或走開 MOVE 格（重查還沒載入或太遠的片）、玩家身邊 NEAR 格內格上的物件數變了（每幀輪流比一段）。
 -- 會自己消失、又不改物件數的原因（PlanCheck.RECHECK：有人或車擋著、配方太暗）看不出來：身邊的片隔一段時間重查一次。
+-- 放不下（BLOCKED）的片也隔 STALE_MS 重查：撐它的東西可能蓋在別格、藍圖外，那一格的物件數比不到。
 -- 放不下、但旁邊還有會蓋的片的，細節碼報 WAIT（等旁邊先蓋好，見 waiting），狀態照舊是 blocked。
 -- 沒有地上的藍圖時 OnTick 第一行就離開。
 require "MinidoracatBuilder/Entry"
@@ -24,6 +25,8 @@ PlanCheck.NEAR = 12         -- 身邊幾格內的片輪流比格上的物件數
 PlanCheck.SWEEP = 128       -- 每幀輪流比幾片
 -- 這些細節碼的片隔多久（毫秒）重查一次。太暗要重算配方，隔久一點
 PlanCheck.RECHECK = { OCCUPIED = 500, VEHICLE = 500, DARK = 5000 }
+-- ponytail：身邊放不下的片每 STALE_MS 整片重算一次；量到拖慢再改成只比旁邊幾格的物件數
+PlanCheck.STALE_MS = 5000
 local MAX_BUCKET = 255
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 local FAR = { TOO_FAR = true, NOT_LOADED = true }
@@ -465,13 +468,16 @@ local function sweep(player, now)
         if r.s and not r.q and r.s ~= "far" then
             local x, y, z = p.x + cur.ox, p.y + cur.oy, p.z + cur.oz
             if math.abs(x - px) <= near and math.abs(y - py) <= near and math.abs(z - pz) <= 1 then
-                local every = r.c and PlanCheck.RECHECK[r.c]
-                local dt = every and now - (r.at or 0)
+                local every = r.c and (PlanCheck.RECHECK[r.c] or (r.c == "BLOCKED" and PlanCheck.STALE_MS))
+                if every and not r.at then r.at = now end -- 第一次看到只記時間：剛算完的不馬上再算一次
+                local dt = every and now - r.at
                 if dt and (dt < 0 or dt >= every) then
                     r.at = now
                     push(p)
                 elseif sigOf(cell:getGridSquare(x + (r.wx or 0), y + (r.wy or 0), z)) ~= r.sig then
+                    -- 連靠這一格撐的片一起重查：牆不是照圖蓋蓋的（手拖、別人、原版建造）時沒有人叫 touch
                     push(p)
+                    PlanCheck.touch(x + (r.wx or 0), y + (r.wy or 0), z)
                 end
             end
         end

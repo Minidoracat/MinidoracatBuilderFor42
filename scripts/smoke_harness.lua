@@ -12497,8 +12497,8 @@ end)()
     -- 測試用的藍圖：帶空白的圖塊名、中文名稱、配方項目、疊放、兩層、負的相對座標、一排與一列
     local function sample()
         local pl = Plan.new("海邊 小屋")
-        local w = Plan.item(pl, "edit_ddd_RUS_Forest Survival_01_64",
-            { mod = "FSMod", modName = "Forest Survival", workshop = "123456", version = "1.2" })
+        local w = Plan.item(pl, "pack_two_Tile Pack_01_64",
+            { mod = "TPMod", modName = "Tile Pack", workshop = "123456", version = "1.2" })
         local rc = Plan.item(pl, "recipe:Base.RainCollector_Tarp")
         local f = Plan.item(pl, "floors_01_40")
         for x = -2, 7 do Plan.add(pl, x, 0, 0, 0, 0, f) end
@@ -12517,8 +12517,8 @@ end)()
         if back then
             check(PF.encode(back) == text and sig(back) == sig(pl) and back.name == "海邊 小屋" and back.n == 17,
                 "存了再讀：內容與再存的文字完全一樣（帶空白的圖塊名、中文名稱、配方項目）")
-            local fs = back.items[back._byId["edit_ddd_RUS_Forest Survival_01_64"]]
-            check(fs.mod == "FSMod" and fs.modName == "Forest Survival" and fs.workshop == "123456" and fs.version == "1.2"
+            local fs = back.items[back._byId["pack_two_Tile Pack_01_64"]]
+            check(fs.mod == "TPMod" and fs.modName == "Tile Pack" and fs.workshop == "123456" and fs.version == "1.2"
                 and back.items[back._byId["floors_01_40"]].mod == nil, "項目的 MOD 來源讀回；原版的寫 - 讀回 nil")
             check(back.ox == 98 and back.oy == 200 and back.oz == 0 and Plan.bounds(back) == 0, "位置寫成包圍盒角的世界座標、片從 0 起算")
             check(#back._undo == 0 and back.rev == 0 and Plan.undo(back) == false, "讀回的藍圖沒有撤銷紀錄")
@@ -12591,7 +12591,7 @@ end)()
         local back, why, at = PF.unshare(code)
         check(back ~= nil and sig(back) == sig(pl) and back.name == pl.name and back.ox == 98 and back.oy == 200,
             "分享碼來回一致、帶位置（" .. tostring(why) .. " " .. tostring(at) .. "）")
-        check(back and back.items[back._byId["edit_ddd_RUS_Forest Survival_01_64"]].workshop == "123456", "分享碼帶項目的來源 MOD")
+        check(back and back.items[back._byId["pack_two_Tile Pack_01_64"]].workshop == "123456", "分享碼帶項目的來源 MOD")
         local noPos = PF.unshare(PF.share(pl, false))
         check(noPos and noPos.ox == nil and sig(noPos) == sig(pl), "不帶位置的分享碼")
         check(PF.share(pl) == PF.share(pl, false), "省略 withPos＝不帶位置")
@@ -12795,7 +12795,7 @@ end)()
         disk["MinidoracatBuilder/plans/a b.txt"], disk["MinidoracatBuilder/plans/House (1).TXT"] = nil, nil
         local h = PF.head("bighouse.txt")
         check(h and h.name == "海邊 小屋" and h.n == 17 and h.w == 10 and h.h == 6 and h.levels == 2 and #h.items == 3
-            and h.items[1].modName == "Forest Survival" and h.items[1].n == 5, "讀檔頭：名稱、大小、片數、各項目與來源")
+            and h.items[1].modName == "Tile Pack" and h.items[1].n == 5, "讀檔頭：名稱、大小、片數、各項目與來源")
         local back = PF.load("bighouse.txt")
         check(back and back.file == "bighouse.txt" and sig(back) == sig(pl), "讀整份")
         check(PF.fileName("Big House") == "bighouse2.txt", "撞名加編號")
@@ -12953,14 +12953,14 @@ end)()
     do -- 圖塊的來源 MOD
         local oldMap, oldOrder = spriteMap, spriteOrder
         world({ sprite("fs_tiles_01_3", MOD_ID_BASE + 3), sprite("walls_01_4", 10) })
-        Sources.byFile = { [7001] = "FSMod" }
+        Sources.byFile = { [7001] = "TPMod" }
         getModInfoByID = function(id)
-            if id ~= "FSMod" then return nil end
-            return { getName = function() return "Forest Survival" end, getWorkshopID = function() return "123456" end,
+            if id ~= "TPMod" then return nil end
+            return { getName = function() return "Tile Pack" end, getWorkshopID = function() return "123456" end,
                 getModVersion = function() return "" end }
         end
         local s = PF.source("fs_tiles_01_3")
-        check(s and s.mod == "FSMod" and s.modName == "Forest Survival" and s.workshop == "123456" and s.version == nil,
+        check(s and s.mod == "TPMod" and s.modName == "Tile Pack" and s.workshop == "123456" and s.version == nil,
             "圖塊屬於哪個 MOD：ID、名稱、工作坊編號（版本空的回 nil）")
         check(PF.source("walls_01_4") == nil and PF.source("recipe:Base.RainCollector_Tarp") == nil and PF.source("none_01_1") == nil,
             "原版的圖、配方項目、沒有的圖：nil")
@@ -12994,11 +12994,11 @@ end)()
         worldName = "我的世界"
         check(next(PS.load()) == nil, "沒有存過：空表")
         local st = { file = "smallhut.txt", ox = 98, oy = 200, oz = 0, hidden = true,
-            boxes = { { x = 1, y = 2, z = 0, index = 3 } }, seen = { ["edit_ddd_RUS_Forest Survival_01_64"] = "MISSING" } }
+            boxes = { { x = 1, y = 2, z = 0, index = 3 } }, seen = { ["pack_two_Tile Pack_01_64"] = "MISSING" } }
         check(PS.save(st) == true, "存地上的藍圖")
         local got = PS.load()
         check(got.file == "smallhut.txt" and got.ox == 98 and got.oy == 200 and got.oz == 0 and got.hidden == true
-            and got.boxes[1].index == 3 and got.seen["edit_ddd_RUS_Forest Survival_01_64"] == "MISSING", "讀回地上的藍圖")
+            and got.boxes[1].index == 3 and got.seen["pack_two_Tile Pack_01_64"] == "MISSING", "讀回地上的藍圖")
         worldName = "other"
         check(next(PS.load()) == nil, "別的存檔看不到")
         worldName = "我的世界"
@@ -13377,8 +13377,32 @@ end)()
     waitNow()
     check(st(wWall) == "done" and st(wRoof) ~= "blocked" and codeOf(wNext) == "WAIT",
         "在等旁邊：牆蓋好後 touch，上面的屋頂不再放不下；挨著的那片改等它")
-    Plan.remove(pl, { wWall, wRoof, wNext, wLone, wOver, wA, wB })
+    -- 牆不是照圖蓋蓋的（手拖、隊友、原版建造）：沒有人叫 touch。身邊輪流比物件數看到那一格變了，靠它撐的片也要重查
+    -- （植入：只重查那一片自己，上面的屋頂就一直「放不下」，照圖蓋永遠不挑它）
+    local hWall, hRoof = put("pcw_01_0", 4, 6, 0), put("pcr_01_0", 4, 6, 1)
+    waitNow()
+    local hBefore = codeOf(hRoof)
+    square(204, 206, 0, { wallN = {} })
+    squares["204,206,0"].objects[1] = obj("pcw_01_0")
+    waitNow()
+    check(hBefore == "WAIT" and st(hWall) == "done" and st(hRoof) ~= "blocked",
+        "在等旁邊：牆自己出現（沒有 touch），身邊輪流比到那格變了，上面的屋頂跟著重查")
+    -- 撐它的東西蓋在藍圖外（那一格沒有片）：物件數比不到，放不下的片隔 STALE_MS 重查一次
+    -- （植入：不重查就一直放不下，只能搬藍圖）
+    square(206, 204, 0, { wallN = {} })
+    squares["206,204,0"].objects[1] = obj("pcw_01_0")
+    PC.tick(K)
+    local stale = codeOf(wLone)
+    clockStep = PC.STALE_MS or 0
+    getTimestampMs()
+    clockStep = 0
+    waitNow()
+    check(stale == "BLOCKED" and st(wLone) ~= "blocked",
+        "放不下的片：撐它的牆蓋在藍圖外，隔一段時間重查就能蓋（同一段時間內不重算）")
+    Plan.remove(pl, { wWall, wRoof, wNext, wLone, wOver, wA, wB, hWall, hRoof })
     square(202, 205, 0)
+    square(204, 206, 0)
+    square(206, 204, 0)
     -- 同一格疊很多片（12 款屋頂疊在一格、下面是還沒蓋的牆）：名單以格子為單位算，讀清單的次數跟片數成正比
     -- （植入：每一片都把旁邊每一格的清單整張掃一遍，12 片就要讀三百多次）
     local dense = {}
