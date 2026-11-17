@@ -15854,6 +15854,12 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         CanScrap = "", Material = "Wood" })
     set("rm_01", 0, "N", 20, 9830)
     add("rm_01_0", 9830, { SlopedSurfaceDirection = "N", SlopedSurfaceHeightMax = "5", IsMoveAble = "" })
+    -- rh_01：朝北 5 片的短坡道（每片升 20），和 rp_01 北向同方向、不同圖塊包與長度（帳本鍵要分得開）
+    for i = 0, 4 do
+        local keys = { SlopedSurfaceDirection = "N", SlopedSurfaceHeightMax = tostring(20 * (i + 1)) }
+        if i > 0 then keys.SlopedSurfaceHeightMin = tostring(20 * i) end
+        add("rh_01_" .. i, 9900 + i, keys)
+    end
     local rugS = add("rpr_01_0", 9793, {}, { "FloorOverlay" })
     -- 樓梯平台圖（原版一定有；前面情境換過圖塊表時這裡補上）與 W 型、N 型樓梯各一組（底、中、頂）
     if not spriteMap[Entry.STAIR_FLOOR] then add(Entry.STAIR_FLOOR, 9797) end
@@ -16123,7 +16129,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     local okA = build(1, 421)
     local n, marked, plain = column(421)
     local A1, A10 = piece(421, 430, "rp_01_0"), piece(421, 421, "rp_01_9")
-    local rec = Ledger.getRamp(421, 430, 0, "N")
+    local rec = Ledger.getRamp(421, 430, 0, "rp_01_0")
     check(okA == true and n == 20 and marked and plain and A1.sent and table.concat(order, " ") == table.concat(
         (function() local t = {} for i = 0, 19 do t[#t + 1] = "rp_01_" .. i end return t end)(), " ")
         and stock() == "180/180",
@@ -16138,7 +16144,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     failAt = at(427, 421)
     local okU = build(2, 427)
     failAt = nil
-    check(okU == false and column(427) == 0 and Ledger.getRamp(427, 430, 0, "N") == nil and deck(427) == nil and stock() == "180/180",
+    check(okU == false and column(427) == 0 and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil and deck(427) == nil and stock() == "180/180",
         "坡道（Ramp）✗ 放到第 10 片丟錯：Place.undo 之後一片不留、帳本沒有那筆、沒有平台、沒扣料")
 
     -- 坡道格上只放格邊的東西（探針 2e）；地板換不掉坡道片、框選不把坡道片收成地板
@@ -16164,7 +16170,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     local okD, codeD = unbuild(3, 421, 421, "rp_01_9")
     local drop = P:getCurrentSquare().dropped
     check(okD == "dismantled" and column(421) == 0 and drop["Base.Plank"] == 20 and drop["Base.Nails"] == 20
-        and Ledger.getRamp(421, 430, 0, "N") == nil and deck(421) == nil and Ledger.get({ getSquare = function() return at(421, 410, 1) end,
+        and Ledger.getRamp(421, 430, 0, "rp_01_0") == nil and deck(421) == nil and Ledger.get({ getSquare = function() return at(421, 410, 1) end,
             getSprite = function() return spriteMap.rp_01_23 end }) == nil,
         "坡道（Ramp）拆除：點第 10 片整組 20 片都拆、照帳本退一次（木板 20）、帳本清掉、平台拆掉（" .. tostring(codeD) .. "）")
     -- ✗ 舊版當地板蓋的坡道片（IsoThumpable、isFloor）照地板拆
@@ -16197,7 +16203,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         and #pm.remove == 19 and pm.partial and pm.refund[1] ~= nil and pm.incomplete == nil and not pm.foreign,
         "坡道（Ramp）收片照位置與圖名：✗ 清掉一片記號不算殘組（20 片）；少一片時 remove 是剩下的 19 片、標殘組")
     check(pu.incomplete == "NOT_LOADED" and okU2 == "dismantleSkipped" and codeU2 == "NOT_LOADED" and column(442) == 20
-        and next(P:getCurrentSquare().dropped) == nil and Ledger.getRamp(442, 430, 0, "N") ~= nil,
+        and next(P:getCurrentSquare().dropped) == nil and Ledger.getRamp(442, 430, 0, "rp_01_0") ~= nil,
         "坡道（Ramp）✗ 缺片那格沒載入：照舊 NOT_LOADED，一片都不拆、不退料、帳本還在")
     check(#pok.remove == 20 and pok.refund[1] == D1 and pok.incomplete == nil and not pok.foreign and #pok.landing == 1,
         "坡道（Ramp）完整：20 片加平台，照頭片那筆退")
@@ -16206,16 +16212,16 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     local okP, _ = unbuild(6, 442, 430, "rp_01_0")
     local dropP = P:getCurrentSquare().dropped
     check(okP == "dismantled" and dropP["Base.Plank"] == 20 and column(442) == 0 and piece(442, 416, "rp_01_14") == nil
-        and Ledger.getRamp(442, 430, 0, "N") == nil and deck(442) == nil,
+        and Ledger.getRamp(442, 430, 0, "rp_01_0") == nil and deck(442) == nil,
         "坡道（Ramp）✗ 清掉一片記號後拆：照常整組 20 片都拆、退一次（木板 20）、帳本刪掉")
     -- 少一片（被別的方式拆掉，帳本跟著清）：點中間任一片照拆剩下 19 片、0 退料
     esq(430, 410, 1)
     build(15, 430)
     at(430, 416):transmitRemoveItemFromSquare(piece(430, 416, "rp_01_14"))
-    local voided = Ledger.getRamp(430, 430, 0, "N")
+    local voided = Ledger.getRamp(430, 430, 0, "rp_01_0")
     local okM = unbuild(16, 430, 420, "rp_01_10")
     check(voided and next(voided) == nil and okM == "dismantled" and column(430) == 0
-        and next(P:getCurrentSquare().dropped) == nil and Ledger.getRamp(430, 430, 0, "N") == nil and deck(430) == nil,
+        and next(P:getCurrentSquare().dropped) == nil and Ledger.getRamp(430, 430, 0, "rp_01_0") == nil and deck(430) == nil,
         "坡道（Ramp）殘組（少一片）：那一筆作廢成空表（鍵留著）；點任一片拆掉剩下 19 片和平台、不退料，最後一片拆掉才刪鍵")
 
     -- 平台留著：蓋之前那格已經有地板（不是本 MOD 補的）、上面有別的東西
@@ -16226,8 +16232,18 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     at(436, 410, 1).objects[#at(436, 410, 1).objects + 1] = { name = "chair" }
     unbuild(8, 433, 430, "rp_01_0")
     unbuild(9, 436, 430, "rp_01_0")
-    check(okB and okC and column(433) == 0 and column(436) == 0 and deck(433) ~= nil and deck(436) ~= nil,
-        "坡道（Ramp）✗ 平台那格原本就有地板、平台上有別的東西：拆坡道時平台留著")
+    -- 平台格原本就有 STAIR_FLOOR（玩家自己鋪的、帳本沒記）：deckOf 認這張圖，但不是本 MOD 補的，拆坡道時一樣留著
+    do
+        esq(437, 410, 1):addFloor(Entry.STAIR_FLOOR)
+        for _ = 1, 20 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end -- 退料掉在地上，背包照舊
+        local okS = build(120, 437)
+        local okSU = unbuild(121, 437, 430, "rp_01_0")
+        local keptS
+        for _, o in ipairs(at(437, 410, 1).objects) do if o.name == Entry.STAIR_FLOOR then keptS = o end end
+        check(okB and okC and column(433) == 0 and column(436) == 0 and deck(433) ~= nil and deck(436) ~= nil
+            and okS and okSU == "dismantled" and column(437) == 0 and keptS ~= nil and #at(437, 410, 1).objects == 1,
+            "坡道（Ramp）✗ 平台那格原本就有地板（坡道平台圖或 STAIR_FLOOR）、平台上有別的東西：拆坡道時平台留著")
+    end
 
     -- ✗ 拆地板：坡道片底下本 MOD 的地板拆掉後，坡道片還在（格上還有 solidfloor，不補泥土、不 clearFloor）
     esq(439, 410, 1)
@@ -16254,7 +16270,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     table.insert(fsq.objects, 1, fl)
     if Floors then Floors.put(fl, { ["Base.Plank"] = 1 }) end
     local okF = unbuild(11, 439, 430, "rpf_01_0")
-    check(okF == "dismantled" and piece(439, 430, "rp_01_0") ~= nil and column(439) == 20 and Ledger.getRamp(439, 430, 0, "N") ~= nil,
+    check(okF == "dismantled" and piece(439, 430, "rp_01_0") ~= nil and column(439) == 20 and Ledger.getRamp(439, 430, 0, "rp_01_0") ~= nil,
         "坡道（Ramp）✗ 拆地板：拆掉坡道片底下的地板，坡道片不被當成地板一起拆、帳本那筆還在")
 
     for _ = 1, 200 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
@@ -16280,7 +16296,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         at(445, 425):transmitRemoveItemFromSquare(piece(445, 425, "rp_01_5")) -- 大錘砸掉一片：沒有那一筆，不新增
         local okH, codeH = unbuild(41, 445, 420, "rp_01_10")
         check(okW == "dismantleSkipped" and codeW == "NOT_OURS" and whole == 20 and okH == "dismantleSkipped"
-            and codeH == "NOT_OURS" and column(445) == 19 and Ledger.getRamp(445, 430, 0, "N") == nil
+            and codeH == "NOT_OURS" and column(445) == 19 and Ledger.getRamp(445, 430, 0, "rp_01_0") == nil
             and next(P:getCurrentSquare().dropped) == nil,
             "坡道（Ramp）✗ 地圖坡道寫上記號、帳本沒有那一筆：整組或缺一片都 NOT_OURS、一片不拆，帳本不多一筆")
     end
@@ -16292,10 +16308,10 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local hit = piece(427, 416, "rp_01_14")
         hit.md.builderEntry = "something_else"
         at(427, 416):transmitRemoveItemFromSquare(hit)
-        local v = Ledger.getRamp(427, 430, 0, "N")
+        local v = Ledger.getRamp(427, 430, 0, "rp_01_0")
         local okS = unbuild(43, 427, 430, "rp_01_0")
         check(v and next(v) == nil and okS == "dismantled" and column(427) == 0 and next(P:getCurrentSquare().dropped) == nil
-            and Ledger.getRamp(427, 430, 0, "N") == nil,
+            and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil,
             "坡道（Ramp）✗ 記號改過的片被砸：那一筆照樣作廢（不留整筆退料），剩下的拆光、不退料、最後刪鍵")
     end
     -- 帳本寫不進去（還沒建、滿了）、平台引擎半途出錯回 nil：整組失敗、一片不留、不扣料
@@ -16315,13 +16331,13 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local okF = build(45, 427)
         Store.put = realPut
         check(okN == false and nN == 0 and dN == nil and okF == false and column(427) == 0 and deck(427) == nil
-            and Ledger.getRamp(427, 430, 0, "N") == nil and stock() == start,
+            and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil and stock() == start,
             "坡道（Ramp）✗ 帳本還沒建、帳本滿了：放置失敗，20 片與平台都不留、不扣料")
         local s4 = esq(421, 410, 1) -- 另一欄：不受上面那一條的結果影響
         local af = s4.addFloor
         function s4:addFloor(name) af(self, name) return nil end -- 引擎例外被吞：地板已加進格子、回 nil
         local okL = build(46, 421)
-        check(okL == false and column(421) == 0 and deck(421) == nil and Ledger.getRamp(421, 430, 0, "N") == nil
+        check(okL == false and column(421) == 0 and deck(421) == nil and Ledger.getRamp(421, 430, 0, "rp_01_0") == nil
             and stock() == start,
             "坡道（Ramp）✗ 平台 addFloor 加進格子卻回 nil：整組失敗，20 片、平台、帳本都不留，不扣料")
     end
@@ -16405,7 +16421,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         piece(427, 420, "rp_01_10").md = {}
         local okC = unbuild(61, 427, 420, "rp_01_10")
         local dropC = P:getCurrentSquare().dropped["Base.Plank"]
-        local goneC = column(427) == 0 and Ledger.getRamp(427, 430, 0, "N") == nil and deck(427) == nil
+        local goneC = column(427) == 0 and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil and deck(427) == nil
         build(62, 427)
         for i = 0, 19 do piece(427, 430 - i, "rp_01_" .. i).md = {} end
         P:getCurrentSquare().dropped = {}
@@ -16417,7 +16433,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local okA = sent[#sent] and sent[#sent].cmd
         local dropA = P:getCurrentSquare().dropped["Base.Plank"]
         check(okC == "dismantled" and dropC == 20 and goneC and dur == Entry.duration("ramp", P) and dur > 1
-            and okA == "dismantled" and dropA == 20 and column(427) == 0 and Ledger.getRamp(427, 430, 0, "N") == nil,
+            and okA == "dismantled" and dropA == 20 and column(427) == 0 and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil,
             "坡道（Ramp）✗ 被點那片、整組的記號都清掉：伺服器照圖與位置找到，施工時間照坡道，整組拆、退一次（木板 20）")
         for i = 0, 19 do
             local o = piece(445, 430 - i, "rp_01_" .. i)
@@ -16529,9 +16545,9 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         squares["427,425,0"] = nil
         at(427, 416):transmitRemoveItemFromSquare(piece(427, 416, "rp_01_14"))
         squares["427,425,0"] = far
-        local v = Ledger.getRamp(427, 430, 0, "N")
+        local v = Ledger.getRamp(427, 430, 0, "rp_01_0")
         local okV = unbuild(81, 427, 425, "rp_01_5")
-        check(v and next(v) == nil and okV == "dismantled" and column(427) == 0 and Ledger.getRamp(427, 430, 0, "N") == nil,
+        check(v and next(v) == nil and okV == "dismantled" and column(427) == 0 and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil,
             "坡道（Ramp）✗ 某片被砸時同組剩下的片所在的格子沒載入：只作廢（空表）、不刪鍵，之後照殘組拆光")
         esq(427, 410, 1)
         build(82, 427)
@@ -16540,10 +16556,10 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         Store.put = function() return false end
         at(427, 416):transmitRemoveItemFromSquare(piece(427, 416, "rp_01_14"))
         Store.put = realPut
-        local kept = Ledger.getRamp(427, 430, 0, "N")
+        local kept = Ledger.getRamp(427, 430, 0, "rp_01_0")
         local okK = unbuild(83, 427, 420, "rp_01_10")
         check(kept and kept["Base.Plank"] == 20 and okK == "dismantled" and next(P:getCurrentSquare().dropped) == nil
-            and column(427) == 0 and Ledger.getRamp(427, 430, 0, "N") == nil,
+            and column(427) == 0 and Ledger.getRamp(427, 430, 0, "rp_01_0") == nil,
             "坡道（Ramp）✗ 作廢寫不進帳本：留著原筆、不刪鍵；剩下的照殘組拆光、不退料")
     end
     -- 樓梯平台 addFloor 加進格子卻回 nil：整組失敗，三片、平台都不留，不扣料
@@ -16593,19 +16609,19 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local okN = build(90, 470)
         at(470, 430):transmitRemoveItemFromSquare(piece(470, 430, "rp_01_0"))
         local okE = east(91, 470, 430)
-        local eRec = Ledger.getRamp(470, 430, 0, "E")
-        local nRec = Ledger.getRamp(470, 430, 0, "N")
+        local eRec = Ledger.getRamp(470, 430, 0, "rp_01_72")
+        local nRec = Ledger.getRamp(470, 430, 0, "rp_01_0")
         fresh()
         local uN = unAt(92, 470, 420, "rp_01_10")
         local northLeft = 0
         for i = 1, 19 do if piece(470, 430 - i, "rp_01_" .. i) then northLeft = northLeft + 1 end end
-        local eAfter = Ledger.getRamp(470, 430, 0, "E")
+        local eAfter = Ledger.getRamp(470, 430, 0, "rp_01_72")
         fresh()
         local uE = unAt(93, 470, 430, "rp_01_72")
         local dropE = P:getCurrentSquare().dropped["Base.Plank"]
         check(okN and okE and nRec and next(nRec) == nil and eRec and eRec["Base.Plank"] == 20 and uN == "dismantled"
             and northLeft == 0 and eAfter == eRec and uE == "dismantled" and dropE == 20 and eastLeft(470, 430) == 0
-            and Ledger.getRamp(470, 430, 0, "E") == nil and Ledger.getRamp(470, 430, 0, "N") == nil,
+            and Ledger.getRamp(470, 430, 0, "rp_01_72") == nil and Ledger.getRamp(470, 430, 0, "rp_01_0") == nil,
             "坡道（Ramp）✗ 北向殘組和同一頭片格的東向新組：拆殘組不動東向那一筆，東向照常整組拆、退一次（木板 20）")
         -- 地圖上的北向坡道片（沒有頭片、沒有記號、帳本沒有）＋在它推算的頭片格蓋東向坡道：地圖的片 NOT_OURS、一片不動
         for i = 1, 19 do
@@ -16615,18 +16631,88 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         esq(515, 420, 1)
         fresh()
         local okC = east(94, 495, 420)
-        local cRec = Ledger.getRamp(495, 420, 0, "E")
+        local cRec = Ledger.getRamp(495, 420, 0, "rp_01_72")
         fresh()
         local uM, cM = unAt(95, 495, 410, "rp_01_10")
         local mapLeft = 0
         for i = 1, 19 do if piece(495, 420 - i, "rp_01_" .. i) then mapLeft = mapLeft + 1 end end
-        local cAfter = Ledger.getRamp(495, 420, 0, "E")
+        local cAfter = Ledger.getRamp(495, 420, 0, "rp_01_72")
         fresh()
         local uC = unAt(96, 495, 420, "rp_01_72")
         local dropC = P:getCurrentSquare().dropped["Base.Plank"]
         check(okC and cRec and uM == "dismantleSkipped" and cM == "NOT_OURS" and mapLeft == 19 and cAfter == cRec
-            and Ledger.getRamp(495, 420, 0, "N") == nil and uC == "dismantled" and dropC == 20 and eastLeft(495, 420) == 0,
+            and Ledger.getRamp(495, 420, 0, "rp_01_0") == nil and uC == "dismantled" and dropC == 20 and eastLeft(495, 420) == 0,
             "坡道（Ramp）✗ 地圖坡道殘片（沒有頭片）＋頭片格蓋了別方向的本 MOD 坡道：拆地圖的片 NOT_OURS、19 片都在、那組帳本不變，那組照常拆")
+        P.pos.x, P.pos.y = 421.5, 431.5
+    end
+
+    -- 帳本鍵含頭片圖名：同方向、同頭片格，但圖塊包或長度不同的兩組（rp_01 北向 20 片、rh_01 北向 5 片）各自一筆
+    do
+        local function un(n, x, y, name)
+            P.pos.y = y + 1.5
+            local ok, code = unbuild(n, x, y, name)
+            P.pos.y = 431.5
+            return ok, code
+        end
+        local function short(n, x)
+            P.pos.x, P.pos.y = x + 0.5, 431.5
+            local c = intentCode(n, "rh_01_0", { x, 430, 0, 0 })
+            sent = {}
+            return c == nil and Server.complete(P, n, 1)
+        end
+        local function count(x, from, to)
+            local k = 0
+            for i = from, to do if piece(x, 430 - i, "rp_01_" .. i) then k = k + 1 end end
+            return k
+        end
+        local function shortLeft(x)
+            local k = 0
+            for i = 0, 4 do if piece(x, 430 - i, "rh_01_" .. i) then k = k + 1 end end
+            return k
+        end
+        for _ = 1, 40 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+        -- 地圖上的北向 rp_01 少了頭片那一段（第 1–5 片），在推算的頭片格蓋一組 rh_01；拆地圖的片 NOT_OURS、一片不動
+        for i = 5, 19 do
+            local sq = at(500, 430 - i)
+            sq.objects[#sq.objects + 1] = IsoObject.new(nil, sq, spriteMap["rp_01_" .. i])
+        end
+        esq(500, 425, 1)
+        fresh()
+        local okH = short(130, 500)
+        local hRec = Ledger.getRamp(500, 430, 0, "rh_01_0")
+        local hPlank = hRec and hRec["Base.Plank"]
+        fresh()
+        local uM, cM = un(131, 500, 420, "rp_01_10")
+        local mapLeft, hAfter = count(500, 5, 19), Ledger.getRamp(500, 430, 0, "rh_01_0")
+        fresh()
+        local uH = un(132, 500, 430, "rh_01_0")
+        local dropH = P:getCurrentSquare().dropped["Base.Plank"]
+        check(okH and hPlank and hPlank > 0 and uM == "dismantleSkipped" and cM == "NOT_OURS" and mapLeft == 15
+            and hAfter == hRec and hAfter["Base.Plank"] == hPlank and uH == "dismantled" and dropH == hPlank and shortLeft(500) == 0
+            and Ledger.getRamp(500, 430, 0, "rh_01_0") == nil and Ledger.getRamp(500, 430, 0, "rp_01_0") == nil,
+            "坡道（Ramp）✗ 地圖北向坡道少了頭片那段＋頭片格蓋了另一組北向短坡道：拆地圖的片 NOT_OURS、15 片都在、短坡道那筆不變，之後照常整組退料")
+        -- 自己的北向 rp_01 少了頭片那段（那一筆作廢），同一格蓋 rh_01；拆殘組不動 rh_01 那一筆，之後照常整組退料
+        esq(505, 410, 1)
+        esq(505, 425, 1)
+        fresh()
+        P.pos.x = 505.5
+        local okN = build(133, 505)
+        for i = 0, 4 do at(505, 430 - i):transmitRemoveItemFromSquare(piece(505, 430 - i, "rp_01_" .. i)) end
+        local nRec = Ledger.getRamp(505, 430, 0, "rp_01_0")
+        fresh()
+        local okH2 = short(134, 505)
+        local h2Rec = Ledger.getRamp(505, 430, 0, "rh_01_0")
+        local h2Plank = h2Rec and h2Rec["Base.Plank"]
+        fresh()
+        local uN = un(135, 505, 420, "rp_01_10")
+        local nLeft, h2After = count(505, 5, 19), Ledger.getRamp(505, 430, 0, "rh_01_0")
+        fresh()
+        local uH2 = un(136, 505, 430, "rh_01_0")
+        local dropH2 = P:getCurrentSquare().dropped["Base.Plank"]
+        check(okN and nRec and next(nRec) == nil and okH2 and h2Plank and h2Plank > 0 and uN == "dismantled" and nLeft == 0
+            and Ledger.getRamp(505, 430, 0, "rp_01_0") == nil and h2After == h2Rec and h2After["Base.Plank"] == h2Plank
+            and uH2 == "dismantled" and dropH2 == h2Plank and shortLeft(505) == 0 and Ledger.getRamp(505, 430, 0, "rh_01_0") == nil,
+            "坡道（Ramp）✗ 自己的北向殘組＋同一頭片格的另一組北向短坡道：拆殘組不動短坡道那一筆，短坡道之後照常整組退料")
         P.pos.x, P.pos.y = 421.5, 431.5
     end
 
@@ -16662,7 +16748,7 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local okR = p1 and c == nil and Server.complete(P, 102, 1)
         check(okB and #whole == 1 and p1.id == "rp_01_0" and p1.x == 480 and p1.y == 430 and p1.z == 0 and r1.kinds == 1
             and okU == "dismantled" and gone and okR and column(480) == 20 and deck(480) ~= nil
-            and start - P.inv:count("Base.Plank") == 20 and Ledger.getRamp(480, 430, 0, "N")["Base.Plank"] == 20,
+            and start - P.inv:count("Base.Plank") == 20 and Ledger.getRamp(480, 430, 0, "rp_01_0")["Base.Plank"] == 20,
             "坡道（Ramp）✗ 框選含平台的坡道：藍圖只有頭片一項；照藍圖蓋回來 20 片加平台都在、只扣一組的料（木板 20）")
         local own = esq(485, 410, 1)
         own:addFloor("rp_01_23")

@@ -271,18 +271,19 @@ function Ledger.forgetDoor(anchor)
     if k then L:del(k) end
 end
 
--- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp<方向>"] = 整組的退料表，鍵是頭片那格加上坡方向（Place.rampOrigin 的 set.dir，
--- N／E／S／W；同 doorKey 帶方向）。頭片不在時那一格放得下別方向的頭片，兩組的頭片格會相同，方向分得開。
+-- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp:<頭片圖名>"] = 整組的退料表，鍵是頭片那格加上頭片圖名（Place.rampOrigin 的
+-- set.parts[1]）。頭片名已含圖塊包、方向與片數：頭片不在時那一格放得下別的頭片（別方向，或同方向但別的圖塊包、別的長度），
+-- 兩組的頭片格會相同，圖名分得開；同一組在同一格只放得下一份，所以一組一筆。
 -- 「這組是不是本 MOD 蓋的」只認這一筆；伺服器不看記號（modData），找片、認片、清帳本都照圖與位置
 -- （Dismantle.find、Place.refundOf、Place.onAboutToBeRemoved）。某片被本工具以外的方式移走時這一筆改成空表（作廢，
 -- Ledger.voidRamp）：剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪
-function Ledger.rampKey(x, y, z, dir)
-    return x .. "," .. y .. "," .. z .. ",ramp" .. dir
+function Ledger.rampKey(x, y, z, head)
+    return x .. "," .. y .. "," .. z .. ",ramp:" .. head
 end
 
 -- Place.build 蓋好整組後記，回記進去了沒有。記不進去（帳本還沒建、滿了）時印 log、回 false：Place.build 丟錯，整組收回、不扣料
-function Ledger.putRamp(x, y, z, dir, items)
-    local k = Ledger.instance and Ledger.rampKey(x, y, z, dir)
+function Ledger.putRamp(x, y, z, head, items)
+    local k = Ledger.instance and Ledger.rampKey(x, y, z, head)
     local copy = {}
     for ft, n in pairs(items) do copy[ft] = n end
     if k and valid(copy, k) and L:put(k, copy) then return true end
@@ -290,21 +291,21 @@ function Ledger.putRamp(x, y, z, dir, items)
     return false
 end
 
-function Ledger.getRamp(x, y, z, dir)
-    return Ledger.instance and L:get(Ledger.rampKey(x, y, z, dir)) or nil
+function Ledger.getRamp(x, y, z, head)
+    return Ledger.instance and L:get(Ledger.rampKey(x, y, z, head)) or nil
 end
 
 -- 作廢：有那一筆時改成空表（不再退料、鍵留著）。空表比原本的小，照理放得回原處；萬一放不回去就留著原本那筆、不刪鍵：
 -- 剩下的片照樣認得到這組，缺片的組拆除照殘組算（Dismantle.plan 的 partial），一樣不退料
-function Ledger.voidRamp(x, y, z, dir)
-    local k = Ledger.instance and Ledger.rampKey(x, y, z, dir)
+function Ledger.voidRamp(x, y, z, head)
+    local k = Ledger.instance and Ledger.rampKey(x, y, z, head)
     if k and L:get(k) and not L:put(k, {}) then
         print(LOG .. "ramp ledger could not be voided; kept: " .. k)
     end
 end
 
-function Ledger.forgetRamp(x, y, z, dir)
-    if Ledger.instance then L:del(Ledger.rampKey(x, y, z, dir)) end
+function Ledger.forgetRamp(x, y, z, head)
+    if Ledger.instance then L:del(Ledger.rampKey(x, y, z, head)) end
 end
 
 local STAIR_FLOOR = MinidoracatBuilder.Entry.STAIR_FLOOR

@@ -902,7 +902,7 @@ function Place.refundOf(obj)
     local x, y, z, set = Place.rampOrigin(obj)
     if x then
         local Ledger = MinidoracatBuilder.Ledger
-        return Ledger and Ledger.getRamp(x, y, z, set.dir) or nil
+        return Ledger and Ledger.getRamp(x, y, z, set.parts[1]:getName()) or nil
     end
     if Place.keyed(obj) then
         local Ledger, Dismantle = MinidoracatBuilder.Ledger, MinidoracatBuilder.Dismantle
@@ -1174,7 +1174,7 @@ end
 -- 見 builder-dev placement.md「坡道」），AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
 -- 記號＝頭片名（Place.ramp，只給右鍵選單看）放之前寫好，跟著整件物件送給玩家。照樓梯清掉這格的草。坡頂上一層沒有地板
 -- 時補平台（layFloor：引擎半途出錯的那片拿掉、整組失敗），記帳本（拆坡道時一起拆，Dismantle.plan）。整組的退料記成
--- 伺服器帳本一筆，鍵是頭片那格加上坡方向（Ledger.rampKey、Place.refundOf）：這一筆是「這組是本 MOD 蓋的」唯一的憑據，記不進去就整組失敗
+-- 伺服器帳本一筆，鍵是頭片那格加上頭片圖名（Ledger.rampKey、Place.refundOf）：這一筆是「這組是本 MOD 蓋的」唯一的憑據，記不進去就整組失敗
 -- （丟錯，Server.complete 照 Place.undo 收回、不扣料），不留一組本工具拆不掉的坡道
 local function placeRamp(cells, placed)
     local head, items = cells[1], {}
@@ -1199,8 +1199,8 @@ local function placeRamp(cells, placed)
         end
         sq:RecalcAllWithNeighbours(true)
     end
-    local Ledger, set = MinidoracatBuilder.Ledger, Entry.rampSet(head.spr)
-    if not (Ledger and set and Ledger.putRamp(head.x, head.y, head.z, set.dir, items)) then
+    local Ledger = MinidoracatBuilder.Ledger
+    if not (Ledger and Ledger.putRamp(head.x, head.y, head.z, head.spr:getName(), items)) then
         error("ramp ledger not recorded at " .. head.x .. "," .. head.y .. "," .. head.z)
     end
 end
@@ -1562,9 +1562,9 @@ function Place.onAboutToBeRemoved(obj)
     end
     local x, y, z, set = Place.rampOrigin(obj)
     if x then
-        local Ledger = MinidoracatBuilder.Ledger
-        if not (Ledger and Ledger.getRamp(x, y, z, set.dir)) then return end
-        if rampRest(obj, x, y, z, set) then Ledger.voidRamp(x, y, z, set.dir) else Ledger.forgetRamp(x, y, z, set.dir) end
+        local Ledger, name = MinidoracatBuilder.Ledger, set.parts[1]:getName()
+        if not (Ledger and Ledger.getRamp(x, y, z, name)) then return end
+        if rampRest(obj, x, y, z, set) then Ledger.voidRamp(x, y, z, name) else Ledger.forgetRamp(x, y, z, name) end
         return
     end
     if not instanceof(obj, "IsoThumpable") then
