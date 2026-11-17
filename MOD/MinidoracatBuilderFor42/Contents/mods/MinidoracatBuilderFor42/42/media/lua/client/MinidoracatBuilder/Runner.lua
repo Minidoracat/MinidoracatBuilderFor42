@@ -1041,6 +1041,8 @@ local function watch(p)
     local stats = p:getStats()
     if stats and stats:getNumChasingZombies() > 0 then return Runner.pause("ZOMBIE") or true end
     if p:isAttackStarted() or p:isAiming() then return Runner.pause("ATTACK") or true end
+    -- 手把按著取消動作（B）：原版直接清佇列（ISButtonPrompt.stopAction），沒有按鍵事件可掛；鍵盤的在 Runner.onKey
+    if p:getJoypadBind() ~= -1 and p:pressedCancelAction() then return Runner.pause("PAUSE") or true end
     -- 玩家自己走：照圖蓋的走路都是佇列裡的動作；佇列空著還在走＝方向鍵或搖桿（玩家一動，原版就清掉佇列：
     -- IsoPlayer.java:2645-2667 的 StopAllActionQueueWalking）。動作剛結束的那一幀可能還帶著移動，連兩幀才算
     if p:isJustMoved() and not ISTimedActionQueue.isPlayerDoingAction(p) then
@@ -1097,17 +1099,22 @@ function Runner.tickPaused()
     if active() and isGamePaused() then Runner.pause("GAME_PAUSED") end
 end
 
--- Esc＝暫停（多人遊戲不會停下時間，原版也不清佇列）
+-- Esc 或「取消動作」鍵＝暫停（多人遊戲不會停下時間）。掛在按下那一刻：角色正在做動作時，原版在按下時清掉佇列、
+-- 吃掉這次按鍵（MainScreen.lua 的 StartPressCancelActionKey → GameKeyboard.eatKeyPress），放開的 OnKeyPressed 不會來；
+-- 只掛放開的話，照圖蓋會把被取消的那一片當成走不過去、接著蓋別片
 function Runner.onKey(key)
     if not active() then return end
-    if Keyboard and key == Keyboard.KEY_ESCAPE then Runner.pause("ESC") end
+    if (Keyboard and key == Keyboard.KEY_ESCAPE)
+        or (KeybindId and KeybindId.CANCEL_ACTION and getCore():isKey(KeybindId.CANCEL_ACTION, key)) then
+        Runner.pause("ESC")
+    end
 end
 
 -- 除錯重新載入 Lua 時不重複掛（同 PlanMode）；掛的是轉呼叫，重新載入後跑新的函式
 if not Runner.loaded then
     Runner.loaded = true
     Events.OnTick.Add(function() MinidoracatBuilder.Runner.tick() end)
-    Events.OnKeyPressed.Add(function(key) MinidoracatBuilder.Runner.onKey(key) end)
+    Events.OnKeyStartPressed.Add(function(key) MinidoracatBuilder.Runner.onKey(key) end)
     Events.OnTickEvenPaused.Add(function() MinidoracatBuilder.Runner.tickPaused() end)
 end
 

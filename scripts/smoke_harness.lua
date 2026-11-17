@@ -15049,6 +15049,9 @@ end)()
     function K:isAttackStarted() return false end
     function K:isAiming() return false end
     function K:isJustMoved() return self.moving end
+    K.pad, K.cancel = -1, false -- 手把編號（-1＝鍵盤）、取消動作鍵是不是按著
+    function K:getJoypadBind() return self.pad end
+    function K:pressedCancelAction() return self.cancel end
     function K:getMaxWeight() return 3 end
     function K.inv:getCapacityWeight() return K.load or 0 end
     function K.inv:getCountTypeRecurse(ft) return self:count(ft) end
@@ -15271,10 +15274,36 @@ end)()
     local moved = R.reason()
     K.moving = false
     R.start(K)
-    for _, f in ipairs(handlers.OnKeyPressed or {}) do pcall(f, 1) end -- 別的模組的按鍵處理在假環境可能出錯：各自包 pcall
+    local function key(ev, k) -- 別的模組的按鍵處理在假環境可能出錯：各自包 pcall
+        for _, f in ipairs(handlers[ev] or {}) do pcall(f, k) end
+    end
+    -- 真鍵盤：角色正在做動作時，原版在按下那一刻取消動作並吃掉這次按鍵（MainScreen.lua 的 StartPressCancelActionKey），
+    -- 只有 OnKeyStartPressed 會來，放開的 OnKeyPressed 不會來（實機 plan-mp --fg 抓到：只掛放開時照圖蓋接著蓋別片）
+    key("OnKeyStartPressed", 30)
+    local otherKey = R.state()
+    key("OnKeyStartPressed", 1)
     local esc = R.reason()
-    check(zombie == "ZOMBIE" and walkingAction ~= "paused" and moved == "MOVED" and esc == "ESC",
-        "殭屍在追 → ZOMBIE；佇列走路不算自己走；佇列空著還在動 → MOVED；Esc → ESC")
+    check(zombie == "ZOMBIE" and walkingAction ~= "paused" and moved == "MOVED" and otherKey ~= "paused" and esc == "ESC",
+        "殭屍在追 → ZOMBIE；佇列走路不算自己走；佇列空著還在動 → MOVED；別的鍵不停；按下 Esc 那一刻（只來 OnKeyStartPressed）→ ESC")
+    -- 「取消動作」改綁到別的鍵：按那個鍵也停
+    R.start(K)
+    local realCoreK, realKidK = getCore, KeybindId
+    KeybindId = { CANCEL_ACTION = "CancelAction" }
+    getCore = function() return { isKey = function(_, id, k) return id == "CancelAction" and k == 57 end } end
+    key("OnKeyStartPressed", 57)
+    getCore, KeybindId = realCoreK, realKidK
+    check(R.state() == "paused" and (R.reason()) == "ESC", "「取消動作」綁在別的鍵：按下那個鍵也停成 ESC")
+    -- 手把：按著 B（取消動作）沒有按鍵事件，每幀看；鍵盤玩家光是按著、沒經過按鍵事件時不走這條
+    R.start(K)
+    K.cancel = true
+    run(1)
+    local kbHeld = R.state()
+    K.pad = 0
+    local toastsBefore = #toasts
+    run(1)
+    check(kbHeld ~= "paused" and R.state() == "paused" and (R.reason()) == "PAUSE" and #toasts == toastsBefore + 1,
+        "手把按著 B → 暫停 PAUSE、跳一則通知；鍵盤玩家沒有按鍵事件時不停")
+    K.pad, K.cancel = -1, false
     R.stop()
     R.start(K)
     B.PlanMode = { plan = function() return Plan.new("other") end, origin = PM.origin }
@@ -18288,6 +18317,7 @@ end)()
     function K:isAttackStarted() return false end
     function K:isAiming() return false end
     function K:isJustMoved() return false end
+    function K:getJoypadBind() return -1 end
     getSpecificPlayer = function() return K end
     local function run(n)
         for _ = 1, n do
