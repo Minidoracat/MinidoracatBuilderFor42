@@ -280,7 +280,7 @@ local function removeAll(kind, plan)
         if t == IsoObjectType.stairsTW or t == IsoObjectType.stairsTN then top, west = s, Rules.westStairs(t) end
         s:transmitRemoveItemFromSquare(o, false) -- 只拆這一片：多格的一組已經逐片列進 plan
         if s:getObjects():contains(o) then error("not removed at " .. s:getX() .. "," .. s:getY() .. "," .. s:getZ()) end
-        Place.repush(s, true, kind) -- 區域資料補推（Place.repush）
+        Place.repush(s, kind) -- 區域資料補推（Place.repush）
     end
     if top then
         local lsq = getCell():getGridSquare(top:getX() - (west and 1 or 0), top:getY() - (west and 0 or 1), top:getZ() + 1)
@@ -289,7 +289,7 @@ local function removeAll(kind, plan)
     for _, l in ipairs(plan.landing or {}) do
         local s = l:getSquare()
         s:transmitRemoveItemFromSquare(l, false)
-        Place.repush(s, true, kind)
+        Place.repush(s, kind)
     end
     if kind == "floor" then
         for _, s in ipairs(squares) do

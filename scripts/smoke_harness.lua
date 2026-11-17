@@ -2526,7 +2526,11 @@ local function newKinds()
     local npl = square(47, 40, 1)
     local SN = who(2109, 48.5, 42.5)
     give(SN, { ["Base.Plank"] = 13, ["Base.Nails"] = 8 })
+    fire("OnTick") -- 區域補推（Place.repush）：前面留下的先跑掉
+    local nPokes = regionPokes
     local nok = build(SN, 1, "stn_01_2", { 47, 41, 0 })
+    fire("OnTick")
+    check(regionPokes == nPokes + 4, "蓋樓梯：三片與補的平台那一格，下一個 tick 各補推一次區域資料")
     local TN, BN = at(squares["47,41,0"], "stn_01_0"), at(squares["47,43,0"], "stn_01_2")
     check(nok and TN and at(squares["47,42,0"], "stn_01_1") and BN and TN.north == false and TN.mats["Base.Plank"] == "13"
         and at(npl, "carpentry_02_57") and npl.md and npl.md.ConnectedToStairstrue == true,
@@ -3003,11 +3007,15 @@ local function dismantleScenario()
     engineSq(72, 72, 1, { floor = {} })
     buildUtil.getStairObjects = stairsOnly({ T0, M0, B0 })
     local SP2 = hammerer(2207, 75.5, 72.5, at(75, 72, 0))
+    fire("OnTick")
+    local sPokes = regionPokes
     unbuild(SP2, 10, 75, 73, 0, "ds_01_1")
     check(Server.dismantle(SP2, 10, 1) and not has(at(74, 73, 0), T0) and not has(at(75, 73, 0), M0)
         and not has(at(76, 73, 0), B0) and not has(plat, landing) and plat.md.ConnectedToStairsfalse == nil
         and at(75, 72, 0).dropped["Base.Plank"] == 13 and at(75, 72, 0).dropped["Base.Nails"] == 8 and Ledger.get(landing) == nil,
         "樓梯：點中片，三片與平台一起拆（平台旁邊有別的地板、原版不收平台也一樣）、只退一組、平台格的 ConnectedToStairs 清掉、帳本的平台清掉")
+    fire("OnTick")
+    check(regionPokes == sPokes + 4, "拆樓梯：三片與平台那一格，下一個 tick 各補推一次區域資料")
 
     -- 樓梯有一片沒有記號：整組不拆、不退（三片要一起拆、只退一組）
     local SP3 = hammerer(2210, 75.5, 75.5, at(75, 75, 0))
@@ -5532,44 +5540,69 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     Place.build("floor", { { sq = grassSq, spr = floorS, cost = { items = {} } } }, swapped2)
     check(swapped2[1] ~= nil and grassSq.objects[1] == swapped2[1] and grassSq.objects[2] == CH3 and #grassSq.objects == 2,
         "換地板：舊地板前面的草一起拆掉時，新地板照樣排在家具前面（審查 1110 第 2 輪 Claude）")
-    -- 區域資料補推（Place.repush，2026-11-18）：會改區域位元的種類放好或拆掉後，下一個 tick 把那一格再推一次。
-    -- 實機 58,080 片牆有 5 片只寫進引擎兩份區域緩衝的其中一份（E2ERun14.md 二之五），重推補得回來
+    -- 區域資料補推（Place.repush，2026-11-18）：會改區域位元的種類放好或拆掉後，下一個 tick 把那一格照當時的樣子再推一次。
+    -- 實機 58,080 片牆有 5 片只寫進引擎兩份區域緩衝的其中一份（E2ERun14.md 二之五），重推補得回來。
+    -- 假的 IsoRegions 照引擎：位元和「之前」一樣就不送（IsoRegions.java:301-349）；sent 記真的送出去的（格子、位元）
     ;(function()
         fire("OnTick") -- 前面幾次放置留下的先跑掉
-        local realRegions, pushes, prev = IsoRegions, {}, nil
-        IsoRegions = { setPreviousFlags = function(sq) prev = sq end,
-            squareChanged = function(sq) pushes[#pushes + 1] = { sq, prev } end }
+        local function bits(sq)
+            if not sq then return 0 end
+            local f = sq:has(F.solidfloor) and 16 or 0
+            if sq:has(F.cutN) or sq:has(T.doorFrN) then f = f + 1 end
+            if not sq:has(F.WallSE) and (sq:has(F.cutW) or sq:has(T.doorFrW)) then f = f + 2 end
+            if sq:HasStairs() then f = f + 32 end
+            return f
+        end
+        local realRegions, sent, prev = IsoRegions, {}, 0
+        IsoRegions = { setPreviousFlags = function(sq) prev = bits(sq) end,
+            squareChanged = function(sq)
+                local f = bits(sq)
+                if f ~= prev then sent[#sent + 1] = { sq, f }; prev = 0 end
+            end }
         local ticks = count("OnTick")
-        local ground, up = square(93, 98, 0, { floor = {} }), square(93, 98, 1, { flags = {} })
+        local gf, uf = { solidfloor = true }, {} -- 假格子的旗標不跟著物件變：照蓋好、拆掉後的樣子自己設
+        local ground, up = square(93, 98, 0, { floor = {}, flags = gf }), square(93, 98, 1, { flags = uf })
         local gPlaced, upPlaced = {}, {}
         Place.build("wall", { { sq = ground, spr = wallS, cost = { items = {} } } }, gPlaced)
-        local waits = #pushes == 0 and count("OnTick") == ticks + 1
+        gf.cutN = true
+        local waits = #sent == 0 and count("OnTick") == ticks + 1
         fire("OnTick")
-        check(waits and #pushes == 1 and pushes[1][1] == ground and pushes[1][2] == nil and count("OnTick") == ticks,
-            "蓋牆：當下不推，下一個 tick 把那一格的區域資料再推一次（「之前」當成 0），推完摘掉 tick 事件")
-        pushes = {}
+        check(waits and #sent == 1 and sent[1][1] == ground and sent[1][2] == 17 and prev == 0 and count("OnTick") == ticks,
+            "蓋牆：當下不推，下一個 tick 把那一格的區域位元（地板＋北牆）再送一次，送完摘掉 tick 事件")
+        sent = {}
         Place.build("solid", { { sq = ground, spr = chairS, cost = { items = {} } } }, {})
-        if Place.repush then Place.repush(ground, true, "container") end
-        check(#pushes == 0 and count("OnTick") == ticks and Place.repush ~= nil,
+        if Place.repush then Place.repush(ground, "container") end
+        check(#sent == 0 and count("OnTick") == ticks and Place.repush ~= nil,
             "✗ 家具、容器不改區域位元：放好、拆掉都不推，也不掛 tick 事件")
         Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, upPlaced)
+        uf.cutN = true
         fire("OnTick")
-        pushes = {}
+        local upBuilt = #sent == 1 and sent[1][1] == up and sent[1][2] == 1
+        sent = {}
         Place.undo(upPlaced)
+        uf.cutN = nil
         fire("OnTick")
-        check(#pushes == 2 and pushes[1][1] == up and pushes[1][2] == nil and pushes[2][1] == up and pushes[2][2] == ground
-            and prev == nil,
-            "上層拆掉牆（撤回）：那格位元可能已經是 0，再拿正下方地面那格當「之前」推一次；最後把「之前」設回 0")
-        pushes = {}
+        check(upBuilt and #sent == 1 and sent[1][1] == up and sent[1][2] == 0 and prev == 0,
+            "上層沒地板的格子：蓋牆送一次；拆掉後位元是 0，借正下方地面那格當「之前」才送得出去，只送一次，「之前」設回 0")
+        -- 柱子（WallSE）會讓引擎不算同格的西牆：蓋的是東西、位元卻從 2 變 0（審查第 6 輪 Codex R6-3）
+        sent = {}
+        uf.cutW, uf.WallSE = true, true
+        Place.repush(up, "post")
+        fire("OnTick")
+        local post0 = #sent == 1 and sent[1][1] == up and sent[1][2] == 0
+        uf.cutW, uf.WallSE = nil, nil
+        check(post0, "上層沒地板、只有西牆的格子蓋柱子：位元變 0 也送得出去（不看這次是蓋還是拆）")
+        sent = {}
         Place.undo(gPlaced)
+        gf.cutN = nil
         fire("OnTick")
-        local once = #pushes == 1 and pushes[1][1] == ground and pushes[1][2] == nil
-        pushes = {}
+        local once = #sent == 1 and sent[1][1] == ground and sent[1][2] == 16
+        sent = {}
         Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, {})
         squares["93,98,1"] = nil -- 下一個 tick 前那一格卸載了
         fire("OnTick")
-        check(once and #pushes == 0 and count("OnTick") == ticks,
-            "一樓拆掉只推一次（沒有更下面的地面可借）；下一個 tick 前格子卸載了：不推、不出錯，tick 事件照樣摘掉")
+        check(once and #sent == 0 and count("OnTick") == ticks,
+            "一樓拆掉牆：送一次剩下的位元（地板）；下一個 tick 前格子卸載了：不推、不出錯，tick 事件照樣摘掉")
         IsoRegions = realRegions
     end)()
     instanceof = realInst
@@ -9851,6 +9884,9 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
         "水面放上去之後才出錯：撤回清單有這一格，撤回後換回原地面")
     -- 填平時原本的地面補不上去：補泥土；兩張都補不上才報錯
     local dSq = at(491, 497)
+    -- 區域補推：這個情境的 tick 事件裡有別段留下的（跑不得），改記 Place.repush 有沒有排到這一格
+    local realRepush, wPush = Place.repush, {}
+    Place.repush = function(sq, kind) wPush[#wPush + 1] = sq; return realRepush(sq, kind) end
     local dw = Place.dig(dSq, waterS, nil)
     local realAdd2 = dSq.addFloor
     dSq.addFloor = function(self, name)
@@ -9858,6 +9894,9 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
         return realAdd2(self, name)
     end
     Place.fill(dw)
+    Place.repush = realRepush
+    check(#wPush == 2 and wPush[1] == dSq and wPush[2] == dSq,
+        "挖水、填平：都是先拆地板再放新的，引擎各送兩次更新（中間那次沒有地板）；兩個動作各排一次區域補推（審查第 6 輪）")
     local dirtOk = dSq:getFloor() and dSq:getFloor():getSprite():getName() == Place.DIRT and #dSq.objects == 1
     dSq.addFloor = realAdd2
     local dw2 = Place.dig(dSq, waterS, nil)
@@ -16256,9 +16295,14 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
 
     -- 放置（第 421 欄）：20 個一般物件、記號、頭片到最後一片的順序、平台、帳本整組一筆
     esq(421, 410, 1)
+    -- 區域補推：這個情境的 tick 事件裡有別段留下的（跑不得），改數 Place.repush 排了幾格
+    local realRepush, rPush = Place.repush, 0
+    Place.repush = function(sq, kind) rPush = rPush + 1; return realRepush(sq, kind) end
     order = {}
     check(stock() == "200/200", "坡道（Ramp）起始材料 200/200")
     local okA = build(1, 421)
+    Place.repush = realRepush
+    check(rPush == 21, "坡道（Ramp）放置：20 片與補的平台那一格各排一次區域補推")
     local n, marked, plain = column(421)
     local A1, A10 = piece(421, 430, "rp_01_0"), piece(421, 421, "rp_01_9")
     local rec = Ledger.getRamp(421, 430, 0, "rp_01_0")

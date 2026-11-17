@@ -675,6 +675,7 @@ function Place.dig(sq, spr, placed)
     local floor = sq:getFloor()
     local fs = floor and floor:getSprite()
     local base = fs and fs:getName()
+    Place.repush(sq, nil) -- 區域資料補推：下面先拆地板再放水面，引擎各送一次更新，中間那次（沒有地板）也可能只記進一份
     Place.clearFloor(sq)
     local obj = layFloor(sq, spr:getName())
     if not obj then
@@ -699,6 +700,7 @@ end
 function Place.fill(obj)
     local sq = obj:getSquare()
     local base = Place.waterBase(obj)
+    Place.repush(sq, nil) -- 區域資料補推：同 Place.dig，先拆水面再補地
     sq:transmitRemoveItemFromSquare(obj, false)
     if sq:getObjects():contains(obj) then error("water not removed at " .. sq:getX() .. "," .. sq:getY()) end
     local floor = layFloor(sq, base) or layFloor(sq, Place.DIRT)
@@ -1391,46 +1393,49 @@ end
 -- 區域資料（引擎算室內、房間圍合用的 IsoRegions）補推。引擎有兩份緩衝輪流當前台，格子的更新在背景執行緒成批套用；
 -- 排到那一批「套用」後面的格子只寫進一份（IsoRegionWorker.java:129-208 取空佇列就開批、:210-296 兩份各跑一輪），之後
 -- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回
--- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯與坡道補的平台）
--- 放好或拆掉後，下一個 tick 把那幾格再推一次：兩份已經一致時引擎不改資料。存座標不存格子（格子物件會回收重用）。
--- gone＝這格剛拆掉東西：上層沒地板的格子位元可能已經是 0，「之前」也是 0 時引擎不送，改拿正下方地面那格當「之前」
--- 再推一次。kind 給 nil＝不看種類（Place.undo 不知道種類）。多人的客戶端呼叫到也沒事（squareChanged 在客戶端直接返回）
+-- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
+-- 放好或拆掉後，下一個 tick 照那一格當時的樣子再推一次：兩份已經一致時引擎不改資料。這是降低機率、不是保證：補推
+-- 自己也可能只寫進一份，兩次都遇上才會留下。存座標不存格子（格子物件會回收重用）。kind 給 nil＝不看種類
+-- （Place.undo、挖水、填平）。多人的客戶端呼叫到也沒事（squareChanged 在客戶端直接返回）
 do
     local REGIONAL = { floor = true, stairs = true, ramp = true }
     local pending, n = {}, 0
+    -- 這格的區域位元是不是 0：照 IsoRegions.calculateSquareFlags 的條件（IsoRegions.java:322-349；protected，Lua 叫不到）
+    local function bare(sq)
+        return not (sq:has(F.solidfloor) or sq:has(F.cutN) or sq:has(T.doorFrN) or sq:HasStairs()
+            or (not sq:has(F.WallSE) and (sq:has(F.cutW) or sq:has(T.doorFrW))))
+    end
     local function flush()
         Events.OnTick.Remove(flush)
         local list, m, cell = pending, n, getCell()
         pending, n = {}, 0
-        for i = 1, m, 4 do
+        for i = 1, m, 3 do
             local x, y, z = list[i], list[i + 1], list[i + 2]
             local sq = cell:getGridSquare(x, y, z)
             if sq then
-                IsoRegions.setPreviousFlags(nil)
+                -- 引擎只在位元和「之前」不同時才送：一般拿 0 當「之前」；位元本身是 0 的（上層沒地板的格子拆掉牆，或
+                -- 柱子讓引擎不算同格的西牆）改拿正下方地面那格（有地板，不是 0）。送完把「之前」設回 0
+                local ref = z > 0 and bare(sq) and cell:getGridSquare(x, y, 0) or nil
+                IsoRegions.setPreviousFlags(ref)
                 IsoRegions.squareChanged(sq)
-                local ground = list[i + 3] and z > 0 and cell:getGridSquare(x, y, 0)
-                if ground then
-                    IsoRegions.setPreviousFlags(ground)
-                    IsoRegions.squareChanged(sq)
-                    IsoRegions.setPreviousFlags(nil)
-                end
+                IsoRegions.setPreviousFlags(nil)
             end
         end
     end
-    function Place.repush(sq, gone, kind)
+    function Place.repush(sq, kind)
         if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then return end
         if n == 0 then Events.OnTick.Add(flush) end
-        pending[n + 1], pending[n + 2], pending[n + 3], pending[n + 4] = sq:getX(), sq:getY(), sq:getZ(), gone == true
-        n = n + 4
+        pending[n + 1], pending[n + 2], pending[n + 3] = sq:getX(), sq:getY(), sq:getZ()
+        n = n + 3
     end
 end
 
--- 這次放好的物件所在的格子補推區域資料。placed 裡的表（掛上去的疊圖、水面）不改區域位元
+-- 這次放好的物件所在的格子補推區域資料。placed 裡的表：掛上去的疊圖不改區域位元，水面 Place.dig 自己排過了
 local function repushPlaced(kind, placed, first)
     for i = first, #placed do
         local o = placed[i]
         local sq = not (type(o) == "table" and (o.attached == true or o.water)) and o:getSquare()
-        if sq then Place.repush(sq, false, kind) end
+        if sq then Place.repush(sq, kind) end
     end
 end
 
@@ -1534,7 +1539,7 @@ function Place.undo(placed)
             local sq = obj:getSquare()
             if sq then
                 sq:transmitRemoveItemFromSquare(obj, false)
-                Place.repush(sq, true, nil)
+                Place.repush(sq, nil)
             end
         end
     end
