@@ -243,6 +243,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Collapse[/b]: click the bar's title to fold it into one line, "Quick pick: current item", and click again to open it; dragging the title still moves the bar without folding it. Folded or open is saved on your own computer and stays after restarting the game.
 [*] [b]Gamepad[/b]: while placing, press the right stick (R3) to move into the bar (it opens first if folded), A to switch to that item, B to go back to the cursor; press R3 again in the bar to fold it and go back to the cursor.
 [/list]
+<!-- 圖：快選列收合成一條「Quick pick: 目前項目」 -->
+{{img:27-hotbar-collapsed-en.jpg}}
 [h3]Placing keys[/h3]
 [table]
 [tr][th]Name in key bindings[/th][th]Default[/th][th]What it does[/th][/tr]
@@ -343,10 +345,12 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Dismantled or destroyed[/b]: any step removes the whole set, and materials come back only once.
 [/list]
 [h3]Ramps[/h3]
+<!-- 圖：並排四組坡道，車停在坡道上 -->
+{{img:26-ramp-en.jpg}}
 [list]
 [*] [b]Where[/b]: the Ramp kind on the Stairs & ramps tab, one item per direction; press R (gamepad LB/RB) while placing to change direction. Ramp tiles in tile packs that can be disassembled or picked up as in vanilla don't form a set and aren't listed.
 [*] [b]A 20-tile set[/b]: the whole ramp goes down at once, 20 tiles long and rising one level; if the level above has no floor at the top, a landing is added.
-[*] [b]Who can use it[/b]: people and vehicles.
+[*] [b]Who can use it[/b]: people and vehicles; a vehicle can drive up onto the landing and back down.
 [*] [b]Driving up[/b]: a ramp set is one tile wide and vehicles are wider. A vehicle half over the side gets stuck at the bottom, so build two or more sets side by side. The landing is one tile deep and the front of the vehicle hangs past it; lay more floor behind the landing first, which also lets you keep driving up there.
 [*] [b]Ramps inside a roofless room[/b]: such as a house whose roof was taken down, or where one used to stand. Once someone reaches the second-floor height, the game itself puts a ceiling over that whole room, which can end up above the upper half of the ramp and block vehicles. Those tiles weren't built with Build Anything: dismantle them with a sledgehammer; a room only gets this once. Or build the ramp outside the room.
 [*] [b]When it can't be placed[/b]: a wall, vehicle, person, another ramp or an unloaded tile in the way blocks it; so does furniture, a container or the like already on a tile of its path (floors, floor overlays and wall overlays don't count), and a wall, window or door on the edge between the top piece and the landing, even an open door (placing the ramp first and adding the door afterwards works). The box points out which tile.
@@ -722,6 +726,8 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]Planning turns on[/b]: if you aren't planning yet, pressing it starts planning, and the roof goes one level above the one you stand on by default.
 [/list]
 [h3]The panel[/h3]
+<!-- 圖：拖到一半的 30 度雙斜 4×5 預覽，右上是屋頂助手面板 -->
+{{img:24-roof-helper-en.jpg}}
 [list]
 [*] [b]Shape[/b]: Gable, Hip or Shed; 45-degree sets also have Flat.
 [*] [b]Direction[/b]: for Gable, pick Ridge east-west or Ridge north-south; for Shed, pick which way the low side faces: all four for 30-degree sets, only south or east for 45-degree sets.
@@ -732,6 +738,8 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]Taking it back[/b]: one planning Undo (Ctrl+Z) removes the whole roof.
 [/list]
 [h3]Rules[/h3]
+<!-- 圖：照圖蓋完成的雙斜屋頂加山牆 -->
+{{img:25-roof-result-en.jpg}}
 [list]
 [*] [b]Area size[/b]: at least 2 tiles per side. 30-degree Gable and Hip roofs span up to 11 tiles; 45-degree sets without flat tops span up to 6.
 [*] [b]Ceilings[/b]: 30-degree and 45-degree sloped roofs get a ceiling tile under every tile, which an enclosed room needs to count as indoors and stay dry; tiles that already have a floor on the roof's level get none. That means more pieces and materials: a 30-degree roof has twice as many pieces as tiles (for example 96 for a 6×8 Gable, not counting gable walls), and a 45-degree 6×4 Gable has 36 and a 5×5 Hip 40.
@@ -830,6 +838,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]Sending the file[/b]: send the .txt file from your blueprint folder, and your friend puts it in theirs; the .cfg is a backup and isn't needed.
 [/list]
 [h3]Import[/h3]
+<!-- 圖：匯入框貼上分享碼、按「檢查」後的結果 -->
 {{img:22-import-en.jpg}}
 [list]
 [*] [b]Open[/b]: press Import in the library.
@@ -1140,7 +1149,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] Once a rain-proof roof is built, the square below is no longer outdoors.
 [*] For the room to count as indoors (temperature), the level above also needs a floor.
-[*] Sloped roofs from the Roof Helper, 30-degree and 45-degree, get a ceiling tile under every tile (except tiles that already have a floor on the roof's level), which an enclosed room needs to count as indoors.
+[*] Sloped roofs from the Roof Helper, 30-degree and 45-degree, get a ceiling tile under every tile (except tiles that already have a floor on the roof's level). Once built from blueprint, an enclosed room counts as indoors and you stay dry inside when it rains; this holds for Gable, Hip and Shed alike.
 [/list]
 [h3]Why do I get little or no XP?[/h3]
 [list]
