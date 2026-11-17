@@ -301,7 +301,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
 [*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
 [/list]
-=== 🧰 Rules for each kind: doors, windows, stairs, ramps and roofs
+=== 🧰 Rules for each kind: doors, windows and curtains
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
@@ -332,6 +332,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Cost[/b]: 1 sheet, 2 for long curtains, with no tools and no XP.
 [*] [b]Use[/b]: opening, closing and taking them down for the sheet back all work as in vanilla.
 [/list]
+=== 🧰 Rules for each kind: stairs, ramps and roofs
 [h3]Stairs[/h3]
 [list]
 [*] [b]All three steps at once[/b]: one action builds the set, and you can go up and down right away.
