@@ -660,6 +660,13 @@ local function pickBatch(player, plan, settled)
     end
     st.waitFrom = nil
     if not best then return nil end
+    -- 分幀看的途中狀態可能變了（別人剛蓋好同一片：可疊的東西 Check.item 照樣放行，會多蓋一個）：挑到的那片不再是
+    -- 能蓋的就整張重看；收好的那一批（最多一批的片數）送出前每片也再問一次
+    local function live(p)
+        local s = PC.state(p)
+        return s == "ok" or (s == "short" and boxes)
+    end
+    if not live(best.p) then return "again" end
     local garage, one = false, false
     if best.id:sub(1, #RECIPE) ~= RECIPE then
         local e = Entry.resolve(best.id)
@@ -688,7 +695,11 @@ local function pickBatch(player, plan, settled)
             end
         end
     end
-    return { id = best.id, z = best.z, overlap = best.o == 1 or best.o == true, garage = garage, list = list }
+    local fresh = {}
+    for _, c in ipairs(list) do
+        if live(c.p) then fresh[#fresh + 1] = c end
+    end
+    return { id = best.id, z = best.z, overlap = best.o == 1 or best.o == true, garage = garage, list = fresh }
 end
 
 -- 這一批逐片問 Check.item（同游標預覽：可蓋的照順序扣掉材料，屋頂、地板能靠前面可蓋的撐）。

@@ -328,12 +328,15 @@ end
 -- 客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
+-- 屋頂片＝屋頂型別或帶 RoofGroup、而且不是樓板：平屋頂地板片（roofs_01_22 這類，帶 RoofGroup 的 solidfloor 片，分類是地板）
+-- 是樓板，算了的話鋪在一樓就能讓正上方、旁邊上一層浮空蓋（審查第 5 輪）；同一層的支撐照 supports 的 solidfloor 算
 local function roofPiece(sq)
     if not sq then return false end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local s = objects:get(i):getSprite()
-        if s and (Rules.typeCode(s:getType()) == "roof" or s:getProperties():has("RoofGroup")) then return true end
+        local p = s and s:getProperties()
+        if p and not p:has(F.solidfloor) and (Rules.typeCode(s:getType()) == "roof" or p:has("RoofGroup")) then return true end
     end
     return false
 end
@@ -345,14 +348,23 @@ end
 -- 伺服器分不出，所以照兩端都查得到的事實放行，兩種都沒有的照舊要地板（不浮空）：
 -- 一、正下方那格同一條邊有牆（getWall：牆、門框、窗框）：屋頂下的山牆疊在一樓的牆上，那一格在屋頂層沒有地板（地圖房子同樣）。
 -- 二、這條邊兩側的格子同一層有屋頂片：牆是那片屋頂的端牆。單斜往上一層接的山牆片正下方那層是空的（建築編輯器在那裡放整面
--- 的別款牆），靠旁邊的屋頂片撐
-local function wallHeld(sq, kind, n, w)
-    if kind ~= "wall" or not (n or w) or sq:getZ() <= 0 then return false end
-    local cell, x, y, z = getCell(), sq:getX(), sq:getY(), sq:getZ()
+-- 的別款牆），靠旁邊的屋頂片撐。照座標查（那一格不必存在）
+local function wallHeld(x, y, z, kind, n, w)
+    if kind ~= "wall" or not (n or w) or z <= 0 then return false end
+    local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
     if below and (not n or below:getWall(true) ~= nil) and (not w or below:getWall(false) ~= nil) then return true end
-    return roofPiece(sq) or (n and roofPiece(cell:getGridSquare(x, y - 1, z)))
+    return roofPiece(cell:getGridSquare(x, y, z)) or (n and roofPiece(cell:getGridSquare(x, y - 1, z)))
         or (w and roofPiece(cell:getGridSquare(x - 1, y, z))) or false
+end
+-- 那一格還沒有（客戶端預覽上一層，Check.item）時牆照座標查撐不撐得住：格子不在＝自己沒有地板，剩引擎 hasFloor(north)
+-- 看的鄰格地板（IsoGridSquare.java:3496-3508：北邊的牆看北鄰，否則看西鄰）與 wallHeld。伺服器補了格子走 Place.check
+-- 的同一行，兩端同一個答案；不查的話預覽說能蓋、伺服器回 BLOCKED，照圖蓋那一輪就跳過那片。一樓以下不查
+function Place.wallHeldAt(spr, x, y, z)
+    if z <= 0 then return true end
+    local n, w = Entry.edges("wall", spr)
+    local side = getCell():getGridSquare(n and x or x - 1, n and y - 1 or y, z)
+    return (side ~= nil and side:has(F.solidfloor)) or wallHeld(x, y, z, "wall", n, w)
 end
 function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
 function Place.roofAt(x, y, z, planned)
@@ -602,7 +614,10 @@ function Place.deckOwner(name, sq)
             if s then dx, dy = Entry.rampTop(s) end -- Kahlua 的 a and f() 只留一個回傳值
             if dx == d[1] and dy == d[2] then
                 local hx, hy, hz, set = Place.rampOrigin(o)
-                if hx and set.deck == name then return hx, hy, hz, hx, hy, set.parts[1]:getName() end
+                -- 頭片要真的在（被砸、被燒掉的殘組不算：框選收不到坡道，平台要照一般地板收）
+                if hx and set.deck == name and named(cell:getGridSquare(hx, hy, hz), set.parts[1]:getName()) then
+                    return hx, hy, hz, hx, hy, set.parts[1]:getName()
+                end
             end
         end
     end
@@ -755,7 +770,9 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
             return false
         end
         -- 樓上的牆要踩在地板上（ISWoodenWall:isValid），或疊在正下方同一條邊的牆上、靠著同一層的屋頂片（wallHeld）
-        if not floorUnder(sq) and not sq:hasFloor(n) and not wallHeld(sq, kind, n, w) then return false end
+        if not floorUnder(sq) and not sq:hasFloor(n) and not wallHeld(sq:getX(), sq:getY(), sq:getZ(), kind, n, w) then
+            return false
+        end
         if not n and not w then return not has(sq, F.WallSE, replacing) end -- 柱子
         return not ((n and edgeTaken(sq, true, replacing, dirtN)) or (w and edgeTaken(sq, false, replacing, dirtW))
             or splitsGrid(sq, n, w, replacing))

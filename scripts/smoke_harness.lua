@@ -6751,6 +6751,14 @@ print("情境三十五：硬核（需要技能、原版材料）、同一套的�
         "affordable 也看技能：料和工具都夠、石工 1 仍回技能不夠（要 2、有 1）；選項關著、升到 2、建造作弊都沒有")
     check(not Materials.same(SL, SL2) and Materials.same(SL2, Materials.summary(LV)),
         "技能等級變了摘要比對就不一樣（缺料標示要重算）；沒變照樣一樣")
+    -- 審查第 5 輪 R5-2：藍圖檢查、游標問的是 Check.item；它判技能時要照摘要讀（記下讀過的技能），之後只升技能、
+    -- 背包沒變，摘要比對才看得出來（藍圖上技能不夠的片靠這個重算）
+    lvOpts.perks["perk:Masonry"] = 1
+    local SI = Materials.summary(LV)
+    local codeI = Check.item(LV, "hc_brick_01_1", 0, { 133, 130, 0 }, { preview = true, walk = true, summary = SI })
+    lvOpts.perks["perk:Masonry"] = 2
+    check(codeI == "SKILL" and not Materials.same(SI, Materials.summary(LV)),
+        "Check.item 判技能不夠時記在摘要上：只升技能、背包沒變，摘要比對就不一樣（✗ 技能不夠的片升級後一直卡著）")
     sb.RecipeMaterials = true
     local L2 = player({ id = 3405, x = 132.5, y = 131.5, perks = { ["perk:Masonry"] = 2 } })
     L2.inv:add(item("Base.MasonsTrowel", { MASONS_TROWEL = true }))
@@ -16913,6 +16921,19 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         check(#part == 1 and part[1].id == "rp_01_23" and part[1].y == 410 and part[1].z == 1
             and #lone == 1 and lone[1].id == "rp_01_23" and lone[1].x == 485,
             "坡道（Ramp）✗ 框選：頭片在框外時平台照一般地板收（只框到坡頂的片不收）；沒有坡道通到的同圖地板照一般地板收")
+        -- 審查第 5 輪 R5-4：頭片不在了（被砸、被燒）、頂片與平台還在的殘組：坡道收不進藍圖，平台照一般地板收
+        local hsq, hObj = at(480, 430), piece(480, 430, "rp_01_0")
+        for i, o in ipairs(hsq.objects) do
+            if o == hObj then
+                table.remove(hsq.objects, i)
+                break
+            end
+        end
+        local headless = capture(479, 409, 481, 431)
+        hsq.objects[#hsq.objects + 1] = hObj -- 放回去：後面的情境還要這一組
+        check(hObj ~= nil and piece(480, 411, "rp_01_19") ~= nil and #headless == 1 and headless[1].id == "rp_01_23"
+            and headless[1].x == 480 and headless[1].y == 410 and headless[1].z == 1,
+            "坡道（Ramp）✗ 框選：頭片不在、頂片與平台還在的殘組，平台照一般地板收（藍圖不會坡道和平台都沒有）")
         -- 樓梯（W 型 rpt_01：頂片 470、中片 471、底片 472，平台 469,405,1 補 STAIR_FLOOR）：同坡道，樓梯在框裡時不另收平台；
         -- 底片不在框裡（樓梯不收）時平台照一般地板收
         local function stair(x, y)
@@ -17374,6 +17395,29 @@ end)()
         check(not loneOk and onWall and chain and not onSlab,
             "屋頂（Place）一樓地面帶 solidfloor：✗ 二樓孤零零的屋頂（正下方沒牆、四周沒屋頂或地板）擋；正下方有牆可以、"
                 .. "挨著蓋好的屋頂可以；✗ 三樓正下方只有樓板或天花板：擋（同 0a4b161）")
+        -- 審查第 5 輪 R5-1：平屋頂地板片（roofs_01_22：帶 RoofGroup 的 solidfloor 片，分類是地板）是樓板、不是斜片：
+        -- 鋪在一樓後，正上方二樓的屋頂、旁邊二樓的地板都不能靠它浮空蓋
+        for x = 3979, 3985 do for y = 2999, 3003 do cellAt(x, y, 0) end end
+        put("floor", flat, 3982, 3001, 0)
+        local overFlat = Place.roofAt(3982, 3001, 1) or fits("roof", r30, 3982, 3001, 1)
+        local besideFlat = Place.floorAt(3983, 3001, 1) or fits("floor", slab, 3983, 3001, 1)
+        check(flat:getProperties():has("RoofGroup") and not overFlat and not besideFlat,
+            "屋頂（Place）平屋頂地板片鋪在一樓：✗ 正上方二樓的屋頂、✗ 旁邊二樓的地板都擋（它是樓板，不算屋頂片）")
+        -- 審查第 5 輪：上一層那格還沒有時，牆也照座標查撐不撐得住（Place.wallHeldAt，Check.item 預覽用），
+        -- 和伺服器補出格子後的 Place.check 同一個答案（✗ 預覽說能蓋、伺服器回 BLOCKED）
+        select(2, cellAt(3940, 3000, 0)).wallW = obj(plain) -- 正下方同一條邊有牆
+        put("roof", r30, 3943, 3000, 1)                     -- 西邊那格同一層有屋頂片
+        put("floor", slab, 3946, 3000, 1)                   -- 西邊那格同一層有地板（引擎 hasFloor(north) 看鄰格）
+        cellAt(3949, 3000, 0)                               -- 什麼都沒有
+        local cw = getCell()
+        local noUp = cw:getGridSquare(3940, 3000, 1) == nil and cw:getGridSquare(3944, 3000, 1) == nil
+            and cw:getGridSquare(3947, 3000, 1) == nil and cw:getGridSquare(3949, 3000, 1) == nil
+        local pre = { Place.wallHeldAt(plain, 3940, 3000, 1), Place.wallHeldAt(plain, 3944, 3000, 1),
+            Place.wallHeldAt(plain, 3947, 3000, 1), Place.wallHeldAt(plain, 3949, 3000, 1), Place.wallHeldAt(plain, 3949, 3000, 0) }
+        check(noUp and pre[1] and pre[2] and pre[3] and not pre[4] and pre[5]
+            and fits("wall", plain, 3940, 3000, 1) and fits("wall", plain, 3944, 3000, 1) and not fits("wall", plain, 3949, 3000, 1),
+            "屋頂（Place）上一層還沒有格子的牆照座標查：正下方同邊有牆、旁邊同層有屋頂片、旁邊同層有地板可以；"
+                .. "✗ 都沒有：擋；一樓不查。補出格子後 Place.check 同一個答案")
 
         -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
         local plainN = add("p2_plain_wall_1", { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" } })
@@ -17558,6 +17602,15 @@ end)()
         end
         check(fills == 13 and not onOwn and wp and wp.HALF and rb == "ok" and kept,
             "屋頂（Roof）範圍裡先有 3 格地板：那 3 格不補天花板（16 格補 13 片）；照圖蓋後那 3 格還是原本的地板")
+        -- 審查第 5 輪：補天花板的圖不成立（圖塊組被沙盒關掉）時 30 度回 DISABLED（面板有句子可說），不丟錯
+        local realResolveF = Entry.resolve
+        Entry.resolve = function(name)
+            if name == Roof.FILL then return nil end
+            return realResolveF(name)
+        end
+        local okD, gd, cd = pcall(Roof.layout, s30, "gable", "EW", px, py, px + 3, py + 3, 1, nil)
+        Entry.resolve = realResolveF
+        check(okD and gd == nil and cd == "DISABLED", "屋頂（Roof）✗ 補天花板的圖被關掉：30 度回 DISABLED，不丟錯（" .. tostring(cd) .. "）")
         for k in pairs(opts) do squares[k] = nil end
     end
 
@@ -17604,6 +17657,30 @@ end)()
     check(p1 == p2 and #p1.cells == 48 and p1.cells[1].z == 1 and #p1.lines == 3 and p1.lines[2] == "IGUI_MBLD_Roof_Warn_HALF"
         and fixed == "S" and #p3.lines == 3 and p3.lines[2] == "IGUI_MBLD_Roof_Warn_HALF",
         "屋頂（RoofPanel）預覽：同一範圍回同一份、天花板同格不重複畫；30、45 度都補天花板多一行提示；✗ 45 度單斜選朝北夾回朝南")
+    -- 審查第 5 輪 R5-6：排法照世界現況（屋頂層已有地板的格子不補天花板）。同一範圍再問一次時世界沒變回同一份，
+    -- 變了（中間鋪了一格地板）要重排，不回舊的那份
+    st.set, st.shape, st.dir, st.gable, st.gableTs = s30, "gable", "EW", nil, ""
+    local q1 = RP.preview(100, 200, 105, 207)
+    square(100, 200, 1, { flags = { solidfloor = true } })
+    local q2, q3 = RP.preview(100, 200, 105, 207), RP.preview(100, 200, 105, 207)
+    squares["100,200,1"] = nil
+    local q4 = RP.preview(100, 200, 105, 207)
+    check(q1 ~= q2 and q2 == q3 and q4 ~= q3, "屋頂（RoofPanel）預覽：同一範圍中間鋪了一格地板，再問要重排（✗ 一直回舊的片數）；世界沒變回同一份")
+    -- 大範圍（排一次超過 SLOW_MS）不每秒重排：SLOW_EVERY 內世界變了也回上一份，過了才重排
+    local realLayoutR = Roof.layout
+    Roof.layout = function(...)
+        nowMs = nowMs + 10 -- 這一次排了 10 ms
+        return realLayoutR(...)
+    end
+    local w1 = RP.preview(100, 200, 104, 207)
+    square(100, 200, 1, { flags = { solidfloor = true } })
+    local w2 = RP.preview(100, 200, 104, 207)
+    nowMs = nowMs + RP.SLOW_EVERY
+    local w3 = RP.preview(100, 200, 104, 207)
+    Roof.layout = realLayoutR
+    squares["100,200,1"] = nil
+    check(w1 == w2 and w3 ~= w2, "屋頂（RoofPanel）預覽：排一次超過 SLOW_MS 的範圍，SLOW_EVERY 內再問回上一份（不每秒頓一下）；過了才照世界重排")
+    st.set, st.shape, st.dir = s45, "gable", "EW" -- 後面的情境照 45 度雙斜
     -- 缺口補不了（底下沒有房子的牆）：預覽多一行說幾格；放開後也跳通知
     st.gable, st.gableTs = g45, "walls_exterior_roofs_01"
     local p4 = RP.preview(100, 200, 102, 207)
@@ -18247,13 +18324,14 @@ end)()
     do
         pl = Plan.new("stale")
         local si = Plan.item(pl, "pp_a")
-        for x = 30, 32 do Plan.add(pl, x, 34, 0, 0, 0, si) end
+        for x = 30, 35 do Plan.add(pl, x, 34, 0, 0, 0, si) end
         Plan.add(pl, 30, 36, 0, 0, 0, Plan.item(pl, "pp_ramp"))
         for i, name in ipairs({ "pp_ramp", "pp_ramp_1", "pp_ramp_2" }) do sqAt(OX + 29 + i, OY + 36, 0).objs = { tile(name) } end
         local deck = sqAt(OX + 33, OY + 36, 1)
         deck.objs, deck.floor = {}, true
         SHORT, CODE = false, { [(OX + 30) .. "," .. (OY + 34)] = "NO_MATERIAL", [(OX + 31) .. "," .. (OY + 34)] = "SAME_TILE",
-            [(OX + 32) .. "," .. (OY + 34)] = "BLOCKED" }
+            [(OX + 32) .. "," .. (OY + 34)] = "BLOCKED", [(OX + 33) .. "," .. (OY + 34)] = "SAFEHOUSE",
+            [(OX + 34) .. "," .. (OY + 34)] = "NOT_EMPTY", [(OX + 35) .. "," .. (OY + 34)] = "NO_UPPER" }
         PC.reset()
         frame(nil)
         local s0 = { PC.state(Plan.at(pl, 30, 34, 0)[1]), PC.state(Plan.at(pl, 31, 34, 0)[1]),
@@ -18265,6 +18343,16 @@ end)()
         check(s0[1] == "short" and s0[2] == "blocked" and s0[3] == "blocked" and s0[4] == "done"
             and ev(30, 34) == nil and ev(31, 34) == nil and ev(32, 34) == 1 and ev(30, 36) == 1,
             "sweep：缺料、SAME_TILE 的片過了 STALE_MS 不重查（反面）；同一幀 BLOCKED 與蓋好的坡道照樣重查")
+        -- 審查第 5 輪 R5-3：解除時格上物件數不變、也沒有別的通知的原因（被加進安全屋、舊容器清空、上一層蓋好）
+        -- 同 BLOCKED 定時重查；原因解除後變回可蓋
+        local wokeOnce = ev(33, 34) == 1 and ev(34, 34) == 1 and ev(35, 34) == 1
+        for x = 33, 35 do CODE[(OX + x) .. "," .. (OY + 34)] = nil end
+        T = T + PC.STALE_MS
+        frame(nil)
+        check(wokeOnce and PC.state(Plan.at(pl, 33, 34, 0)[1]) == "ok" and PC.state(Plan.at(pl, 34, 34, 0)[1]) == "ok"
+            and PC.state(Plan.at(pl, 35, 34, 0)[1]) == "ok",
+            "sweep：SAFEHOUSE、NOT_EMPTY、NO_UPPER 的片過了 STALE_MS 重查；原因解除（格上物件數沒變）後變回可蓋"
+                .. "（✗ 一直卡在擋住）")
         SHORT, CODE = false, {}
         PC.reset()
     end
@@ -18507,11 +18595,39 @@ end)()
         R.stop()
         PC.state = realState7
         local chunk = R.PICK_CHUNK or 512 -- 舊版沒有這個常數：照 512 比
-        check(allOk and started == true and ticks == 8 and most <= chunk and at == "532,532",
-            "照圖蓋挑 4,096 片都能蓋的藍圖：分 8 幀看完、一幀最多問 " .. chunk .. " 片，第一片是腳下那片（"
+        -- 最後一幀另外再問挑到的那一批（挑到的那片＋一批最多 32 片，審查第 5 輪 R5-5）
+        check(allOk and started == true and ticks == 8 and most <= chunk + 33 and at == "532,532",
+            "照圖蓋挑 4,096 片都能蓋的藍圖：分 8 幀看完、一幀最多問 " .. chunk .. " 片（最後一幀多問挑到的那一批），第一片是腳下那片（"
             .. ticks .. " 幀、一幀最多 " .. most .. " 片、送 " .. tostring(at) .. "）")
         check(busyStart == true and busyNow and startAsks == 0,
             "剛拿到料（PlanCheck 在重排）按照圖蓋：Runner.start 不逐片問狀態（問了 " .. startAsks .. " 片）")
+        -- 審查第 5 輪 R5-5：分幀看到一半，腳下那片被別人蓋好了（狀態變 done）：看完不送它，重看一輪、送別片
+        R.stop()
+        bigPlan(nil)
+        materialsChange()
+        settle(nil)
+        local foot, footAsks = Plan.at(pl, 32, 32, 0)[1], 0
+        pushes = {}
+        local started2 = R.start(K)
+        PC.state = function(p)
+            if p == foot then
+                footAsks = footAsks + 1
+                if footAsks > 1 then return "done" end
+            end
+            return realState7(p)
+        end
+        local ticks2, sentFoot = 0, false
+        while not pushes[1] and ticks2 < 40 do
+            R.tick()
+            ticks2 = ticks2 + 1
+        end
+        for _, a2 in ipairs(pushes[1] and pushes[1].anchors or {}) do
+            if a2[1] == 532 and a2[2] == 532 then sentFoot = true end
+        end
+        R.stop()
+        PC.state = realState7
+        check(started2 == true and pushes[1] ~= nil and footAsks > 1 and not sentFoot,
+            "照圖蓋分幀挑片途中腳下那片變成蓋好：不送它（✗ 照舊狀態再蓋一次、多扣料），重看後送別片（看了 " .. ticks2 .. " 幀）")
     end
     PC.materials = realMaterials2
     pushes, SHORT, CODE = {}, false, {}

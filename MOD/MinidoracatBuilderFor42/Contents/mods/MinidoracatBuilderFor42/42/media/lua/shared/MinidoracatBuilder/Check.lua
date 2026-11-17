@@ -270,12 +270,14 @@ function Check.item(player, name, d, anchor, opts)
                 end
             end
         elseif (entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned))
-            or (entry.kind == "floor" and not Place.floorAt(c.x, c.y, c.z, planned)) then
-            -- 預覽：上一層的格子常常還沒建，屋頂與地板照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
+            or (entry.kind == "floor" and not Place.floorAt(c.x, c.y, c.z, planned))
+            or (entry.kind == "wall" and not Place.wallHeldAt(c.spr, c.x, c.y, c.z)) then
+            -- 預覽：上一層的格子常常還沒建，屋頂、地板與牆照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end
-    local perk, level, have, enough = Check.skill(player, entry.kind, spr)
+    -- 預覽照摘要讀技能等級（記下讀過的技能）：之後只升技能、背包沒變，Materials.same 才看得出來
+    local perk, level, have, enough = Check.skill(player, entry.kind, spr, preview and opts.summary and opts.summary.levels or nil)
     if perk and not enough then return "SKILL", { perk = perk, level = level, have = have }, info end
     local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
     for j, c in ipairs(cells) do c.cost = costs[j] end

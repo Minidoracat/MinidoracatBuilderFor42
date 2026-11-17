@@ -61,7 +61,8 @@ Roof.FAM = {
     -- （_01@0 與 _01@72 差 15／12 點；穀倉、二手衣店是 @72 那種），所以每個片種比 alt 那套也比；兩套取近的，原版非燒毀款
     -- 同片種最大差 7（walls_exterior_roofs_04 PeakS1），不同片種最近差 10（PeakS1 與 RiseS1），容許取 7；
     -- 燒毀款（差 8）與 walls_logs（差 9 以上）認不出（量測見 builder-dev roof.md）。
-    -- 跨距 7 以上的山牆中段（建築編輯器的 CapGap，是別的牆圖塊組的整面牆）不放
+    -- 跨距 7 以上的山牆中段（建築編輯器的 CapGap，是別的牆圖塊組的整面牆）這裡沒有片種：用房子那條邊正下方的直牆補
+    -- （Roof.layout 的山牆段）
     ["45"] = {
         ref = "roofs_01", tol = 20, rise = 3, kind = "roof",
         off = rows({ { "S", 0, 1, 3 }, { "E", 3, -1, 3 }, { "O", 8, 1, 3 }, { "I", 11, 1, 3 }, { "RE2", 14, 1, 0 },
@@ -393,6 +394,8 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
         return nil, "ODD_SPAN" -- 四坡奇數短邊的屋脊頭要半格轉角片，這一款沒有
     end
     local fill = fillName(set)
+    -- 面板開著時沙盒把天花板的圖關掉（Roof.shapes 那時已經給過形狀）：同其他圖不成立，回有句子可說的 DISABLED
+    if shape ~= "flat" and not fill then return nil, "DISABLED" end
 
     local order, byName, top, warn = {}, {}, 0, nil
     local function add(name, x, y, lv)
@@ -417,7 +420,6 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
     local function sq(x, y, lz) return cell and cell:getGridSquare(x, y, lz) or nil end
     -- 屋頂層那格已經有實心地板（玩家鋪的、地圖原有的、之前蓋的天花板）：本來就封住了，不補（不換掉玩家的地板）
     local function putFill(x, y)
-        if not fill then error("Roof.layout: no fill for " .. set.ts) end
         local s = sq(x, y, z)
         if s and s:has(IsoFlagType.solidfloor) then return end
         add(fill, x, y, 0)
@@ -429,7 +431,8 @@ function Roof.layout(set, shape, dir, x1, y1, x2, y2, z, gable)
         for x = x1, x2 do
             d.N, d.S, d.W, d.E = y - y1, y2 - y, x - x1, x2 - x
             local kk, m = role(spec, eaves, d)
-            -- 每格先補天花板（45 度平頂除外）：同格的屋頂片、上一層的平頂片與往上接的片都靠它撐（Place.roofAt）
+            -- 每格先補天花板（45 度平頂除外）：同格的屋頂片靠它撐（同一層有地板，Place.roofAt）；上一層的平頂片與
+            -- 往上接的片不靠它，靠斜下方的屋頂片與同一層先蓋好的片（正下方只有天花板不算撐）
             if shape ~= "flat" then putFill(x, y) end
             if multi and m >= spec.rise then
                 put(set.ts, set.base, spec.off, nil, key.flat .. "1", x, y, 1)

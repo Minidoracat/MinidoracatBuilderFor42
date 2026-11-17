@@ -70,6 +70,9 @@ function RP.pickGable(ts)
 end
 
 local memo = {}
+-- 大範圍排一次要好幾毫秒（64×64 四坡離線量約 9 ms，遊戲裡更慢）：排一次超過 SLOW_MS 的範圍，SLOW_EVERY 內再問回上一份
+RP.SLOW_MS = 4
+RP.SLOW_EVERY = 5000
 -- 山牆還沒認出來（gableWait）先再認一次；還是沒載好就不排（排了會少山牆）：GABLE_WAIT
 local function layout(x1, y1, x2, y2, z)
     local st = RP.st
@@ -78,24 +81,31 @@ local function layout(x1, y1, x2, y2, z)
     return Roof.layout(st.set, st.shape, st.dir, x1, y1, x2, y2, z, st.gable)
 end
 
--- 長方形游標的預覽（Cursor.startArea 的 cb.preview）：屋頂片的格子（灰框，排在規劃樓層）與兩行字。範圍、樓層、選擇沒變
--- 回同一份（游標每秒再問一次，拿到同一份就不重排）；山牆還沒認出來時每次都再認一次，認出來了 key 跟著變
+-- 長方形游標的預覽（Cursor.startArea 的 cb.preview）：屋頂片的格子（灰框，排在規劃樓層）與兩行字。游標每秒再問一次：
+-- 每次都重排（排法照世界現況：屋頂層已有地板的格子不補天花板、底下有直牆才補山牆下的牆；大範圍見 SLOW_MS），範圍、樓層、
+-- 選擇與排出來的片數、提示都沒變才回同一份（游標拿到同一份就不重畫）；山牆還沒認出來時每次都再認一次，認出來了 key 跟著變
 function RP.preview(x1, y1, x2, y2)
     local st, PM = RP.st, B.PlanMode
     local z = PM and PM.level and PM.level()
     if not (st.set and z) then return { cells = {}, lines = {} } end
     if st.gableWait then RP.pickGable(st.gableTs) end
-    local key = table.concat({ st.set.ts, tostring(st.set.base), tostring(x1), tostring(y1), tostring(x2), tostring(y2),
+    local base = table.concat({ st.set.ts, tostring(st.set.base), tostring(x1), tostring(y1), tostring(x2), tostring(y2),
         tostring(z), tostring(st.shape), tostring(st.dir), st.gableTs, tostring(st.gableWait) }, ",")
-    if memo.key == key then return memo.res end
+    local t = getTimestampMs()
+    if memo.base == base and memo.cost > RP.SLOW_MS and t >= memo.at and t - memo.at < RP.SLOW_EVERY then return memo.res end
     local groups, code = layout(x1, y1, x2, y2, z)
     local warn = groups and code
-    local cells, seen, n = {}, {}, 0
+    local n = 0
+    for _, g in ipairs(groups or {}) do n = n + #g.cells end
+    local key = table.concat({ base, tostring(n), tostring(not groups and code), tostring(warn and warn.HALF),
+        tostring(warn and warn.GAP) }, ",")
+    memo.base, memo.at, memo.cost = base, t, getTimestampMs() - t
+    if memo.key == key then return memo.res end
+    local cells, seen = {}, {}
     local text
     if groups then
         for _, g in ipairs(groups) do
             for _, c in ipairs(g.cells) do
-                n = n + 1
                 local k = c[1] .. "," .. c[2] .. "," .. c[3]
                 if not seen[k] then
                     seen[k] = true

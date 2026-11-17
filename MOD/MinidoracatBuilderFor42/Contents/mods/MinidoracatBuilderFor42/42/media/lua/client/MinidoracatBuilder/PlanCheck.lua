@@ -5,7 +5,8 @@
 -- 算完整張後只重查有變動的片：PlanCheck.touch 的格子、背包或技能變了（材料摘要每秒比一次）、沙盒設定變了、
 -- 玩家換樓層或走開 MOVE 格（重查還沒載入或太遠的片）、玩家身邊 NEAR 格內格上的物件數變了（每幀輪流比一段）。
 -- 會自己消失、又不改物件數的原因（PlanCheck.RECHECK：有人或車擋著、配方太暗）看不出來：身邊的片隔一段時間重查一次。
--- 放不下（BLOCKED）的片也隔 STALE_MS 重查：撐它的東西可能蓋在別格、藍圖外，那一格的物件數比不到。
+-- 放不下（BLOCKED）的片也隔 STALE_MS 重查：撐它的東西可能蓋在別格、藍圖外，那一格的物件數比不到。解除時物件數不變、
+-- 也沒有別的通知的原因（STALE：被加進安全屋、權限、舊容器清空、上一層蓋好了）同樣。
 -- 蓋好的多格組（車庫門、雙開門、坡道）也隔 STALE_MS 重查整組：物件數只比錨點那格，其他格被拆看不出來。
 -- 放不下、但旁邊還有會蓋的片的，細節碼報 WAIT（等旁邊先蓋好，見 waiting），狀態照舊是 blocked。
 -- 沒有地上的藍圖時 OnTick 第一行就離開。
@@ -29,6 +30,10 @@ PlanCheck.SWEEP = 128       -- 每幀輪流比幾片
 PlanCheck.RECHECK = { OCCUPIED = 500, VEHICLE = 500, DARK = 5000 }
 -- ponytail：身邊放不下的片每 STALE_MS 整片重算一次；量到拖慢再改成只比旁邊幾格的物件數
 PlanCheck.STALE_MS = 5000
+-- 隔 STALE_MS 重查的細節碼（見檔頭）。缺料、缺工具、技能不夠等材料摘要變了重排；SAME_TILE 這類看同一格的物件數；
+-- INTERNAL（判斷本身出錯）不重查：每次都會再印一行 log
+local STALE = { BLOCKED = true, SAFEHOUSE = true, OUTSIDE_SAFEHOUSE = true, PERM_DENIED = true, NOT_EMPTY = true,
+    NO_UPPER = true }
 local MAX_BUCKET = 255
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 local FAR = { TOO_FAR = true, NOT_LOADED = true }
@@ -616,10 +621,10 @@ local function sweep(player, now)
                     push(p)
                     PlanCheck.touch(sx, sy, z)
                 elseif c or r.group then
-                    -- 有細節碼的只有 RECHECK 與 BLOCKED 定時重查（缺料、缺工具、技能不夠等要等材料或技能變了才重排）；
+                    -- 有細節碼的只有 RECHECK 與 STALE 定時重查（缺料、缺工具、技能不夠等要等材料或技能變了才重排）；
                     -- 沒有細節碼的是蓋好的多格組（r.group）。不能寫成 c and (…) or stale：c 不在表裡時會變成 stale
                     local every = stale
-                    if c then every = recheck[c] or (c == "BLOCKED" and stale) end
+                    if c then every = recheck[c] or (STALE[c] and stale) end
                     local at = r.at or now -- 上次算這一片的時間（tick 記的）
                     if every and (now < at or now - at >= every) then push(p) end
                 end
