@@ -320,9 +320,11 @@ end
 
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
 -- 一樓（z＝0）不查支撐：原版地圖的屋簷、貼牆的邊緣裝飾、帳篷與碉堡頂都放在一樓（離線讀 Muldraugh 的 lotpack，z＝0 的
--- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆、地板或屋頂片
--- （45 度屋頂助手每格補的天花板、上一層的平頂片疊在它上面），四鄰往下一層有屋頂片（單斜往上一層接：那片正下方是空的，
--- 靠斜下方的鄰片撐），或這格、四鄰有地板或屋頂（四鄰有地板＝connectedWithFloor，不含斜坡）。照座標查、不要這格存在：
+-- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆或屋頂片，
+-- 四鄰往下一層有屋頂片（單斜往上一層接：那片正下方只有天花板，靠斜下方的鄰片撐），或這格、四鄰同一層有地板或屋頂
+-- （四鄰有地板＝connectedWithFloor，不含斜坡）。正下方只有地板不算：z＝1 的正下方是一樓地面，一定帶 solidfloor，算了
+-- 就整片二樓都能浮空蓋（0d1d2f2 這樣做過，實機 plan-sp wrBefore／roBefore 抓到）；更高層的樓板、助手補的天花板也一樣
+-- 不算（同 0a4b161），助手往上一層接的片靠斜下方的屋頂片與同一層先蓋好的片，照圖蓋的順序靠 WAIT。照座標查、不要這格存在：
 -- 客戶端預覽時上一層的格子常常還沒建（Check.item 照樣呼叫）。
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
@@ -360,7 +362,7 @@ function Place.roofAt(x, y, z, planned)
     if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋（審查 1109 Claude）
     if z == 0 then return true end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
-    if supports(below) or roofPiece(cell:getGridSquare(x - 1, y, z - 1)) or roofPiece(cell:getGridSquare(x + 1, y, z - 1))
+    if roofPiece(below) or roofPiece(cell:getGridSquare(x - 1, y, z - 1)) or roofPiece(cell:getGridSquare(x + 1, y, z - 1))
         or roofPiece(cell:getGridSquare(x, y - 1, z - 1)) or roofPiece(cell:getGridSquare(x, y + 1, z - 1)) then
         return true
     end

@@ -607,35 +607,51 @@ local function rateFull(t)
     return C.recentSends(t) >= C.RATE_MAX - RATE_SPARE
 end
 
+-- 挑片一幀最多看幾片：大藍圖分幾幀看完（4,096 片 8 幀），一幀的成本不隨藍圖大小長。實機 4,096 片一次看完，一幀
+-- 17 ms（能蓋的約 100 片）到 32 ms（約 4,000 片都能蓋）（E2EPerf11 重量 fc52b53 的 bigRun）
+Runner.PICK_CHUNK = 512
+
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、離玩家最近的那片，再收同項目、同層、同疊放值最近的幾片。
+-- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
 -- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。
--- 回 batch，"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
+-- 回 batch，"again"（還沒看完），"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
 local function pickBatch(player, plan, settled)
     local PC = planCheck()
-    local boxes = #Runner.boxes() > 0
-    local px, py = player:getX(), player:getY()
-    local best, bk1, bk2, bk3, pendingSeg
-    local cand = {}
-    B.Plan.each(plan, function(p)
+    local sc = st.scan
+    if not sc then
+        sc = { i = 1, cand = {}, boxes = #Runner.boxes() > 0, px = player:getX(), py = player:getY() }
+        st.scan = sc
+    end
+    local pieces, cand, boxes, px, py = st.pieces, sc.cand, sc.boxes, sc.px, sc.py
+    local best, bk1, bk2, bk3, pendingSeg = sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg
+    local last = math.min(#pieces, sc.i + Runner.PICK_CHUNK - 1)
+    for k = sc.i, last do
+        local p = pieces[k]
         -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）
-        if st.skip[p] or st.placed[p] or st.later[p] then return end
-        local state = PC.state(p)
-        if state == nil then
-            local id = resolve(p)
-            local s = id and segmentOf(id)
-            if s and (not pendingSeg or s < pendingSeg) then pendingSeg = s end
-            return
+        if not (st.skip[p] or st.placed[p] or st.later[p]) then
+            local state = PC.state(p)
+            if state == nil then
+                local id = resolve(p)
+                local s = id and segmentOf(id)
+                if s and (not pendingSeg or s < pendingSeg) then pendingSeg = s end
+            elseif state == "ok" or (state == "short" and boxes) then
+                local id, x, y, z, d, o, w = resolve(p)
+                if id and not (settled and not settled(x, y, z)) then
+                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id),
+                        dist = (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2 }
+                    cand[#cand + 1] = c
+                    if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.dist < bk3))) then
+                        best, bk1, bk2, bk3 = c, c.seg, c.z, c.dist
+                    end
+                end
+            end
         end
-        if not (state == "ok" or (state == "short" and boxes)) then return end
-        local id, x, y, z, d, o, w = resolve(p)
-        if not id or (settled and not settled(x, y, z)) then return end
-        local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id),
-            dist = (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2 }
-        cand[#cand + 1] = c
-        if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.dist < bk3))) then
-            best, bk1, bk2, bk3 = c, c.seg, c.z, c.dist
-        end
-    end)
+    end
+    if last < #pieces then
+        sc.i, sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg = last + 1, best, bk1, bk2, bk3, pendingSeg
+        return "again"
+    end
+    st.scan = nil
     if pendingSeg and (not best or pendingSeg < bk1) then
         local t = getTimestampMs()
         st.waitFrom = st.waitFrom or t
@@ -914,7 +930,7 @@ local function pick(player, plan)
         st.nextPick = t + RETRY_MS
         return
     end
-    if b == "again" then return end
+    if b == "again" then return end -- 還沒看完（下一幀接著看），或車庫門少了寬度跳過那片（下一幀重挑）
     if b then st.busyFrom = nil end
     -- 一批蓋完後的寬限內、或 PlanCheck 還在重排或待算（重排中的片 state 還是舊的）：挑不到不算蓋完，稍後再挑
     local busy = not b and PC.busy and PC.busy()
@@ -978,21 +994,25 @@ function Runner.start(player)
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
-    st.later = {}
+    st.later, st.scan = {}, nil
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.busyFrom, st.rateFrom, st.rateUntil = nil, nil, nil
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     -- 剛拿到料、PlanCheck 每秒一次的比對還沒看到：先比一次。變了就在重排（busy），開始後等身邊的片重算完再挑，
     -- 不先挑走舊狀態裡能蓋的遠片
     if PC.refresh then PC.refresh(player) end
-    local boxes, any = #Runner.boxes() > 0, false
+    -- 還在重排或待算：開始後挑不到會等它算完，不必逐片看有沒有能蓋的。
+    -- 這一輪的片記在 st.pieces（藍圖改了就暫停，整輪不變），挑片照它分幀看
+    local boxes, any, pieces, n = #Runner.boxes() > 0, (PC.busy and PC.busy()) or false, {}, 0
     B.Plan.each(plan, function(p)
+        n = n + 1
+        pieces[n] = p
         if any then return end
         local s = PC.state(p)
         if s == nil or s == "ok" or (s == "short" and boxes) then any = true end
     end)
+    st.pieces = pieces
     if not any and standingOn(player, plan) then any = true end -- 只剩腳下那一片：走開就能蓋
-    if not any and PC.busy and PC.busy() then any = true end -- 還在重排或待算：開始後挑不到會等它算完
     if not any then
         summary, summaryAt = buildSummary(), getTimestampMs()
         return nil, "NOTHING"

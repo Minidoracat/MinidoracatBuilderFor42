@@ -13420,6 +13420,20 @@ end)()
     check(stale == "BLOCKED" and st(wLone) ~= "blocked",
         "放不下的片：撐它的牆蓋在藍圖外，隔一段時間重查就能蓋（同一段時間內不重算）")
     Plan.remove(pl, { wWall, wRoof, wNext, wLone, wOver, wA, wB, hWall, hRoof })
+    -- 一樓地面帶 solidfloor（同真遊戲；上面那幾段的假地面沒有）：二樓的屋頂不能拿地面當撐（實機 plan-sp wrBefore／roBefore，
+    -- 0d1d2f2 起回 ok）。疊在還沒蓋的規劃牆上 WAIT、牆蓋好後可蓋；孤零零的 BLOCKED
+    for x = 209, 214 do for y = 199, 204 do square(x, y, 0, { flags = { solidfloor = true } }) end end
+    local gWall, gRoof, gLone = put("pcw_01_0", 10, 1, 0), put("pcr_01_0", 10, 1, 1), put("pcr_01_0", 13, 3, 1)
+    waitNow()
+    local gWait, gBlock = codeOf(gRoof), codeOf(gLone)
+    square(210, 201, 0, { flags = { solidfloor = true }, wallN = {} })
+    squares["210,201,0"].objects[1] = obj("pcw_01_0")
+    PC.touch(210, 201, 0)
+    waitNow()
+    check(gWait == "WAIT" and gBlock == "BLOCKED" and st(gWall) == "done" and st(gRoof) ~= "blocked" and codeOf(gLone) == "BLOCKED",
+        "地面帶 solidfloor：疊在還沒蓋的規劃牆上的二樓屋頂 WAIT、牆蓋好後可蓋；✗ 孤零零的二樓屋頂 BLOCKED（地面不算撐）")
+    Plan.remove(pl, { gWall, gRoof, gLone })
+    for x = 209, 214 do for y = 199, 204 do squares[x .. "," .. y .. ",0"] = nil end end
     square(202, 205, 0)
     square(204, 206, 0)
     square(206, 204, 0)
@@ -17138,7 +17152,7 @@ end)()
         local function cellAt(x, y, z) -- 建或拿格子；回 格子, 它的選項（flags、wallN、wallW、floor）
             local k = x .. "," .. y .. "," .. z
             if not opts[k] then
-                opts[k] = { flags = {} }
+                opts[k] = { flags = { solidfloor = z == 0 or nil } } -- 一樓的地面帶 solidfloor，同真遊戲
                 square(x, y, z, opts[k])
             end
             return squares[k], opts[k]
@@ -17178,15 +17192,15 @@ end)()
         check(fits("wall", gw, 3920, 3000, 2) and fits("wall", gw, 3921, 3000, 2) and not fits("wall", gw, 3922, 3000, 2)
             and not fits("wall", plain, 3925, 3000, 2),
             "屋頂（Place）三樓沒有地板的西牆：這條邊兩側的格子同一層有屋頂片可以蓋（端牆）；✗ 屋頂片隔一格、在南邊那格：擋")
-        -- 屋頂：正下方有地板或屋頂片、斜下方鄰格有屋頂片可以；✗ 斜下方只有地板、什麼都沒有：擋
+        -- 屋頂：正下方有屋頂片、斜下方鄰格有屋頂片可以；✗ 正下方只有天花板、斜下方只有天花板、什麼都沒有：擋
         put("floor", spriteMap[Roof.FILL], 3910, 3000, 1)
         put("roof", r30, 3912, 3000, 1)
         put("roof", r30, 3914, 3001, 1)
         put("floor", spriteMap[Roof.FILL], 3916, 3001, 1)
-        check(Place.roofAt(3910, 3000, 2) and Place.roofAt(3912, 3000, 2) and Place.roofAt(3914, 3000, 2)
+        check(not Place.roofAt(3910, 3000, 2) and Place.roofAt(3912, 3000, 2) and Place.roofAt(3914, 3000, 2)
             and not Place.roofAt(3916, 3000, 2) and not Place.roofAt(3918, 3000, 2),
-            "屋頂（Place）二樓以上的屋頂片：正下方有天花板或屋頂片、斜下方鄰格有屋頂片可以；✗ 斜下方只有地板、"
-                .. "✗ 下面和旁邊都沒東西：擋")
+            "屋頂（Place）二樓以上的屋頂片：正下方有屋頂片、斜下方鄰格有屋頂片可以；✗ 正下方只有天花板（同樓板，不算撐）、"
+                .. "✗ 斜下方只有天花板、✗ 下面和旁邊都沒東西：擋")
         -- 那一層還沒有格子（實機 b100-roof-ch2 的 check=nosq）：預覽不補格子，Check.item 改照座標問 roofAt／floorAt；
         -- 伺服器 Place.square 補出格子後照 Place.check 逐片查（fits 先建格子，同伺服器）。45 度平頂片分類是地板
         local cellZ2 = getCell()
@@ -17201,10 +17215,27 @@ end)()
             and not fits("floor", flat, 3936, 3000, 2) and fits("roof", r30, 3914, 3000, 2),
             "屋頂（Place）上一層還沒有格子：平頂片（地板）四鄰往下一層有斜片、屋頂片斜下方有屋頂片，預覽照座標判可蓋、"
                 .. "補出格子後也放得下；✗ 四鄰往下一層只有天花板：兩端都擋")
+        -- 屋頂浮空（實機 plan-sp wrBefore／roBefore，0d1d2f2 起回 ok）：一樓地面帶 solidfloor（同真遊戲）不能當二樓屋頂的撐；
+        -- 二樓以上正下方只有樓板或天花板也不算（同 0a4b161）。撐得住：正下方有牆或屋頂片、斜下方鄰格有屋頂片、
+        -- 同一層四鄰有屋頂或地板（照圖蓋的順序靠 WAIT，不靠放寬）
+        for x = 3959, 3965 do for y = 2999, 3003 do cellAt(x, y, 0) end end
+        local loneOk = Place.roofAt(3962, 3001, 1) or fits("roof", r30, 3962, 3001, 1)
+        select(2, cellAt(3964, 3001, 0)).wallW = obj(plain)
+        local onWall = Place.roofAt(3964, 3001, 1)
+        put("roof", r30, 3964, 3001, 1)
+        local chain = Place.roofAt(3963, 3001, 1)
+        local slab = add("p2_slab_floor_0", { flags = { "solidfloor" } })
+        put("floor", slab, 3970, 3000, 1)
+        put("floor", spriteMap[Roof.FILL], 3972, 3000, 1)
+        local onSlab = Place.roofAt(3970, 3000, 2) or Place.roofAt(3972, 3000, 2)
+        check(not loneOk and onWall and chain and not onSlab,
+            "屋頂（Place）一樓地面帶 solidfloor：✗ 二樓孤零零的屋頂（正下方沒牆、四周沒屋頂或地板）擋；正下方有牆可以、"
+                .. "挨著蓋好的屋頂可以；✗ 三樓正下方只有樓板或天花板：擋（同 0a4b161）")
 
         -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
         local plainN = add("p2_plain_wall_1", { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" } })
         local function house(x0, y0, w, h)
+            for x = x0 - 1, x0 + w do for y = y0 - 1, y0 + h do cellAt(x, y, 0) end end -- 地面（帶 solidfloor）
             for x = x0, x0 + w - 1 do
                 select(2, cellAt(x, y0, 0)).wallN = obj(plainN)
                 select(2, cellAt(x, y0 + h, 0)).wallN = obj(plainN)
@@ -17253,6 +17284,33 @@ end)()
         end
         check(stuck == nil, "屋頂（Roof＋Place）照圖蓋：30／45 度雙斜、單斜、四坡（含山牆、往上一層接、上一層平頂）"
             .. "每一片都蓋得起來" .. (stuck and "；卡住的 " .. stuck or ""))
+        -- 屋頂浮空修正後（正下方只有地板、天花板不算撐）：30／45 度每種形狀 × 方向 × 有／沒有山牆，地面帶 solidfloor 的房子上
+        -- 照圖蓋到一片不剩（往上一層接的片靠斜下方的屋頂片與同一層先蓋好的片，順序靠反覆挑蓋得起來的）
+        local allStuck, allRuns, idx = nil, 0, 0
+        for _, c in ipairs({ { s30, g30 }, { s45, g45 } }) do
+            for _, sh in ipairs(Roof.shapes(c[1])) do
+                for _, dd in ipairs(#sh.dirs > 0 and sh.dirs or { false }) do
+                    for _, gb in ipairs({ false, c[2] }) do
+                        for _, sz in ipairs({ { 4, 8 }, { 7, 7 }, { 9, 5 } }) do
+                            idx = idx + 1
+                            local x0, y0 = 4000 + idx * 12, 6000
+                            house(x0, y0, sz[1], sz[2])
+                            local gr = Roof.layout(c[1], sh.id, dd or nil, x0, y0, x0 + sz[1] - 1, y0 + sz[2] - 1, 1, gb or nil)
+                            if gr then
+                                allRuns = allRuns + 1
+                                local r = buildAll(gr)
+                                if r ~= "ok" and not allStuck then
+                                    allStuck = c[1].fam .. " " .. sh.id .. " " .. tostring(dd) .. (gb and "＋山牆 " or " ")
+                                        .. sz[1] .. "×" .. sz[2] .. "：" .. r
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        check(allStuck == nil and allRuns >= 40, "屋頂（Roof＋Place）地面帶 solidfloor：30／45 度每種形狀、方向、有／沒有山牆、"
+            .. "4×8／7×7／9×5 照圖蓋都一片不剩（" .. allRuns .. " 種）" .. (allStuck and "；卡住的 " .. allStuck or ""))
 
         -- 缺口（Main 2026-11-17，實機 roof-45-gable-8-gw）：配山牆時側面每一格從屋簷到屋頂線都要有牆。幾何條件：側面那格旁邊
         -- 那格（範圍裡最靠那一邊的那格）有斜片在第 L 層＝第 0..L 層都要有牆類；只有上一層的平頂片（地板，第 1 層以上）在第 L 層
@@ -18269,6 +18327,48 @@ end)()
     check(mnOk, "剛拿到料就按照圖蓋：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），重算完送最近的那片")
     check(na and nStarted == nil and nWhy == "NOTHING" and nBusy == false,
         "沒拿到料時按照圖蓋：照舊回 NOTHING、不在重排（反面）")
+
+    -- 7d'. 4,096 片都能蓋時挑一批（一批蓋完後重挑也是這樣）：一次 R.tick 最多問 PICK_CHUNK 片的狀態，4,096 片分 8 幀看完，
+    --      送出的還是腳下那片（✗ 一幀看完整張：E2EPerf11 重量的 bigRun 約 4,000 片能蓋時 Runner 一幀 32 ms）；
+    --      按下那一下 PlanCheck 在重排（剛拿到料）時，Runner.start 不逐片問狀態（✗ 全缺料時整張問一遍）
+    do
+        R.stop()
+        bigPlan(nil)
+        materialsChange()
+        settle(nil)
+        local allOk = allState(pl, "ok") == 0
+        local realState7 = PC.state
+        local asks = 0
+        PC.state = function(p)
+            asks = asks + 1
+            return realState7(p)
+        end
+        pushes = {}
+        local started = R.start(K)
+        local ticks, most = 0, 0
+        while not pushes[1] and ticks < 20 do
+            asks = 0
+            R.tick()
+            ticks = ticks + 1
+            if asks > most then most = asks end
+        end
+        local a = pushes[1] and pushes[1].anchors[1]
+        local at = a and (a[1] .. "," .. a[2])
+        R.stop()
+        bigPlan(nil)
+        SHORT, MG = false, MG + 1
+        asks = 0
+        local busyStart = R.start(K)
+        local startAsks, busyNow = asks, PC.busy()
+        R.stop()
+        PC.state = realState7
+        local chunk = R.PICK_CHUNK or 512 -- 舊版沒有這個常數：照 512 比
+        check(allOk and started == true and ticks == 8 and most <= chunk and at == "532,532",
+            "照圖蓋挑 4,096 片都能蓋的藍圖：分 8 幀看完、一幀最多問 " .. chunk .. " 片，第一片是腳下那片（"
+            .. ticks .. " 幀、一幀最多 " .. most .. " 片、送 " .. tostring(at) .. "）")
+        check(busyStart == true and busyNow and startAsks == 0,
+            "剛拿到料（PlanCheck 在重排）按照圖蓋：Runner.start 不逐片問狀態（問了 " .. startAsks .. " 片）")
+    end
     PC.materials = realMaterials2
     pushes, SHORT, CODE = {}, false, {}
     PC.reset()
