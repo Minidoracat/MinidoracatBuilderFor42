@@ -10008,9 +10008,15 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     Place.build("floor", { { sq = hSq, spr = floorS, cost = { items = {} } } }, hPlaced)
     local hLaid = hSq:getFloor() and hSq:getFloor():getSprite() == floorS
     Place.undo(hPlaced)
+    -- ✗ 撤回的是樓梯、坡道補的平台（addFloor 放的一般物件，不是 IsoThumpable）：原本就沒有地板的 z ≤ 0 格子不補泥土（R6V2-1）
+    local eSq = wsq(499, 490, 0, {})
+    local deck = eSq:addFloor("pf_floor_01_0")
+    local deckOn = #eSq.objects == 1 and deck:isFloor()
+    Place.undo({ deck })
     instanceof = instH
     check(hLaid and hSq:getFloor() and hSq:getFloor():getSprite():getName() == Place.DIRT and #hSq.objects == 1,
         "蓋在天然地面上的地板撤回：那一格補泥土，✗ 不留一格沒有地板")
+    check(deckOn and #eSq.objects == 0, "✗ 撤回的不是本工具的地板（平台這種一般地板物件）：不補泥土")
     -- 別的 MOD 的水面地板帶拆解屬性：照樣由本工具填平，不交給原版拆解（一般地板帶同樣屬性的照舊走原版拆解）
     scrapDefs.WgMetal = { perk = perkObj("MetalWelding"), returnItems = { { returnItem = "Base.ScrapMetal", maxAmount = 2 } } }
     local modWater = sprite("modwater_01_0", 4791, { flags = WATER.flags, keys = { waterAmount = "9999", CanScrap = "", Material = "WgMetal" } })
