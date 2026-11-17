@@ -1388,12 +1388,64 @@ function Place.relink(obj)
     return true
 end
 
+-- 區域資料（引擎算室內、房間圍合用的 IsoRegions）補推。引擎有兩份緩衝輪流當前台，格子的更新在背景執行緒成批套用；
+-- 排到那一批「套用」後面的格子只寫進一份（IsoRegionWorker.java:129-208 取空佇列就開批、:210-296 兩份各跑一輪），之後
+-- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回
+-- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯與坡道補的平台）
+-- 放好或拆掉後，下一個 tick 把那幾格再推一次：兩份已經一致時引擎不改資料。存座標不存格子（格子物件會回收重用）。
+-- gone＝這格剛拆掉東西：上層沒地板的格子位元可能已經是 0，「之前」也是 0 時引擎不送，改拿正下方地面那格當「之前」
+-- 再推一次。kind 給 nil＝不看種類（Place.undo 不知道種類）。多人的客戶端呼叫到也沒事（squareChanged 在客戶端直接返回）
+do
+    local REGIONAL = { floor = true, stairs = true, ramp = true }
+    local pending, n = {}, 0
+    local function flush()
+        Events.OnTick.Remove(flush)
+        local list, m, cell = pending, n, getCell()
+        pending, n = {}, 0
+        for i = 1, m, 4 do
+            local x, y, z = list[i], list[i + 1], list[i + 2]
+            local sq = cell:getGridSquare(x, y, z)
+            if sq then
+                IsoRegions.setPreviousFlags(nil)
+                IsoRegions.squareChanged(sq)
+                local ground = list[i + 3] and z > 0 and cell:getGridSquare(x, y, 0)
+                if ground then
+                    IsoRegions.setPreviousFlags(ground)
+                    IsoRegions.squareChanged(sq)
+                    IsoRegions.setPreviousFlags(nil)
+                end
+            end
+        end
+    end
+    function Place.repush(sq, gone, kind)
+        if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then return end
+        if n == 0 then Events.OnTick.Add(flush) end
+        pending[n + 1], pending[n + 2], pending[n + 3], pending[n + 4] = sq:getX(), sq:getY(), sq:getZ(), gone == true
+        n = n + 4
+    end
+end
+
+-- 這次放好的物件所在的格子補推區域資料。placed 裡的表（掛上去的疊圖、水面）不改區域位元
+local function repushPlaced(kind, placed, first)
+    for i = first, #placed do
+        local o = placed[i]
+        local sq = not (type(o) == "table" and (o.attached == true or o.water)) and o:getSquare()
+        if sq then Place.repush(sq, false, kind) end
+    end
+end
+
 -- 依序放好 cells 的每一格（{ sq, spr, cost, yoff, role }）。物件一建好就記進 placed（之後出錯時拆回用；還沒加進格子的
 -- 拆回時會略過）。丟錯由呼叫端 pcall 接。
 function Place.build(kind, cells, placed)
-    if kind == "stairs" then return placeStairs(cells, placed) end
-    if kind == "ramp" then return placeRamp(cells, placed) end
     local first = #placed + 1
+    if kind == "stairs" then
+        placeStairs(cells, placed)
+        return repushPlaced(kind, placed, first)
+    end
+    if kind == "ramp" then
+        placeRamp(cells, placed)
+        return repushPlaced(kind, placed, first)
+    end
     for _, c in ipairs(cells) do
         local sq, spr = c.sq, c.spr
         local north = Entry.north(kind, spr)
@@ -1460,6 +1512,7 @@ function Place.build(kind, cells, placed)
         end
         Ledger.putDoor(placed[first], items)
     end
+    repushPlaced(kind, placed, first)
 end
 
 -- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
@@ -1479,7 +1532,10 @@ function Place.undo(placed)
             end
         else
             local sq = obj:getSquare()
-            if sq then sq:transmitRemoveItemFromSquare(obj, false) end
+            if sq then
+                sq:transmitRemoveItemFromSquare(obj, false)
+                Place.repush(sq, true, nil)
+            end
         end
     end
 end

@@ -2895,10 +2895,14 @@ local function dismantleScenario()
     sent = {}
     check(Server.dismantle(O, 1, 1) == false and has(at(72, 71, 0), W) and #sent == 0,
         "別的玩家拿同一個 nonce：沒有請求，不拆、MP 不回覆")
+    fire("OnTick") -- 區域補推（Place.repush）：前面留下的先跑掉
+    local pokes0 = regionPokes
     HARNESS_ROLL = "max"
     check(Server.dismantle(P, 1, 1) == true and not has(at(72, 71, 0), W) and here.dropped["Base.Plank"] == 4
         and here.dropped["Base.Nails"] == 6 and next(W.mats) == nil and (lastSent()) == "dismantled",
         "拆牆：移除、照退料表退到玩家腳下（最多全部）；移除前退料表已清空（先讀再移除）")
+    fire("OnTick")
+    check(regionPokes == pokes0 + 1, "拆牆：下一個 tick 把那一格的區域資料再推一次（Place.repush）")
     sent = {}
     check(Server.dismantle(P, 1, 1) == false and here.dropped["Base.Plank"] == 4,
         "同一筆請求再送一次：不再拆、不再退")
@@ -5528,6 +5532,46 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     Place.build("floor", { { sq = grassSq, spr = floorS, cost = { items = {} } } }, swapped2)
     check(swapped2[1] ~= nil and grassSq.objects[1] == swapped2[1] and grassSq.objects[2] == CH3 and #grassSq.objects == 2,
         "換地板：舊地板前面的草一起拆掉時，新地板照樣排在家具前面（審查 1110 第 2 輪 Claude）")
+    -- 區域資料補推（Place.repush，2026-11-18）：會改區域位元的種類放好或拆掉後，下一個 tick 把那一格再推一次。
+    -- 實機 58,080 片牆有 5 片只寫進引擎兩份區域緩衝的其中一份（E2ERun14.md 二之五），重推補得回來
+    ;(function()
+        fire("OnTick") -- 前面幾次放置留下的先跑掉
+        local realRegions, pushes, prev = IsoRegions, {}, nil
+        IsoRegions = { setPreviousFlags = function(sq) prev = sq end,
+            squareChanged = function(sq) pushes[#pushes + 1] = { sq, prev } end }
+        local ticks = count("OnTick")
+        local ground, up = square(93, 98, 0, { floor = {} }), square(93, 98, 1, { flags = {} })
+        local gPlaced, upPlaced = {}, {}
+        Place.build("wall", { { sq = ground, spr = wallS, cost = { items = {} } } }, gPlaced)
+        local waits = #pushes == 0 and count("OnTick") == ticks + 1
+        fire("OnTick")
+        check(waits and #pushes == 1 and pushes[1][1] == ground and pushes[1][2] == nil and count("OnTick") == ticks,
+            "蓋牆：當下不推，下一個 tick 把那一格的區域資料再推一次（「之前」當成 0），推完摘掉 tick 事件")
+        pushes = {}
+        Place.build("solid", { { sq = ground, spr = chairS, cost = { items = {} } } }, {})
+        if Place.repush then Place.repush(ground, true, "container") end
+        check(#pushes == 0 and count("OnTick") == ticks and Place.repush ~= nil,
+            "✗ 家具、容器不改區域位元：放好、拆掉都不推，也不掛 tick 事件")
+        Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, upPlaced)
+        fire("OnTick")
+        pushes = {}
+        Place.undo(upPlaced)
+        fire("OnTick")
+        check(#pushes == 2 and pushes[1][1] == up and pushes[1][2] == nil and pushes[2][1] == up and pushes[2][2] == ground
+            and prev == nil,
+            "上層拆掉牆（撤回）：那格位元可能已經是 0，再拿正下方地面那格當「之前」推一次；最後把「之前」設回 0")
+        pushes = {}
+        Place.undo(gPlaced)
+        fire("OnTick")
+        local once = #pushes == 1 and pushes[1][1] == ground and pushes[1][2] == nil
+        pushes = {}
+        Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, {})
+        squares["93,98,1"] = nil -- 下一個 tick 前那一格卸載了
+        fire("OnTick")
+        check(once and #pushes == 0 and count("OnTick") == ticks,
+            "一樓拆掉只推一次（沒有更下面的地面可借）；下一個 tick 前格子卸載了：不推、不出錯，tick 事件照樣摘掉")
+        IsoRegions = realRegions
+    end)()
     instanceof = realInst
     IsoDoor = nil
 end)()
@@ -7030,6 +7074,7 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     inst.built["140,140,0,kl_01_0"] = { ["Base.ElectricWire"] = 7 }
     inst.built["170,170,1,kl_01_0"] = { ["Base.ElectricWire"] = 2 }
     inst.built["160,160,0,kl_01_0"] = { ["Base.ElectricWire"] = 9 } -- 那一塊還沒讀進來
+    fire("OnTick") -- 前面放置留下的區域補推（Place.repush）先跑掉，下面數 tick 事件才準
     HARNESS_REOPEN(Ledger)
     local ticks = count("OnTick") -- 含剛掛上的那一個 tick
     fire("OnTick")
@@ -7245,6 +7290,7 @@ print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框�
         function o:getContainerCount() return 0 end
         function o:getProperties() return spr:getProperties() end
         function o:getSprite() return spr end
+        function o:getSquare() return sq end
         made[#made + 1] = o
         return o
     end }
@@ -8195,6 +8241,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
 
     local ended
     Recipes.onEnd = function(pn) ended = pn end
+    fire("OnTick") -- 前面放置留下的區域補推（Place.repush）先跑掉，下面數 tick 事件才準
     local ticks, step0 = count("OnTick"), clockStep
     clockStep = 0
     local o = Recipes.build(0, barrel.id)
