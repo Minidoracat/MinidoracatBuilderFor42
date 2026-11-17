@@ -1690,7 +1690,7 @@ do
     check(cSrv == "NOT_LOADED" and eSrv.x == 58 and created == before + 1, "伺服器：照舊補格子，建不出來 NOT_LOADED")
     check(Check.item(K, "solid_01_0", 0, { 57, 46, 0 }, PV) == nil and created == before + 1,
         "預覽：最近那一格不存在時不判斷走不走得到")
-    do -- 審查第 5 輪複核：上一層的格子還沒建時，牆的預覽也照座標查撐不撐得住（Check.item 的 nil 格分支接到 Place.wallHeldAt）
+    do -- 審查第 5 輪複核：上一層的格子還沒建時，牆的預覽也照座標查撐不撐得住（Check.item 的 nil 格分支接到 Place.edgeHeldAt）
         local keep = squares["57,45,0"] -- 換成底下有北牆的格子，查完換回來
         square(57, 45, 0, { wallN = {} })
         local wLone = Check.item(K, "walls_test_01_4", 0, { 56, 45, 1 }, PV)
@@ -17444,6 +17444,15 @@ end)()
             and not fits("window", winW, 3950, 3000, 1),
             "屋頂（Place）上一層還沒有格子的柵欄、門框照座標查：旁邊同層有地板可以；✗ 只有正下方的牆、旁邊的屋頂片、"
                 .. "都沒有：擋；✗ 一般的門、窗（要框）：擋；一樓不查。補出空格子後 Place.check 同樣擋")
+        -- 不要框的特例不能被一般門窗那兩句擋掉：柵欄門、車庫門、牆型窗、柱子（看西鄰）照樣只看鄰格地板
+        local gateW = add("p2_gate_0", { flags = { "doorW", "HoppableW" } })
+        local garageW = add("p2_garage_0", { flags = { "doorW" }, keys = { GarageDoor = "" } })
+        local fwinW = add("p2_fwin_0", { type = T.wall, flags = { "windowW" } })
+        local postS = add("p2_post_0", { flags = { "WallSE" } })
+        check(e("door", gateW, 3947, 3000, 1) and e("door", garageW, 3947, 3000, 1) and e("window", fwinW, 3947, 3000, 1)
+            and e("post", postS, 3947, 3000, 1) and not e("door", gateW, 3949, 3000, 1) and not e("door", garageW, 3949, 3000, 1)
+            and not e("window", fwinW, 3949, 3000, 1) and not e("post", postS, 3949, 3000, 1),
+            "屋頂（Place）上一層還沒有格子的柵欄門、車庫門、牆型窗、柱子：旁邊同層有地板可以（✗ 當成一般門窗要框而擋）；✗ 都沒有：擋")
 
         -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
         local plainN = add("p2_plain_wall_1", { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" } })
