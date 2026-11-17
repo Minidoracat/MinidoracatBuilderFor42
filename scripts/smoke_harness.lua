@@ -15874,6 +15874,9 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         if i > 0 then keys.SlopedSurfaceHeightMin = tostring(20 * i) end
         add("rh_01_" .. i, 9900 + i, keys)
     end
+    -- ramp:rp_01：圖塊組名稱帶冒號（引擎不擋）。_0 是平片（這組的平台圖），_1 是朝西的單片坡道
+    add("ramp:rp_01_0", 9910, {})
+    add("ramp:rp_01_1", 9911, { SlopedSurfaceDirection = "W", SlopedSurfaceHeightMax = "100" })
     local rugS = add("rpr_01_0", 9793, {}, { "FloorOverlay" })
     -- 樓梯平台圖（原版一定有；前面情境換過圖塊表時這裡補上）與 W 型、N 型樓梯各一組（底、中、頂）
     if not spriteMap[Entry.STAIR_FLOOR] then add(Entry.STAIR_FLOOR, 9797) end
@@ -16728,6 +16731,96 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
             and uH2 == "dismantled" and dropH2 == h2Plank and shortLeft(505) == 0 and Ledger.getRamp(505, 430, 0, "rh_01_0") == nil,
             "坡道（Ramp）✗ 自己的北向殘組＋同一頭片格的另一組北向短坡道：拆殘組不動短坡道那一筆，短坡道之後照常整組退料")
         P.pos.x, P.pos.y = 421.5, 431.5
+    end
+
+    -- 帳本鍵的前綴在最前面：平台圖名是「ramp:<頭片名>」時，記在某組坡道的頭片格也不會和那組坡道同鍵
+    do
+        local function unZ(n, x, y, z, name)
+            P.pos.x, P.pos.y, P.pos.z = x + 0.5, y + 1.5, z
+            P:getCurrentSquare().dropped = {}
+            sent = {}
+            Server.dismantleIntent(P, { n = n, t = { x, y, z, name } })
+            local cmd, code = sent[1] and sent[1].cmd, sent[1] and sent[1].args.code
+            if cmd == "dismantleAccepted" then
+                sent = {}
+                Server.dismantle(P, n, 1)
+                local last = sent[#sent]
+                cmd, code = last and last.cmd, last and last.args.code
+            end
+            P.pos.x, P.pos.y, P.pos.z = 421.5, 431.5, 0
+            return cmd, code
+        end
+        local function weirdDeck()
+            for _, o in ipairs(at(510, 430, 1).objects) do
+                if (o.name or (o.spr and o.spr:getName())) == "ramp:rp_01_0" then return o end
+            end
+            return nil
+        end
+        local function mapLeft()
+            local k = 0
+            for i = 1, 19 do
+                for _, o in ipairs(at(510, 430 - i, 1).objects) do
+                    if o.spr and o.spr:getName() == "rp_01_" .. i then k = k + 1 end
+                end
+            end
+            return k
+        end
+        for _ = 1, 20 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+        -- 地圖在 z=1 留著北向 rp_01 第 1–19 片（頭片格 (510,430,1) 空著）
+        for i = 1, 19 do
+            local sq = esq(510, 430 - i, 1)
+            sq.objects[#sq.objects + 1] = IsoObject.new(nil, sq, spriteMap["rp_01_" .. i])
+        end
+        esq(510, 430, 1)
+        -- 本工具在 (511,430,0) 蓋朝西的 ramp:rp_01_1：平台 ramp:rp_01_0 補在 (510,430,1)，帳本記一筆空表
+        fresh()
+        P.pos.x, P.pos.y = 511.5, 431.5
+        local c = intentCode(150, "ramp:rp_01_1", { 511, 430, 0, 0 })
+        sent = {}
+        local okW = c == nil and Server.complete(P, 150, 1)
+        local wd = weirdDeck()
+        local wdRec = wd and Ledger.get(wd)
+        local wRec = Ledger.getRamp(511, 430, 0, "ramp:rp_01_1")
+        local wPlank = wRec and wRec["Base.Plank"]
+        -- 拆地圖殘片：那一格的平台帳本不能被當成北向 rp_01 那組的授權
+        fresh()
+        local uM, cM = unZ(151, 510, 420, 1, "rp_01_10")
+        local left, wdAfter = mapLeft(), wd and Ledger.get(wd)
+        -- 自己蓋的那組照常拆、照常退料，平台跟著收
+        fresh()
+        local uW = unZ(152, 511, 430, 0, "ramp:rp_01_1")
+        local dropW = P:getCurrentSquare().dropped["Base.Plank"]
+        check(okW and wd ~= nil and wdRec ~= nil and next(wdRec) == nil and wPlank and wPlank > 0
+            and uM == "dismantleSkipped" and cM == "NOT_OURS" and left == 19 and wdAfter == wdRec and next(wdAfter) == nil
+            and uW == "dismantled" and dropW == wPlank and weirdDeck() == nil and Ledger.getRamp(511, 430, 0, "ramp:rp_01_1") == nil
+            and Ledger.get(wd) == nil and mapLeft() == 19,
+            "坡道（Ramp）✗ 平台圖名是「ramp:<頭片名>」、補在地圖殘組的頭片格：拆地圖的片 NOT_OURS、19 片都在、平台那筆不變，自己那組照常拆、照常退料")
+    end
+
+    -- 轉向蓋（按 R、藍圖轉向）：送北向頭片＋d＝2（東），伺服器換成東向頭片，帳本記東向頭片名
+    do
+        esq(485, 402, 1)
+        for _ = 1, 20 do P.inv:add(item("Base.Plank")); P.inv:add(item("Base.Nails")) end
+        fresh()
+        P.pos.x, P.pos.y = 465.5, 403.5
+        local c = intentCode(160, "rp_01_0", { 465, 402, 0, 2 })
+        sent = {}
+        local okR = c == nil and Server.complete(P, 160, 1)
+        local rE, rN = Ledger.getRamp(465, 402, 0, "rp_01_72"), Ledger.getRamp(465, 402, 0, "rp_01_0")
+        local function eastRow()
+            local k = 0
+            for i = 0, 19 do if piece(465 + i, 402, "rp_01_" .. (72 + i)) then k = k + 1 end end
+            return k
+        end
+        local built = eastRow()
+        fresh()
+        P.pos.y = 403.5
+        local uR = unbuild(161, 470, 402, "rp_01_77")
+        local dropR = P:getCurrentSquare().dropped["Base.Plank"]
+        P.pos.x, P.pos.y = 421.5, 431.5
+        check(okR and built == 20 and rE ~= nil and rE["Base.Plank"] == 20 and rN == nil and uR == "dismantled" and dropR == 20
+            and eastRow() == 0 and Ledger.getRamp(465, 402, 0, "rp_01_72") == nil and Ledger.getRamp(465, 402, 0, "rp_01_0") == nil,
+            "坡道（Ramp）轉向蓋：送北向頭片＋d＝東，帳本記東向頭片名（北向那個鍵沒有）；拆一片整組退料一次、兩個鍵都不在")
     end
 
     -- 框選含平台的坡道：頭片在框裡時藍圖只有頭片一項（平台跟著整組蓋）；照藍圖蓋回來整組含平台都在、只扣一組的料。

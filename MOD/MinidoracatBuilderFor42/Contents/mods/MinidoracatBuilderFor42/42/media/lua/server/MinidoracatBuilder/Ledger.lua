@@ -6,6 +6,7 @@
 --   都跟著存檔），認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
 -- 樓梯平台：同一本，["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。
 -- 車庫門、雙開門（IsoDoor，沒有 buildMaterials）：同一本，["x,y,z,doorN"／"…,doorW"] = 整組的退料表（Ledger.putDoor）。
+-- 坡道：同一本，["ramp:x,y,z,<頭片圖名>"] = 整組的退料表（Ledger.putRamp）；坡頂平台照樓梯平台記。
 -- 線路：gos_MinidoracatBuilderCircuits_<n>.bin（Ledger.circuits；格式與讀寫在 Circuits.lua，成員的鍵照 Ledger.key）。
 -- 主系統 MinidoracatBuilder（gos_MinidoracatBuilder.bin）只留：下一個編號（lamps.next、circuits.next）、分片以前的存檔
 --   （lamps.e、built 的平台、circuits.c，Store.adopt 搬完就清），以及 0.3.0 以前的燈（built["x,y,z,sprite"] = 退料表；
@@ -271,14 +272,15 @@ function Ledger.forgetDoor(anchor)
     if k then L:del(k) end
 end
 
--- 本 MOD 蓋的坡道：整組一筆，["x,y,z,ramp:<頭片圖名>"] = 整組的退料表，鍵是頭片那格加上頭片圖名（Place.rampOrigin 的
+-- 本 MOD 蓋的坡道：整組一筆，["ramp:x,y,z,<頭片圖名>"] = 整組的退料表，鍵是頭片那格加上頭片圖名（Place.rampOrigin 的
 -- set.parts[1]）。頭片名已含圖塊包、方向與片數：頭片不在時那一格放得下別的頭片（別方向，或同方向但別的圖塊包、別的長度），
 -- 兩組的頭片格會相同，圖名分得開；同一組在同一格只放得下一份，所以一組一筆。
 -- 「這組是不是本 MOD 蓋的」只認這一筆；伺服器不看記號（modData），找片、認片、清帳本都照圖與位置
 -- （Dismantle.find、Place.refundOf、Place.onAboutToBeRemoved）。某片被本工具以外的方式移走時這一筆改成空表（作廢，
--- Ledger.voidRamp）：剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪
+-- Ledger.voidRamp）：剩下的片憑它照樣拆得掉、不退料；最後一片移走時才刪。前綴放在最前面：同一本的平台、門的鍵都以座標開頭，
+-- 圖名又能含冒號，接在座標後面的話一片叫「ramp:<頭片名>」的平台會和坡道同鍵
 function Ledger.rampKey(x, y, z, head)
-    return x .. "," .. y .. "," .. z .. ",ramp:" .. head
+    return "ramp:" .. x .. "," .. y .. "," .. z .. "," .. head
 end
 
 -- Place.build 蓋好整組後記，回記進去了沒有。記不進去（帳本還沒建、滿了）時印 log、回 false：Place.build 丟錯，整組收回、不扣料
