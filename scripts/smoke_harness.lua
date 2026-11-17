@@ -1690,6 +1690,16 @@ do
     check(cSrv == "NOT_LOADED" and eSrv.x == 58 and created == before + 1, "伺服器：照舊補格子，建不出來 NOT_LOADED")
     check(Check.item(K, "solid_01_0", 0, { 57, 46, 0 }, PV) == nil and created == before + 1,
         "預覽：最近那一格不存在時不判斷走不走得到")
+    do -- 審查第 5 輪複核：上一層的格子還沒建時，牆的預覽也照座標查撐不撐得住（Check.item 的 nil 格分支接到 Place.wallHeldAt）
+        local keep = squares["57,45,0"] -- 換成底下有北牆的格子，查完換回來
+        square(57, 45, 0, { wallN = {} })
+        local wLone = Check.item(K, "walls_test_01_4", 0, { 56, 45, 1 }, PV)
+        local wHeld = Check.item(K, "walls_test_01_4", 0, { 57, 45, 1 }, PV)
+        squares["57,45,0"] = keep
+        check(wLone == "BLOCKED" and wHeld == nil and squares["56,45,1"] == nil and squares["57,45,1"] == nil,
+            "預覽：上一層的格子還沒建，牆也照座標查：什麼都沒撐的擋、正下方同一條邊有牆的放行（✗ 直接放行，伺服器才回放不下；"
+                .. tostring(wLone) .. "／" .. tostring(wHeld) .. "）")
+    end
     local WK = { preview = true, walk = true }
     check(Check.item(K, "walls_test_01_4", 0, { 56, 49, 0 }, WK) == nil and Check.item(K, "solid_01_0", 0, { 55, 44, 0 }, WK) == nil,
         "游標預覽（walk）：會先走過去，不看 MaxDistance、不查走不走得到")
@@ -17403,7 +17413,7 @@ end)()
         local besideFlat = Place.floorAt(3983, 3001, 1) or fits("floor", slab, 3983, 3001, 1)
         check(flat:getProperties():has("RoofGroup") and not overFlat and not besideFlat,
             "屋頂（Place）平屋頂地板片鋪在一樓：✗ 正上方二樓的屋頂、✗ 旁邊二樓的地板都擋（它是樓板，不算屋頂片）")
-        -- 審查第 5 輪：上一層那格還沒有時，牆也照座標查撐不撐得住（Place.wallHeldAt，Check.item 預覽用），
+        -- 審查第 5 輪：上一層那格還沒有時，格邊的東西也照座標查撐不撐得住（Place.edgeHeldAt，Check.item 預覽用），
         -- 和伺服器補出格子後的 Place.check 同一個答案（✗ 預覽說能蓋、伺服器回 BLOCKED）
         select(2, cellAt(3940, 3000, 0)).wallW = obj(plain) -- 正下方同一條邊有牆
         put("roof", r30, 3943, 3000, 1)                     -- 西邊那格同一層有屋頂片
@@ -17412,12 +17422,28 @@ end)()
         local cw = getCell()
         local noUp = cw:getGridSquare(3940, 3000, 1) == nil and cw:getGridSquare(3944, 3000, 1) == nil
             and cw:getGridSquare(3947, 3000, 1) == nil and cw:getGridSquare(3949, 3000, 1) == nil
-        local pre = { Place.wallHeldAt(plain, 3940, 3000, 1), Place.wallHeldAt(plain, 3944, 3000, 1),
-            Place.wallHeldAt(plain, 3947, 3000, 1), Place.wallHeldAt(plain, 3949, 3000, 1), Place.wallHeldAt(plain, 3949, 3000, 0) }
+        local pre = { Place.edgeHeldAt("wall", plain, 3940, 3000, 1), Place.edgeHeldAt("wall", plain, 3944, 3000, 1),
+            Place.edgeHeldAt("wall", plain, 3947, 3000, 1), Place.edgeHeldAt("wall", plain, 3949, 3000, 1),
+            Place.edgeHeldAt("wall", plain, 3949, 3000, 0) }
         check(noUp and pre[1] and pre[2] and pre[3] and not pre[4] and pre[5]
             and fits("wall", plain, 3940, 3000, 1) and fits("wall", plain, 3944, 3000, 1) and not fits("wall", plain, 3949, 3000, 1),
             "屋頂（Place）上一層還沒有格子的牆照座標查：正下方同邊有牆、旁邊同層有屋頂片、旁邊同層有地板可以；"
                 .. "✗ 都沒有：擋；一樓不查。補出格子後 Place.check 同一個答案")
+        -- 複核：框、柵欄、門窗也一樣。柵欄與門框靠鄰格的地板（不靠正下方的牆、旁邊的屋頂片）；一般的門要門框、
+        -- 一般的窗要窗框，空格子一定沒有
+        local fenceW = add("p2_fence_0", { flags = { "HoppableW" } })
+        local frameW = add("p2_frame_0", { flags = { "DoorWallW" } })
+        local doorW = add("p2_door_0", { flags = { "doorW" } })
+        local winW = add("p2_win_0", { flags = { "windowW" } })
+        local e = Place.edgeHeldAt
+        check(e("fence", fenceW, 3947, 3000, 1) and e("doorFrame", frameW, 3947, 3000, 1)
+            and not e("fence", fenceW, 3940, 3000, 1) and not e("doorFrame", frameW, 3944, 3000, 1)
+            and not e("fence", fenceW, 3949, 3000, 1) and not e("door", doorW, 3947, 3000, 1)
+            and not e("window", winW, 3947, 3000, 1) and e("door", doorW, 3949, 3000, 0)
+            and not fits("fence", fenceW, 3950, 3000, 1) and not fits("door", doorW, 3950, 3000, 1)
+            and not fits("window", winW, 3950, 3000, 1),
+            "屋頂（Place）上一層還沒有格子的柵欄、門框照座標查：旁邊同層有地板可以；✗ 只有正下方的牆、旁邊的屋頂片、"
+                .. "都沒有：擋；✗ 一般的門、窗（要框）：擋；一樓不查。補出空格子後 Place.check 同樣擋")
 
         -- 照圖蓋：一樓四面牆圍好，助手排的片反覆照「現在蓋得起來的先蓋」，最後要一片不剩（同照圖蓋等旁邊先蓋好）
         local plainN = add("p2_plain_wall_1", { type = T.wall, flags = { "collideN", "cutN", "WallN" }, keys = { WallN = "" } })
@@ -17666,6 +17692,35 @@ end)()
     squares["100,200,1"] = nil
     local q4 = RP.preview(100, 200, 105, 207)
     check(q1 ~= q2 and q2 == q3 and q4 ~= q3, "屋頂（RoofPanel）預覽：同一範圍中間鋪了一格地板，再問要重排（✗ 一直回舊的片數）；世界沒變回同一份")
+    -- 複核 R5V-1：兩格地板換位置、片數不變：預覽的格子要跟著換（✗ 鍵只比片數，一直回舊的格子）
+    local function hasCell(res, x, y, z)
+        for _, c in ipairs(res.cells) do
+            if c.x == x and c.y == y and c.z == z then return true end
+        end
+        return false
+    end
+    st.set = s45 -- 45 度往上疊：屋頂層有只補天花板、沒有屋頂片的格子（那格鋪了地板，預覽就沒有那一格）
+    local only = {}
+    for x = 100, 103 do
+        for y = 200, 205 do
+            if #only < 2 then
+                square(x, y, 1, { flags = { solidfloor = true } })
+                if not hasCell(RP.preview(100, 200, 103, 205), x, y, 1) then only[#only + 1] = { x, y } end
+                squares[x .. "," .. y .. ",1"] = nil
+            end
+        end
+    end
+    local ca, cb = only[1] or { 0, 0 }, only[2] or { 0, 0 }
+    square(ca[1], ca[2], 1, { flags = { solidfloor = true } })
+    local sa = RP.preview(100, 200, 103, 205)
+    squares[ca[1] .. "," .. ca[2] .. ",1"] = nil
+    square(cb[1], cb[2], 1, { flags = { solidfloor = true } })
+    local sb = RP.preview(100, 200, 103, 205)
+    squares[cb[1] .. "," .. cb[2] .. ",1"] = nil
+    st.set = s30
+    check(#only == 2 and #sa.cells == #sb.cells and not hasCell(sa, ca[1], ca[2], 1) and hasCell(sa, cb[1], cb[2], 1)
+        and hasCell(sb, ca[1], ca[2], 1) and not hasCell(sb, cb[1], cb[2], 1),
+        "屋頂（RoofPanel）預覽：兩格地板換位置、片數不變，預覽的格子跟著換（✗ 只比片數，一直回舊的格子；找到 " .. #only .. " 格）")
     -- 大範圍（排一次超過 SLOW_MS）不每秒重排：SLOW_EVERY 內世界變了也回上一份，過了才重排
     local realLayoutR = Roof.layout
     Roof.layout = function(...)
@@ -18628,6 +18683,34 @@ end)()
         PC.state = realState7
         check(started2 == true and pushes[1] ~= nil and footAsks > 1 and not sentFoot,
             "照圖蓋分幀挑片途中腳下那片變成蓋好：不送它（✗ 照舊狀態再蓋一次、多扣料），重看後送別片（看了 " .. ticks2 .. " 幀）")
+        -- 複核：同一批裡不是最近的那片在送出前變成蓋好：只丟那一片，腳下那片照送
+        R.stop()
+        bigPlan(nil)
+        materialsChange()
+        settle(nil)
+        local side, sideAsks = Plan.at(pl, 33, 32, 0)[1], 0
+        pushes = {}
+        local started3 = R.start(K)
+        PC.state = function(p)
+            if p == side then
+                sideAsks = sideAsks + 1
+                if sideAsks > 1 then return "done" end
+            end
+            return realState7(p)
+        end
+        local ticks3, sentSide, sentFoot3 = 0, false, false
+        while not pushes[1] and ticks3 < 40 do
+            R.tick()
+            ticks3 = ticks3 + 1
+        end
+        for _, a3 in ipairs(pushes[1] and pushes[1].anchors or {}) do
+            if a3[1] == 533 and a3[2] == 532 then sentSide = true end
+            if a3[1] == 532 and a3[2] == 532 then sentFoot3 = true end
+        end
+        R.stop()
+        PC.state = realState7
+        check(started3 == true and side ~= nil and sideAsks > 1 and sentFoot3 and not sentSide,
+            "照圖蓋同一批裡旁邊那片在送出前變成蓋好：只丟那一片、腳下那片照送（✗ 整批照舊狀態送出）")
     end
     PC.materials = realMaterials2
     pushes, SHORT, CODE = {}, false, {}

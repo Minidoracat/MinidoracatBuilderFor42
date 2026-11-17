@@ -271,8 +271,9 @@ function Check.item(player, name, d, anchor, opts)
             end
         elseif (entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned))
             or (entry.kind == "floor" and not Place.floorAt(c.x, c.y, c.z, planned))
-            or (entry.kind == "wall" and not Place.wallHeldAt(c.spr, c.x, c.y, c.z)) then
-            -- 預覽：上一層的格子常常還沒建，屋頂、地板與牆照座標查撐不撐得住（伺服器補了格子照樣走上面那段）
+            or (Entry.EDGE[entry.kind] and not Place.edgeHeldAt(entry.kind, c.spr, c.x, c.y, c.z)) then
+            -- 預覽：上一層的格子常常還沒建，屋頂、地板與格邊的東西（牆、框、柵欄、門窗）照座標查撐不撐得住
+            -- （伺服器補了格子照樣走上面那段）
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end

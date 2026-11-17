@@ -357,14 +357,18 @@ local function wallHeld(x, y, z, kind, n, w)
     return roofPiece(cell:getGridSquare(x, y, z)) or (n and roofPiece(cell:getGridSquare(x, y - 1, z)))
         or (w and roofPiece(cell:getGridSquare(x - 1, y, z))) or false
 end
--- 那一格還沒有（客戶端預覽上一層，Check.item）時牆照座標查撐不撐得住：格子不在＝自己沒有地板，剩引擎 hasFloor(north)
--- 看的鄰格地板（IsoGridSquare.java:3496-3508：北邊的牆看北鄰，否則看西鄰）與 wallHeld。伺服器補了格子走 Place.check
--- 的同一行，兩端同一個答案；不查的話預覽說能蓋、伺服器回 BLOCKED，照圖蓋那一輪就跳過那片。一樓以下不查
-function Place.wallHeldAt(spr, x, y, z)
+-- 那一格還沒有（客戶端預覽上一層，Check.item）時格邊的東西（Entry.EDGE）照座標查，和伺服器補出空格子後走 Place.check
+-- 的那一段同一個答案；不查的話預覽說能蓋、伺服器回 BLOCKED，照圖蓋那一輪就跳過那片。一般的門要門框、一般的窗要窗框，
+-- 空格子一定沒有；其餘要地板：格子不在＝自己沒有地板，剩引擎 hasFloor(north) 看的鄰格地板（IsoGridSquare.java:3496-3508：
+-- 北邊的看北鄰，否則看西鄰）與 wallHeld（只認牆）。一樓以下不查
+function Place.edgeHeldAt(kind, spr, x, y, z)
     if z <= 0 then return true end
-    local n, w = Entry.edges("wall", spr)
+    local p = spr:getProperties()
+    if kind == "door" and not Rules.grouped(p) and not Rules.gate(p) then return false end
+    if kind == "window" and not Rules.framedWindow(spr:getType()) then return false end
+    local n, w = Entry.edges(kind, spr)
     local side = getCell():getGridSquare(n and x or x - 1, n and y - 1 or y, z)
-    return (side ~= nil and side:has(F.solidfloor)) or wallHeld(x, y, z, "wall", n, w)
+    return (side ~= nil and side:has(F.solidfloor)) or wallHeld(x, y, z, kind, n, w)
 end
 function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
 function Place.roofAt(x, y, z, planned)

@@ -83,7 +83,8 @@ end
 
 -- 長方形游標的預覽（Cursor.startArea 的 cb.preview）：屋頂片的格子（灰框，排在規劃樓層）與兩行字。游標每秒再問一次：
 -- 每次都重排（排法照世界現況：屋頂層已有地板的格子不補天花板、底下有直牆才補山牆下的牆；大範圍見 SLOW_MS），範圍、樓層、
--- 選擇與排出來的片數、提示都沒變才回同一份（游標拿到同一份就不重畫）；山牆還沒認出來時每次都再認一次，認出來了 key 跟著變
+-- 選擇與排出來的每一片的位置、提示都沒變才回同一份（游標拿到同一份就不重畫；位置用雜湊比：兩格地板換位置時片數不變）；
+-- 山牆還沒認出來時每次都再認一次，認出來了 key 跟著變
 function RP.preview(x1, y1, x2, y2)
     local st, PM = RP.st, B.PlanMode
     local z = PM and PM.level and PM.level()
@@ -95,9 +96,12 @@ function RP.preview(x1, y1, x2, y2)
     if memo.base == base and memo.cost > RP.SLOW_MS and t >= memo.at and t - memo.at < RP.SLOW_EVERY then return memo.res end
     local groups, code = layout(x1, y1, x2, y2, z)
     local warn = groups and code
-    local n = 0
-    for _, g in ipairs(groups or {}) do n = n + #g.cells end
-    local key = table.concat({ base, tostring(n), tostring(not groups and code), tostring(warn and warn.HALF),
+    local n, h = 0, 0
+    for _, g in ipairs(groups or {}) do
+        n = n + #g.cells
+        for _, c in ipairs(g.cells) do h = (h * 31 + c[1] * 7919 + c[2] * 104729 + c[3] * 1299709) % 2147483647 end
+    end
+    local key = table.concat({ base, tostring(n), tostring(h), tostring(not groups and code), tostring(warn and warn.HALF),
         tostring(warn and warn.GAP) }, ",")
     memo.base, memo.at, memo.cost = base, t, getTimestampMs() - t
     if memo.key == key then return memo.res end
@@ -158,6 +162,7 @@ end
 -- 拖出範圍：長方形游標每邊最多藍圖的上限；手把回 nil
 function RP.drag(pn)
     local Cursor, Plan = B.Cursor, B.Plan
+    memo.base = nil -- 新的一次拖曳從頭排，不沿用上一次拖曳的節流
     local o = Cursor and Cursor.startArea and Cursor.startArea(pn, {
         side = Plan and Plan.MAX_SIDE or 64,
         preview = function(x1, y1, x2, y2) return RP.preview(x1, y1, x2, y2) end,
