@@ -997,6 +997,7 @@ function Runner.start(player)
     st.later, st.scan = {}, nil
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.busyFrom, st.rateFrom, st.rateUntil = nil, nil, nil
+    st.padDown, st.padFree = nil, nil
     st.lastDone, st.idleAt, st.stepped, st.asideFor = nil, nil, {}, nil
     -- 剛拿到料、PlanCheck 每秒一次的比對還沒看到：先比一次。變了就在重排（busy），開始後等身邊的片重算完再挑，
     -- 不先挑走舊狀態裡能蓋的遠片
@@ -1025,6 +1026,19 @@ end
 
 -- ---------------------------------------------------------------- 每幀
 
+-- 手把的取消動作（B）沒有按鍵事件可掛，每幀看；只認「上一幀沒按著、焦點在角色身上」之後按下的那一次。
+-- 用 B 關面板時，面板一關焦點回到角色、B 還按著（原版每幀照焦點開關角色的按鍵，JoyPadSetup.lua:634），
+-- 只看「現在按著」會把關面板當成取消
+local function padCancel(p)
+    if p:getJoypadBind() == -1 then return false end
+    local data = getJoypadData and getJoypadData(p:getPlayerNum())
+    local free = not (data and data.focus)
+    local down = p:pressedCancelAction()
+    local hit = down and st.padDown == false and st.padFree == true
+    st.padDown, st.padFree = down, free
+    return hit
+end
+
 -- 暫停與停止的條件（計畫第 2 節的表）。回 true＝已經停了
 local function watch(p)
     if p:isDead() then return Runner.stop("DEAD") or true end
@@ -1041,8 +1055,8 @@ local function watch(p)
     local stats = p:getStats()
     if stats and stats:getNumChasingZombies() > 0 then return Runner.pause("ZOMBIE") or true end
     if p:isAttackStarted() or p:isAiming() then return Runner.pause("ATTACK") or true end
-    -- 手把按著取消動作（B）：原版直接清佇列（ISButtonPrompt.stopAction），沒有按鍵事件可掛；鍵盤的在 Runner.onKey
-    if p:getJoypadBind() ~= -1 and p:pressedCancelAction() then return Runner.pause("PAUSE") or true end
+    -- 手把按下取消動作（B）：原版直接清佇列（ISButtonPrompt.stopAction）；鍵盤的在 Runner.onKey
+    if padCancel(p) then return Runner.pause("PAUSE") or true end
     -- 玩家自己走：照圖蓋的走路都是佇列裡的動作；佇列空著還在走＝方向鍵或搖桿（玩家一動，原版就清掉佇列：
     -- IsoPlayer.java:2645-2667 的 StopAllActionQueueWalking）。動作剛結束的那一幀可能還帶著移動，連兩幀才算
     if p:isJustMoved() and not ISTimedActionQueue.isPlayerDoingAction(p) then
@@ -1104,9 +1118,10 @@ end
 -- 只掛放開的話，照圖蓋會把被取消的那一片當成走不過去、接著蓋別片
 function Runner.onKey(key)
     if not active() then return end
-    if (Keyboard and key == Keyboard.KEY_ESCAPE)
-        or (KeybindId and KeybindId.CANCEL_ACTION and getCore():isKey(KeybindId.CANCEL_ACTION, key)) then
+    if Keyboard and key == Keyboard.KEY_ESCAPE then
         Runner.pause("ESC")
+    elseif KeybindId and KeybindId.CANCEL_ACTION and getCore():isKey(KeybindId.CANCEL_ACTION, key) then
+        Runner.pause("PAUSE") -- 改綁過的鍵：通知不寫「按了 Esc」
     end
 end
 

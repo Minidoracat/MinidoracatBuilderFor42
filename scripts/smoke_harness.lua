@@ -15285,25 +15285,46 @@ end)()
     local esc = R.reason()
     check(zombie == "ZOMBIE" and walkingAction ~= "paused" and moved == "MOVED" and otherKey ~= "paused" and esc == "ESC",
         "殭屍在追 → ZOMBIE；佇列走路不算自己走；佇列空著還在動 → MOVED；別的鍵不停；按下 Esc 那一刻（只來 OnKeyStartPressed）→ ESC")
-    -- 「取消動作」改綁到別的鍵：按那個鍵也停
+    -- 「取消動作」改綁到別的鍵：按那個鍵也停，通知不寫「按了 Esc」
     R.start(K)
     local realCoreK, realKidK = getCore, KeybindId
     KeybindId = { CANCEL_ACTION = "CancelAction" }
     getCore = function() return { isKey = function(_, id, k) return id == "CancelAction" and k == 57 end } end
     key("OnKeyStartPressed", 57)
     getCore, KeybindId = realCoreK, realKidK
-    check(R.state() == "paused" and (R.reason()) == "ESC", "「取消動作」綁在別的鍵：按下那個鍵也停成 ESC")
-    -- 手把：按著 B（取消動作）沒有按鍵事件，每幀看；鍵盤玩家光是按著、沒經過按鍵事件時不走這條
+    check(R.state() == "paused" and (R.reason()) == "PAUSE", "「取消動作」綁在別的鍵：按下那個鍵也停，原因是 PAUSE 不是 ESC")
+    -- 手把的 B（取消動作）沒有按鍵事件，每幀看：只認焦點在角色身上時按下的那一次；鍵盤玩家光是按著不走這條
+    local realJoy = getJoypadData
+    local joy = { focus = nil }
+    getJoypadData = function() return joy end
+    if not K.getPlayerNum then function K:getPlayerNum() return 0 end end
     R.start(K)
     K.cancel = true
     run(1)
     local kbHeld = R.state()
+    K.cancel = false
     K.pad = 0
+    run(1)
+    K.cancel = true
     local toastsBefore = #toasts
     run(1)
     check(kbHeld ~= "paused" and R.state() == "paused" and (R.reason()) == "PAUSE" and #toasts == toastsBefore + 1,
-        "手把按著 B → 暫停 PAUSE、跳一則通知；鍵盤玩家沒有按鍵事件時不停")
+        "手把：焦點在角色身上時按下 B → 暫停 PAUSE、跳一則通知；鍵盤玩家沒有按鍵事件時不停")
+    -- 用 B 關面板：按下時焦點在面板，面板關掉後焦點回角色、B 還按著
+    R.start(K)
+    joy.focus, K.cancel = {}, false
+    run(1)
+    joy.focus, K.cancel = nil, true
+    run(3)
+    local bleed = R.state()
+    K.cancel = false
+    run(1)
+    K.cancel = true
+    run(1)
+    check(bleed ~= "paused", "手把：用 B 關面板（面板關掉後 B 還按著）不暫停 got=" .. tostring(bleed))
+    check(R.state() == "paused" and (R.reason()) == "PAUSE", "手把：放開後焦點在角色身上再按 B 才暫停")
     K.pad, K.cancel = -1, false
+    getJoypadData = realJoy
     R.stop()
     R.start(K)
     B.PlanMode = { plan = function() return Plan.new("other") end, origin = PM.origin }
@@ -15834,10 +15855,10 @@ end)()
     end
 
     -- 除錯重新載入 Runner.lua：不重複掛事件
-    local nTick, nKey = #handlers.OnTick, #handlers.OnKeyPressed
+    local nTick, nKey = #handlers.OnTick, #handlers.OnKeyStartPressed
     loadfile(MEDIA .. "/client/MinidoracatBuilder/Runner.lua")()
-    check(#handlers.OnTick == nTick and #handlers.OnKeyPressed == nKey and B.Runner == R,
-        "重新載入 Runner.lua 不重複掛 OnTick、OnKeyPressed")
+    check(nKey > 0 and #handlers.OnTick == nTick and #handlers.OnKeyStartPressed == nKey and B.Runner == R,
+        "重新載入 Runner.lua 不重複掛 OnTick、OnKeyStartPressed")
 
     B.PlanMode, B.PlanCheck, B.Recipes = real.PM, real.PC, real.rec
     Q.push, Q.cancel, Q.busy = real.push, real.cancel, real.busy
