@@ -356,7 +356,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 {{img:07-roof-en.jpg}}
 [list]
 [*] [b]On the ground floor too[/b]: eaves, roof trims and other roof pieces can go on the level of the walls, as on the vanilla map, with no support check. Not allowed in basements.
-[*] [b]From the second floor up[/b]: needs a wall below, or a floor or roof beside it holding it up; a roof piece or ceiling right below, or a roof piece beside it one level down, also holds it, so roof pieces and flat tops that step up a level can be built in order.
+[*] [b]From the second floor up[/b]: something has to hold it up: a wall or roof piece right below, a roof piece diagonally below (beside it one level down), or a floor or roof beside it on the same level. A floor or ceiling right below doesn't count. That's why roof pieces and flat tops that step up a level can be built in order.
 [*] [b]Above stairs[/b]: not allowed directly above stairs.
 [*] [b]Which level[/b]: the cursor builds one level up at the same spot on screen by default.
 [*] [b]Changing level[/b]: PgUp/PgDn switches between one level up and this level. If your keyboard has no such keys, rebind them under Options, Key Bindings, "Minidoracat Build Anything".
