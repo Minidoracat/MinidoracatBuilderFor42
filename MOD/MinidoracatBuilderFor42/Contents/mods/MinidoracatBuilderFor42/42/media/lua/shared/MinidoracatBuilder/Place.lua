@@ -1522,7 +1522,8 @@ end
 
 -- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
 -- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。掛上去的（Place.attach 的紀錄）拿掉那張、清帳本。
--- 挖好的水面（{ water }）換回原本的地面，不留一格沒有地板；出錯只記 log（呼叫端已經在收拾，不再往上丟）
+-- 挖好的水面（{ water }）換回原本的地面，不留一格沒有地板；出錯只記 log（呼叫端已經在收拾，不再往上丟）。
+-- 蓋地板時原本的地面已經拆掉（placeFloor 的 Place.clearFloor）：z ≤ 0 拆回後補泥土（同拆地板，Server.lua 的 removeAll）
 function Place.undo(placed)
     for i = #placed, 1, -1 do
         local obj = placed[i]
@@ -1539,6 +1540,10 @@ function Place.undo(placed)
             local sq = obj:getSquare()
             if sq then
                 sq:transmitRemoveItemFromSquare(obj, false)
+                if sq:getZ() <= 0 and instanceof(obj, "IsoThumpable") and obj:isFloor() and not sq:getFloor() then
+                    Place.clearFloor(sq)
+                    layFloor(sq, Place.DIRT)
+                end
                 Place.repush(sq, nil)
             end
         end

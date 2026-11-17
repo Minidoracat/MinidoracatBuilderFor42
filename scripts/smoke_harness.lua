@@ -285,7 +285,12 @@ square = function(x, y, z, o)
         end
         local f = { name = name }
         function f:getSquare() return sq end
-        function f:getSprite() return { getName = function() return name end } end
+        -- 照引擎是一般的 IsoObject（Place.clearFloor 之後會問圖、屬性、種類）
+        local spr = sprite(name, 0, { flags = { "solidfloor" } })
+        function f:getSprite() return spr end
+        function f:getProperties() return spr:getProperties() end
+        function f:getTextureName() return name end
+        function f:getType() return spr:getType() end
         flags.solidfloor = true
         sq.objects[#sq.objects + 1] = f
         return f
@@ -5597,6 +5602,16 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         gf.cutN = nil
         fire("OnTick")
         local once = #sent == 1 and sent[1][1] == ground and sent[1][2] == 16
+        -- 上層鋪了地板（16）、地面格也是 16：要拿 0 當「之前」，借地面格會因為兩邊一樣而送不出去（複核 R6V-1）；
+        -- 地板、坡道兩個種類都會記（R6V-2）
+        sent = {}
+        uf.solidfloor = true
+        Place.repush(up, "floor")
+        Place.repush(ground, "ramp")
+        fire("OnTick")
+        check(#sent == 2 and sent[1][1] == up and sent[1][2] == 16 and sent[2][1] == ground and sent[2][2] == 16,
+            "上層鋪地板、位元和地面格一樣：照樣送一次（✗ 不借地面格）；地板、坡道種類都會記")
+        uf.solidfloor = nil
         sent = {}
         Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, {})
         squares["93,98,1"] = nil -- 下一個 tick 前那一格卸載了
@@ -6354,11 +6369,28 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     give(P, fPay)
     here.dropped = {}
     nonce = nonce + 1
+    local instG = instanceof -- 照引擎認得出 IsoThumpable、getFloor 看格上物件：Place.undo 撤回地板後在 z ≤ 0 補泥土
+    function FG:getFloor()
+        for _, v in ipairs(self.objects) do
+            local p = v.getProperties and v:getProperties()
+            if p and p:has(IsoFlagType.solidfloor) then return v end
+        end
+        return nil
+    end
+    local PlaceG = MinidoracatBuilder.Place -- 只在撤回時認（整段認的話這個情境的舊地板會走另一條算料的路）
+    local undoG = PlaceG.undo
+    PlaceG.undo = function(placed)
+        instanceof = function(o, cls) return cls == "IsoThumpable" and type(o) == "table" and o.set ~= nil end
+        undoG(placed)
+        instanceof = instG
+    end
     local okG, _, aG = build(P, nonce, "cs_floor_01_1", { 115, 114, 0 })
+    PlaceG.undo = undoG
     local paidG = true
     for ft, v in pairs(fPay) do if P.inv:count(ft) ~= v then paidG = false end end
-    check(not okG and aG.code == "INTERNAL" and #FG.objects == 0 and here.dropped["Base.Plank"] == 3 and paidG,
-        "替換地板時新的、舊的都蓋不上：格子清空，舊的退料表整份退（木板 3），新的料不扣")
+    check(not okG and aG.code == "INTERNAL" and #FG.objects == 1
+        and FG.objects[1]:getSprite():getName() == MinidoracatBuilder.Place.DIRT and here.dropped["Base.Plank"] == 3 and paidG,
+        "替換地板時新的、舊的都蓋不上：那一格補泥土（✗ 不留一格沒有地板），舊的退料表整份退（木板 3），新的料不扣")
     -- 舊的一樓地板查不到帳本：照改版前蓋新地板（拆掉舊片、不退料、付全價），不卡 NOT_OURS
     local FH = S(114, 115)
     local OH = obj(FH, floorA, {})
@@ -9970,6 +10002,15 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     isServer = realServer
     check(c1 - c0 == 1 and n1 == n0 and pSq.cleared - p1 == 2 and sN.cleared - n1 == 1,
         "蓋一般地板：伺服器只清自己那一格；單機另外照客戶端那一份清 9 格")
+    -- 蓋地板到一半出錯撤回（Place.undo）：原本的地面蓋的時候已經拆掉，z ≤ 0 補泥土，不留一格沒有地板（審查第 6 輪複核範圍外 2）
+    local hSq, hPlaced, instH = at(496, 490), {}, instanceof
+    instanceof = function(o, cls) return type(o) == "table" and (o.class == cls or (cls == "IsoThumpable" and o.set ~= nil)) end
+    Place.build("floor", { { sq = hSq, spr = floorS, cost = { items = {} } } }, hPlaced)
+    local hLaid = hSq:getFloor() and hSq:getFloor():getSprite() == floorS
+    Place.undo(hPlaced)
+    instanceof = instH
+    check(hLaid and hSq:getFloor() and hSq:getFloor():getSprite():getName() == Place.DIRT and #hSq.objects == 1,
+        "蓋在天然地面上的地板撤回：那一格補泥土，✗ 不留一格沒有地板")
     -- 別的 MOD 的水面地板帶拆解屬性：照樣由本工具填平，不交給原版拆解（一般地板帶同樣屬性的照舊走原版拆解）
     scrapDefs.WgMetal = { perk = perkObj("MetalWelding"), returnItems = { { returnItem = "Base.ScrapMetal", maxAmount = 2 } } }
     local modWater = sprite("modwater_01_0", 4791, { flags = WATER.flags, keys = { waterAmount = "9999", CanScrap = "", Material = "WgMetal" } })
