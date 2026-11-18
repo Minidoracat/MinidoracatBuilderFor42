@@ -306,9 +306,14 @@ end
 -- 在別的視窗複製、再切回遊戲讀得到；遊戲視窗一直在前景時讀到的是舊的。寫剪貼簿超過約 64 KB 會讓 render 執行緒當掉、
 -- pcall 擋不住（LWJGL 的 MemoryStack，2026-11-16 實機 97,746 bytes 當掉、60,000 沒事）：超過 SHARE_MAX 的分享碼改傳檔。
 PlanFile.SHARE_MAX = 60000
--- MBLD1;N名稱;C片數;[P x,y,z;]I項目ID,MOD-ID,工作坊編號,版本,MOD名稱;…;G項目,朝向,疊放,層[,寬度];x,y[,長度];…;K檢查碼
--- 每一組（同項目、朝向、疊放、層、寬度）的片寫成一段一段：長度正數＝往 +x 連續、負數＝往 +y 連續。
--- 寬度（車庫門）寫在組頭，同寬的幾扇照樣能併成一段；還原時每一片都帶這個寬度。
+-- MBLD2;N名稱;C片數;[Px,y,z;]〔S…;〕T…;…;G…;…;K檢查碼（段的順序固定：S／T 全在 G 前面，G 之後只能是 G 或 K）
+--   S MOD-ID,工作坊編號,版本,MOD名稱：後面的 T 段都來自這個 MOD；第一個 S 之前的 T 段是原版的。
+--   T 前綴[,數字…]：每個數字是一個項目，ID＝前綴_數字（數字照原樣，前面的 0 也留著）；沒有數字時 ID＝前綴本身（配方）。
+--     項目編號照出現的順序，不寫出來。
+--   G 一個項目的片，照項目編號一段一個、不寫編號。裡面一到多組，逗號分開；一組＝1 個字的（朝向×2＋疊放）×4＋層，
+--     後面接格子：xy＝一格、=xy寬高＝長方形（寬與高各減 1）、-xy寬＝帶寬度的一片（車庫門，寬減 1）。
+--   G 段裡的數值都是一個字：0-9 A-Z a-z + /＝0..63（所以邊長上限 64、層數上限 4 寫死在格式裡）。
+-- 發布後玩家手上的分享碼要一直收得下：要改格式就換 MBLD3，MBLD2 的解碼留著。
 -- 字串欄位：英數與 : - / ( ) 照寫，_ 寫成 .，空白寫成 +，其他寫成 =XX（字碼 < 256）或 =uXXXX（Kahlua 的 UTF-16 字）。
 -- 檢查碼蓋住 K 之前的全部內容，改過一個字就拒收。
 local HEX = "0123456789ABCDEF"
@@ -392,64 +397,133 @@ local function checksum(s)
     return h
 end
 
--- 一組片（同項目、朝向、疊放、層）寫成一段一段：從每片往左、往上找到那一排的頭，取比較長的方向
-local function runs(cells, put)
-    local set, used = {}, {}
-    for _, c in ipairs(cells) do set[c[2] * 64 + c[1]] = true end
-    local function free(x, y) return x >= 0 and y >= 0 and x < 64 and y < 64 and set[y * 64 + x] and not used[y * 64 + x] end
-    for _, c in ipairs(cells) do
-        local x, y = c[1], c[2]
-        if not used[y * 64 + x] then
-            local sx, sy = x, y
-            while free(sx - 1, y) do sx = sx - 1 end
-            while free(x, sy - 1) do sy = sy - 1 end
-            local lx, ly = 0, 0
-            while free(sx + lx, y) do lx = lx + 1 end
-            while free(x, sy + ly) do ly = ly + 1 end
-            if lx >= ly then
-                for k = 0, lx - 1 do used[y * 64 + sx + k] = true end
-                put(lx == 1 and (sx .. "," .. y) or (sx .. "," .. y .. "," .. lx))
-            else
-                for k = 0, ly - 1 do used[(sy + k) * 64 + x] = true end
-                put(x .. "," .. sy .. "," .. (-ly))
+local A64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/"
+local D64 = {}
+for i = 1, 64 do D64[A64:byte(i)] = i - 1 end
+local function c64(v) return A64:sub(v + 1, v + 1) end
+
+-- 一組片的格子寫成單格與長方形。cells＝格子的 y×64＋x，由小到大；set[格子]＝true。
+-- 照順序拿還沒寫的第一格當左上角，取從它開始面積最大的長方形（面積一樣取比較寬的）；
+-- 3 格以上寫成 =xy寬高（5 字），1、2 格一格一格寫（2 字一格）
+local function rects(cells, set)
+    local out, used = {}, {}
+    for _, k in ipairs(cells) do
+        if not used[k] then
+            local x, y = k % 64, math.floor(k / 64)
+            local bw, bh, best, hmax, w = 1, 1, 0, 64, 0
+            while x + w < 64 and set[k + w] and not used[k + w] do
+                local h = 1
+                while h < hmax and y + h < 64 and set[k + w + h * 64] and not used[k + w + h * 64] do h = h + 1 end
+                hmax = h
+                w = w + 1
+                if w * hmax >= best then best, bw, bh = w * hmax, w, hmax end
             end
+            for dy = 0, bh - 1 do
+                for dx = 0, bw - 1 do
+                    used[k + dy * 64 + dx] = true
+                    if best < 3 then out[#out + 1] = c64(x + dx) .. c64(y + dy) end
+                end
+            end
+            if best >= 3 then out[#out + 1] = "=" .. c64(x) .. c64(y) .. c64(bw - 1) .. c64(bh - 1) end
         end
     end
+    return table.concat(out)
 end
 
--- withPos：要不要帶地上的位置（可省略＝不帶）
+-- withPos：要不要帶地上的位置（可省略＝不帶）。同一張藍圖每次編出同一串：項目照藍圖裡的順序分組，片照格子的順序
 function PlanFile.share(plan, ...)
     local withPos = opt(...)
     local out = {}
     local function put(s) out[#out + 1] = s end
     local x0, y0, z0 = frame(plan)
-    put("MBLD1")
+    put("MBLD2")
     put("N" .. esc(Plan.cleanName(plan.name)))
     put("C" .. plan.n)
     if withPos and plan.ox and plan.n > 0 then
         put("P" .. (plan.ox + x0) .. "," .. (plan.oy + y0) .. "," .. (plan.oz + z0))
     end
+    -- 項目：同一個來源的排在一起，同一個前綴的寫成一個 T 段；都照第一次出現的順序，原版的排最前面
     local map, list = renumber(plan)
-    for _, item in ipairs(list) do
+    local srcs, order = {}, {}
+    for k, item in ipairs(list) do
         local ws = item.workshop and tostring(item.workshop) or ""
         if not ws:match("^[0-9]*$") or #ws > 20 then ws = "" end
-        put("I" .. esc(item.id) .. "," .. esc(item.mod) .. "," .. ws .. "," .. esc(item.version) .. "," .. esc(item.modName))
-    end
-    local groups, order = {}, {}
-    Plan.each(plan, function(p)
-        local it, z = map[p.it], p.z - z0
-        local key = (((it * 6 + p.d) * 2 + p.o) * 4 + z) * 65 + (p.w or 0)
-        local g = groups[key]
-        if not g then
-            g = { head = "G" .. it .. "," .. p.d .. "," .. p.o .. "," .. z .. (p.w and ("," .. p.w) or ""), cells = {} }
-            groups[key] = g
-            order[#order + 1] = g
+        local key = esc(item.mod) .. "," .. ws .. "," .. esc(item.version) .. "," .. esc(item.modName)
+        local src = srcs[key]
+        if not src then
+            src = { key = key, tiles = {}, byPre = {} }
+            srcs[key] = src
+            order[#order + 1] = src
         end
-        g.cells[#g.cells + 1] = { p.x - x0, p.y - y0 }
+        local id = clean(item.id) -- 和存檔一樣：控制字元換空白（解碼不收控制字元）
+        local pre, digits = id:match("^(.*)_([0-9]+)$")
+        local t = pre and src.byPre[pre]
+        if not t then
+            t = { head = "T" .. esc(pre or id), nums = {}, its = {} }
+            src.tiles[#src.tiles + 1] = t
+            if pre then src.byPre[pre] = t end
+        end
+        if pre then t.nums[#t.nums + 1] = digits end
+        t.its[#t.its + 1] = k
+    end
+    local newOf, n = {}, 0 -- renumber 的編號 → 分享碼裡的編號
+    local function tiles(src)
+        for _, t in ipairs(src.tiles) do
+            put(#t.nums > 0 and (t.head .. "," .. table.concat(t.nums, ",")) or t.head)
+            for _, k in ipairs(t.its) do
+                n = n + 1
+                newOf[k] = n
+            end
+        end
+    end
+    local vanilla = srcs[",,,"]
+    if vanilla then tiles(vanilla) end
+    for _, src in ipairs(order) do
+        if src ~= vanilla then
+            put("S" .. src.key)
+            tiles(src)
+        end
+    end
+    -- 片：先照格子（y×64＋x）分桶，再由小到大分進各項目的各組，每組的格子自然是排好的（不用 table.sort）
+    local bucket = {}
+    Plan.each(plan, function(p)
+        local k = (p.y - y0) * 64 + p.x - x0
+        local b = bucket[k]
+        if not b then
+            b = {}
+            bucket[k] = b
+        end
+        b[#b + 1] = p
     end)
-    for _, g in ipairs(order) do
-        put(g.head)
-        runs(g.cells, put)
+    local groups = {}
+    for it = 1, n do groups[it] = {} end
+    for k = 0, 4095 do
+        local b = bucket[k]
+        if b then
+            for _, p in ipairs(b) do
+                local gi = groups[newOf[map[p.it]]]
+                local h = (p.d * 2 + p.o) * 4 + p.z - z0
+                local g = gi[h]
+                if not g then
+                    g = { cells = {}, set = {}, wide = {} }
+                    gi[h] = g
+                end
+                if p.w then
+                    g.wide[#g.wide + 1] = "-" .. c64(p.x - x0) .. c64(p.y - y0) .. c64(p.w - 1)
+                else
+                    g.cells[#g.cells + 1] = k
+                    g.set[k] = true
+                end
+            end
+        end
+    end
+    for it = 1, n do
+        local parts = {}
+        for h = 0, 47 do
+            local g = groups[it][h]
+            if g then parts[#parts + 1] = c64(h) .. rects(g.cells, g.set) .. table.concat(g.wide) end
+        end
+        put("G" .. table.concat(parts, ","))
     end
     local body = table.concat(out, ";") .. ";"
     return body .. "K" .. checksum(body)
@@ -462,7 +536,7 @@ function PlanFile.unshare(code)
     if #code > MAX_SHARE then return nil, "TOO_BIG", 0 end
     local recs, nr = split(code, ";")
     if recs[1]:sub(1, 4) ~= "MBLD" then return nil, "FORMAT", 1 end
-    if recs[1] ~= "MBLD1" then return nil, "VERSION", 1 end
+    if recs[1] ~= "MBLD2" then return nil, "VERSION", 1 end
     local last = recs[nr]
     if nr < 4 or last:sub(1, 1) ~= "K" then return nil, "NO_END", nr end
     local sum = num(last:sub(2), 0, 9999990)
@@ -490,55 +564,73 @@ function PlanFile.unshare(code)
         r = r + 1
     end
     local items = {}
-    while r < nr and recs[r]:sub(1, 1) == "I" do
-        local f, n = split(recs[r]:sub(2), ",")
-        if n ~= 5 or #items >= Plan.MAX_PIECES then return nil, "FORMAT", r end
-        local id, mod, ver, modName = unesc(f[1]), unesc(f[2]), unesc(f[4]), unesc(f[5])
-        if not id or not mod or not ver or not modName or not f[3]:match("^[0-9]*$") then return nil, "FORMAT", r end
-        items[#items + 1] = { id = id, mod = mod, ws = f[3], ver = ver, modName = modName, r = r, n = 0 }
-        r = r + 1
-    end
-    local pieces, g = {}, nil
-    local mx, my, mz = 0, 0, 0
+    local mod, ws, ver, modName = "", "", "", ""
     while r < nr do
-        local rec = recs[r]
-        local f, n = split(rec:sub(rec:sub(1, 1) == "G" and 2 or 1), ",")
-        if rec:sub(1, 1) == "G" then
-            if n ~= 4 and n ~= 5 then return nil, "FORMAT", r end
-            local it, d, o, z
-            it, why = num(f[1], 1, #items)
-            if not it then return nil, why == "RANGE" and "ITEM" or why, r end
-            d, why = num(f[2], 0, 5)
-            if not d then return nil, why, r end
-            o, why = num(f[3], 0, 1)
-            if not o then return nil, why, r end
-            z, why = num(f[4], 0, Plan.MAX_LEVELS - 1)
-            if not z then return nil, why, r end
-            g = { it = it, d = d, o = o, z = z, w = f[5] } -- 寬度原樣轉成 p 行，由 parse 檢查範圍
-            if z > mz then mz = z end
+        local tag = recs[r]:sub(1, 1)
+        if tag ~= "S" and tag ~= "T" then break end
+        local f, n = split(recs[r]:sub(2), ",")
+        if tag == "S" then
+            if n ~= 4 or #f[2] > 20 or not f[2]:match("^[0-9]*$") then return nil, "FORMAT", r end
+            mod, ws, ver, modName = unesc(f[1]), f[2], unesc(f[3]), unesc(f[4])
+            if not mod or not ver or not modName then return nil, "FORMAT", r end
         else
-            if not g or n < 2 or n > 3 then return nil, "FORMAT", r end
-            local x, y, len = num(f[1], 0, Plan.MAX_SIDE - 1), num(f[2], 0, Plan.MAX_SIDE - 1), 1
-            if not x or not y then return nil, "RANGE", r end
-            if n == 3 then
-                len, why = num(f[3], -Plan.MAX_SIDE, Plan.MAX_SIDE)
-                if not len then return nil, why, r end
-                if len >= -1 and len <= 1 then return nil, "RANGE", r end
+            local pre = unesc(f[1])
+            if not pre then return nil, "FORMAT", r end
+            for k = n > 1 and 2 or 1, n do -- 只有前綴（n＝1）時跑一次
+                local id = pre
+                if n > 1 then
+                    if not f[k]:match("^[0-9]+$") then return nil, "FORMAT", r end
+                    id = pre .. "_" .. f[k]
+                end
+                if clean(id) ~= id then return nil, "FORMAT", r end -- 空的、太長的 parse 會擋；換行它擋不到
+                if #items >= Plan.MAX_PIECES then return nil, "ITEM", r end
+                items[#items + 1] = { id = id, mod = mod, ws = ws, ver = ver, modName = modName, r = r, n = 0 }
             end
-            local dx, dy = 1, 0
-            if len < 0 then dx, dy, len = 0, 1, -len end
-            if x + dx * (len - 1) >= Plan.MAX_SIDE or y + dy * (len - 1) >= Plan.MAX_SIDE then return nil, "RANGE", r end
-            if #pieces + len > Plan.MAX_PIECES then return nil, "FULL", r end
-            for k = 0, len - 1 do
-                local px, py = x + dx * k, y + dy * k
-                pieces[#pieces + 1] = { px, py, g, r }
-                if px > mx then mx = px end
-                if py > my then my = py end
-            end
-            items[g.it].n = items[g.it].n + 1 * len
         end
         r = r + 1
     end
+    local pieces, it = {}, 0
+    local mx, my, mz = 0, 0, 0
+    while r < nr do
+        local rec = recs[r]
+        if rec:sub(1, 1) ~= "G" then return nil, "FORMAT", r end
+        it = it + 1
+        if it > #items then return nil, "ITEM", r end
+        local gs, ng = split(rec:sub(2), ",")
+        for gi = 1, ng do
+            local s = gs[gi]
+            local len = #s
+            if len < 3 then return nil, "FORMAT", r end -- 至少 1 個字的組頭加一格
+            local h = D64[s:byte(1)]
+            if not h then return nil, "FORMAT", r end -- 48 以上拆出來的朝向超出 0..5，parse 回 RANGE
+            local z = h % 4
+            local g = { it = it, d = math.floor(h / 8), o = math.floor(h / 4) % 2, z = z }
+            if z > mz then mz = z end
+            local i = 2
+            while i <= len do
+                local c, need = s:sub(i, i), 2
+                if c == "=" then need, i = 4, i + 1 elseif c == "-" then need, i = 3, i + 1 end
+                if i + need - 1 > len then return nil, "FORMAT", r end -- 先看長度：不靠 string.byte 超出範圍時回什麼
+                local x, y, a, b = D64[s:byte(i)], D64[s:byte(i + 1)], 0, 0
+                if need > 2 then a = D64[s:byte(i + 2)] end
+                if need > 3 then b = D64[s:byte(i + 3)] end
+                if not (x and y and a and b) then return nil, "FORMAT", r end
+                i = i + need
+                local w, hh, pw = 1, 1, nil
+                if need == 4 then w, hh = a + 1, b + 1 elseif need == 3 then pw = a + 1 end -- 寬度的範圍由 parse 檢查
+                if x + w > Plan.MAX_SIDE or y + hh > Plan.MAX_SIDE then return nil, "RANGE", r end
+                if #pieces + w * hh > Plan.MAX_PIECES then return nil, "FULL", r end -- 展開之前先擋
+                for dy = 0, hh - 1 do
+                    for dx = 0, w - 1 do pieces[#pieces + 1] = { x + dx, y + dy, g, r, pw } end
+                end
+                if x + w - 1 > mx then mx = x + w - 1 end
+                if y + hh - 1 > my then my = y + hh - 1 end
+                items[it].n = items[it].n + w * hh
+            end
+        end
+        r = r + 1
+    end
+    if it < #items then return nil, "ITEM", items[it + 1].r end -- 有項目沒有片
 
     put(MAGIC .. "\t1", 1)
     put("name\t" .. name, 2)
@@ -546,15 +638,15 @@ function PlanFile.unshare(code)
     else put("size\t0\t0\t0", 3) end
     put("count\t" .. count, 3)
     if pos then put("pos\t" .. pos.f[1] .. "\t" .. pos.f[2] .. "\t" .. pos.f[3], pos.r) end
-    for k, it in ipairs(items) do
-        local ws = it.ws == "" and "-" or it.ws
-        put("i\t" .. k .. "\t" .. it.n .. "\t" .. dash(it.mod) .. "\t" .. ws .. "\t" .. dash(it.ver) .. "\t"
-            .. dash(it.modName) .. "\t" .. it.id, it.r)
+    for k, item in ipairs(items) do
+        local wsText = item.ws == "" and "-" or item.ws
+        put("i\t" .. k .. "\t" .. item.n .. "\t" .. dash(item.mod) .. "\t" .. wsText .. "\t" .. dash(item.ver) .. "\t"
+            .. dash(item.modName) .. "\t" .. item.id, item.r)
     end
     for _, p in ipairs(pieces) do
         local pg = p[3]
         put("p\t" .. p[1] .. "\t" .. p[2] .. "\t" .. pg.z .. "\t" .. pg.d .. "\t" .. pg.o .. "\t" .. pg.it
-            .. (pg.w and ("\t" .. pg.w) or ""), p[4])
+            .. (p[5] and ("\t" .. p[5]) or ""), p[4])
     end
     put("END", 3)
     local plan, code2, ln = parse(bounded(arrayLines(lines)), false)

@@ -12757,38 +12757,156 @@ end)()
         check(back ~= nil and sig(back) == sig(pl) and back.name == pl.name and back.ox == 98 and back.oy == 200,
             "分享碼來回一致、帶位置（" .. tostring(why) .. " " .. tostring(at) .. "）")
         check(back and back.items[back._byId["pack_two_Tile Pack_01_64"]].workshop == "123456", "分享碼帶項目的來源 MOD")
+        check(back and back.items[back._byId["floors_01_40"]].mod == nil
+            and back.items[back._byId["recipe:Base.RainCollector_Tarp"]].workshop == nil, "反面：原版圖塊與配方讀回來沒有來源 MOD")
+        check(back and PF.share(back, true) == code, "讀回來的藍圖再分享：同一串")
         local noPos = PF.unshare(PF.share(pl, false))
         check(noPos and noPos.ox == nil and sig(noPos) == sig(pl), "不帶位置的分享碼")
         check(PF.share(pl) == PF.share(pl, false), "省略 withPos＝不帶位置")
-        check(code:find("0,0,10", 1, true) and code:find("0,1,-5", 1, true), "連續的一排與一列各寫成一段")
+        check(code:sub(1, 6) == "MBLD2;" and code:find(";P98,200,0;", 1, true) and not PF.share(pl, false):find(";P", 1, true),
+            "MBLD2 開頭；帶位置才有 P 段")
+        check(code:find(";G0=0090;", 1, true) and code:find(";GW=0104;", 1, true), "連續的一排與一列各寫成一個長方形")
+        check(code:find(";G153,553;", 1, true) ~= nil, "同一個項目的兩組（疊放不同）寫在同一個 G 段，逗號分開")
+        check(code:find(";Trecipe:Base=2ERainCollector.Tarp;Tfloors.01,40;STPMod,123456,1=2E2,Tile+Pack;Tpack.two.Tile+Pack.01,64;G", 1, true)
+            ~= nil, "項目：原版的排前面、不寫來源；MOD 的來源寫一個 S 段；圖塊名拆成前綴與數字")
+        -- 同一組圖塊的名稱只寫一次
+        local row = Plan.new("row")
+        for i = 0, 19 do Plan.add(row, i, 0, 0, 0, 0, Plan.item(row, "walls_exterior_house_01_" .. i)) end
+        Plan.add(row, 0, 1, 0, 0, 0, Plan.item(row, "walls_exterior_house_02_7"))
+        Plan.add(row, 1, 1, 0, 0, 0, Plan.item(row, "walls_exterior_house_01_007"))
+        local rc = PF.share(row, false)
+        local rb = PF.unshare(rc)
+        check(select(2, rc:gsub(";T", "")) == 2 and rc:find(";Twalls.exterior.house.01,0,1,2,", 1, true) ~= nil
+            and rc:find(",19,007;Twalls.exterior.house.02,7;G", 1, true) ~= nil and #rc < 260 and rb and sig(rb) == sig(row),
+            "同一組圖塊的名稱只寫一次、數字照原樣（007 與 7 是兩個項目）（" .. #rc .. " 字）")
+        -- 拆不出「前綴_數字」的名稱、有逗號分號的名稱、MOD 名稱一樣但版本不同
+        local odd = Plan.new("odd")
+        for i, id in ipairs({ "_32", "123", "foo_", "a,b;c_01", "x y", "x y_7", "T", "G0", "pre", "pre_", "pre_0", "pre_00",
+            ("L"):rep(120) .. "_1234567" }) do
+            Plan.add(odd, i, 0, 0, 0, 0, Plan.item(odd, id, i % 3 == 0 and { mod = "M,od;", modName = "Na me_", version = "1." .. (i % 2) } or nil))
+        end
+        local oc = PF.share(odd, false)
+        local ob, ow, oa = PF.unshare(oc)
+        check(ob and sig(ob) == sig(odd) and PF.share(ob, false) == oc and select(2, oc:gsub(";S", "")) == 2
+            and ob.items[ob._byId["foo_"]].version == "1.1" and ob.items[ob._byId["x y_7"]].version == "1.0"
+            and ob.items[ob._byId["_32"]].mod == nil,
+            "怪名稱（空前綴、只有數字、底線結尾、逗號分號、128 字）來回一致，版本不同算兩個來源（" .. tostring(ow) .. " " .. tostring(oa) .. "）")
         local full = Plan.new("full")
         local f = Plan.item(full, "floor_01_0")
         for y = 0, 63 do for x = 0, 63 do Plan.add(full, x, y, 0, 0, 0, f) end end
         local big = PF.share(full, false)
         local fb = PF.unshare(big)
-        check(#big < 1000 and fb and fb.n == 4096, "4,096 片的地板分享碼壓到 1,000 字以內並能還原（" .. #big .. " 字）")
+        check(#big < 60 and big:find(";G0=00//;", 1, true) and fb and fb.n == 4096, "4,096 片的地板分享碼是一個長方形、60 字以內並能還原（" .. #big .. " 字）")
+        local eb = PF.unshare(PF.share(Plan.new("empty"), false))
+        check(eb and eb.n == 0, "空的藍圖也能分享再讀回")
         check(PF.unshare("  " .. code .. "\n") ~= nil, "前後多的空白、換行照收")
         local function rechk(s) -- 改內容後重算檢查碼（模擬故意改的人）
-            local body = s:match("^(.*;)K%d+$")
+            local body = s:match("^(.*;)K[^;]*$")
             local h = 0
             for i = 1, #body do h = (h * 31 + body:byte(i)) % 9999991 end
             return body .. "K" .. h
         end
-        local function rejects(s, want, label)
-            local ok, p, c = pcall(PF.unshare, s)
-            check(ok and p == nil and c == want, "壞分享碼拒收：" .. label .. "（" .. tostring(c) .. "）")
+        local function rejects(s, want, label, seg)
+            local ok, p, c, r = pcall(PF.unshare, s)
+            check(ok and p == nil and c == want and (seg == nil or r == seg),
+                "壞分享碼拒收：" .. label .. "（" .. tostring(c) .. "，第 " .. tostring(r) .. " 段）")
         end
-        rejects(code:gsub("C17", "C18", 1), "CHECKSUM", "改了一個字")
+        -- code 的段：1 MBLD2、2 N、3 C、4 P、5 T 配方、6 T 地板、7 S、8 T MOD 圖塊、9～11 G、12 K
+        rejects(code:gsub("C17", "C18", 1), "CHECKSUM", "改了一個字", 12)
         rejects(code:sub(1, #code - 20), "NO_END", "被截斷")
-        rejects(rechk(code:gsub("C17", "C18", 1)), "COUNT", "改了片數並重算檢查碼")
-        rejects(rechk(code:gsub(";0,0,10;", ";0,0,70;", 1)), "RANGE", "一排超出 64 格")
-        rejects(rechk(code:gsub(";G(%d+),", ";G9,", 1)), "ITEM", "項目編號不存在")
-        rejects(rechk(code:gsub("^MBLD1", "MBLD2")), "VERSION", "版本不認得")
-        rejects(rechk(code:gsub(";N[^;]*", ";N<x>", 1)), "FORMAT", "名稱有不認得的字元")
-        rejects(rechk(code:gsub(";N[^;]*", ";N" .. string.rep("A", 41), 1)), "NAME", "名稱超過 40 字")
-        rejects(rechk(code:gsub(";0,0,10;", ";0,0,10;0,0,10;", 1)), "DUP", "同一排寫兩次")
-        rejects("hello", "FORMAT", "不是分享碼")
-        rejects(nil, "FORMAT", "不是字串")
+        rejects(code:sub(1, #code - 2), "CHECKSUM", "檢查碼少兩個字", 12)
+        rejects("MBLD2;Nt;C0", "NO_END", "少於四段", 3)
+        rejects(rechk("MBLD2;Nt;K0"), "NO_END", "只有名稱與檢查碼", 3)
+        rejects(rechk("MBLD2;K0"), "NO_END", "只有開頭與檢查碼", 2)
+        rejects(rechk(code:gsub("C17", "C18", 1)), "COUNT", "改了片數並重算檢查碼", 3)
+        rejects(rechk(code:gsub("C17", "C4097", 1)), "FULL", "片數 4,097", 3)
+        rejects(rechk(code:gsub("^MBLD2", "MBLD3")), "VERSION", "版本不認得", 1)
+        rejects(rechk(code:gsub("^MBLD2", "MBLD1")), "VERSION", "舊的 MBLD1 不收", 1)
+        rejects("MBLD1;Nx;C0;K0", "VERSION", "舊的 MBLD1 不收（不看後面）", 1)
+        rejects(rechk(code:gsub(";N[^;]*", ";N<x>", 1)), "FORMAT", "名稱有不認得的字元", 2)
+        rejects(rechk(code:gsub(";N[^;]*", ";N" .. string.rep("A", 41), 1)), "NAME", "名稱超過 40 字", 2)
+        rejects(rechk(code:gsub(";P98,200,0;", ";P98,200;", 1)), "FORMAT", "位置少一欄", 4)
+        rejects(rechk(code:gsub(";P98,200,0;", ";P98,200,32;", 1)), "RANGE", "位置的層超出", 4)
+        -- 項目
+        rejects(rechk(code:gsub(";STPMod,", ";STPMod,,", 1)), "FORMAT", "S 段多一欄", 7)
+        rejects(rechk(code:gsub(";STPMod,123456,", ";STPMod,", 1)), "FORMAT", "S 段少一欄", 7)
+        rejects(rechk(code:gsub(",123456,", ",12x456,", 1)), "FORMAT", "工作坊編號不是數字", 7)
+        rejects(rechk(code:gsub(",123456,", "," .. string.rep("1", 21) .. ",", 1)), "FORMAT", "工作坊編號 21 位", 7)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,;", 1)), "FORMAT", "T 段的數字是空的", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4a;", 1)), "FORMAT", "T 段的數字有字母", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,-4;", 1)), "FORMAT", "T 段的數字有負號", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";T;", 1)), "FORMAT", "T 段是空的", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors_01,40;", 1)), "FORMAT", "T 段有不認得的字元", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors=0A01,40;", 1)), "FORMAT", "項目名稱帶換行", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4" .. string.rep("0", 120) .. ";", 1)), "FORMAT", "項目名稱超過 128 字", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4" .. string.rep("0", 700) .. ";", 1)), "TOO_BIG", "項目名稱 700 字", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目寫兩次", 6)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Trecipe:Base=2ERainCollector,Tarp;", 1)), "FORMAT", "T 段的數字欄不是數字", 7)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Tfloors.01.40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目換一種寫法再寫一次", 7)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,41;", 1)), "ITEM", "多一個項目、最後一個項目沒有 G 段", 8)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";", 1)), "ITEM", "少一個項目、G 段多一段", 10)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Xfloors.01,40;", 1)), "FORMAT", "不認得的段", 6)
+        do
+            local t, g = {}, {} -- 每個項目都有自己的 G 段：沒有項目數上限的話會數到第 4,097 片才回 FULL
+            for i = 1, 4097 do t[i], g[i] = tostring(i), "G000" end
+            rejects(rechk("MBLD2;Nt;C1;Tw," .. table.concat(t, ",") .. ";" .. table.concat(g, ";") .. ";K0"), "ITEM", "4,097 個項目", 4)
+        end
+        -- 片
+        rejects(rechk(code:gsub(";G0=0090;", ";G0=t090;", 1)), "RANGE", "長方形的右邊超出 64 格", 10)
+        rejects(rechk(code:gsub(";GW=0104;", ";GW=0x0A;", 1)), "RANGE", "長方形的下邊超出 64 格", 11)
+        rejects(rechk(code:gsub(";G0=0090;", ";Gm=0090;", 1)), "RANGE", "組頭超出 47", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G0=0090=0090;", 1)), "DUP", "同一個長方形寫兩次", 10)
+        rejects(rechk(code:gsub(";G153,553;", ";G153,153;", 1)), "DUP", "同一組寫兩次", 9)
+        rejects(rechk(code:gsub(";G0=0090;", ";G0=009;", 1)), "FORMAT", "長方形少一個字", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G0=0090A;", 1)), "FORMAT", "格子少一個字", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G0=00.0;", 1)), "FORMAT", "格子有不認得的字元", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G.=0090;", 1)), "FORMAT", "組頭有不認得的字元", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G0;", 1)), "FORMAT", "只有組頭、沒有格子", 10)
+        rejects(rechk(code:gsub(";G0=0090;", ";G;", 1)), "FORMAT", "空的 G 段", 10)
+        rejects(rechk(code:gsub(";G153,553;", ";G153,553,;", 1)), "FORMAT", "G 段尾巴多一個逗號", 9)
+        rejects(rechk(code:gsub(";GW=0104;", ";GW=0104;GW00;", 1)), "ITEM", "G 段比項目多", 12)
+        rejects(rechk(code:gsub(";GW=0104;", ";", 1)), "ITEM", "G 段比項目少", 8)
+        -- 段的順序：G 之後只能是 G。下面幾段去掉開頭的字母都是合格的片（000），沒檢查開頭就會被當成片收下
+        rejects(rechk(code:gsub(";GW=0104;", ";T000;", 1)), "FORMAT", "T 段寫在 G 段後面", 11)
+        rejects(rechk(code:gsub(";GW=0104;", ";S000;", 1)), "FORMAT", "S 段寫在 G 段後面", 11)
+        rejects(rechk(code:gsub(";GW=0104;", ";X000;", 1)), "FORMAT", "G 段的位置出現不認得的段", 11)
+        rejects(rechk(code:gsub(";G153,553;", ";P1,2,0;G153,553;", 1)), "FORMAT", "P 段寫在項目後面", 9)
+        rejects(rechk(code:gsub(";GW=0104;", ";GW=0104;Kx;", 1)), "FORMAT", "K 段後面還有 K 段", 12)
+        rejects(rechk("MBLD2;Nt;C4096;Tw,1;G0=00//,100;K0"), "FULL", "一個 64×64 再多一片", 5)
+        rejects(rechk("MBLD2;Nt;C1;K0"), "RANGE", "有片數、沒有片", 3)
+        do -- 展開之前先擋：六萬個 64×64 的長方形（2.4 億片）要馬上拒收，不是先展開再數
+            local t = {}
+            for i = 1, 60000 do t[i] = "=00//" end
+            local c0 = os.clock()
+            rejects(rechk("MBLD2;Nt;C4096;Tw,1;G0" .. table.concat(t) .. ";K0"), "FULL", "六萬個 64×64 的長方形", 5)
+            check(os.clock() - c0 < 2, "超過 4,096 片的長方形在展開之前就拒收（" .. (os.clock() - c0) .. " 秒）")
+        end
+        rejects("hello", "FORMAT", "不是分享碼", 1)
+        rejects(nil, "FORMAT", "不是字串", 0)
+        rejects(string.rep("A", 400001), "TOO_BIG", "超過 40 萬字", 0)
+        -- 亂改：每次改 1～3 個字後重算檢查碼，不能丟 Lua 錯誤；還收得下的要是一張合格的藍圖
+        local CH = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=-,;.:()"
+        local seed, fuzzOk, taken = 20261118, true, 0
+        local function rnd(k)
+            seed = (seed * 75 + 74) % 65537
+            return math.floor(seed / 7) % k
+        end
+        for _ = 1, 3000 do
+            local s = rnd(2) == 0 and code or oc
+            for _ = 1, 1 + rnd(3) do
+                local a, ci = 1 + rnd(#s), 1 + rnd(#CH)
+                s = s:sub(1, a - 1) .. (rnd(3) > 0 and CH:sub(ci, ci) or "") .. s:sub(a + rnd(2))
+            end
+            if s:match("^(.*;)K[^;]*$") then s = rechk(s) end
+            local ok, p, c, r = pcall(PF.unshare, s)
+            if not ok or (p == nil and (type(c) ~= "string" or type(r) ~= "number")) then fuzzOk = false end
+            if ok and p then
+                taken = taken + 1
+                local again = PF.unshare(PF.share(p, p.ox ~= nil))
+                if p.n > Plan.MAX_PIECES or not again or sig(again) ~= sig(p) then fuzzOk = false end
+            end
+        end
+        check(fuzzOk and taken > 0, "亂改 3,000 次：不丟 Lua 錯誤，收下的 " .. taken .. " 張都能再來回")
     end
 
     do -- 車庫門的寬度 w：片、檔案、分享碼
@@ -12835,7 +12953,7 @@ end)()
         local back = PF.decode(text)
         check(back and sig(back) == sig(pl) and PF.encode(back) == text, "帶寬度的藍圖存了再讀：寬度相同")
         local code = PF.share(pl, false)
-        check(code:find(";G1,1,0,0,5;", 1, true) ~= nil and code:find(";G1,1,0,0,3;", 1, true) ~= nil, "分享碼：寬度寫在組頭，不同寬度分組")
+        check(code:find(";G8-004-104-202;", 1, true) ~= nil, "分享碼：寬度跟著每一扇門寫（-xy寬），不同寬度在同一組")
         local sb = PF.unshare(code)
         check(sb and sig(sb) == sig(pl), "帶寬度的分享碼來回：寬度相同")
 
@@ -12856,20 +12974,30 @@ end)()
             for i = 1, #body do h = (h * 31 + body:byte(i)) % 9999991 end
             return body .. "K" .. h
         end
-        local function badCode(wtxt, want)
-            local ok, p, c = pcall(PF.unshare, rechk((sc:gsub(";G1,1,0,0,5;", ";G1,1,0,0," .. wtxt .. ";", 1))))
-            check(ok and p == nil and c == want, "壞分享碼拒收：寬度 " .. wtxt .. "（" .. tostring(c) .. "）")
+        check(sc:find(";G8-004;", 1, true) ~= nil, "一扇寬 5 的車庫門寫成 -004")
+        local function badCode(wtxt, want, label) -- 寬度寫成 1 個字（寬減 1）：0＝寬 1 不合格，/＝寬 64
+            local ok, p, c = pcall(PF.unshare, rechk((sc:gsub(";G8%-004;", ";G8-00" .. wtxt .. ";", 1))))
+            check(ok and p == nil and c == want, "壞分享碼拒收：" .. label .. "（" .. tostring(c) .. "）")
         end
-        badCode("0", "RANGE")
-        badCode("65", "RANGE")
-        badCode("x", "FORMAT")
+        badCode("0", "RANGE", "寬度 1")
+        badCode(".", "FORMAT", "寬度不是 64 進位的字")
+        badCode("", "FORMAT", "少了寬度")
+        local wide = PF.unshare(rechk((sc:gsub(";G8%-004;", ";G8-00/;", 1))))
+        check(wide and Plan.at(wide, 0, 0, 0)[1].w == 64, "反面：寬度 64（/）照收")
+        local mix = Plan.new("mix")
+        local mg = Plan.item(mix, "garage_01_0")
+        Plan.add(mix, 0, 0, 0, 1, 0, mg, 5)
+        for x = 1, 4 do Plan.add(mix, x, 0, 0, 1, 0, mg) end
+        local mc = PF.share(mix, false)
+        local mb = PF.unshare(mc)
+        check(mc:find(";G8=1030-004;", 1, true) ~= nil and mb and sig(mb) == sig(mix), "同一組裡有寬度與沒寬度的片：各寫各的、來回一致")
     end
 
     do -- 分享碼的 =uXXXX 代理對要成對（審查 residual）：模擬 Kahlua 的 string.char 收得下 > 255 的字碼
         local pl = sample()
         local code = PF.share(pl)
         local function withName(n)
-            local body = code:gsub("^MBLD1;N[^;]*;", "MBLD1;N" .. n .. ";", 1):match("^(.*;)K%d+$")
+            local body = code:gsub("^MBLD2;N[^;]*;", "MBLD2;N" .. n .. ";", 1):match("^(.*;)K%d+$")
             local h = 0
             for i = 1, #body do h = (h * 31 + body:byte(i)) % 9999991 end
             return body .. "K" .. h
@@ -14618,7 +14746,7 @@ end)()
     setStates(BAD)
 
     do -- 壞的分享碼、壞檔：一句原因、不當掉
-        local plan, err = L.parseCode("MBLD1;junk")
+        local plan, err = L.parseCode("MBLD2;junk")
         check(plan == nil and type(err) == "string" and err:find("IGUI_MBLD_PlanErr_", 1, true) == 1, "壞的分享碼：回一句原因、不當掉")
         check(L.errText("CHECKSUM", 3) == "IGUI_MBLD_PlanErr_CHECKSUMIGUI_MBLD_PlanErr_At"
             and L.errText("CHECKSUM", 0) == "IGUI_MBLD_PlanErr_CHECKSUM" and L.errText("WHAT", 0) == "IGUI_MBLD_PlanErr_Other",
