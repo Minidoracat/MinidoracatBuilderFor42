@@ -62,7 +62,7 @@ end
 -- 寫進檔案的選填欄：沒有寫 -；控制字元換空白、太長截掉
 local function dash(v)
     if v == nil or v == "" then return "-" end
-    return clean(v):sub(1, MAX_FIELD)
+    return Plan.cut(clean(v), MAX_FIELD)
 end
 
 local function undash(s)
@@ -193,7 +193,8 @@ local function parse(nextLine, headOnly)
         cnt, why = num(f[3], 1, Plan.MAX_PIECES)
         if not cnt then return nil, why, ln end
         local id = f[8]
-        if id == "" or #id > MAX_FIELD or #f[4] > MAX_FIELD or #f[6] > MAX_FIELD or #f[7] > MAX_FIELD
+        if id == "" or #id > MAX_FIELD or clean(id) ~= id -- 控制字元存檔時會換成空白，兩個 ID 會變成同一個
+            or #f[4] > MAX_FIELD or #f[6] > MAX_FIELD or #f[7] > MAX_FIELD
             or not workshopOk(f[5]) then
             return nil, "FORMAT", ln
         end
@@ -315,6 +316,8 @@ PlanFile.SHARE_MAX = 60000
 --   G 段裡的數值都是一個字：0-9 A-Z a-z + /＝0..63（所以邊長上限 64、層數上限 4 寫死在格式裡）。
 -- 發布後玩家手上的分享碼要一直收得下：要改格式就換 MBLD3，MBLD2 的解碼留著。
 -- 字串欄位：英數與 : - / ( ) 照寫，_ 寫成 .，空白寫成 +，其他寫成 =XX（字碼 < 256）或 =uXXXX（Kahlua 的 UTF-16 字）。
+--   S 的 MOD-ID、版本、MOD 名稱與 T 的前綴還原後最多 128 字、不能有控制字元，不合的整張拒收
+--   （這些字串很多項目共用，先擋才不會一段長字串被接成幾千份）。編碼時 MOD 資訊照存檔的截法截到 128 字。
 -- 檢查碼蓋住 K 之前的全部內容，改過一個字就拒收。
 local HEX = "0123456789ABCDEF"
 local function hex(c, digits)
@@ -443,12 +446,15 @@ function PlanFile.share(plan, ...)
         put("P" .. (plan.ox + x0) .. "," .. (plan.oy + y0) .. "," .. (plan.oz + z0))
     end
     -- 項目：同一個來源的排在一起，同一個前綴的寫成一個 T 段；都照第一次出現的順序，原版的排最前面
+    local function field(v) -- 和存檔的 dash 同一種截法：編得出來的碼一定解得回去
+        return v == nil and "" or esc(Plan.cut(clean(v), MAX_FIELD))
+    end
     local map, list = renumber(plan)
     local srcs, order = {}, {}
     for k, item in ipairs(list) do
         local ws = item.workshop and tostring(item.workshop) or ""
         if not ws:match("^[0-9]*$") or #ws > 20 then ws = "" end
-        local key = esc(item.mod) .. "," .. ws .. "," .. esc(item.version) .. "," .. esc(item.modName)
+        local key = field(item.mod) .. "," .. ws .. "," .. field(item.version) .. "," .. field(item.modName)
         local src = srcs[key]
         if not src then
             src = { key = key, tiles = {}, byPre = {} }
@@ -572,10 +578,13 @@ function PlanFile.unshare(code)
         if tag == "S" then
             if n ~= 4 or #f[2] > 20 or not f[2]:match("^[0-9]*$") then return nil, "FORMAT", r end
             mod, ws, ver, modName = unesc(f[1]), f[2], unesc(f[3]), unesc(f[4])
-            if not mod or not ver or not modName then return nil, "FORMAT", r end
+            if not mod or not ver or not modName or #mod > MAX_FIELD or #ver > MAX_FIELD or #modName > MAX_FIELD
+                or clean(mod) ~= mod or clean(ver) ~= ver or clean(modName) ~= modName then
+                return nil, "FORMAT", r
+            end
         else
             local pre = unesc(f[1])
-            if not pre then return nil, "FORMAT", r end
+            if not pre or #pre > MAX_FIELD then return nil, "FORMAT", r end -- 先擋長度：下面每個數字都接一次前綴
             for k = n > 1 and 2 or 1, n do -- 只有前綴（n＝1）時跑一次
                 local id = pre
                 if n > 1 then

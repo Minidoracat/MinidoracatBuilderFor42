@@ -37,6 +37,18 @@ function Plan.nameLen(s)
     return n
 end
 
+-- Kahlua 的字串是 UTF-16：截到 n 個字，結尾不留半個代理對（落單的一半存檔會變成 ?、分享碼解不回來）。
+-- 標準 Lua 的位元組到不了這個範圍。
+function Plan.cut(s, n)
+    s = s:sub(1, n)
+    local len = #s
+    if len > 0 then
+        local b = s:byte(len)
+        if b >= 55296 and b <= 56319 then s = s:sub(1, len - 1) end -- D800..DBFF
+    end
+    return s
+end
+
 -- 顯示名稱：控制字元（含 Tab、換行，檔案用它們分欄）換成空白、去頭尾空白、超過 40 字截掉
 function Plan.cleanName(s)
     s = tostring(s or ""):gsub("%c", " "):match("^%s*(.-)%s*$")
@@ -45,10 +57,10 @@ function Plan.cleanName(s)
         local b = s:byte(i)
         if b < 128 or b > 191 then
             n = n + 1
-            if n > Plan.MAX_NAME then return s:sub(1, i - 1) end
+            if n > Plan.MAX_NAME then return Plan.cut(s, i - 1) end
         end
     end
-    return s
+    return Plan.cut(s, #s) -- 文字框自己截在代理對中間時也去掉那一半
 end
 
 function Plan.new(name)

@@ -12732,6 +12732,7 @@ end)()
         bad(with(7, "p\t0\tx\t0\t1\t0\t1"), "FORMAT", 7, "座標不是整數")
         bad(with(7, "hello"), "FORMAT", 7, "看不懂的行")
         bad(with(5, "i\t1\t2\t-\tabc\t-\t-\twalls_01_4"), "FORMAT", 5, "工作坊編號不是數字")
+        bad(with(5, "i\t1\t2\t-\t-\t-\t-\twalls\1_01_4"), "FORMAT", 5, "項目 ID 帶控制字元（存檔會換成空白，兩個 ID 可能變成同一個）")
         check(PF.decode(good .. "x\n" .. string.rep("y", 5000) .. "\n") ~= nil, "END 之後不讀（審查 C11）")
         bad(with(7, "p\t0\t0\t0\t1\t0\t1\t" .. string.rep("9", 700)), "TOO_BIG", 7, "一行超過上限（審查 C11）")
         bad("MBLDPLAN\tdeleted\nEND\n", "DELETED", 1, "已刪除的檔")
@@ -12880,6 +12881,37 @@ end)()
             local c0 = os.clock()
             rejects(rechk("MBLD2;Nt;C4096;Tw,1;G0" .. table.concat(t) .. ";K0"), "FULL", "六萬個 64×64 的長方形", 5)
             check(os.clock() - c0 < 2, "超過 4,096 片的長方形在展開之前就拒收（" .. (os.clock() - c0) .. " 秒）")
+        end
+        do -- 共用的字串不能逐項放大（2026-11-18 審查）：T 前綴、S 的欄位還原後超過 128 字，在接成各項目之前整張拒收
+            local t = {}
+            for i = 1, 4096 do t[i] = tostring(i) end
+            local head, tail = "MBLD2;Nt;C1;T", "," .. table.concat(t, ",") .. ";G000;K0"
+            local a = rechk(head .. string.rep("a", PF.SHARE_MAX - #head - #tail - 8) .. tail)
+            local c0 = os.clock()
+            rejects(a, "FORMAT", "T 前綴約 4 萬字配 4,096 個數字", 4)
+            check(#a <= PF.SHARE_MAX and os.clock() - c0 < 0.5,
+                "T 前綴太長：接成 4,096 個名稱之前就拒收（" .. #a .. " 字，" .. (os.clock() - c0) .. " 秒）")
+            rejects(rechk("MBLD2;Nt;C1;T" .. string.rep("a", 129) .. ",1;G000;K0"), "FORMAT", "T 前綴 129 字", 4)
+            local edge = PF.unshare(rechk("MBLD2;Nt;C1;T" .. string.rep("a", 126) .. ",1;G000;K0"))
+            check(edge ~= nil and edge.items[1].id == string.rep("a", 126) .. "_1", "T 前綴 126 字加 _1 剛好 128 字：照收")
+            local long, fit = string.rep("a", 129), string.rep("a", 128)
+            rejects(rechk("MBLD2;Nt;C1;S" .. long .. ",,,;Tw,1;G000;K0"), "FORMAT", "S 的 MOD-ID 129 字", 4)
+            rejects(rechk("MBLD2;Nt;C1;Sm,," .. long .. ",;Tw,1;G000;K0"), "FORMAT", "S 的版本 129 字", 4)
+            rejects(rechk("MBLD2;Nt;C1;Sm,,," .. long .. ";Tw,1;G000;K0"), "FORMAT", "S 的 MOD 名稱 129 字", 4)
+            rejects(rechk("MBLD2;Nt;C1;Sm=0Ax,,,;Tw,1;G000;K0"), "FORMAT", "S 的 MOD-ID 帶換行", 4)
+            rejects(rechk("MBLD2;Nt;C1;Sm,,,n=09x;Tw,1;G000;K0"), "FORMAT", "S 的 MOD 名稱帶 Tab", 4)
+            local ok128 = PF.unshare(rechk("MBLD2;Nt;C1;S" .. fit .. ",," .. fit .. "," .. fit .. ";Tw,1;G000;K0"))
+            check(ok128 ~= nil and ok128.items[1].mod == fit and ok128.items[1].version == fit and ok128.items[1].modName == fit,
+                "S 的欄位剛好 128 字：照收、不截")
+            -- 編碼端：MOD 資訊超過 128 字的照存檔的截法截掉再寫，編得出來的碼一定解得回去
+            local lp = Plan.new("long src")
+            local li = Plan.item(lp, "w_1", { mod = string.rep("m", 200), version = string.rep("v", 200), modName = string.rep("n", 200) })
+            Plan.add(lp, 0, 0, 0, 0, 0, li)
+            local lc = PF.share(lp, false)
+            local back = PF.unshare(lc)
+            check(lc:find(";S" .. string.rep("m", 128) .. ",,", 1, true) ~= nil and back ~= nil
+                and back.items[1].mod == string.rep("m", 128) and back.items[1].version == string.rep("v", 128)
+                and back.items[1].modName == string.rep("n", 128), "MOD 資訊超過 128 字：分享碼裡只寫前 128 字，解得回來")
         end
         rejects("hello", "FORMAT", "不是分享碼", 1)
         rejects(nil, "FORMAT", "不是字串", 0)
