@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Builder 專屬的靜態檢查：scripts/verify_mod.py 第 19 項會呼叫；單獨跑 `python scripts/verify_local.py`。
+兩項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）。
 
 管理面板規則頁的選項名稱放得下（client/MinidoracatBuilder/Admin.lua 的 Panel:buildRules，字型 UIFont.Small）：
   數字列（SliderRow）標籤寬 floor(cw*0.45)；下拉列 cw - floor(cw*0.45) - GAP；勾選列照 E2E admin-mp 的估計 cw - 28。
@@ -34,7 +35,181 @@ def line_height(path):
     raise SystemExit(f"{path} 沒有 common lineHeight")
 
 
-def main():
+def lua_clean(src):
+    """註解換成空白、字串內容換成底線（長度與換行不變），之後才能用樣式找呼叫。"""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        c = src[i]
+        long_open = re.match(r"(--)?\[(=*)\[", src[i:]) if c in "-[" else None
+        if long_open:
+            end = src.find("]" + long_open.group(2) + "]", i)
+            end = n if end < 0 else end + len(long_open.group(2)) + 2
+            fill = " " if long_open.group(1) else "_"
+            body = "".join("\n" if ch == "\n" else fill for ch in src[i:end])
+            out.append(body if long_open.group(1) else '"' + body[1:-1] + '"')
+            i = end
+        elif src.startswith("--", i):
+            end = src.find("\n", i)
+            end = n if end < 0 else end
+            out.append(" " * (end - i))
+            i = end
+        elif c in "\"'":
+            j = i + 1
+            while j < n and src[j] != c and src[j] != "\n":
+                j += 2 if src[j] == "\\" else 1
+            out.append(c + "_" * (j - i - 1) + c)
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def call_args(text, open_at):
+    """open_at 是呼叫的 '('。回 (引數個數, 第一個引數, 最後一個引數)；括號不成對回 None。巢狀函式本體裡的逗號不算。"""
+    depth, block, count, start, first, i, n = 0, 0, 0, open_at + 1, None, open_at, len(text)
+    while i < n:
+        c = text[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                last = text[start:i].strip()
+                if last or count:
+                    count += 1
+                return count, (last if first is None else first), last
+        elif c == "," and depth == 1 and block == 0:
+            if first is None:
+                first = text[start:i].strip()
+            count += 1
+            start = i + 1
+        elif c.isalpha() or c == "_":
+            word = re.match(r"\w+", text[i:]).group(0)
+            if word == "function" or (block > 0 and word in ("if", "do", "repeat")):
+                block += 1
+            elif block > 0 and word in ("end", "until"):
+                block -= 1
+            i += len(word)
+            continue
+        i += 1
+    return None
+
+
+def short_calls():
+    """MOD 的 Lua 裡，傳的引數比定義的固定參數少的呼叫。回 [(key, 位置說明)]，key＝檔|函式|傳幾個<要幾個。
+    只報確定少傳的：最後一個引數是呼叫或 ... 的（個數不定）不報；同名函式有好幾個定義時照最少的那個算。
+    定義只認 `function A.b(…)`、`function A:b(…)`、`local function b(…)`、`A.b = function(…)`（表建構式裡的欄位不算）；
+    沒前綴的呼叫只對同檔的 local 函式與全域函式；`pcall(f, …)` 當成呼叫 f。"""
+    lua_root = os.path.dirname(os.path.dirname(os.path.dirname(ADMIN)))   # …/media/lua
+    defs, texts, def_parens = {}, {}, set()
+    name_re = r"[A-Za-z_]\w*"
+
+    def fixed(params):
+        return len([p for p in (q.strip() for q in params.split(",")) if p and p != "..."])
+
+    def add(name, path, pos, form, params, local):
+        defs.setdefault(name, []).append((path, texts[path].count("\n", 0, pos) + 1, form, fixed(params), local))
+
+    for folder, _, names in os.walk(lua_root):
+        for name in sorted(names):
+            if not name.endswith(".lua"):
+                continue
+            path = os.path.join(folder, name)
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = texts[path] = lua_clean(fh.read())
+            for m in re.finditer(rf"(local\s+)?\bfunction\s+({name_re}(?:\.{name_re})*)(?::({name_re}))?\s*\(([^)]*)\)", text):
+                local, dotted, method, params = m.groups()
+                def_parens.add((path, text.index("(", m.start(2))))
+                if method:
+                    add(method, path, m.start(), "colon", params, False)
+                elif "." in dotted:
+                    add(dotted.rsplit(".", 1)[1], path, m.start(), "dot", params, False)
+                else:
+                    add(dotted, path, m.start(), "bare", params, bool(local))
+            for m in re.finditer(rf"^[ \t]*(local\s+)?({name_re}(?:\.{name_re})*)\s*=\s*function\s*\(([^)]*)\)", text, re.M):
+                local, dotted, params = m.groups()
+                if "." in dotted:
+                    add(dotted.rsplit(".", 1)[1], path, m.start(), "dot", params, False)
+                else:
+                    add(dotted, path, m.start(), "bare", params, bool(local))
+
+    keywords = {"if", "and", "or", "not", "return", "while", "until", "elseif", "in", "function", "for", "do", "then", "else", "end", "local"}
+    hits = []
+    for path, text in texts.items():
+        rel = os.path.relpath(path, lua_root).replace(os.sep, "/")
+        for m in re.finditer(rf"([.:]?)\b({name_re})\s*\(", text):
+            sep, name = m.groups()
+            open_at = m.end() - 1
+            if name in keywords or (path, open_at) in def_parens:
+                continue
+            got = call_args(text, open_at)
+            if not got:
+                continue
+            count, first, last = got
+            if name == "pcall" and sep == "" and re.fullmatch(rf"{name_re}(?:\.{name_re})*", first or ""):
+                sep, name, count = ("." if "." in first else ""), first.rsplit(".", 1)[-1], count - 1
+            cands = defs.get(name, [])
+            if sep == "":
+                cands = [d for d in cands if d[2] == "bare" and (not d[4] or d[0] == path)]
+            else:
+                cands = [d for d in cands if d[2] != "bare"]
+            if not cands or last.endswith(")") or last == "...":
+                continue
+            need = min(d[3] + (1 if sep == "." and d[2] == "colon" else -1 if sep == ":" and d[2] == "dot" else 0) for d in cands)
+            if count < need:
+                d = min(cands, key=lambda d: d[3])
+                line = text.count("\n", 0, m.start()) + 1
+                hits.append((f"{rel}|{name}|{count}<{need}",
+                             f"{rel}:{line}  {name} 傳 {count} 個、定義 {need} 個（{os.path.basename(d[0])}:{d[1]}）"))
+    return hits
+
+
+ARGS_TITLE = "呼叫自己的 Lua 函式時固定參數傳齊（Kahlua 不補 nil）"
+ARGS_BASE = os.path.join(REPO, "scripts", "kahlua_args_baseline.txt")
+
+
+def check_args(rebase):
+    """Kahlua 不替少傳的固定參數補 nil：OP_CALL 平常會把引數後面的堆疊清掉，但陣列建構式最後一項是呼叫或 ... 之後
+    （OP_SETLIST 不還原堆疊頂端）到下一個呼叫回來之前不清，少傳的參數讀到舊值（KahluaThread.java:604-613,839-859、
+    LuaCallFrame.java:96-109；家族 pitfalls「少傳的參數不保證是 nil」）。標準 Lua 的 harness 驗不到。
+    實例：2026-10-31 宣傳片情境 cellsX(4, 8, 1) 的 z 收到 2；2026-11-19 L.saveFirst 加了選用的第三個固定參數、
+    既有呼叫點只傳兩個（第二條審查線讀碼抓到）。
+    既有的少傳記在 scripts/kahlua_args_baseline.txt（每行：次數、檔|函式|傳幾個<要幾個），只有比它多才 FAIL。"""
+    hits = short_calls()
+    now = {}
+    for key, where in hits:
+        now.setdefault(key, []).append(where)
+    if rebase:
+        with open(ARGS_BASE, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("# 既有的「固定參數少傳」呼叫（scripts/verify_local.py 的 check_args）。只會變少：改掉一處就重跑\n"
+                     "# python scripts/verify_local.py --rebase-args。不要為了讓新的呼叫通過而重跑：少的補 nil 傳齊，\n"
+                     "# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法（例 ArrayList.new()）才加進來。\n")
+            for key in sorted(now):
+                fh.write(f"{len(now[key])}\t{key}\n")
+        print(f"  note  {ARGS_TITLE}：baseline 重寫，{len(hits)} 處")
+        return 0
+    base = {}
+    if os.path.isfile(ARGS_BASE):
+        with open(ARGS_BASE, encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip() and not line.startswith("#"):
+                    n, key = line.rstrip("\n").split("\t", 1)
+                    base[key] = int(n)
+    bad = [f"{w}" + (f"（這個檔同樣的呼叫 baseline 只有 {base[key]} 處）" if key in base else "")
+           for key in sorted(now) if len(now[key]) > base.get(key, 0) for w in now[key]]
+    if bad:
+        print(f"  FAIL  {ARGS_TITLE}")
+        for b in bad:
+            print(f"        {b}")
+        print("        少的補 nil 傳齊，或把選用參數改成 ... 接（local a, b = ...；例 PlanLibrary.lua 的 L.saveFirst）。"
+              "確定呼叫的是 Java 方法才 python scripts/verify_local.py --rebase-args")
+        return 1
+    print(f"  PASS  {ARGS_TITLE}（新增 0 處；既有 {len(hits)} 處記在 baseline）")
+    return 0
+
+
+def check_rules():
     if not os.path.isfile(WIDTH):
         print(f"  SKIP  {TITLE} — 找不到 {WIDTH}")
         return 0
@@ -92,4 +267,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv))
