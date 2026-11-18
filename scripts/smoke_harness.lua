@@ -13150,7 +13150,8 @@ end)()
     -- 寫入照 FileWriter：非附加一開檔就清空，寫多少進多少。crash＝{ at＝第幾次開檔 或 match＝路徑結尾, keep＝那次只寫進
     -- 幾個位元組 }：那次之後程式等於當掉，再也寫不進任何東西（測試把 crash 設回 nil＝重開遊戲）。
     -- 讀取照 InputStreamReader：檔尾殘缺的 UTF-8 字解成 U+FFFD
-    local disk, dropWrites, crash = {}, false, nil
+    -- listAs(名稱)：清單回的名稱（模擬會改寫檔名的檔案系統，例如舊 macOS 磁碟把 é 拆成 e＋U+0301；開檔照樣用寫的名稱）
+    local disk, dropWrites, crash, listAs = {}, false, nil, nil
     local readerOpens, readLines = 0, 0
     getFileWriter = function(p, _, append)
         local idle = { write = function() end, close = function() end }
@@ -13190,7 +13191,7 @@ end)()
         local names = {}
         for p in pairs(disk) do
             local name = p:sub(#dir + 2)
-            if p:sub(1, #dir + 1) == dir .. "/" and not name:find("/", 1, true) then names[#names + 1] = name end
+            if p:sub(1, #dir + 1) == dir .. "/" and not name:find("/", 1, true) then names[#names + 1] = listAs and listAs(name) or name end
         end
         table.sort(names)
         return javaList(names)
@@ -13200,47 +13201,113 @@ end)()
         return false
     end
 
-    do -- 存檔、讀回比對、刪除、改名、複製
+    do -- 存檔、讀回比對、刪除、改名、複製；檔名照藍圖名稱取（使用者 2026-11-18：「測試房子」存成 plan.txt 分不出來）
+        local P = "MinidoracatBuilder/plans/"
         local pl = sample()
-        check(PF.fileName("我的小屋 Big House!") == "bighouse.txt" and PF.fileName("我的小屋") == "plan.txt", "檔名只留英數、轉小寫；沒有英數用 plan")
-        check(PF.save(pl, "bighouse.txt") == true and pl.file == "bighouse.txt"
-            and disk["MinidoracatBuilder/plans/bighouse.txt"] == PF.encode(pl)
-            and disk["MinidoracatBuilder/plans/bighouse.cfg"] == PF.encode(pl), "存檔：寫進 plans 資料夾（另有 .cfg 備份）、記住檔名")
-        disk["MinidoracatBuilder/plans/notes.md"] = "x"
-        disk["MinidoracatBuilder/plans/a b.txt"] = "x"
-        disk["MinidoracatBuilder/plans/House (1).TXT"] = "x"
+        PF.unicodeNames = nil
+        check(PF.fileName("ascii only") and PF.unicodeNames == nil, "英數名稱不測這台電腦能不能用非英數檔名")
+        check(PF.fileName("測試房子") == "測試房子.txt" and PF.unicodeNames == true
+            and disk["MinidoracatBuilder/names-測試한글é.txt"] == "MBLDNAMES\tnames-測試한글é.txt\n",
+            "中文名稱：檔名同藍圖名稱（第一次先在 MinidoracatBuilder/ 寫測試小檔、讀回、比清單）")
+        check(PF.fileName("My House (v2)") == "My House (v2).txt" and PF.fileName("我的小屋 Big House!") == "我的小屋 Big House.txt",
+            "英數、空白、- _ ( ) 與大小寫照留，其他 ASCII 標點去掉")
+        check(PF.fileName("a\\b/c:d*e?f\"g<h>i|j.k\1l") == "abcdefghijkl.txt", "路徑與 Windows 不收的字、. 、控制字元去掉")
+        check(PF.fileName("  家\226\128\139園\240\159\152\128 \194\160\227\128\128 2\239\187\191\226\128\174\194\133\239\191\189  ") == "家園 2.txt",
+            "零寬字、方向控制、BOM、C1 控制字元、U+FFFD、表情符號去掉；NBSP 與全形空白當空白、連續空白併成一個、去頭尾")
+        check(PF.fileName("con") == "con_.txt" and PF.fileName("COM1") == "COM1_.txt" and PF.fileName("Lpt9") == "Lpt9_.txt"
+            and PF.fileName("Console") == "Console.txt", "Windows 保留名稱（不分大小寫）後面加 _")
+        check(PF.fileName("...") == "plan.txt" and PF.fileName("\240\159\152\128") == "plan.txt" and PF.fileName(nil) == "plan.txt",
+            "清完是空的：plan")
+        check(PF.fileName(string.rep("長", 50)) == string.rep("長", 40) .. ".txt", "最多 Plan.MAX_NAME 個字")
+        check(PF.validFile(string.rep("長", 40) .. ".txt") and PF.validFile(string.rep("長", 40) .. "12.txt")
+            and PF.validFile("plan2.txt") and PF.validFile("My House (v2).txt") and PF.validFile("con_.txt"),
+            "validFile 收 40 個中文字（加編號）、舊的英數檔名、pickName 產得出來的名稱")
+        local bad = { "../x.txt", "a/b.txt", "a\\b.txt", "..txt", ".txt", " a.txt", "a .txt", "a  b.txt", "a?.txt", "a:b.txt",
+            "a\1b.txt", "a\tb.txt", "a.b.txt", "a\239\191\189.txt", "a\226\128\139.txt", "a.TXT", "a.cfg", "",
+            string.rep("長", 49) .. ".txt" }
+        local leaked
+        for _, f in ipairs(bad) do
+            if PF.validFile(f) or select(2, PF.load(f)) ~= "FILE" or select(2, PF.save(pl, f)) ~= "FILE" or PF.exists(f) then leaked = f end
+        end
+        check(leaked == nil and not PF.validFile(5) and not PF.validFile(nil), "validFile 擋路徑、. 、控制字元、頭尾或連續空白、? : 、U+FFFD、太長（" .. tostring(leaked) .. "）")
+        check(PF.save(pl, "海邊 小屋.txt") == true and pl.file == "海邊 小屋.txt"
+            and disk[P .. "海邊 小屋.txt"] == PF.encode(pl) and disk[P .. "海邊 小屋.cfg"] == PF.encode(pl),
+            "存檔：中文檔名寫進 plans 資料夾（另有 .cfg 備份）、記住檔名")
+        check(PF.save(pl, "bighouse.txt") == true, "舊的英數檔名照存")
+        disk[P .. "notes.md"] = "x"
+        disk[P .. "a  b.txt"] = "x"
+        disk[P .. "House (1).TXT"] = "x"
+        disk[P .. "x.y.txt"] = "x"
         local listed, skipped = PF.list()
-        check(#listed == 1 and listed[1] == "bighouse.txt", "列清單只列英數檔名的 .txt（備份檔不列）")
-        check(skipped == 2, "列清單回略過的 .txt 檔數（審查 K2：a b.txt、House (1).TXT；.md、.cfg 不算）")
-        disk["MinidoracatBuilder/plans/a b.txt"], disk["MinidoracatBuilder/plans/House (1).TXT"] = nil, nil
-        local h = PF.head("bighouse.txt")
+        check(#listed == 2 and has(listed, "bighouse.txt") and has(listed, "海邊 小屋.txt"), "列清單列中文檔名與舊英數檔名的 .txt（備份檔不列）")
+        check(skipped == 3, "列清單回略過的 .txt 檔數（審查 K2：a  b.txt、House (1).TXT、x.y.txt；.md、.cfg 不算）")
+        disk[P .. "a  b.txt"], disk[P .. "House (1).TXT"], disk[P .. "x.y.txt"] = nil, nil, nil
+        local h = PF.head("海邊 小屋.txt")
         check(h and h.name == "海邊 小屋" and h.n == 17 and h.w == 10 and h.h == 6 and h.levels == 2 and #h.items == 3
             and h.items[1].modName == "Tile Pack" and h.items[1].n == 5, "讀檔頭：名稱、大小、片數、各項目與來源")
-        local back = PF.load("bighouse.txt")
-        check(back and back.file == "bighouse.txt" and sig(back) == sig(pl), "讀整份")
-        check(PF.fileName("Big House") == "bighouse2.txt", "撞名加編號")
+        local back = PF.load("海邊 小屋.txt")
+        check(back and back.file == "海邊 小屋.txt" and sig(back) == sig(pl), "讀整份")
+        disk[P .. "Big House.txt"], disk[P .. "big house2.txt"] = PF.encode(pl), PF.encode(pl)
+        check(PF.fileName("海邊 小屋") == "海邊 小屋2.txt" and PF.fileName("Big House") == "Big House3.txt",
+            "撞名加編號；清單照小寫比（big house2.txt 擋住 Big House2.txt）")
+        disk[P .. "Big House.txt"], disk[P .. "big house2.txt"] = nil, nil
         dropWrites = true
         local ok, why = PF.save(pl, "other.txt")
         dropWrites = false
-        check(ok == nil and why == "WRITE" and disk["MinidoracatBuilder/plans/other.txt"] == nil, "寫入沒進檔（引擎不丟錯）：讀回比對，回 WRITE")
-        disk["MinidoracatBuilder/plans/cut.txt"] = PF.encode(pl):gsub("END\n$", "")
+        check(ok == nil and why == "WRITE" and disk[P .. "other.txt"] == nil, "寫入沒進檔（引擎不丟錯）：讀回比對，回 WRITE")
+        disk[P .. "cut.txt"] = PF.encode(pl):gsub("END\n$", "")
         check(select(2, PF.load("cut.txt")) == "NO_END", "沒有 END 的檔不用")
-        check(select(2, PF.load("../x.txt")) == "FILE" and select(2, PF.save(pl, "a b.txt")) == "FILE"
-            and select(2, PF.load("none.txt")) == "NO_FILE", "檔名不合格、檔案不存在：拒絕")
-        check(PF.remove("bighouse.txt") == true and not has(PF.list(), "bighouse.txt")
-            and select(2, PF.load("bighouse.txt")) == "DELETED" and PF.head("bighouse.txt") == nil,
-            "刪除：列清單看不到、讀不到")
-        check(PF.fileName("Big House") == "bighouse.txt", "刪掉的檔名可以再用")
-        PF.save(pl, "bighouse.txt")
-        local nf = PF.rename("bighouse.txt", "Small Hut")
+        check(select(2, PF.load("none.txt")) == "NO_FILE", "檔案不存在：NO_FILE")
+        check(PF.remove("海邊 小屋.txt") == true and not has(PF.list(), "海邊 小屋.txt")
+            and select(2, PF.load("海邊 小屋.txt")) == "DELETED" and PF.head("海邊 小屋.txt") == nil,
+            "刪除中文檔名：列清單看不到、讀不到")
+        check(PF.fileName("海邊 小屋") == "海邊 小屋.txt", "刪掉的檔名可以再用")
+        PF.save(pl, "海邊 小屋.txt")
+        local nf = PF.rename("海邊 小屋.txt", "Small Hut")
         local list = PF.list()
-        check(nf == "smallhut.txt" and has(list, "smallhut.txt") and not has(list, "bighouse.txt")
-            and PF.load("smallhut.txt").name == "Small Hut", "改名：寫新檔、舊檔標成刪除")
-        check(PF.rename("smallhut.txt", "small hut") == "smallhut.txt" and PF.load("smallhut.txt").name == "small hut",
-            "改名後檔名一樣：直接改寫同一個檔")
-        local dup = PF.duplicate("smallhut.txt")
-        check(dup == "smallhut2.txt" and has(PF.list(), "smallhut.txt") and PF.load(dup).name == "small hut", "複製一份：新檔名、同名稱")
-        check(PF.duplicate("smallhut.txt", "Copy") == "copy.txt", "複製時給新名稱")
+        check(nf == "Small Hut.txt" and has(list, "Small Hut.txt") and not has(list, "海邊 小屋.txt")
+            and PF.load("Small Hut.txt").name == "Small Hut", "改名：寫新檔、舊檔標成刪除")
+        check(PF.rename("Small Hut.txt", "small hut") == "Small Hut.txt" and PF.load("Small Hut.txt").name == "small hut"
+            and disk[P .. "small hut.txt"] == nil, "改名只差大小寫：直接改寫同一個檔（Windows 上是同一個檔，換檔名會把它標成刪除）")
+        nf = PF.rename("bighouse.txt", "測試房子")
+        check(nf == "測試房子.txt" and PF.load(nf).name == "測試房子" and select(2, PF.load("bighouse.txt")) == "DELETED",
+            "舊英數檔名改名：換成新規則的檔名")
+        local dup = PF.duplicate("測試房子.txt")
+        check(dup == "測試房子2.txt" and has(PF.list(), "測試房子.txt") and PF.load(dup).name == "測試房子", "複製一份：新檔名、同名稱")
+        check(PF.duplicate("Small Hut.txt", "Copy") == "Copy.txt", "複製時給新名稱")
+
+        -- 會改寫檔名的檔案系統：清單回拆開的 e＋U+0301，開檔用寫的名稱照樣開得到
+        local cafe = "Café.txt"
+        PF.save(pl, cafe)
+        listAs = function(name) return name == cafe and "Cafe\204\129.txt" or name end
+        check(not has(PF.list(), cafe) and PF.fileName("Café") == "Café2.txt",
+            "清單漏列、但開得起來的檔不當成沒用過（不會把另一張寫進同一個檔）")
+        listAs = nil
+        disk[P .. cafe], disk[P .. "Café.cfg"] = nil, nil
+
+        -- 測試小檔讀不回來、清單名稱不同：這次遊戲退回舊規則（只留英數、轉小寫）
+        local realPrint, logged = print, {}
+        print = function(s) logged[#logged + 1] = tostring(s) end
+        PF.unicodeNames = nil
+        dropWrites = true
+        local f1 = PF.fileName("測試房子 Big")
+        dropWrites = false
+        local f2 = PF.fileName("My House (v2)")
+        local fail1 = PF.unicodeNames
+        PF.unicodeNames = nil
+        listAs = function(name) return name:sub(1, 6) == "names-" and "names-x.txt" or name end
+        local f3 = PF.fileName("測試房子")
+        listAs = nil
+        local fail2 = PF.unicodeNames
+        PF.unicodeNames = nil
+        local f4 = PF.fileName("한글집")
+        print = realPrint
+        check(f1 == "big.txt" and f2 == "myhousev2.txt" and fail1 == false and logged[1] == "[MinidoracatBuilderFor42] plan file names: unicode=false read back differs",
+            "測試小檔讀不回來：退回英數規則、印一行 log（" .. tostring(logged[1]) .. "）")
+        check(f3 == "plan.txt" and fail2 == false and logged[2] == "[MinidoracatBuilderFor42] plan file names: unicode=false name not listed as written",
+            "清單回的名稱和寫的不同：退回英數規則")
+        check(f4 == "한글집.txt" and PF.unicodeNames == true and logged[3] == "[MinidoracatBuilderFor42] plan file names: unicode=true ok",
+            "測試小檔三樣都對：用新規則")
     end
 
     do -- 存檔寫到一半斷掉（審查 C1）：任何時間點都留得住完整的一版；刪除不會從備份復活
@@ -13351,22 +13418,22 @@ end)()
         check(wb and #wb.items[1].mod == 128 and #wb.items[1].modName == 128, "MOD 資訊很長：截短後存，讀得回來")
     end
 
-    do -- 檔名沒有上限（審查 C13）：純中文名稱的第 1,000、1,001 張照樣分得到檔名，而且不用逐一開檔
+    do -- 檔名沒有上限（審查 C13）：同名的第 1,000、1,001 張照樣分得到檔名，而且不用逐一開檔
         local P = "MinidoracatBuilder/plans/"
         local tiny = Plan.new("中文藍圖")
         Plan.add(tiny, 0, 0, 0, 0, 0, Plan.item(tiny, "walls_01_4"))
         local body = PF.encode(tiny)
-        for i = 1, 999 do disk[P .. "plan" .. (i > 1 and i or "") .. ".txt"] = body end
+        for i = 1, 999 do disk[P .. "中文藍圖" .. (i > 1 and i or "") .. ".txt"] = body end
         readerOpens = 0
         local f1000 = PF.fileName("中文藍圖")
         local opens = readerOpens
         local ok1000 = f1000 and PF.save(tiny, f1000)
         local f1001 = PF.fileName("中文藍圖")
         local ok1001 = f1001 and PF.save(tiny, f1001)
-        check(f1000 == "plan1000.txt" and ok1000 == true and f1001 == "plan1001.txt" and ok1001 == true and opens <= 1,
-            "第 1,000、1,001 張純中文名稱的藍圖：plan1000.txt、plan1001.txt（取名時開了 " .. opens .. " 個檔）")
+        check(f1000 == "中文藍圖1000.txt" and ok1000 == true and f1001 == "中文藍圖1001.txt" and ok1001 == true and opens <= 1,
+            "第 1,000、1,001 張同名藍圖：中文藍圖1000.txt、中文藍圖1001.txt（取名時開了 " .. opens .. " 個檔）")
         for p in pairs(disk) do
-            if p:sub(1, #P + 4) == P .. "plan" then disk[p] = nil end
+            if p:sub(1, #P + #"中文藍圖") == P .. "中文藍圖" then disk[p] = nil end
         end
     end
 
@@ -13421,6 +13488,10 @@ end)()
             and got.boxes[1].index == 3 and got.seen["pack_two_Tile Pack_01_64"] == "MISSING", "讀回地上的藍圖")
         worldName = "other"
         check(next(PS.load()) == nil, "別的存檔看不到")
+        check(PS.save({ file = "測試房子 (2).txt", ox = 1, oy = 2, oz = 0, boxes = {}, seen = {} }) == true
+            and PS.load().file == "測試房子 (2).txt", "記錄的檔名可以有中文、空白、括號（同 PlanFile.validFile）")
+        check(PS.save({ file = "../x.txt", ox = 1, oy = 2, oz = 0, boxes = {}, seen = {} }) and PS.load().file == nil,
+            "反面：記錄的檔名離得開藍圖資料夾就不收")
         worldName = "我的世界"
         local p = "MinidoracatBuilder/worlds/" .. PS.worldId() .. ".txt"
         local saved = disk[p]
@@ -14047,7 +14118,7 @@ end)()
     listFilesInZomboidLuaDirectory = function() return javaList({}) end
     local okSave, file = Cap.save(out.plan, "  ", "Cap House")
     local back = okSave and PF.load(file)
-    check(okSave == true and file == "caphouse.txt" and out.plan.name == "Cap House" and back and back.n == 3
+    check(okSave == true and file == "Cap House.txt" and out.plan.name == "Cap House" and back and back.n == 3
         and back.nItems == 3, "存成藍圖：空白名稱用預設名稱，讀回片數、種類相同")
     -- 一片都沒收到：只說一聲、不開框
     local empty = Cap.scan(300, 300, 301, 301, 0)
@@ -15050,7 +15121,7 @@ end)()
         dialogs = {}
         local done
         local d = L.askRemove(file, pl.name, pl.n, 0, function(ok) done = ok end)
-        check(file == "gone.txt" and d ~= nil and d.danger == true and has(PF.list(), file), "刪除：先跳危險確認框，還沒刪")
+        check(file == "Gone.txt" and d ~= nil and d.danger == true and has(PF.list(), file), "刪除：先跳危險確認框，還沒刪")
         d.onResult(false)
         check(has(PF.list(), file) and done == nil, "反面：按取消不刪")
         L.askRemove(file, pl.name, pl.n, 0, function(ok) done = ok end)
@@ -15070,7 +15141,7 @@ end)()
         mk("Bravo", 1)
         mk("Alpha", 3)
         mk("Charlie", 2)
-        disk[USED] = "alpha.txt\t100\ncharlie.txt\t300\n#end\n"
+        disk[USED] = "Alpha.txt\t100\nCharlie.txt\t300\n#end\n"
     end
     local function order(sort)
         L.st.sort = sort
@@ -15083,20 +15154,20 @@ end)()
         three()
         check(L.open(0) and L.visible(), "藍圖庫：打得開")
         while L.pending() > 0 do L.pump(1000) end
-        check(order("used") == "charlie.txt,alpha.txt,bravo.txt", "排序：最近用過（沒用過的排後面）")
-        check(order("name") == "alpha.txt,bravo.txt,charlie.txt", "排序：名稱")
-        check(order("pieces") == "alpha.txt,charlie.txt,bravo.txt", "排序：片數多的在前")
+        check(order("used") == "Charlie.txt,Alpha.txt,Bravo.txt", "排序：最近用過（沒用過的排後面）")
+        check(order("name") == "Alpha.txt,Bravo.txt,Charlie.txt", "排序：名稱")
+        check(order("pieces") == "Alpha.txt,Charlie.txt,Bravo.txt", "排序：片數多的在前")
         L.st.query = "char"
-        check(order("name") == "charlie.txt", "搜尋：名稱不分大小寫")
+        check(order("name") == "Charlie.txt", "搜尋：名稱不分大小寫")
         L.st.query = ""
-        disk[USED] = "alpha.txt\t100\ncharlie.txt\t300\n"
-        check(L.loadUsed() == true and order("used") == "charlie.txt,alpha.txt,bravo.txt" and L.markUsed("bravo.txt", nil) == true
-            and disk[USED]:find("#end\n$") ~= nil and disk[USED]:find("alpha.txt\t100\n", 1, true) ~= nil
-            and disk[USED]:find("charlie.txt\t300\n", 1, true) ~= nil, "少了 #end 的紀錄：收讀得出來的行，下次寫入補齊")
+        disk[USED] = "Alpha.txt\t100\nCharlie.txt\t300\n"
+        check(L.loadUsed() == true and order("used") == "Charlie.txt,Alpha.txt,Bravo.txt" and L.markUsed("Bravo.txt", nil) == true
+            and disk[USED]:find("#end\n$") ~= nil and disk[USED]:find("Alpha.txt\t100\n", 1, true) ~= nil
+            and disk[USED]:find("Charlie.txt\t300\n", 1, true) ~= nil, "少了 #end 的紀錄：收讀得出來的行，下次寫入補齊")
         local rd = getFileReader
         getFileReader = function() return nil end
         local before = disk[USED]
-        check(L.loadUsed() == false and L.markUsed("alpha.txt", nil) == false and disk[USED] == before,
+        check(L.loadUsed() == false and L.markUsed("Alpha.txt", nil) == false and disk[USED] == before,
             "反面：讀不到紀錄檔時不載入也不覆寫")
         getFileReader = rd
         L.loadUsed()
@@ -15112,22 +15183,22 @@ end)()
         three()
         L.open(0)
         while L.pending() > 0 do L.pump(1000) end
-        L.markUsed("bravo.txt", nil)
-        local nf = L.rename("bravo.txt", "Delta")
+        L.markUsed("Bravo.txt", nil)
+        local nf = L.rename("Bravo.txt", "Delta")
         L.v:reload(nf)
         while L.pending() > 0 do L.pump(1000) end
         L.v:refreshRows()
         local shown = false
         for _, row in ipairs(L.v.list.items) do
-            if row.e.file == "delta.txt" and row.cells[1] == "Delta" then shown = true end
+            if row.e.file == "Delta.txt" and row.cells[1] == "Delta" then shown = true end
         end
-        check(nf == "delta.txt" and shown and L.st.byFile["bravo.txt"] == nil and L.v.selected == L.st.byFile["delta.txt"],
+        check(nf == "Delta.txt" and shown and L.st.byFile["Bravo.txt"] == nil and L.v.selected == L.st.byFile["Delta.txt"],
             "改名：清單換成新名稱與檔名、選著它")
-        check(L.usedAt("delta.txt") ~= nil and L.usedAt("bravo.txt") == nil, "改名：上次用的時間搬到新檔名")
+        check(L.usedAt("Delta.txt") ~= nil and L.usedAt("Bravo.txt") == nil, "改名：上次用的時間搬到新檔名")
         dialogs = {}
         L.v:act("delete")
         dialogs[#dialogs].onResult(true)
-        check(L.st.byFile["delta.txt"] == nil and #L.v.list.items == 2 and L.usedAt("delta.txt") == nil, "清單上刪除：確認後清單少一列")
+        check(L.st.byFile["Delta.txt"] == nil and #L.v.list.items == 2 and L.usedAt("Delta.txt") == nil, "清單上刪除：確認後清單少一列")
     end
 
     do -- 1,000 個檔：打開時不讀檔頭，之後每幀最多 HEAD_MAX 個
@@ -15245,19 +15316,19 @@ end)()
 
     do -- 審查：改名、刪除時地上那張跟著改（不寫回舊檔名、不蓋掉重用檔名的新藍圖）
         three()
-        ground = PF.load("alpha.txt")
-        local nf = L.rename("alpha.txt", "Echo")
-        check(nf == "echo.txt" and ground.file == "echo.txt" and ground.name == "Echo", "改名：地上那張的檔名與名稱跟著改")
-        L.rename("bravo.txt", "Foxtrot")
-        check(ground.file == "echo.txt", "反面：改別張不動地上那張")
-        check(L.remove("echo.txt") == true and ground.file == nil, "刪除：地上那張不再連到這個檔")
+        ground = PF.load("Alpha.txt")
+        local nf = L.rename("Alpha.txt", "Echo")
+        check(nf == "Echo.txt" and ground.file == "Echo.txt" and ground.name == "Echo", "改名：地上那張的檔名與名稱跟著改")
+        L.rename("Bravo.txt", "Foxtrot")
+        check(ground.file == "Echo.txt", "反面：改別張不動地上那張")
+        check(L.remove("Echo.txt") == true and ground.file == nil, "刪除：地上那張不再連到這個檔")
         local fresh = Plan.new("Echo")
         Plan.add(fresh, 0, 0, 0, 0, 0, Plan.item(fresh, "okay_01_0"))
         local file = L.store(fresh)
-        local text = disk["MinidoracatBuilder/plans/echo.txt"]
+        local text = disk["MinidoracatBuilder/plans/Echo.txt"]
         local gf = ground.file or PF.fileName(ground.name) -- 之後存地上那張（PlanMode 的取檔名規則）
         PF.save(ground, gf)
-        check(file == "echo.txt" and gf ~= file and disk["MinidoracatBuilder/plans/echo.txt"] == text,
+        check(file == "Echo.txt" and gf ~= file and disk["MinidoracatBuilder/plans/Echo.txt"] == text,
             "刪除後重用同一個檔名：之後存地上那張不會蓋掉新藍圖")
         ground = nil
     end
@@ -15499,33 +15570,33 @@ end)()
         PF.fileName = fileName
         check(f == nil and err == "IGUI_MBLD_PlanErr_READ", "存進藍圖庫：取不到檔名時說列不出資料夾，不說檔名不合規則")
         local f2 = L.store(sample("HasDir"))
-        check(f2 == "hasdir.txt", "反面：取得到檔名照常存")
+        check(f2 == "HasDir.txt", "反面：取得到檔名照常存")
     end
 
     do -- 審查第 2 輪：存進藍圖庫寫到地上那張的檔（定住＝地上換成這份；規劃中＝另存新的一張）
         three()
-        ground = PF.load("alpha.txt")
-        local imp1 = L.loadFile("alpha.txt")
+        ground = PF.load("Alpha.txt")
+        local imp1 = L.loadFile("Alpha.txt")
         Plan.add(imp1, 9, 9, 0, 0, 0, Plan.item(imp1, "fresh_01_0"))
         local f1, new1 = L.store(imp1)
         PF.save(ground, ground.file) -- 之後地上那張存檔（收起、完成）
-        check(f1 == "alpha.txt" and not new1 and ground == imp1 and PF.load("alpha.txt").n == imp1.n,
+        check(f1 == "Alpha.txt" and not new1 and ground == imp1 and PF.load("Alpha.txt").n == imp1.n,
             "定住時存進藍圖庫：地上那張換成這份，之後存檔是換過的內容")
-        ground = PF.load("bravo.txt")
+        ground = PF.load("Bravo.txt")
         local mine = ground
         B.PlanMode.state = function() return "edit" end
-        local before = disk["MinidoracatBuilder/plans/bravo.txt"]
-        local imp2 = L.loadFile("bravo.txt")
+        local before = disk["MinidoracatBuilder/plans/Bravo.txt"]
+        local imp2 = L.loadFile("Bravo.txt")
         Plan.add(imp2, 9, 9, 0, 0, 0, Plan.item(imp2, "fresh_01_0"))
         toasts = {}
         L.import(0)
         L.imp.plan = imp2
         L.imp.rev = imp2.rev -- 讀進來後沒換過項目：照舊存
         L.imp:finish("store")
-        local copy = PF.load("bravo2.txt")
-        check(ground == mine and ground.file == "bravo.txt" and disk["MinidoracatBuilder/plans/bravo.txt"] == before
+        local copy = PF.load("Bravo2.txt")
+        check(ground == mine and ground.file == "Bravo.txt" and disk["MinidoracatBuilder/plans/Bravo.txt"] == before
             and toasts[1] and toasts[1]:find("IGUI_MBLD_Imp_StoredNew", 1, true) == 1 and copy and copy.n == imp2.n,
-            "規劃中存進藍圖庫：另存成新的一張（bravo2.txt）並通知，原檔與地上那張都沒動")
+            "規劃中存進藍圖庫：另存成新的一張（Bravo2.txt）並通知，原檔與地上那張都沒動")
         B.PlanMode.state = nil
         ground = nil
     end
@@ -20103,8 +20174,8 @@ end)()
         local copy = PF.duplicate("echo.txt")
         check(copy and PF.head(copy).name == "Echo", "藍圖庫複製：副本保留同一個名稱")
         PM.renaming("echo.txt", "Foxtrot two")
-        check(PF.rename("echo.txt", "Foxtrot two") == "foxtrottwo.txt" and PF.load("echo.txt") == nil, "換檔名改名：新檔寫好、舊檔標成刪除")
-        check(PM.restore() == true and PM.plan().file == "foxtrottwo.txt" and PS.load().file == "foxtrottwo.txt"
+        check(PF.rename("echo.txt", "Foxtrot two") == "Foxtrot two.txt" and PF.load("echo.txt") == nil, "換檔名改名：新檔寫好、舊檔標成刪除")
+        check(PM.restore() == true and PM.plan().file == "Foxtrot two.txt" and PS.load().file == "Foxtrot two.txt"
             and PS.load().name == PS.nameKey("Foxtrot two") and PS.load().renameTo == nil,
             "換檔名的改名斷在舊檔標刪除後、記錄還沒改（舊名稱有副本）：只照要改成的名稱找回新檔並改好記錄")
         PM.clear()

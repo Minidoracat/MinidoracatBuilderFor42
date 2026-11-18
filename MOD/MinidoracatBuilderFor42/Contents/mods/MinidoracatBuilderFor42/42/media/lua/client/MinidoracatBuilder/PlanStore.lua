@@ -102,7 +102,7 @@ local function parse(lines)
     for i = 2, #lines - 1 do
         local f, n = split(lines[i])
         local tag = f[1]
-        if tag == "file" and n == 2 and f[2]:match("^[A-Za-z0-9]+%.txt$") then
+        if tag == "file" and n == 2 and PlanFile.validFile(f[2]) then
             st.file = f[2]
         elseif tag == "name" and n == 2 and f[2]:match("^[A-Za-z0-9_]*$") then
             st.name = f[2]

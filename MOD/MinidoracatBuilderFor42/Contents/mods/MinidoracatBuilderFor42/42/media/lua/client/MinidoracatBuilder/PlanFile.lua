@@ -674,8 +674,11 @@ end
 -- 所以「刪除」＝把檔案改寫成 TOMB（列清單時略過、檔名可以再用），「改名」＝寫新檔再把舊檔標成刪除。
 -- getFileWriter 一開檔就把舊內容清掉（FileWriter 非附加，LuaManager.java:6684-6719），又不能改名，所以每次存檔
 -- 先完整寫進同名的 .cfg 備份檔、讀回確認，再寫正式檔（writeSafe）：任何時間點斷掉，兩份裡至少一份是完整的。
--- 列資料夾只列檔案（LuaManager.java:6030-6041），裡面還有備份檔與別的檔，所以只收英數檔名的 .txt。
--- 檔名只用英數＋.txt（使用者 2026-11-16 定案；顯示名稱寫在檔裡）。
+-- 列資料夾只列檔案（LuaManager.java:6030-6041），裡面還有備份檔與別的檔，所以只收合檔名規則的 .txt（validFile）。
+-- 檔名照藍圖名稱取（pickName；使用者 2026-11-18：藍圖叫「測試房子」檔名卻是 plan.txt，資料夾裡分不出哪個檔是哪張）。
+-- 引擎不限制檔名用什麼字（getFileWriter／getFileReader 只擋 .. 與副檔名，直接交給 java.io.File、內容用 UTF-8，
+-- LuaManager.java:5910,6687-6719）；這台電腦的檔案系統存不存得住非英數檔名每次遊戲測一次（unicodeOk），
+-- 存不住就退回 2026-11-16 的舊規則（只留英數、轉小寫）。舊的英數檔名照讀照寫，不自動改名。
 
 local function path(file)
     return PlanFile.DIR .. "/" .. file
@@ -685,9 +688,75 @@ local function backupOf(p)
     return p:sub(1, -5) .. ".cfg"
 end
 
-local function validFile(file)
-    return type(file) == "string" and #file <= 40 and file:match("^[A-Za-z0-9]+%.txt$") ~= nil
+local LOG = "[MinidoracatBuilderFor42] "
+-- Kahlua 的字串是 UTF-16（一個單位一個字，string.byte 回字碼），標準 Lua 是 UTF-8 位元組；跳脫寫的 U+FFFD
+-- 在 Kahlua 是 1 個字（見下面 REPLACEMENT）。只有標準 Lua（harness）走 UTF-8 解碼那條。
+local WIDE = #"\239\191\189" == 1
+
+-- 字碼 c 在檔名裡：回 "keep"、"space"（換成一個空白），或 nil（去掉）。
+-- ASCII 只留英數、空白、- _ ( )；其他 ASCII（控制字元、. 與 \ / : * ? " < > |）去掉。非 ASCII 照留，但去掉
+-- U+0080–009F、U+200B–200F、U+2028–202E、U+2060–206F、U+FEFF、U+FFF9 以上（含 U+FFFD）與代理對 U+D800–DFFF
+-- （Kahlua 的表情符號是兩個代理單位，兩半都去掉；標準 Lua 解出來 > U+FFFF 也去掉）；U+00A0、U+3000 當空白。
+local function nameChar(c)
+    if c < 128 then
+        if c == 32 then return "space" end
+        if (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+            or c == 45 or c == 95 or c == 40 or c == 41 then return "keep" end
+        return nil
+    end
+    if c == 160 or c == 12288 then return "space" end
+    if c <= 159 or (c >= 8203 and c <= 8207) or (c >= 8232 and c <= 8238) or (c >= 8288 and c <= 8303)
+        or c == 65279 or (c >= 55296 and c <= 57343) or c >= 65529 then return nil end
+    return "keep"
 end
+
+-- 第 i 個位置的字：回 字碼（壞的 UTF-8 回 -1）, 佔幾個單位
+local function charAt(s, i)
+    local c = s:byte(i)
+    if WIDE or c < 128 then return c, 1 end -- Kahlua：一個單位就是一個字（128–255 是 U+0080–00FF）
+    local n = (c >= 240 and c < 248 and 4) or (c >= 224 and c < 240 and 3) or (c >= 192 and c < 224 and 2) or 1
+    if n == 1 then return -1, 1 end
+    local cp = c - (n == 4 and 240 or n == 3 and 224 or 192)
+    for k = 1, n - 1 do
+        local b = s:byte(i + k)
+        if not b or b < 128 or b > 191 then return -1, 1 end
+        cp = cp * 64 + b - 128
+    end
+    if cp < 128 then return -1, n end -- 過長編碼
+    return cp, n
+end
+
+-- 照檔名規則清字串：回 清好的字串, 字數。空白併成一個、去頭尾；max＝最多幾個字（可省略＝不截）
+local function cleanStem(s, max)
+    local out, n, i, len, gap = {}, 0, 1, #s, false
+    while i <= len do
+        local c, w = charAt(s, i)
+        local kind = c >= 0 and nameChar(c) or nil
+        if kind == "space" then
+            gap = n > 0
+        elseif kind == "keep" then
+            local add = gap and 2 or 1
+            if max and n + add > max then break end
+            out[#out + 1] = (gap and " " or "") .. s:sub(i, i + w - 1)
+            n, gap = n + add, false
+        end
+        i = i + w
+    end
+    return table.concat(out), n
+end
+
+-- 主檔名最多幾個字：名稱的上限，加撞名的編號與保留名稱的 _
+local STEM_MAX = Plan.MAX_NAME + 8
+
+-- 合規則的藍圖檔名：清過一次不變（擋路徑字元、. 、控制字元、頭尾或連續空白、U+FFFD…）、主檔名不是空的、
+-- 字數在上限內（Kahlua 算字、標準 Lua 算解出來的字，40 個中文字都過）。舊的英數檔名也合
+local function validFile(file)
+    if type(file) ~= "string" or #file > STEM_MAX * 3 + 4 or file:sub(-4) ~= ".txt" then return false end
+    local stem = file:sub(1, -5)
+    local clean, n = cleanStem(stem)
+    return stem ~= "" and clean == stem and n <= STEM_MAX
+end
+PlanFile.validFile = validFile
 
 local function openReader(p)
     local ok, r = pcall(getFileReader, p, false)
@@ -893,19 +962,75 @@ function PlanFile.remove(file)
     return PlanFile.writeSafe(path(file), TOMB .. "\nEND\n")
 end
 
--- 顯示名稱 → 檔名：只留英數、轉小寫、最多 24 字；撞名加 2、3…。資料夾有 N 個檔時前 N+1 個編號一定有空的，
--- 所以沒有上限，也不用一個一個開檔：只有不加編號的那個檔名會開來看是不是已刪除（可以再用）。
--- keep＝這個檔名就算有檔也能用。回 檔名，或 nil, "READ"（列不出資料夾）
+-- 這台電腦存不存得住非英數檔名：在 MinidoracatBuilder/ 寫一個混中文、韓文音節、帶重音拉丁字母的小檔，內容讀得回來、
+-- 資料夾清單回來的名稱和寫的一模一樣才算（舊 macOS 磁碟會把韓文、é 拆開存，清單名稱和寫的不同，
+-- 照新規則取名會讓兩張不同的藍圖寫進同一個檔；編碼不是 UTF-8 的檔案系統會把字換成 ?）。
+-- PlanFile.unicodeNames：nil＝這次遊戲還沒測（第一次要取非英數檔名時才測），之後是 true／false 到遊戲結束
+local PROBE_DIR = "MinidoracatBuilder"
+local PROBE_FILE = "names-\230\184\172\232\169\166\237\149\156\234\184\128\195\169.txt" -- names-測試한글é.txt
+local PROBE_LINE = "MBLDNAMES\t" .. PROBE_FILE
+local function unicodeOk()
+    if PlanFile.unicodeNames ~= nil then return PlanFile.unicodeNames end
+    local p, why = PROBE_DIR .. "/" .. PROBE_FILE, "ok"
+    local okW, wrote = pcall(writeText, p, PROBE_LINE .. "\n")
+    local okR, line = pcall(firstLine, p)
+    if not (okW and wrote) then
+        why = "write failed"
+    elseif not okR or line ~= PROBE_LINE then
+        why = "read back differs"
+    else
+        why = "name not listed as written"
+        local okL, files = pcall(listFilesInZomboidLuaDirectory, PROBE_DIR)
+        if okL and files then
+            for i = 0, files:size() - 1 do
+                if tostring(files:get(i)) == PROBE_FILE then why = "ok" end
+            end
+        end
+    end
+    PlanFile.unicodeNames = why == "ok"
+    print(LOG .. "plan file names: unicode=" .. tostring(PlanFile.unicodeNames) .. " " .. why)
+    return PlanFile.unicodeNames
+end
+
+local function ascii(s)
+    for i = 1, #s do
+        if s:byte(i) > 127 then return false end
+    end
+    return true
+end
+
+local RESERVED = { CON = true, PRN = true, AUX = true, NUL = true } -- Windows 的保留裝置名，不分大小寫
+for i = 1, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
+
+local function opens(p)
+    local r = openReader(p)
+    if r then pcall(function() r:close() end) end
+    return r ~= nil
+end
+
+-- 顯示名稱 → 檔名：照 cleanStem 清、最多 Plan.MAX_NAME 字、保留大小寫，清完是空的用 plan；Windows 保留名稱後面加 _。
+-- 這台電腦存不住非英數檔名時（unicodeOk）退回舊規則：只留英數、轉小寫、最多 24 字。
+-- 撞名加 2、3…（照小寫比：Windows 的檔名不分大小寫）。資料夾有 N 個檔時前 N+1 個編號一定有空的，所以沒有上限。
+-- 清單裡沒有的候選還要開不起來才用：會改寫檔名的檔案系統清單回來的名稱和寫的不同，只看清單會寫進別張的檔。
+-- 不加編號的那個檔名是刪除標記時直接重用。keep＝這個檔名（不分大小寫）就算有檔也能用：
+-- 只差大小寫時回 keep 本身，不然 Windows 上新舊檔名是同一個檔，改名把舊檔標成刪除就刪掉了新檔。
+-- 回 檔名，或 nil, "READ"（列不出資料夾）
 local function pickName(name, keep)
-    local stem = tostring(name or ""):gsub("[^A-Za-z0-9]", ""):lower():sub(1, 24)
+    local stem = cleanStem(tostring(name or ""), Plan.MAX_NAME)
+    if not ascii(stem) then unicodeOk() end
+    if PlanFile.unicodeNames == false then stem = tostring(name or ""):gsub("[^A-Za-z0-9]", ""):lower():sub(1, 24) end
     if stem == "" then stem = "plan" end
     local ok, files = pcall(listFilesInZomboidLuaDirectory, PlanFile.DIR)
     if not ok or not files then return nil, "READ" end
     local used, n = {}, files:size()
-    for i = 0, n - 1 do used[tostring(files:get(i)):lower()] = true end -- Windows 的檔名不分大小寫
+    for i = 0, n - 1 do used[tostring(files:get(i)):lower()] = true end
+    local low = keep and keep:lower()
     for i = 1, n + 1 do
-        local f = stem .. (i > 1 and i or "") .. ".txt"
-        if f == keep or not used[f] then return f end
+        local base = stem .. (i > 1 and i or "")
+        if RESERVED[base:upper()] then base = base .. "_" end
+        local f = base .. ".txt"
+        if f:lower() == low then return keep end
+        if not used[f:lower()] and not opens(path(f)) then return f end
         if i == 1 then
             local okA, live = pcall(alive, f)
             if okA and not live then return f end
