@@ -1,7 +1,7 @@
 # 既有的「固定參數少傳」呼叫（scripts/verify_local.py 的 check_args）。只會變少：改掉一處就重跑
 # python scripts/verify_local.py --rebase-args。不要為了讓新的呼叫通過而重跑：少的補 nil 傳齊，
-# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定回夠多個值
-# （key 裡是 ~）才加進來。
-1	client/MinidoracatBuilder/PlanMode.lua|limitWhy|1~7
-1	shared/MinidoracatBuilder/Cost.lua|basePrice|3~4
-1	shared/MinidoracatBuilder/Place.lua|bdEdges|2~3
+# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定每條路都回夠多個值
+# （key 裡是 ~，後面是那個呼叫的函式名）才加進來。
+1	client/MinidoracatBuilder/PlanMode.lua|limitWhy|1~7|tally
+1	shared/MinidoracatBuilder/Cost.lua|basePrice|3~4|family
+1	shared/MinidoracatBuilder/Place.lua|bdEdges|2~3|Entry.edges

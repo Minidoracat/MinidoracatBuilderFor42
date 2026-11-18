@@ -125,16 +125,31 @@ def expands(arg):
 def short_calls(extra=()):
     """MOD 的 Lua 裡，傳的引數比定義的固定參數少的呼叫。回 [(key, 位置說明)]，key＝檔|函式|傳幾個<要幾個。
     呼叫照「哪個模組的哪個函式」對定義：`Queue.cancel(`、`B.Queue.cancel(`、`local Q = B.Queue` 之後的 `Q.cancel(` 都對
-    Queue.lua 的那一個（照名稱對、同名取最少的做法，別的模組有同名而參數較少的函式時會漏）。沒前綴的呼叫對同檔
-    最近、還在範圍內的 local 函式，`local f = Check.safehouse` 這種別名跟著對；`self:f(` 對同檔的方法；認不出接收者的
-    `obj:f(` 照方法名對（同名取最少的），`x.f(` 不看（別人的表或欄位裡的函式：`ArrayList.new()`、`UI.Button.new`）。
-    最後一個引數是 ... 的不報；是單獨一個呼叫的（會展開成好幾個值）當一個算、照報，key 的 < 換成 ~。
+    Queue.lua 的那一個（照名稱對、同名取最少的做法，別的模組有同名而參數較少的函式時會漏）。別名照呼叫的位置找：
+    看得到、最近宣告的那個 `local 名稱 = …`（同一個檔裡 `local C = B.Check`、別的函式裡 `local C = B.Cursor` 各對各的），
+    `local Plan, L = B.Plan, B.PlanLibrary` 這種平行指派也認。沒前綴的呼叫對同檔最近、還在範圍內的 local 函式，
+    `local f = Check.safehouse` 這種別名跟著對；`self:f(` 對同檔的方法；認不出接收者的 `obj:f(` 照方法名對（同名取
+    最少的），`x.f(` 不看（別人的表或欄位裡的函式：`ArrayList.new()`、`UI.Button.new`）。
+    最後一個引數是 ... 的不報；是單獨一個呼叫的（會展開成好幾個值）當一個算、照報，key 的 < 換成 ~、後面接那個
+    呼叫的函式名（換成別的函式就不算 baseline 裡那一筆）。
     定義只認 `function A.b(…)`、`function A:b(…)`、`local function b(…)`、`A.b = function(…)`（表建構式裡的欄位不算）；
-    `pcall(f, …)` 當成呼叫 f。extra＝另外要看的目錄或檔（harness、E2E 情境）：只看裡面的呼叫。"""
+    `pcall(f, …)` 當成呼叫 f。extra＝另外要看的目錄或檔（harness、E2E 情境）：只看裡面的呼叫。
+    回的第三項：對到的定義是不是 MOD 的（extra 的檔自己的函式是 False）。"""
     lua_root = os.path.dirname(os.path.dirname(os.path.dirname(ADMIN)))   # …/media/lua
     name_re = r"[A-Za-z_]\w*"
     chain_re = rf"{name_re}(?:\.{name_re})*"
-    texts, defs, def_parens, roots, mods, fn_alias, ours = {}, {}, set(), {}, {}, {}, set()
+    texts, defs, def_parens, roots, mods, aliases, ours = {}, {}, set(), {}, {}, {}, set()
+
+    def split_top(src):
+        out, depth, cur = [], 0, ""
+        for ch in src:
+            depth += (ch in "({[") - (ch in ")}]")
+            if ch == "," and depth == 0:
+                out.append(cur.strip())
+                cur = ""
+            else:
+                cur += ch
+        return out + [cur.strip()]
 
     def fixed(params):
         return len([p for p in (q.strip() for q in params.split(",")) if p and p != "..."])
@@ -158,14 +173,13 @@ def short_calls(extra=()):
     def scan(path):
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = texts[path] = lua_clean(fh.read())
-        roots[path] = {"MinidoracatBuilder"} | set(
-            re.findall(rf"\blocal\s+({name_re})\s*=\s*MinidoracatBuilder[ \t]*$", text, re.M))
+        # local a, b = e1, e2：（位置, 看得到的範圍結尾, 名稱, 運算式）
+        aliases[path] = [(m.end(1), scope_end(text, m.end(1)), n.strip(), e)
+                         for m in re.finditer(rf"^([ \t]*)local\s+({name_re}(?:\s*,\s*{name_re})*)\s*=\s*(.+)$", text, re.M)
+                         for n, e in zip(m.group(2).split(","), split_top(m.group(3)))]
+        roots[path] = {"MinidoracatBuilder"} | {a[2] for a in aliases[path] if a[3] == "MinidoracatBuilder"}
         root = "|".join(sorted(roots[path]))
         mods[path] = {t: x for x, t in re.findall(rf"^[ \t]*(?:{root})\.({name_re})\s*=\s*({name_re})[ \t]*$", text, re.M)}
-        mods[path].update(re.findall(
-            rf"\blocal\s+({name_re})\s*=\s*(?:{root})\.({name_re})(?:\s+or\s+\{{\s*\}})?[ \t]*$", text, re.M))
-        fn_alias[path] = {m.group(1): (m.start(), m.group(2)) for m in re.finditer(
-            rf"\blocal\s+({name_re})\s*=\s*({name_re}(?:\.{name_re})+)[ \t]*$", text, re.M)}
         for m in re.finditer(rf"(local\s+)?\bfunction\s+({chain_re})(?::({name_re}))?\s*\(([^)]*)\)", text):
             local, dotted, method, params = m.groups()
             def_parens.add((path, text.index("(", m.start(2))))
@@ -196,18 +210,27 @@ def short_calls(extra=()):
                 scan(path)
     modkeys = {x for path in ours for x in mods[path].values()}
 
-    def modkey(path, chain):
-        """a.b 這種接收者指的是哪個模組（MinidoracatBuilder.X 的 X）；認不出回 None。"""
+    def alias_of(path, name, at):
+        """呼叫位置看得到、最近宣告的 `local name = 運算式` 的運算式；沒有回 None。"""
+        seen = [a for a in aliases[path] if a[2] == name and a[0] < at < a[1]]
+        return max(seen)[3] if seen else None
+
+    def modkey(path, chain, at):
+        """at 這個位置，a.b 這種接收者指的是哪個模組（MinidoracatBuilder.X 的 X）；認不出回 None。"""
         comps = chain.split(".")
         if len(comps) == 2 and comps[0] in roots[path]:
             return comps[1] if comps[1] in modkeys else None
         if len(comps) == 1:
-            return mods[path].get(chain) or (chain if chain in modkeys else None)
+            expr = alias_of(path, chain, at)
+            m = expr and re.fullmatch(rf"({name_re})\.({name_re})(?:\s+or\s+\{{\s*\}})?", expr)
+            if m and m.group(1) in roots[path]:
+                return m.group(2) if m.group(2) in modkeys else None
+            return mods[path].get(chain) or (chain if expr is None and chain in modkeys else None)
         return None
 
     def of_module(name, key):
-        return [d for d in defs.get(name, [])
-                if d["path"] in ours and d["form"] != "bare" and d["table"] and modkey(d["path"], d["table"]) == key]
+        return [d for d in defs.get(name, []) if d["path"] in ours and d["form"] != "bare" and d["table"]
+                and modkey(d["path"], d["table"], d["pos"]) == key]
 
     def receiver(text, at):
         """at 是呼叫名稱前面那個 . 或 : 的位置。回接收者（a.b 這種一串名字）；前面是運算式（x[i].f、g().f）回 None。"""
@@ -236,19 +259,20 @@ def short_calls(extra=()):
             if sep == "":
                 here = [d for d in named if d["form"] == "bare" and d["path"] == path]
                 scoped = [d for d in here if d["local"] and d["pos"] < m.start() < d["end"]]
-                alias = fn_alias[path].get(name)
+                alias = alias_of(path, name, m.start())
+                alias = alias if alias and re.fullmatch(rf"{name_re}(?:\.{name_re})+", alias) else None
                 if scoped:
                     cands = [max(scoped, key=lambda d: d["pos"])]
                 elif [d for d in here if not d["local"]]:   # 先宣告、後面才 `f = function` 的
                     cands = [d for d in here if not d["local"]]
-                elif alias and alias[0] < m.start():
-                    key = modkey(path, alias[1].rpartition(".")[0])
-                    cands = of_module(alias[1].rsplit(".", 1)[1], key) if key else []
+                elif alias:
+                    key = modkey(path, alias.rpartition(".")[0], m.start())
+                    cands = of_module(alias.rsplit(".", 1)[1], key) if key else []
                     sep = "."
                 else:
                     cands = [d for d in named if d["form"] == "bare" and not d["local"] and d["path"] in ours]
             else:
-                key = chain and modkey(path, chain)
+                key = chain and modkey(path, chain, m.start())
                 mine = [d for d in named if d["form"] != "bare" and d["path"] == path]
                 if key:
                     cands = of_module(name, key)
@@ -268,14 +292,16 @@ def short_calls(extra=()):
                 d = min(cands, key=lambda d: d["need"])
                 line = text.count("\n", 0, m.start()) + 1
                 tail = expands(last)
-                hits.append((f"{rel}|{name}|{count}{'~' if tail else '<'}{need}",
+                callee = re.match(rf"\s*({chain_re}(?::{name_re})?)\s*\(", last) if tail else None
+                hits.append((f"{rel}|{name}|{count}{'~' if tail else '<'}{need}" + (f"|{callee.group(1) if callee else '?'}" if tail else ""),
                              f"{rel}:{line}  {name} 傳 {count} 個{'（最後一個是呼叫，它回幾個值要自己看）' if tail else ''}、"
-                             f"定義 {need} 個（{os.path.basename(d['path'])}:{d['line']}）"))
+                             f"定義 {need} 個（{os.path.basename(d['path'])}:{d['line']}）", d["path"] in ours))
     return hits
 
 
 ARGS_TITLE = "呼叫自己的 Lua 函式時固定參數傳齊（Kahlua 不補 nil）"
 ARGS_BASE = os.path.join(REPO, "scripts", "kahlua_args_baseline.txt")
+ARGS_FIXTURE = os.path.join(REPO, "scripts", "kahlua_args_fixture.lua")
 
 
 def check_args(rebase):
@@ -284,17 +310,26 @@ def check_args(rebase):
     LuaCallFrame.java:96-109；家族 pitfalls「少傳的參數不保證是 nil」）。標準 Lua 的 harness 驗不到。
     實例：2026-10-31 宣傳片情境 cellsX(4, 8, 1) 的 z 收到 2；2026-11-19 L.saveFirst 加了選用的第三個固定參數、
     既有呼叫點只傳兩個（第二條審查線讀碼抓到）。
-    既有的少傳記在 scripts/kahlua_args_baseline.txt（每行：次數、檔|函式|傳幾個<要幾個），只有比它多才 FAIL。"""
-    hits = short_calls()
+    既有的少傳記在 scripts/kahlua_args_baseline.txt（每行：次數、檔|函式|傳幾個<要幾個），只有比它多才 FAIL。
+    每次先拿 scripts/kahlua_args_fixture.lua 驗檢查本身：標 --! 的行要報、其他行不報。"""
+    hits = short_calls([ARGS_FIXTURE])
+    fixture = os.path.relpath(ARGS_FIXTURE, REPO).replace(os.sep, "/")
+    with open(ARGS_FIXTURE, encoding="utf-8") as fh:
+        want = {i for i, line in enumerate(fh, 1) if "--!" in line}
+    seen = {int(where.split("  ")[0].rsplit(":", 1)[1]) for key, where, _ in hits if key.startswith(fixture + "|")}
+    if seen != want:
+        print(f"  FAIL  {ARGS_TITLE}：檢查本身壞了（{fixture} 標 --! 的行 {sorted(want)}，實際報的行 {sorted(seen)}）")
+        return 1
+    hits = [h for h in hits if not h[0].startswith(fixture + "|")]
     now = {}
-    for key, where in hits:
+    for key, where, _ in hits:
         now.setdefault(key, []).append(where)
     if rebase:
         with open(ARGS_BASE, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("# 既有的「固定參數少傳」呼叫（scripts/verify_local.py 的 check_args）。只會變少：改掉一處就重跑\n"
                      "# python scripts/verify_local.py --rebase-args。不要為了讓新的呼叫通過而重跑：少的補 nil 傳齊，\n"
-                     "# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定回夠多個值\n"
-                     "# （key 裡是 ~）才加進來。\n")
+                     "# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定每條路都回夠多個值\n"
+                     "# （key 裡是 ~，後面是那個呼叫的函式名）才加進來。\n")
             for key in sorted(now):
                 fh.write(f"{len(now[key])}\t{key}\n")
         print(f"  note  {ARGS_TITLE}：baseline 重寫，{len(hits)} 處")
@@ -377,8 +412,11 @@ def check_rules():
 
 
 if __name__ == "__main__":
-    if "--args-also" in sys.argv:   # 盤點用：連 harness、E2E 情境裡的呼叫一起列，只列不判
-        for _, where in short_calls(sys.argv[sys.argv.index("--args-also") + 1:]):
-            print(where)
+    if "--args-also" in sys.argv:   # 盤點用：連 harness、E2E 情境裡的呼叫一起列（只列對到 MOD 定義的），只列不判
+        found = short_calls(sys.argv[sys.argv.index("--args-also") + 1:])
+        for _, where, mod in found:
+            if mod:
+                print(where)
+        print(f"另有 {sum(1 for h in found if not h[2])} 處是這些檔自己的函式被少傳（沒列）")
         sys.exit(0)
     sys.exit(check_rules() | check_args("--rebase-args" in sys.argv))

@@ -1214,7 +1214,8 @@ end
 -- ===== 套用篩選 =====
 
 -- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）。name＝那張圖：ENTITY 時查它有沒有建造配方
-function W.whyText(code, arg, ...)
+-- 第二個參數不叫 arg：標準 Lua 5.1 的 vararg 函式有一個隱含的區域變數 arg，會遮住同名的參數（Kahlua 沒有）
+function W.whyText(code, detail, ...)
     local name = ...
     if code == "ENTITY" and name then
         -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件；審查 1109 Claude）：別叫玩家去學配方。
@@ -1224,15 +1225,15 @@ function W.whyText(code, arg, ...)
     end
     if code == "DISABLED_KIND" then
         -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
-        if Entry.KIND_OFF[arg] then code = "OFF_DEFAULT" end
-        arg = Names.kind(arg)
-    elseif code == "DISABLED_SOURCE" and arg then
-        arg = W.modName(arg)
-    elseif code == "ENTITY" and arg then
+        if Entry.KIND_OFF[detail] then code = "OFF_DEFAULT" end
+        detail = Names.kind(detail)
+    elseif code == "DISABLED_SOURCE" and detail then
+        detail = W.modName(detail)
+    elseif code == "ENTITY" and detail then
         -- 配方的顯示名稱（Translator.getRecipeName：沒有翻譯時回原名；LuaManager.java:8784-8789、Translator.java:691-701）
-        arg = getRecipeDisplayName(arg)
+        detail = getRecipeDisplayName(detail)
     end
-    return getTextOrNull("IGUI_MBLD_Why_" .. tostring(code), tostring(arg or "?")) or getText("IGUI_MBLD_Why_UNKNOWN")
+    return getTextOrNull("IGUI_MBLD_Why_" .. tostring(code), tostring(detail or "?")) or getText("IGUI_MBLD_Why_UNKNOWN")
 end
 
 -- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（審查 1031 HIGH：原本叫玩家試較短的字，照做也找不到）：
