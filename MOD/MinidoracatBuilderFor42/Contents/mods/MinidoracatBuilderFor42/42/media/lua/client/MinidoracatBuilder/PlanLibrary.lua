@@ -660,7 +660,7 @@ local function other(cur, plan)
     return cur ~= nil and cur ~= plan and not (plan.file ~= nil and cur.file == plan.file)
 end
 
--- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張；擺到地上當成「搬」地上那張）
+-- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張；從藍圖庫擺這個檔當成「搬」地上那張，L.placeFile）
 local function editing(file)
     local PM = B.PlanMode
     local cur = PM and PM.plan and PM.plan()
@@ -769,6 +769,8 @@ function L.rename(file, name)
     if used[file] then L.markUsed(nf, file) end
     if why == "OLD_LEFT" then L.tell(getText("IGUI_MBLD_Lib_OldLeft", file)) end
     L.touch(nf)
+    -- 藍圖庫的檔變了：開著的存檔三選一作廢（它手上那份的檔名可能已經被別張重用，答了會寫進別張的檔）
+    L.closeChooser()
     return nf
 end
 
@@ -786,6 +788,7 @@ function L.remove(file)
         used[file] = nil
         saveUsed()
     end
+    L.closeChooser() -- 同 L.rename
     return true
 end
 
@@ -1473,7 +1476,8 @@ end
 
 -- 「存進藍圖庫」「擺到地上」。會蓋掉藍圖庫裡的檔之前先問覆蓋或另存（L.askOverwrite）：
 -- 從檔案讀的、換過項目（擺到地上也問：定位後的存檔會寫回那個檔）；分享碼存進藍圖庫、藍圖庫裡剛好一張同名。
--- 要蓋的那張正在地上規劃時不問，照 L.store 另存成新的一張。從檔案讀的、沒換過項目存進藍圖庫：檔已經在藍圖庫裡，
+-- 要蓋的那張正在地上規劃時不問：存進藍圖庫照 L.store 另存成新的一張，擺到地上 PlanMode.place 也把這份當成另一張
+-- （之後另取檔名），沒有檔會被蓋掉。從檔案讀的、沒換過項目存進藍圖庫：檔已經在藍圖庫裡，
 -- 不重寫（匯入框不擋畫面，開著的時候那個檔可能存了新的內容）。其他照舊（分享碼存成新的一張）。
 -- 三選一與名稱框也不擋畫面：按下去時匯入框已經關了或換了一份就不做
 function Imp:finish(how)
@@ -1499,7 +1503,7 @@ function Imp:finish(how)
     local file = plan.file
     if file then
         if plan.rev ~= self.rev then
-            if place or not editing(file) then
+            if not editing(file) then
                 return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
             end
         elseif not place and PlanFile.exists(file) then
@@ -1707,7 +1711,7 @@ end
 function L.choose(pn, o)
     local UI = L.ui()
     if not UI then return nil end
-    discard("chooser")
+    L.closeChooser()
     local ok, err = pcall(function()
         local theme = UI.Theme.create({ variant = "dark" })
         local font = UIFont.Small
@@ -1761,8 +1765,12 @@ function L.choose(pn, o)
     return true
 end
 
+-- 另存新檔的名稱框（L.namer）跟著關：它也不擋畫面，留著的話離開規劃再進來同一張，按確定還會另存、接著做
 function L.closeChooser()
     discard("chooser")
+    local box, UI = L.namer, L.ui()
+    L.namer = nil
+    if box and UI and UI.Dialog.close then UI.Dialog.close(box, false) end
 end
 
 -- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, onOverwrite(), onNew(新名稱)? }；
@@ -1772,7 +1780,7 @@ function L.askOverwrite(pn, o)
     local buttons = { { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = o.onOverwrite } }
     if o.onNew then
         buttons[2] = { text = getText("IGUI_MBLD_SaveAsNew"), onClick = function()
-            L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
+            L.namer = L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
                 input = { text = name }, ok = getText("IGUI_MBLD_SaveAsNew"), onYes = function(t) o.onNew(t or "") end })
         end }
     end

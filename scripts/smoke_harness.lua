@@ -15005,6 +15005,12 @@ end)()
         Dialog = { show = function(o)
             dialogs[#dialogs + 1] = o
             return o
+        end,
+        -- 照框架的 finish：只收一次、回呼 onResult(false)
+        close = function(d)
+            if not d or d.closed then return end
+            d.closed = true
+            if d.onResult then d.onResult(false) end
         end } }
     MinidoracatUI = { v1 = UI }
     if B.Window then B.Window.ui = function() return UI end end
@@ -15435,6 +15441,7 @@ end)()
         check(blanked == 1 and #dialogs == 0 and ground ~= nil and not L.visible(), "空白藍圖：地上沒有時直接開、不問")
         local fixed = sample("Fixed")
         for _, mode in ipairs({ "fixed", "edit" }) do
+            B.PlanMode.state = function() return mode end
             ground, blanked = fixed, 0
             L.newBlank(0)
             dialogs[#dialogs].onResult(false)
@@ -15449,6 +15456,7 @@ end)()
             dialogs[#dialogs].onResult(true)
             check(ground ~= fixed and ground ~= nil and blanked == 1, "空白藍圖（" .. mode .. "）：先收起再開新的")
         end
+        B.PlanMode.state = nil
         ground = nil
     end
 
@@ -15473,6 +15481,7 @@ end)()
             return true
         end
         B.PlanMode.saveAs = function(name)
+            if saveFail then return false, "WRITE" end
             savedAs, dirty = name, false
             return true
         end
@@ -15570,6 +15579,65 @@ end)()
         P.open(0)
         P.v:act("move")
         check(L.chooser == nil and picked == 1 and saved == 0, "反面：沒有沒存的改動時搬照舊、不問")
+        -- 另存也存不了：不接著做
+        reset()
+        saveFail = true
+        P.open(0)
+        P.v:act("move")
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Nope")
+        check(picked == 0 and savedAs == nil and P.visible(), "✗ 搬→另存新檔但存不了：不拿起來、面板留著")
+        saveFail = false
+        -- 收起→另存新檔、新的空白藍圖→取消
+        reset()
+        P.open(0)
+        P.v:act("clear")
+        dialogs[#dialogs].onResult(true)
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Kept")
+        check(savedAs == "Kept" and ground == nil and not P.visible(), "收起→另存新檔：照新名稱另存、接著收起")
+        reset()
+        L.newBlank(0)
+        dialogs[#dialogs].onResult(true)
+        press("UI_Cancel")
+        check(blanked == 0 and ground == a and saved == 0, "新的空白藍圖→取消：地上那張照留、沒存、沒開新的")
+        -- 另存的名稱框也不擋畫面：離開規劃（PlanMode 的 leaveEdit 會 L.closeChooser）時跟著關，
+        -- 不然完成後再進規劃同一張，舊名稱框按確定還會另存、接著做（審查第 9 輪）
+        reset()
+        P.open(0)
+        P.v:act("move")
+        press("IGUI_MBLD_SaveAsNew")
+        local box = dialogs[#dialogs]
+        L.closeChooser()
+        check(box.closed == true and savedAs == nil and picked == 0, "✗ 另存的名稱框開著時離開規劃：名稱框跟著關，不存、不拿起來")
+        -- 三選一開著時藍圖庫刪檔、改名：三選一作廢（手上那份的檔名可能被別張重用，答了會寫進別張的檔；審查第 9 輪）
+        three()
+        reset()
+        L.placePlan(L.loadFile("Bravo.txt"), 0)
+        dialogs[#dialogs].onResult(true)
+        check(L.chooser ~= nil, "（準備）換一張→確認：三選一開著")
+        check(L.remove("Bravo.txt") == true and L.chooser == nil and placed == 0 and ground == a, "✗ 三選一開著時藍圖庫刪檔：三選一關掉、不換")
+        L.placePlan(L.loadFile("Alpha.txt"), 0)
+        dialogs[#dialogs].onResult(true)
+        check(L.chooser ~= nil, "（準備）再換一張→確認：三選一開著")
+        check(L.rename("Charlie.txt", "Zed") ~= nil and L.chooser == nil and placed == 0, "✗ 三選一開著時藍圖庫改名：三選一關掉、不換")
+        -- 回呼裡再開一個三選一：新的留著、照樣能答
+        local second = false
+        L.askOverwrite(0, { name = "One", onOverwrite = function()
+            L.askOverwrite(0, { name = "Two", onOverwrite = function() second = true end })
+        end })
+        press("IGUI_MBLD_SaveOverwrite")
+        check(L.chooser ~= nil and not second, "回呼裡再開三選一：新的那個留著")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(second and L.chooser == nil, "新的那個照樣能答")
+        -- 規劃中、沒有沒存的改動，從藍圖庫擺同一個檔：不問，擺的是地上那張
+        three()
+        reset()
+        dirty = false
+        ground = L.loadFile("Alpha.txt")
+        cur = ground
+        L.placeFile("Alpha.txt", 0)
+        check(L.chooser == nil and #dialogs == 0 and placed == 1 and ground == cur, "規劃中沒改動擺同一個檔：不問，擺的是地上那張")
         -- 三選一開不出來：不替玩家決定，只說先按完成或取消
         reset()
         local realAsk = L.askOverwrite
@@ -15864,6 +15932,17 @@ end)()
         imp(p, p.rev)
         L.imp:finish("place")
         check(L.chooser == nil and placed == 1, "✗ 從檔案讀的、沒換過項目按擺到地上：不問")
+        -- 審查第 9 輪：地上正在規劃同一個檔時不問（PlanMode.place 會把這份當成另一張、之後另取檔名，沒有檔會被蓋掉；
+        -- 問了的話接著還會問地上那張怎麼存，兩個框長得一樣）
+        ground, placed = L.loadFile("Alpha.txt"), 0
+        B.PlanMode.state = function() return "edit" end
+        p = L.loadFile("Alpha.txt")
+        imp(p, p.rev)
+        fresh(p)
+        L.imp:finish("place")
+        B.PlanMode.state = nil
+        check(L.chooser == nil and placed == 1, "✗ 換過項目按擺到地上、地上正在規劃同一個檔：不問覆蓋或另存")
+        L.closeChooser()
         -- 從檔案讀的、沒換過：檔已經在藍圖庫裡，不重寫（匯入框開著的時候那個檔可能存了新的內容）
         ground, placed = nil, 0
         three()
