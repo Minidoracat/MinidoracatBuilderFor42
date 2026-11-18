@@ -688,7 +688,8 @@ local function candidates(player, d, sw)
 end
 
 -- 回給玩家的那一條線路：{ q, who, id, s = { 開關 }, l = { 燈 }, cand（要的話）}
-local function reply(player, q, d, id, extra, sw, cand)
+local function reply(player, q, d, id, extra, ...)
+    local sw, cand = ...
     local c = d and id and d.c[id]
     local args = { q = q, who = player:getOnlineID(), id = c and id or nil, s = c and sideList(c.s) or {},
         l = c and sideList(c.l) or {} }
@@ -698,7 +699,8 @@ local function reply(player, q, d, id, extra, sw, cand)
 end
 
 -- 拒絕：回碼（extra.side＝"t"／"l" 表示是目標或線路上的燈出錯，不是開關本身）。log 每人每個碼 LOG_MS 最多一行，限流不記
-local function refuse(player, q, code, extra)
+local function refuse(player, q, code, ...)
+    local extra = ...
     local k, t = server().keyOf(player) .. ":" .. code, now()
     if code ~= "RATE_LIMITED" and not cooling(quietUntil[k], t, Circuits.LOG_MS) then
         quietUntil[k] = t

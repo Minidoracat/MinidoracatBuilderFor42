@@ -333,7 +333,7 @@ end
 -- 合計 → 說明行 { { 句子, 色名, ws＝要附「開工作坊頁」的編號 }… }。all＝true：四種狀態都列（匯入框），否則只列不能蓋的
 function L.describe(s, all)
     local out = {}
-    local function add(t, tok, ws) out[#out + 1] = { t, tok, ws = ws } end
+    local function add(t, tok, ...) out[#out + 1] = { t, tok, ws = (...) } end
     if all or s.ok < s.n then add(getText("IGUI_MBLD_Imp_Ok", tostring(s.ok)), s.ok == s.n and "success" or "text") end
     if all or s.missing > 0 then add(getText("IGUI_MBLD_Imp_Missing", tostring(s.missing)), s.missing > 0 and "warning" or "textMuted") end
     for i, g in ipairs(s.mods) do
@@ -1412,7 +1412,8 @@ local function sync(self)
 end
 
 -- 分享碼優先（已讀到的、再來是文字欄裡打到一半的）；都沒有才讀選的檔
-function Imp:check(pasted)
+function Imp:check(...)
+    local pasted = ...
     sync(self)
     self.pasted = pasted == true
     local file = self.fileDD:getSelected()

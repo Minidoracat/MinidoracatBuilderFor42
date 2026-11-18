@@ -296,7 +296,8 @@ end
 -- （窗簾）技能夠就每輪都中）, 第一個 Material 的定義, elec（有電工的拆解定義）。
 -- 本工具拆除的種類（不能搬、不照材質拆）照退料表退 1..v 件，不看這裡的 back（Cost.of 的 builder）。
 local NOT_BUILDER = { door = true, window = true, curtain = true }
-local function scrapInto(kind, p, out, perkOf, chanceOf)
+local function scrapInto(kind, p, out, perkOf, ...)
+    local chanceOf = ...
     local defs = ISMoveableDefinitions and ISMoveableDefinitions:getInstance()
     if not defs then return false, false end
     local size = p:has("CanScrap") and (p:get("ScrapSize") or "Medium") or nil

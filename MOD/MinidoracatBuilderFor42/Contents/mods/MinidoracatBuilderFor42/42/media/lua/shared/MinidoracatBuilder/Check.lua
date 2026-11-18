@@ -49,7 +49,8 @@ end
 -- 硬核「需要技能」（沙盒 RequireSkill）：回 技能 ID, 要的等級, 玩家的等級, 夠不夠；沒打開或這種不要求技能回 nil。
 -- 建造作弊（Materials.cheat，同扣料）當夠。Check.item、建造視窗詳情與 Check.affordable 共用。levels＝Materials.summary
 -- 的 S.levels（技能 ID → 等級，讀到才查並記下），給了就照它讀，摘要比對（Materials.same）才看得出等級變了
-function Check.skill(player, kind, spr, levels)
+function Check.skill(player, kind, spr, ...)
+    local levels = ...
     if setting("RequireSkill", false) ~= true then return nil end
     local perk, level = Cost.skillOf(kind, spr)
     if not perk then return nil end
@@ -320,7 +321,8 @@ end
 -- 全部格子。S＝Materials.summary 的結果；multiplier 省略時用沙盒 CostMultiplier。回 missing, tools, total, skill
 -- （missing、tools 同 Materials.short；skill＝技能不夠時 { perk, level, have }；建造作弊時都夠）。
 -- 項目解析不了（不存在、不能蓋、被管理員關掉）回 nil, nil, nil：total 是 nil 就是不能蓋，不是夠料。
-function Check.affordable(S, name, multiplier)
+function Check.affordable(S, name, ...)
+    local multiplier = ...
     local entry = Entry.resolve(name)
     if not entry then return nil, nil, nil end
     local sprites = {}

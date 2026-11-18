@@ -327,7 +327,8 @@ local live = {} -- { { pn, cursor, L, player, sq, at }, … }：游標還在，�
 
 -- 擋不擋放：同原版視窗建游標時（ISBuildPanel.lua:329-336）：材料、工具、技能或學過不夠、太暗，或動作還在跑。
 -- row＝能拖一排的游標：動作在跑也不擋，再放一次取代還沒蓋的（同圖塊項目；Recipes.build）
-local function blocked(L, player, row)
+local function blocked(L, player, ...)
+    local row = ...
     return (not row and L:isCraftActionInProgress()) or not (L:canPerformCurrentRecipe() or player:isBuildCheat())
 end
 
@@ -726,7 +727,8 @@ end
 
 -- 開始一排：每人只留一個請求（同 Client.build）：這個角色還沒輪完的圖塊建造、拆除請求作廢，清掉角色的動作佇列（正在蓋的
 -- 那格當場收尾，實測），舊的一排換成這一排。cells＝{ { x, y, z, d, spr }, … }；run＝照圖蓋送的（Recipes.runCells）：{ onDone }
-local function startRow(o, cells, run)
+local function startRow(o, cells, ...)
+    local run = ...
     local pn, Client, player = o.player, MinidoracatBuilder.Client, o.character
     -- 照「停下」處理：圖塊建造排著的全部取消（放開前標籤已寫出格數，Cursor.cancels 讀 Queue）
     local Q = MinidoracatBuilder.Queue
@@ -803,7 +805,8 @@ local function builtAt(c)
 end
 
 -- 一排結束（蓋完、停下、被取代）：拿掉；照圖蓋送的（runCells）把結果交給它的 onDone，只叫一次
-endRow = function(pn, row, why)
+endRow = function(pn, row, ...)
+    local why = ...
     if rows[pn] == row then rows[pn] = nil end
     local f = row.onDone
     if not f then return end
@@ -818,7 +821,8 @@ end
 -- 原版不收這個動作，客戶端分不出來，
 -- 照圖塊項目的說法（Queue.tick）。原版不收動作時沒有收尾，這裡替它清掉進行中（同原版收尾，ISBuildingObject.lua:291-295）。
 -- 照圖蓋送的不通知，結果交給 onDone（Runner 自己總結）
-local function stop(pn, row, why)
+local function stop(pn, row, ...)
+    local why = ...
     endRow(pn, row, why)
     local L = row.cursor.buildPanelLogic
     if not row.doneAt and L:isCraftActionInProgress() then L:stopCraftAction() end

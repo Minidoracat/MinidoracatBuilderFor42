@@ -245,7 +245,8 @@ local function newGhosts()
     return { n = 0, x = {}, y = {}, z = {}, spr = {}, yoff = {}, tr = {}, tg = {}, tb = {}, fr = {}, fg = {}, fb = {}, m = {} }
 end
 
-local function ghost(g, x, y, z, spr, yoff, tint, floor, mark)
+local function ghost(g, x, y, z, spr, yoff, tint, floor, ...)
+    local mark = ...
     local i = g.n + 1
     g.n = i
     g.x[i], g.y[i], g.z[i], g.spr[i], g.yoff[i], g.m[i] = x, y, z, spr, yoff, mark or 0

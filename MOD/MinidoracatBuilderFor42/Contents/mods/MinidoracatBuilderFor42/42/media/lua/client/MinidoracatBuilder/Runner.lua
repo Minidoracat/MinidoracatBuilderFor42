@@ -127,7 +127,8 @@ local function reasonText(code, detail, extra)
 end
 
 -- 跳過的片的原因：拒絕碼照 Messages；本檔與 PlanCheck 自己的碼（DARK、COVER、DOOR_WIDE 用 PlanCheck 那幾句）另有一句
-function Runner.codeText(code, extra)
+function Runner.codeText(code, ...)
+    local extra = ...
     if Messages.CODES[code] then return Messages.refusal(code, extra) end
     code = tostring(code)
     return getTextOrNull("IGUI_MBLD_RunSkip_" .. code) or getTextOrNull("IGUI_MBLD_Refuse_" .. code)
@@ -243,7 +244,8 @@ local function cancelOurs()
     end
 end
 
-local function halt(state, code, detail, extra, quiet)
+local function halt(state, code, ...)
+    local detail, extra, quiet = ...
     if not active() and st.state ~= "paused" then return end
     cancelOurs()
     st.state, st.reason, st.detail, st.extra = state, code, detail, extra
@@ -579,7 +581,8 @@ end
 
 -- ---------------------------------------------------------------- 挑批
 
-local function skip(p, code, extra)
+local function skip(p, code, ...)
+    local extra = ...
     st.skip[p] = { code = code, extra = extra }
 end
 

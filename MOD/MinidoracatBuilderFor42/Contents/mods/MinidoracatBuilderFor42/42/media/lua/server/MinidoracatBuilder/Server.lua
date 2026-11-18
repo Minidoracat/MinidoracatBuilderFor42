@@ -53,7 +53,8 @@ function Server.send(player, cmd, args)
 end
 
 -- log 的 at＝擋住的那一格（extra 帶 x, y, z 的原因碼）；沒有時是這個請求第 i 項的錨點；都沒有（i＝0 的整批拒絕）不寫
-function Server.refuse(player, n, i, code, extra)
+function Server.refuse(player, n, i, code, ...)
+    local extra = ...
     local at = extra and tonumber(extra.x) and extra
     if not at then
         local it = Server.intents[keyOf(player)]
@@ -535,7 +536,8 @@ end
 Server.unbuilds = {}
 
 -- 這個人整個不能拆（OFF、NOT_ALLOWED、STATE、NO_INTENT）或請求本身被拒（i＝0）
-local function dismantleRefused(player, n, i, code, extra)
+local function dismantleRefused(player, n, i, code, ...)
+    local extra = ...
     print(LOG .. "UNBUILD REFUSE user=" .. who(player) .. " n=" .. tostring(n) .. " i=" .. tostring(i) .. " code=" .. code)
     local args = { n = n, i = i, code = code }
     for k, v in pairs(extra or {}) do args[k] = v end

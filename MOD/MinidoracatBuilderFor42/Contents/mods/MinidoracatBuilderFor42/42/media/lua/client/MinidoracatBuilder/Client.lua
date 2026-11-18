@@ -56,7 +56,8 @@ end
 -- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；其他不站在 own（同一件的其他格）上，
 -- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
 -- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
-local function walkNear(player, kind, north, x, y, z, own)
+local function walkNear(player, kind, north, x, y, z, ...)
+    local own = ...
     local cell = getCell()
     if Entry.EDGE[kind] then
         local sq = cell:getGridSquare(x, y, z)
@@ -287,7 +288,8 @@ local function tell(b, s)
 end
 
 -- 輪完（或被拒、停下）：原版拆解的那幾件照物件還在不在格子上算拆好沒；還沒輪到的算停下。onDone(summary) 或自己通知。
-local function finish(b, refused)
+local function finish(b, ...)
+    local refused = ...
     if Client.pendingUnbuild ~= b then return end
     Client.pendingUnbuild = nil
     for _, it in ipairs(b.scrapping) do
@@ -382,7 +384,8 @@ end
 -- 全部輪完、被拒或停下時呼叫 onDone({ done, total, skipped = { [碼] = 件數 }, refund = { [fullType] = 件數 }, stopped,
 -- refused＝整筆被拒的碼或 nil, res = { [items 的那一項] = true（拆好）或跳過的碼；沒輪到的沒有 } })；沒給 onDone 時自己跳通知。
 -- 會清掉玩家目前排著的動作、取代還沒輪完的建造或拆除。回 nonce。
-function Client.dismantleMany(player, items, onDone)
+function Client.dismantleMany(player, items, ...)
+    local onDone = ...
     lastNonce = lastNonce % 2000000000 + 1
     local n = lastNonce
     local list, index, t = {}, {}, {}

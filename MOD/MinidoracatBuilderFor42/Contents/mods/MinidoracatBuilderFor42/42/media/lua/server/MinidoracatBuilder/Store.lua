@@ -39,7 +39,8 @@ local byId = {}
 -- 位置（edge＝0 那一格、1..3 那一格某條邊的牆）→ 一個數字鍵：x、y 各 22 bits（±2,097,152 格）、z 6 bits、edge 2 bits，
 -- 共 52 bits，double 記得準。超出範圍回 nil（那一筆不記）
 local HALF, SPAN = 2097152, 4194304
-function Store.pos(x, y, z, edge)
+function Store.pos(x, y, z, ...)
+    local edge = ...
     if x < -HALF or x >= HALF or y < -HALF or y >= HALF or z < -32 or z > 31 then return nil end
     return (((x + HALF) * SPAN + (y + HALF)) * 64 + (z + 32)) * 4 + (edge or 0)
 end
@@ -327,7 +328,8 @@ end
 -- 沒有比那一格在舊檔原本的大：舊表也記新值（先 del 再 put 的換地板也算），分片的檔整個沒寫成（不在）時下一次開服照舊表
 -- 補回的是新的那一筆。分片的檔留著上一次存的內容時照分片（adopt 不比內容：哪一邊比較新分不出來），那一筆回到上一次存的
 -- 樣子。其他情形從舊表刪掉：舊表所在的主系統存檔在搬完之前只能變小，不能被撐過引擎的上限
-local function settle(S, k, v)
+local function settle(S, k, ...)
+    local v = ...
     local t, ok, cap = slot(S, k)
     if t then
         if v ~= nil and S.mirror and vsize(v) <= cap then t[ok] = v else t[ok] = nil end

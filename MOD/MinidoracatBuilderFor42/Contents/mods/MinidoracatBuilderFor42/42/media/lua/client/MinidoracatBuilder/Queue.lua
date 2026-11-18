@@ -32,13 +32,15 @@ local function perBatch()
 end
 
 -- title 省略＝「無法建造」（Messages.toast）
-local function tell(player, code, extra, title)
+local function tell(player, code, ...)
+    local extra, title = ...
     if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知，不再疊一則
     Messages.toast(player, Messages.refusal(code, extra), title)
 end
 
 -- 整組結束（蓋完、停下、被拒、被取消）：交給 onDone 一次。why＝nil（蓋完）或 { refused, extra, noRoom }
-local function finish(g, why)
+local function finish(g, ...)
+    local why = ...
     if g.done then return end
     g.done = true
     if not g.onDone then return end
@@ -83,8 +85,8 @@ end
 -- 省略就不畫排隊虛影；overlap＝疊放（Client.build）。opts.owner＝"drag"（預設）或 "plan"，opts.onDone(sum) 整組結束時叫一次。
 -- 手拖的進來時先取消照圖蓋的（玩家動手＝照圖蓋暫停）。沒有在跑的就立刻送，有就接在後面。
 -- 回 組的 id 與（立刻送出時的）nonce；立刻送卻送不出去回 nil, 原因碼
-function Queue.push(player, name, anchors, parts, overlap, opts)
-    opts = opts or {}
+function Queue.push(player, name, anchors, parts, overlap, ...)
+    local opts = (...) or {}
     local owner = opts.owner or "drag"
     local pn = player:getPlayerNum()
     local s = slots[pn]
@@ -408,7 +410,8 @@ Client.onResult = Queue.onResult
 
 -- 停下：這位玩家排著的全部取消，手拖的說一次（蓋好幾格、或卡在哪一格）。noRoom＝停在旁邊沒空位的第幾格；
 -- byUser＝確定是玩家自己取消的，一格都沒蓋也說「停了 0／N」，不說走不過去
-local function halt(s, g, noRoom, byUser)
+local function halt(s, g, noRoom, ...)
+    local byUser = ...
     stopAll(s, g, { noRoom = noRoom })
     if g.owner ~= "drag" then return end
     local p = s.player

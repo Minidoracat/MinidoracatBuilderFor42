@@ -87,7 +87,8 @@ local function compose(name, kind, short)
     return shown
 end
 
-local function lookup(short, name, kind)
+local function lookup(short, name, ...)
+    local kind = ...
     local t = short and shortCache or cache
     local s = t[name]
     if s then return s end
@@ -102,7 +103,8 @@ local function lookup(short, name, kind)
 end
 
 -- name＝項目 ID（sprite 名稱，或建造配方的 recipe:…）；kind 選填（呼叫端已經知道就傳，省一次分類）
-function Names.of(name, kind)
+function Names.of(name, ...)
+    local kind = ...
     return lookup(false, name, kind)
 end
 

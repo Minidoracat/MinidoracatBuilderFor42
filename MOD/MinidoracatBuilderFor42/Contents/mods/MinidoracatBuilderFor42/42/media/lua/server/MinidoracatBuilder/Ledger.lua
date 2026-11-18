@@ -184,7 +184,8 @@ end
 -- 發一個新編號給燈或家電，寫進帳本與物件（items 照抄），回編號。記不進去時編號不用掉、物件不動、記 log，之後這件本工具
 -- 拆不了：回 nil＝每一片都滿了（之後放得下還能記），回 false＝這一筆讀不懂（退料表不對、位置超出範圍）。
 -- old＝這一筆是從 0.3.0 以前的舊紀錄搬來的（下一次開服靠它確認舊紀錄可以刪）
-local function issue(inst, obj, sq, items, old)
+local function issue(inst, obj, sq, items, ...)
+    local old = ...
     local id = inst.lamps.next
     local e = { p = pos(sq), s = obj:getSprite():getName(), i = items, o = old }
     local ok = valid(e, id)

@@ -577,7 +577,8 @@ end
 
 -- 一項的子種類（p＝圖塊屬性，可能是 nil；name＝圖塊名，只有 NAME_SUBS 的種類用）。旗標要 IsoFlagType（bed），其他是字串鍵。
 -- 容器回 "n:<原版顯示名>"：顯示名相同的型別併成一組，原版沒有翻譯的歸 other
-function W.subOf(kind, p, name)
+function W.subOf(kind, p, ...)
+    local name = ...
     if kind == "light" then
         if not p then return "lamp" end
         if B.Rules.switchProps(p) then return "switch" end
@@ -1084,7 +1085,8 @@ function W.turnHint()
 end
 
 -- 格子的提示框與手把焦點說明：「名稱 · 還缺材料」
-function W.tipOf(v, name, short)
+function W.tipOf(v, name, ...)
+    local short = ...
     if short == nil then short = v.dim[name] end
     local s = Names.of(name)
     if short == true then
@@ -1459,7 +1461,8 @@ local function text(ops, s, x, y, c, font)
 end
 
 -- 一段字最多 max 行（預設兩行：名稱、來源、佔地這類短欄位放不下就截字加省略號）；回下一行的 y
-local function para(v, ops, s, x, y, w, col, max)
+local function para(v, ops, s, x, y, w, col, ...)
+    local max = ...
     for _, line in ipairs(wrapMax(v.UI.Text, s, w, v.font, max or 2)) do
         text(ops, line, x, y, col, v.font)
         y = y + v.fh + 4
@@ -3263,7 +3266,8 @@ function W.create(UI)
         onChange = function(_, n) MinidoracatBuilder.Window.setPerRow(n) end })
     win:addChild(v.rowSlider)
     -- 入口列（W.layout 排在材料篩選下面）：給了寬度建，setTitle 不會照標題重算寬度；先照標題量一次（w），窄的時候只放圖示
-    local function entry(key, icon, fn, avail, style)
+    local function entry(key, icon, fn, avail, ...)
+        local style = ...
         local title = getText(key)
         local b = UI.Button.new({ x = 0, y = 0, width = 100, title = title, icon = icon, style = style, theme = theme,
             tooltip = getText(key .. "_Tip"), onClick = fn })

@@ -678,7 +678,8 @@ end
 
 -- 從 SandboxVars 重讀。自己的套用成功、按「還原」：草稿清掉。重新打開面板、設定被別人或快捷鈕改了：keep＝true，草稿只留
 -- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動，審查 1116 #6）
-function Panel:reload(keep)
+function Panel:reload(...)
+    local keep = ...
     local s, old = Entry.settings(), keep and self.edit
     local b = { kinds = {}, srcOff = parseSet(s.DisabledSources), tsOff = parseSet(s.DisabledTilesets), rules = {},
         rawSrc = s.DisabledSources or "", rawTs = s.DisabledTilesets or "" }

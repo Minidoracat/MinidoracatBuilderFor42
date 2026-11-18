@@ -272,7 +272,8 @@ end
 --   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、車庫門頭片與雙開門
 --     第 1 片、坡道的頭片），能蓋才給。
 --     那張也不能蓋時改給它能蓋的那張，不然 code／arg 改說它的原因（只往下查一層；nested 是內部用的）
-function Entry.why(name, nested)
+function Entry.why(name, ...)
+    local nested = ...
     local entry, res = Entry.resolve(name)
     if entry then return nil end
     local spr = Entry.sprite(name)

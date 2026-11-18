@@ -38,7 +38,8 @@ Dismantle.ours = mine
 
 -- 圖的種類與拆除方式（Rules.classify、Cost.refund；種類是 nil 時兩個都 nil）。兩個都只看圖，memo（選填，一次掃描用的空表）
 -- 照 sprite 名稱記住，一區拆除的預覽整區幾千件同一張圖只算一次。
-function Dismantle.classOf(spr, memo)
+function Dismantle.classOf(spr, ...)
+    local memo = ...
     local name = memo and spr:getName()
     local m = memo and memo[name]
     if not m then
@@ -52,7 +53,8 @@ end
 -- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
 -- memo 見 Dismantle.classOf。
-function Dismantle.kindOf(obj, memo)
+function Dismantle.kindOf(obj, ...)
+    local memo = ...
     local ours, floor = mine(obj)
     if not ours then return nil end
     if instanceof(obj, "IsoThumpable") and not obj:isDismantable() then

@@ -91,7 +91,8 @@ Messages.UNBUILD_CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, BAD_REQ
     PERM_DENIED = true, NOT_EMPTY = true, ATTACHED = true, FLOOR_IN_USE = true, STAIRS_TOP = true, NO_TOOL = true,
     INTERNAL = true, NO_ROOM = true, SCRAP = true }
 
-function Messages.unbuildRefusal(code, extra)
+function Messages.unbuildRefusal(code, ...)
+    local extra = ...
     if not Messages.UNBUILD_CODES[code] then return getText("IGUI_MBLD_UnbuildRefuse_Other", tostring(code)) end
     local key = "IGUI_MBLD_UnbuildRefuse_" .. code
     if code == "NO_TOOL" then return getText(key, Messages.tools(extra and extra.tools)) end
@@ -170,7 +171,8 @@ end
 -- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」；
 -- maxLines 省略＝8（超過的最後一行截字；Toast 只長到實際行數）。4 行時 CatLang 字型下英文的缺料句就放不下，
 -- 法、西、德文更寬
-function Messages.toast(player, text, title, maxLines)
+function Messages.toast(player, text, title, ...)
+    local maxLines = ...
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
         UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = maxLines or 8 })

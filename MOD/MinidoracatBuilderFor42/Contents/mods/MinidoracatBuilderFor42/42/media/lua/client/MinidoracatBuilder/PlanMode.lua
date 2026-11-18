@@ -1335,13 +1335,14 @@ local function buildBar(UI)
     local btnH = fh + 10
     local rows, row = {}, nil
     local function newRow() row = {} rows[#rows + 1] = row end
-    local function btn(key, fn, opts)
-        opts = opts or {}
+    local function btn(key, fn, ...)
+        local opts = (...) or {}
         row[#row + 1] = UI.Button.new({ title = getText(key), theme = theme, font = font, height = btnH, style = opts.style,
             active = opts.active, onClick = function() fn() end })
     end
     -- 每幀照現況畫的文字（片數、樓層、選了幾片）：寬度照 sample 量
-    local function text(sample, fn, warnFn)
+    local function text(sample, fn, ...)
+        local warnFn = ...
         local el = ISPanel:new(0, 0, tm:MeasureStringX(font, sample) + 4, btnH)
         el:initialise()
         el.background = false

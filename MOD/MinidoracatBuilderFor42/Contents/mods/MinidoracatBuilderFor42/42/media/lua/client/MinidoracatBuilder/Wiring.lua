@@ -299,7 +299,8 @@ end
 -- 送一個接線指令（op＝add／remove／join／room／clear，c＝點到的那一個）。回覆前不收下一個。onDone：成功（apply 之後），
 -- 或被拒而接線模式還開著時呼叫（限流不算）。busy 在送出前設：單機的回覆在 send 裡面就到了，回呼清掉 busy 之後
 -- 不能再被 send 的回傳值蓋回去
-function Wiring.op(op, c, onDone)
+function Wiring.op(op, ...)
+    local c, onDone = ...
     local m = Wiring.mode
     if not m or busy(m) then return nil end
     local args = { op = op, x = m.sw.x, y = m.sw.y, z = m.sw.z, e = m.sw.e, cand = true }

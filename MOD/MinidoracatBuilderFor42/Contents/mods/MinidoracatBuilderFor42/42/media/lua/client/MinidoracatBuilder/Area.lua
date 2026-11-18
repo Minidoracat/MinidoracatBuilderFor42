@@ -33,7 +33,8 @@ Area.ORDER = ORDER
 --   builder＝本工具拆（Dismantle.kindOf）；scrap＝原版拆解；pickup＝能搬，要原版撿起；none＝只能大錘砸；sheet＝原版移除窗簾。
 -- 門、窗簾是 IsoDoor／IsoCurtain（Place.build），不是 Dismantle.ours 認的物件，照 builderEntry 記號認：只拿來列在選單與
 -- 面板上（說明該用原版哪個動作），不拆，記號被改了也沒關係。memo 見 Dismantle.classOf
-function Area.route(obj, memo)
+function Area.route(obj, ...)
+    local memo = ...
     local kind = Dismantle.kindOf(obj, memo)
     if kind then return "builder", kind end
     if not (Dismantle.ours(obj) or ((instanceof(obj, "IsoDoor") or instanceof(obj, "IsoCurtain"))
@@ -116,7 +117,8 @@ Area.sendable = sendable
 -- limit：照順序查到這麼多件能送的就停，後面的不查（反正一次只送前 limit 件；游標預覽大範圍不必每件都查）。
 -- 一次 collect 內照圖名記住種類與拆除方式、照圖名組合記住缺的工具（Dismantle.classOf、Dismantle.check 的 toolMemo）：
 -- 結果和每件重算一樣，下一次 collect 重新開始（背包、沙盒變了照新的算）
-function Area.collect(x1, y1, x2, y2, z, player, limit)
+function Area.collect(x1, y1, x2, y2, z, player, ...)
+    local limit = ...
     if x1 > x2 then x1, x2 = x2, x1 end
     if y1 > y2 then y1, y2 = y2, y1 end
     local cell, seen, found, memo, tools = getCell(), {}, {}, {}, {}
@@ -388,7 +390,8 @@ function Panel.new(UI, playerNum, list, cw, ch)
     local innerW = w - 2 * PAD
     -- 內文與勾選框的位置（相對內文面板頂端）；字只在這裡組，render 只畫
     local rows, boxes, y = {}, {}, 0
-    local function para(text, color, flag)
+    local function para(text, color, ...)
+        local flag = ...
         local lines = UI.Text.wrap(text, innerW, font) -- 框架快取，只讀
         for i = 1, #lines do
             rows[#rows + 1] = { s = lines[i], y = y, c = color, over = flag }

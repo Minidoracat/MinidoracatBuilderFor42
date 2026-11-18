@@ -46,7 +46,8 @@ end
 -- 格子有這個屬性（旗標或字串鍵）。skip＝要被原地替換掉的那件（Check.item 的 info.replace）：格子的屬性是各物件屬性的
 -- 聯集（IsoGridSquare.RecalcProperties，IsoGridSquare.java:7250-7264），所以有 skip 時逐件看、跳過它。
 -- dirt＝也不算的物件清單（地下室 MOD 的外邊土牆，見 basement）
-local function has(sq, k, skip, dirt)
+local function has(sq, k, skip, ...)
+    local dirt = ...
     if not sq:has(k) then return false end
     if not skip and not dirt then return true end
     local objects = sq:getObjects()
@@ -839,7 +840,8 @@ function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
 end
 
 -- ---------------------------------------------------------------- 建立
-local function finish(sq, obj, index)
+local function finish(sq, obj, ...)
+    local index = ...
     sq:AddSpecialObject(obj, index or -1) -- 會呼叫 addToWorld，照 sprite 的 container 屬性建容器（IsoObject.java:4491-4493）
     obj:setExplored(true) -- 所以排在這之後：蓋出來的容器不生戰利品（ISBuildIsoEntity.lua:745-746）
     Place.fitContainers(obj) -- 容器也是 addToWorld 建的；容量跟著下一行送給玩家
@@ -1135,7 +1137,8 @@ local function edgeIndex(sq, kind, north)
     return -1
 end
 
-local function placeWindow(sq, obj, north, window)
+local function placeWindow(sq, obj, north, ...)
+    local window = ...
     local index = -1
     local objects = sq:getObjects()
     -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）；牆型窗沒有窗框，
