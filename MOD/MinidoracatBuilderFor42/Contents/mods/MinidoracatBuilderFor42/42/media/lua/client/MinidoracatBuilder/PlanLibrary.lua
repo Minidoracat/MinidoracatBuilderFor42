@@ -660,11 +660,17 @@ local function other(cur, plan)
     return cur ~= nil and cur ~= plan and not (plan.file ~= nil and cur.file == plan.file)
 end
 
--- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張；從藍圖庫擺這個檔當成「搬」地上那張，L.placeFile）
-local function editing(file)
+-- 地上那張用的就是這個檔，而且不是定住的：規劃中（沒存的改動比檔案新）或正跟著游標（定位時會把自己寫回這個檔）。
+-- 存進藍圖庫蓋不了它，L.store 另存成新的一張
+local function locked(file)
     local PM = B.PlanMode
     local cur = PM and PM.plan and PM.plan()
-    return cur ~= nil and cur.file == file and PM.state ~= nil and PM.state() == "edit"
+    return cur ~= nil and cur.file == file and PM.state ~= nil and PM.state() ~= "fixed"
+end
+
+-- 地上正在規劃的就是這個檔（從藍圖庫擺這個檔當成「搬」地上那張，L.placeFile）
+local function editing(file)
+    return locked(file) and B.PlanMode.state() == "edit"
 end
 
 function L.doPlace(plan, pn)
@@ -829,12 +835,12 @@ function L.askRemove(file, name, n, pn, onDone)
 end
 
 -- 存進藍圖庫（匯入的、換過項目的）：從檔案讀的存回同一個檔，分享碼照名稱取新檔名。回 檔名, 是否另存成新的一張；或 nil, 句子。
--- 地上那張用同一個檔：規劃中＝另存成新的一張（不動地上那張的檔）；其他＝存好後地上那張換成這份（不然它之後存檔會寫回舊內容）
+-- 地上那張用同一個檔：規劃中或正跟著游標（locked）＝另存成新的一張（不動地上那張的檔）；
+-- 定住的＝存好後地上那張換成這份（不然它之後存檔會寫回舊內容）
 function L.store(plan)
     local PM = B.PlanMode
     local cur = PM and PM.plan and PM.plan()
-    local asNew = plan.file ~= nil and cur ~= nil and cur ~= plan and cur.file == plan.file
-        and PM.state ~= nil and PM.state() == "edit"
+    local asNew = plan.file ~= nil and cur ~= plan and locked(plan.file)
     if asNew then plan.file = nil end
     local file, why = plan.file, nil
     if not file then file, why = PlanFile.fileName(plan.name) end
@@ -1508,7 +1514,8 @@ function Imp:finish(how)
     local file = plan.file
     if file then
         if plan.rev ~= self.rev then
-            if not editing(file) then
+            -- 那個檔被地上那張佔著就不問：擺到地上看規劃中（跟著游標的照舊問），存進藍圖庫連跟著游標的也算
+            if not (place and editing or locked)(file) then
                 return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
             end
         elseif place then
@@ -1522,12 +1529,12 @@ function Imp:finish(how)
         end
     elseif not place then
         local same = L.sameName(plan.name)
-        if same and not editing(same) then
+        if same and not locked(same) then
             return L.askOverwrite(self.pn, { name = plan.name, text = getText("IGUI_MBLD_Imp_SameName", plan.name),
                 onOverwrite = live(function()
-                    -- 框開著的時候藍圖庫可能變了：那個檔還是同名的那張、沒在規劃才蓋，不然存成新的一張
+                    -- 框開著的時候藍圖庫可能變了：那個檔還是同名的那張、沒被地上那張佔著才蓋，不然存成新的一張
                     local head = PlanFile.head(same)
-                    if head and head.name == plan.name and not editing(same) then plan.file = same end
+                    if head and head.name == plan.name and not locked(same) then plan.file = same end
                     self:store(plan)
                 end), onNew = live(asNew) })
         end

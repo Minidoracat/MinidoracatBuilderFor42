@@ -15668,6 +15668,24 @@ end)()
         press("IGUI_MBLD_SaveOverwrite")
         check(saved == 1 and placed == 1 and ground == cur, "✗ 匯入沒換過項目擺到地上、地上正在規劃同一個檔：問地上那張怎麼存，搬的是地上那張")
         L.closeImport()
+        -- 按下去時地上那張沒在規劃、匯入的三選一開著才去規劃同一個檔、再答覆蓋：也當成另一張（檢查要在答的那一刻做）
+        three()
+        reset()
+        dirty = false
+        ground = L.loadFile("Alpha.txt")
+        mode = "fixed"
+        copy = L.loadFile("Alpha.txt")
+        L.import(0)
+        L.imp.plan, L.imp.rev = copy, copy.rev
+        Plan.add(copy, 9, 9, 0, 0, 0, Plan.item(copy, "fresh_01_0"))
+        L.imp:finish("place")
+        check(L.chooser ~= nil, "（準備）地上那張定住、匯入換過項目擺到地上：先問覆蓋或另存")
+        mode = "edit"
+        dialogs = {}
+        press("IGUI_MBLD_SaveOverwrite")
+        check(copy.file == nil and #dialogs == 1 and placed == 0, "✗ 三選一開著才去規劃同一個檔、再答覆蓋：那份當成另一張，先問要不要換掉地上那張")
+        L.closeChooser()
+        L.closeImport()
         -- 三選一開不出來：不替玩家決定，只說先按完成或取消
         reset()
         local realAsk = L.askOverwrite
@@ -15871,6 +15889,24 @@ end)()
         check(ground == mine and ground.file == "Bravo.txt" and disk["MinidoracatBuilder/plans/Bravo.txt"] == before
             and toasts[1] and toasts[1]:find("IGUI_MBLD_Imp_StoredNew", 1, true) == 1 and copy and copy.n == imp2.n,
             "規劃中存進藍圖庫：另存成新的一張（Bravo2.txt）並通知，原檔與地上那張都沒動")
+        -- 審查第 9 輪：地上那張正跟著游標（搬到一半）也一樣另存：它定位時會把自己寫回那個檔，蓋掉剛存的
+        three()
+        ground = PF.load("Charlie.txt")
+        mine = ground
+        B.PlanMode.state = function() return "place" end
+        before = disk["MinidoracatBuilder/plans/Charlie.txt"]
+        local imp3 = L.loadFile("Charlie.txt")
+        Plan.add(imp3, 9, 9, 0, 0, 0, Plan.item(imp3, "fresh_01_0"))
+        toasts = {}
+        L.import(0)
+        L.imp.plan = imp3
+        L.imp.rev = imp3.rev - 1
+        L.imp:finish("store")
+        check(L.chooser == nil and ground == mine and disk["MinidoracatBuilder/plans/Charlie.txt"] == before
+            and toasts[1] and toasts[1]:find("IGUI_MBLD_Imp_StoredNew", 1, true) == 1 and PF.load("Charlie2.txt") ~= nil,
+            "✗ 地上那張跟著游標時存進藍圖庫：不問、另存成新的一張，原檔沒動")
+        L.closeChooser()
+        L.closeImport()
         B.PlanMode.state = nil
         ground = nil
     end
