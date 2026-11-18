@@ -750,10 +750,15 @@ function L.shareFile(file, pn)
     return L.share(plan, false, pn)
 end
 
--- 地上那張是這個檔時跟著改：不然之後存檔會寫回舊檔名（刪掉的復活、或蓋掉重用這個檔名的新藍圖）
+-- 藍圖庫的檔改名或刪掉了。地上那張是這個檔時跟著改：不然之後存檔會寫回舊檔名（刪掉的復活、或蓋掉重用這個檔名的新藍圖）。
+-- 開著的存檔三選一作廢、匯入框手上那份不再算這個檔：它們手上的檔名也可能已經被別張重用，照舊用會寫進別張的檔；
+-- 刪掉的那份也不能當成「已經在藍圖庫裡」
 local function retarget(file, nf, name)
     local PM = B.PlanMode
     if PM and PM.retarget then PM.retarget(file, nf, name) end
+    L.closeChooser()
+    local imp = L.imp
+    if imp and imp.plan and imp.plan.file == file then imp.plan.file = nil end
 end
 
 -- 改名：回 新檔名，或 nil, 句子。檔名跟著改（PlanFile.rename：寫新檔、舊檔標成刪除）。
@@ -769,8 +774,6 @@ function L.rename(file, name)
     if used[file] then L.markUsed(nf, file) end
     if why == "OLD_LEFT" then L.tell(getText("IGUI_MBLD_Lib_OldLeft", file)) end
     L.touch(nf)
-    -- 藍圖庫的檔變了：開著的存檔三選一作廢（它手上那份的檔名可能已經被別張重用，答了會寫進別張的檔）
-    L.closeChooser()
     return nf
 end
 
@@ -788,7 +791,6 @@ function L.remove(file)
         used[file] = nil
         saveUsed()
     end
-    L.closeChooser() -- 同 L.rename
     return true
 end
 
@@ -1476,9 +1478,9 @@ end
 
 -- 「存進藍圖庫」「擺到地上」。會蓋掉藍圖庫裡的檔之前先問覆蓋或另存（L.askOverwrite）：
 -- 從檔案讀的、換過項目（擺到地上也問：定位後的存檔會寫回那個檔）；分享碼存進藍圖庫、藍圖庫裡剛好一張同名。
--- 要蓋的那張正在地上規劃時不問：存進藍圖庫照 L.store 另存成新的一張，擺到地上 PlanMode.place 也把這份當成另一張
--- （之後另取檔名），沒有檔會被蓋掉。從檔案讀的、沒換過項目存進藍圖庫：檔已經在藍圖庫裡，
--- 不重寫（匯入框不擋畫面，開著的時候那個檔可能存了新的內容）。其他照舊（分享碼存成新的一張）。
+-- 要蓋的那張正在地上規劃時不問：存進藍圖庫照 L.store 另存成新的一張，擺到地上的那份清掉檔名、當成另一張。
+-- 從檔案讀的、沒換過項目：檔已經在藍圖庫裡，存進藍圖庫不重寫、擺到地上擺藍圖庫裡現在的那個檔
+-- （匯入框不擋畫面，開著的時候那個檔可能存了新的內容，手上這份是舊的）。其他照舊（分享碼存成新的一張）。
 -- 三選一與名稱框也不擋畫面：按下去時匯入框已經關了或換了一份就不做
 function Imp:finish(how)
     sync(self)
@@ -1491,8 +1493,11 @@ function Imp:finish(how)
         end
     end
     local function go()
-        if place then return L.placePlan(plan, self.pn) end
-        self:store(plan)
+        if not place then return self:store(plan) end
+        -- 地上正在規劃同一個檔（按下去之後才去規劃也算）：這份當成另一張、定位後另取檔名。留著檔名的話，
+        -- 地上那張被問怎麼存、選了另存新檔之後檔名就不同了，這份會照原檔名擺下去、定位時不問就寫回原檔
+        if plan.file and editing(plan.file) then plan.file = nil end
+        return L.placePlan(plan, self.pn)
     end
     local function asNew(name)
         plan.file = nil
@@ -1506,7 +1511,9 @@ function Imp:finish(how)
             if not editing(file) then
                 return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
             end
-        elseif not place and PlanFile.exists(file) then
+        elseif place then
+            return L.placeFile(file, self.pn)
+        elseif PlanFile.exists(file) then
             L.markUsed(file, nil)
             L.tell(getText("IGUI_MBLD_Imp_Stored", plan.name, file))
             L.closeImport()

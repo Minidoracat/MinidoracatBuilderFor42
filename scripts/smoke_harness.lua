@@ -15638,6 +15638,36 @@ end)()
         cur = ground
         L.placeFile("Alpha.txt", 0)
         check(L.chooser == nil and #dialogs == 0 and placed == 1 and ground == cur, "規劃中沒改動擺同一個檔：不問，擺的是地上那張")
+        -- 審查第 9 輪複審：匯入框擺「地上正在規劃的同一個檔」。換過項目的那份當成另一張、不帶原檔名：
+        -- 帶著的話，地上那張選了另存新檔之後檔名就不同了，這份會擺下去、定位時不問就寫回原檔
+        three()
+        reset()
+        ground = L.loadFile("Alpha.txt")
+        cur = ground
+        local copy = L.loadFile("Alpha.txt")
+        L.import(0)
+        L.imp.plan, L.imp.rev = copy, copy.rev
+        Plan.add(copy, 9, 9, 0, 0, 0, Plan.item(copy, "fresh_01_0"))
+        L.imp:finish("place")
+        check(L.chooser == nil and #dialogs == 1 and placed == 0, "✗ 匯入換過項目擺到地上、地上正在規劃同一個檔：不問覆蓋或另存，先問要不要換掉地上那張")
+        if dialogs[1] then dialogs[1].onResult(true) end
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Alpha Two")
+        check(placed == 1 and ground == copy and copy.file == nil and savedAs == "Alpha Two",
+            "✗ 地上那張選另存新檔：擺下去的那份不帶原檔名（定位時不會寫回原檔）")
+        L.closeImport()
+        -- 沒換過項目的：擺的是地上那張（同 L.placeFile），不是匯入框手上那份舊的
+        three()
+        reset()
+        ground = L.loadFile("Alpha.txt")
+        cur = ground
+        copy = L.loadFile("Alpha.txt")
+        L.import(0)
+        L.imp.plan, L.imp.rev = copy, copy.rev
+        L.imp:finish("place")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and placed == 1 and ground == cur, "✗ 匯入沒換過項目擺到地上、地上正在規劃同一個檔：問地上那張怎麼存，搬的是地上那張")
+        L.closeImport()
         -- 三選一開不出來：不替玩家決定，只說先按完成或取消
         reset()
         local realAsk = L.askOverwrite
@@ -15932,17 +15962,43 @@ end)()
         imp(p, p.rev)
         L.imp:finish("place")
         check(L.chooser == nil and placed == 1, "✗ 從檔案讀的、沒換過項目按擺到地上：不問")
-        -- 審查第 9 輪：地上正在規劃同一個檔時不問（PlanMode.place 會把這份當成另一張、之後另取檔名，沒有檔會被蓋掉；
-        -- 問了的話接著還會問地上那張怎麼存，兩個框長得一樣）
-        ground, placed = L.loadFile("Alpha.txt"), 0
+        -- 審查第 9 輪：地上正在規劃同一個檔時不問覆蓋或另存（這份當成另一張、之後另取檔名，沒有檔會被蓋掉；
+        -- 問了的話接著還會問地上那張怎麼存，兩個框長得一樣），只問要不要換掉地上那張
+        ground, placed, dirty = L.loadFile("Alpha.txt"), 0, false
         B.PlanMode.state = function() return "edit" end
         p = L.loadFile("Alpha.txt")
         imp(p, p.rev)
         fresh(p)
+        dialogs = {}
         L.imp:finish("place")
+        check(L.chooser == nil and #dialogs == 1 and placed == 0, "✗ 換過項目按擺到地上、地上正在規劃同一個檔：不問覆蓋或另存")
+        if dialogs[1] then dialogs[1].onResult(true) end
         B.PlanMode.state = nil
-        check(L.chooser == nil and placed == 1, "✗ 換過項目按擺到地上、地上正在規劃同一個檔：不問覆蓋或另存")
+        check(placed == 1 and ground == p and p.file == nil, "✗ 確定換掉：擺下去的那份沒有檔名")
         L.closeChooser()
+        L.closeImport()
+        -- 沒換過項目按擺到地上：擺藍圖庫裡現在的那個檔（匯入框開著的時候它可能存了新的內容，擺手上這份定位時會寫回舊的）
+        three()
+        ground, placed = nil, 0
+        p = L.loadFile("Alpha.txt")
+        imp(p, p.rev)
+        PF.save(fresh(L.loadFile("Alpha.txt")), "Alpha.txt")
+        L.imp:finish("place")
+        check(placed == 1 and ground ~= p and ground.n == p.n + 1, "✗ 匯入框開著時那個檔存了新內容、沒換過按擺到地上：擺的是藍圖庫裡現在的內容")
+        L.closeImport()
+        -- 藍圖庫刪檔、改名：匯入框手上那份不再算那個檔（檔名可能被別張重用；刪掉的也不能當成「已經在藍圖庫裡」）
+        three()
+        ground, placed = nil, 0
+        p = L.loadFile("Bravo.txt")
+        imp(p, p.rev)
+        L.remove("Bravo.txt")
+        check(p.file == nil, "✗ 藍圖庫刪檔：匯入框手上那份的檔名清掉")
+        L.closeImport()
+        p = L.loadFile("Charlie.txt")
+        imp(p, p.rev)
+        L.rename("Charlie.txt", "Zed")
+        check(p.file == nil, "✗ 藍圖庫改名：匯入框手上那份的檔名清掉")
+        L.closeImport()
         -- 從檔案讀的、沒換過：檔已經在藍圖庫裡，不重寫（匯入框開著的時候那個檔可能存了新的內容）
         ground, placed = nil, 0
         three()
