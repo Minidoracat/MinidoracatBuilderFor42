@@ -2672,10 +2672,17 @@ end
 -- ===== 入口列：藍圖、拆除一區、規劃、拆掉剛蓋的 =====
 -- 藍圖與規劃的模組（PlanPanel、PlanLibrary、PlanMode）晚綁：沒載入就不排那顆鈕
 
+-- 藍圖面板或藍圖庫開了，建造工坊視窗收起（不疊在一起）
 function W.openPlans()
     local pn, M = W.playerNum, B.PlanMode
-    if M and M.plan and M.plan() and B.PlanPanel then return B.PlanPanel.open(pn) end
-    if B.PlanLibrary then B.PlanLibrary.open(pn) end
+    local opened
+    if M and M.plan and M.plan() and B.PlanPanel then
+        opened = B.PlanPanel.open(pn)
+    elseif B.PlanLibrary then
+        opened = B.PlanLibrary.open(pn)
+    end
+    if opened then W.close() end
+    return opened
 end
 
 -- 屋頂助手：照選著的屋頂開面板（RoofPanel.open，晚綁定）。按鈕只在 prepareDetail 認得出整套時才看得到
@@ -2695,9 +2702,14 @@ function W.startArea()
     if c and c.area then W.close() end
 end
 
+-- 規劃中再按＝完成（改過的先問覆蓋或另存，PlanMode.askFinish）
 function W.togglePlan()
     local M = B.PlanMode
-    if M and M.toggle then M.toggle(W.playerNum) end
+    if M and M.planning and M.planning() and M.askFinish then
+        M.askFinish()
+    elseif M and M.toggle then
+        M.toggle(W.playerNum)
+    end
     if W.v then W.syncEntry(W.v) end
 end
 

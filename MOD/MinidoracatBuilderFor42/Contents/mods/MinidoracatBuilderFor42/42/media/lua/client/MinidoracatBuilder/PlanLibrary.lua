@@ -630,6 +630,16 @@ local function closeAll()
     L.close()
     L.closeImport()
     L.closePicker()
+    L.closeChooser()
+end
+
+-- 地上那張規劃中有沒存的改動：換張、收起、搬會替玩家決定存不存，先請玩家在工具列完成或取消。回 true＝擋下了
+function L.blockUnsaved()
+    local PM = B.PlanMode
+    if not (PM and PM.unsaved and PM.unsaved()) then return false end
+    local cur = PM.plan()
+    L.tell(getText("IGUI_MBLD_PlanUnsaved", cur and cur.name or ""))
+    return true
 end
 
 -- 地上那張換成別張？同一張（同一個物件或同一個檔）＝PlanMode.place 自己當「搬」
@@ -658,6 +668,7 @@ function L.placePlan(plan, pn)
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
         return false
     end
+    if L.blockUnsaved() then return false end
     local cur = PM.plan and PM.plan()
     if other(cur, plan) then
         return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""),
@@ -759,10 +770,14 @@ function L.newBlank(pn)
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
         return false
     end
+    if L.blockUnsaved() then return false end
     local function go()
         if PM.plan() and not PM.clear() then return false end
         closeAll()
-        return PM.blank(pn) ~= false
+        if PM.blank(pn) == false then return false end
+        local W = B.Window -- 規劃要用建造工坊挑項目
+        if W and W.open then W.open(pn) end
+        return true
     end
     local cur = PM.plan()
     if not cur then return go() end
@@ -1150,6 +1165,7 @@ end
 local Imp = {}
 Imp.__index = Imp
 Imp.TYPE_MAX = 200 -- 文字欄裡最多留幾個字：更長的一進框就清掉、改走貼上鈕那條路（見 Imp:typed）
+Imp.SHOW = 60 -- 收下的碼比 TYPE_MAX 長時，框裡只放開頭這幾個字加「...」
 
 function Imp.new(UI, pn)
     local theme = UI.Theme.create({ variant = "dark" })
@@ -1262,10 +1278,18 @@ function Imp:tooLong()
     self:render()
 end
 
--- 收到一段分享碼（貼上鈕、文字欄裡太長的）：太長的不收，其餘檢查並寫出結果
+-- 收到一段分享碼（貼上鈕、文字欄裡太長的）：太長的不收，其餘檢查並寫出結果。
+-- 框裡放收下的碼讓玩家看得到：短的整串、長的只放開頭加「...」——框裡任何時候都不超過 TYPE_MAX 字，
+-- 因為原生文字框的 Ctrl+C 會把框裡的字整段送進剪貼簿，超過約 64 KiB 遊戲會當掉（見 Imp.new）。
+-- 記成已處理過（seen），兩個回呼不會把它當成玩家打的字；玩家之後改框裡的字照「打到一半」丟掉這個碼
 function Imp:take(s)
     if not L.fits(s) then return self:tooLong() end
     self:setCode(s)
+    if self.field then
+        local shown = #s <= Imp.TYPE_MAX and s or (Plan.cut(s, Imp.SHOW) .. "...")
+        self.field:setText(shown)
+        self.seen = shown
+    end
     self:check(true)
 end
 
@@ -1333,6 +1357,7 @@ function Imp:check(pasted)
     else
         self.plan, self.err = nil, getText("IGUI_MBLD_Imp_Empty")
     end
+    self.rev = self.plan and self.plan.rev -- 之後換過項目（rev 變了）存進藍圖庫時先問覆蓋或另存
     L.resetStates()
     self:render()
 end
@@ -1390,19 +1415,56 @@ function Imp:render()
     end
 end
 
+function Imp:store(plan)
+    local file, asNew = L.store(plan)
+    if not file then return L.tell(asNew) end
+    L.tell(getText(asNew and "IGUI_MBLD_Imp_StoredNew" or "IGUI_MBLD_Imp_Stored", plan.name, file))
+    L.closeImport()
+    if L.visible() and L.v then L.v:reload(file) end
+end
+
+-- 藍圖庫裡顯示名稱完全相同的：剛好一張才回它的檔名（藍圖庫讀好的檔頭先用）
+function L.sameName(name)
+    local found
+    for _, f in ipairs(PlanFile.list()) do
+        local e = L.st and L.st.byFile and L.st.byFile[f]
+        local head = e and e.head or PlanFile.head(f)
+        if head and head.name == name then
+            if found then return nil end
+            found = f
+        end
+    end
+    return found
+end
+
+-- 「存進藍圖庫」：從檔案讀的、換過項目＝問覆蓋原本的或另存；分享碼、藍圖庫裡剛好一張同名＝問蓋掉它或另存。
+-- 其他照舊（從檔案讀的存回同一個檔，分享碼存成新的一張）
 function Imp:finish(how)
     sync(self)
     local plan = self.plan
     if not plan then return end
-    if how == "store" then
-        local file, asNew = L.store(plan)
-        if not file then return L.tell(asNew) end
-        L.tell(getText(asNew and "IGUI_MBLD_Imp_StoredNew" or "IGUI_MBLD_Imp_Stored", plan.name, file))
-        L.closeImport()
-        if L.visible() and L.v then L.v:reload(file) end
-    else
-        L.placePlan(plan, self.pn)
+    if how ~= "store" then return L.placePlan(plan, self.pn) end
+    local function asNew(name)
+        plan.file = nil
+        local n = Plan.cleanName(name)
+        if n ~= "" then plan.name = n end
+        self:store(plan)
     end
+    if plan.file then
+        if plan.rev ~= self.rev then
+            return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = function() self:store(plan) end, onNew = asNew })
+        end
+    else
+        local same = L.sameName(plan.name)
+        if same then
+            return L.askOverwrite(self.pn, { name = plan.name, text = getText("IGUI_MBLD_Imp_SameName", plan.name),
+                onOverwrite = function()
+                    plan.file = same
+                    self:store(plan)
+                end, onNew = asNew })
+        end
+    end
+    self:store(plan)
 end
 
 function L.import(...)
@@ -1579,6 +1641,85 @@ end
 
 function L.closePicker()
     discard("pick")
+end
+
+-- ---------------------------------------------------------------- 三選一的小框（框架 Dialog 只有兩顆鈕）
+
+-- o＝{ title, text, buttons＝{ { text, style?, onClick? }… } }。按鈕先關框再做事；Esc、X＝不做事關掉。
+-- 滑鼠時開在游標旁（同 L.confirm），手把時置中、焦點在第一顆。同時只開一個。回 true；沒有框架回 nil（不做事）
+function L.choose(pn, o)
+    local UI = L.ui()
+    if not UI then return nil end
+    discard("chooser")
+    local ok, err = pcall(function()
+        local theme = UI.Theme.create({ variant = "dark" })
+        local font = UIFont.Small
+        local w = math.floor(360 * getTextManager():getFontHeight(font) / 16)
+        local v = {}
+        local win = UI.Window.new({ x = 0, y = 0, width = w, height = 100, title = o.title, theme = theme, opaque = true,
+            onClose = function() if L.chooser == v then L.chooser = nil end end })
+        win.onEscape = function()
+            win:close()
+            return true
+        end
+        v.win = win
+        L.chooser = v
+        local y = win:contentTop() + GAP
+        y = y + L.setLines(L.textPanel(win, PAD, y, w - 2 * PAD, theme, font), { { o.text or "" } }) + GAP * 2
+        local btns = {}
+        for i, b in ipairs(o.buttons) do
+            local fn = b.onClick
+            btns[i] = UI.Button.new({ x = 0, y = 0, title = b.text, style = b.style, theme = theme,
+                onClick = function()
+                    if L.chooser == v then discard("chooser") end
+                    if fn then fn() end
+                end })
+            win:addChild(btns[i])
+        end
+        local h = L.flow(btns, PAD, y, w - 2 * PAD) + PAD
+        win:setHeight(h)
+        local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
+        local sw, sh = getPlayerScreenWidth(pn), getPlayerScreenHeight(pn)
+        local x, top = sx + math.floor((sw - w) / 2), sy + math.floor((sh - h) / 2)
+        if not L.usingPad(pn) and getMouseX then
+            -- 中心對準游標、夾在畫面內；游標會落在按鈕列時改放到游標上方（同框架 Dialog 的 anchor）
+            local mx, my = math.floor(getMouseX()), math.floor(getMouseY())
+            x = math.max(sx, math.min(mx - math.floor(w / 2), sx + sw - w))
+            top = math.max(sy, math.min(my - math.floor(h / 2), sy + sh - h))
+            if my >= top + y then top = math.max(sy, my - h - 10) end
+        end
+        win:setX(x)
+        win:setY(top)
+        win:addToUIManager()
+        win:setVisible(true)
+        win:bringToTop()
+        local F = UI.Focus
+        if F and F.holdsJoypad and F.focusControl and btns[1] and F.holdsJoypad(win) then F.focusControl(btns[1], true) end
+    end)
+    if not ok then
+        print(LOG .. "plan chooser build failed: " .. tostring(err))
+        discard("chooser")
+        return nil
+    end
+    return true
+end
+
+function L.closeChooser()
+    discard("chooser")
+end
+
+-- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, onOverwrite(), onNew(新名稱) }；
+-- 另存新檔再問名稱（預設現在的名稱）。回 true；沒有框架回 nil
+function L.askOverwrite(pn, o)
+    local name = o.name or ""
+    return L.choose(pn, { title = getText("IGUI_MBLD_SaveTitle", name), text = o.text or getText("IGUI_MBLD_SaveText", name),
+        buttons = {
+            { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = o.onOverwrite },
+            { text = getText("IGUI_MBLD_SaveAsNew"), onClick = function()
+                L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
+                    input = { text = name }, ok = getText("IGUI_MBLD_SaveAsNew"), onYes = function(t) o.onNew(t or "") end })
+            end },
+            { text = getText("UI_Cancel") } } })
 end
 
 if first then

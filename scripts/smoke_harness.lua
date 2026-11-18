@@ -14493,6 +14493,112 @@ end)()
     check(PM.blank(0) == true and PM.planning() and PM.plan().n == 0 and PM.plan() ~= plan, "blank：沒有藍圖時建一張空白的並開始規劃")
     check(PM.stopEdit() == true and PM.state() == "none", "空白的沒畫就結束：直接丟掉")
 
+    -- 1118：規劃可以取消（存過的回到上次存檔的樣子與位置、沒存過的整張丟掉）；unsaved；另存新檔（finishAs）；詢問的接線
+    do
+        local function wx() -- 地上那張每片的世界 x
+            local out, gx = {}, PM.origin()
+            Plan.each(PM.plan(), function(p) out[#out + 1] = p.x + gx end)
+            table.sort(out)
+            return table.concat(out, ",")
+        end
+        local cp = Plan.new("Cancel")
+        local cf = Plan.item(cp, "pm_floor_01_0")
+        Plan.add(cp, 0, 0, 0, 0, 0, cf)
+        Plan.add(cp, 1, 0, 0, 0, 0, cf)
+        local realWin = B.Window.close
+        local closed = 0
+        B.Window.close = function() closed = closed + 1 end
+        PM.place(cp, 0)
+        B.Window.close = realWin
+        drags[0]:isValid(sq(200, 50, 0))
+        drags[0]:tryBuild(200, 50, 0)
+        check(closed == 1, "從藍圖庫擺（beginPlace）：建造工坊視窗收起")
+        local cfile = PM.plan().file
+        local path = "MinidoracatBuilder/plans/" .. cfile
+        local saved = disk[path]
+        check(wx() == "200,201" and PM.unsaved() == false and PM.cancelEdit() == false,
+            "✗ 不在規劃：cancelEdit 回 false、unsaved 是 false")
+        PM.toggle(0)
+        check(PM.unsaved() == false, "unsaved：剛進規劃、還沒改是 false")
+        PM.eraseRect(200, 50, 200, 50) -- 擦掉最西邊一排：包圍盒的角變了
+        PM.addCells(0, "pm_floor_01_0", { { 203, 50, 0, 0 } })
+        check(PM.unsaved() == true and wx() == "201,203", "unsaved：規劃中改了是 true")
+        check(PM.cancelEdit() == true and not PM.planning() and PM.state() == "fixed" and wx() == "200,201"
+            and disk[path] == saved and PS.load().file == cfile and Cur.hook.commit == nil,
+            "取消：片與位置回到上次存檔（擦掉最西邊一排、包圍盒變了也一樣），檔與記錄沒動、離開規劃")
+        check(quit() == true and wx() == "200,201", "取消後重進：仍是存檔的樣子與位置")
+        PM.toggle(0)
+        PM.addCells(0, "pm_floor_01_0", { { 202, 50, 0, 0 } })
+        check(PM.save() == true and PM.unsaved() == false and PM.planning(), "unsaved：存檔後是 false（留在規劃）")
+        saved = disk[path]
+        PM.addCells(0, "pm_floor_01_0", { { 204, 50, 0, 0 } })
+        local back = (path:gsub("%.txt$", ".cfg"))
+        locked[path], locked[back] = true, true
+        before = #toasts
+        local okL = PM.cancelEdit()
+        locked[path], locked[back] = nil, nil
+        check(okL == false and PM.planning() and wx() == "200,201,202,204" and toasts[before + 1] == "IGUI_MBLD_PlanCancelFail",
+            "取消時讀不回上次存的：留在規劃、改動還在、說一聲")
+        fail = { pat = "plans/" }
+        local okX = PM.finishAs("Third")
+        fail = nil
+        check(okX ~= true and PM.planning() and PM.plan().file == cfile and PM.plan().name == "Cancel" and disk[path] == saved,
+            "finishAs 寫不進：留在規劃，檔名與名稱改回去，原本的檔沒動")
+        local okF = PM.finishAs("Cancel Copy")
+        local nf = PM.plan().file
+        check(okF == true and nf ~= cfile and PM.plan().name == "Cancel Copy" and PS.load().file == nf and disk[path] == saved
+            and PF.load(nf).n == 4 and PF.load(cfile).n == 3 and not PM.planning(),
+            "finishAs：另存成新檔、原本的檔不變、記錄指向新檔、離開規劃")
+        PM.toggle(0)
+        PM.addCells(0, "pm_floor_01_0", { { 206, 50, 0, 0 } })
+        check(PM.saveAs("Cancel Third") == true and PM.planning() and PM.plan().file ~= nf and PF.load(nf).n == 4
+            and PM.unsaved() == false, "saveAs：另存成新檔、留在規劃、原本的檔不變")
+        PM.addCells(0, "pm_floor_01_0", { { 207, 50, 0, 0 } })
+        -- 詢問的接線：換成假藍圖庫，記下開了什麼框
+        local realL, asked, conf = B.PlanLibrary, nil, nil
+        B.PlanLibrary = { askOverwrite = function(_, o) asked = o; return true end, confirm = function(_, o) conf = o; return o end }
+        local f3 = PM.plan().file
+        local okA, whyA = PM.askSave()
+        check(okA == true and whyA == "ASKED" and asked and asked.name == "Cancel Third" and PM.unsaved(),
+            "askSave：有沒存的改動先問覆蓋或另存，還沒存")
+        asked.onOverwrite()
+        check(PM.unsaved() == false and PM.planning() and PM.plan().file == f3, "askSave 覆蓋：存回同一個檔、留在規劃")
+        asked = nil
+        local okN = PM.askFinish()
+        check(okN == true and asked == nil and not PM.planning(), "askFinish：沒有沒存的改動直接完成、不問")
+        PM.toggle(0)
+        PM.addCells(0, "pm_floor_01_0", { { 208, 50, 0, 0 } })
+        PM.askFinish()
+        check(asked ~= nil and PM.planning(), "askFinish：有沒存的改動先問、還在規劃")
+        asked.onNew("Cancel Four")
+        check(not PM.planning() and PM.plan().name == "Cancel Four" and PM.plan().file ~= f3 and PF.load(f3).n == 6,
+            "askFinish 另存：存成新的一張、原本的檔不變")
+        PM.toggle(0)
+        check(PM.askCancel() == true and conf == nil and not PM.planning(), "askCancel：沒改過直接取消、不問")
+        PM.toggle(0)
+        PM.addCells(0, "pm_floor_01_0", { { 209, 50, 0, 0 } })
+        check(PM.askCancel() == true and conf and conf.danger and conf.text == "IGUI_MBLD_PlanDiscardText" and PM.planning(),
+            "askCancel：有沒存的改動先確認（危險樣式），還在規劃")
+        conf.onYes()
+        check(not PM.planning() and PM.plan().n == 7, "askCancel 按放棄改動：回到上次存檔的樣子")
+        B.PlanLibrary = { askOverwrite = function() return nil end }
+        PM.toggle(0)
+        PM.addCells(0, "pm_floor_01_0", { { 209, 50, 0, 0 } })
+        check(PM.askCancel() == false and PM.planning() and PM.plan().n == 8, "✗ 沒有確認框：askCancel 不丟改動")
+        check(PM.askFinish() == true and not PM.planning() and PF.load(PM.plan().file).n == 8,
+            "✗ 沒有三選一的框：askFinish 照舊覆蓋原本的")
+        check(PM.clear() == true and PM.blank(0) == true, "（準備）收起，開一張空白的")
+        PM.addCells(0, "pm_floor_01_0", { { 50, 60, 0, 0 } })
+        conf = nil
+        B.PlanLibrary = { confirm = function(_, o) conf = o; return o end }
+        PM.askCancel()
+        check(conf and conf.text == "IGUI_MBLD_PlanDiscardNew", "askCancel：沒存過的那張說整張都會不見")
+        local recBefore = PS.load().file
+        conf.onYes()
+        check(PM.state() == "none" and PM.plan() == nil and PS.load().file == recBefore, "取消沒存過的：整張丟掉、記錄不動")
+        B.PlanLibrary = realL
+    end
+
     -- ===== 審查第 2 輪：改名（PM3）、兩段式存檔（PM2）、搬之前先存（PM1）、同一個檔的另一份（PM8） =====
     local two = Plan.new("Two")
     local tf = Plan.item(two, "pm_floor_01_0")
@@ -14803,7 +14909,7 @@ end)()
             return { need = { ["Base.Plank"] = 4, ["Base.Nails"] = 2 }, have = { ["Base.Plank"] = 1, ["Base.Nails"] = 5 },
                 tools = { { tag = "Hammer", has = false } }, recipes = {} }
         end }
-    local ground, placed, clearFail, blanked = nil, 0, false, 0
+    local ground, placed, clearFail, blanked, dirty = nil, 0, false, 0, false
     B.PlanMode = { plan = function() return ground end,
         place = function(p)
             ground, placed = p, placed + 1
@@ -14834,7 +14940,20 @@ end)()
             return true
         end,
         changed = noop, origin = function() return 100, 100, 0 end,
-        level = function() return 0 end, toggle = noop, pickUp = noop, save = function() return true end }
+        level = function() return 0 end, toggle = noop, pickUp = noop, save = function() return true end,
+        unsaved = function() return dirty end,
+        -- 照介面：面板「存檔」走 askSave(done)；這裡沒有改動要問，存好呼叫 done
+        askSave = function(...)
+            local done = ...
+            local ok = B.PlanMode.save()
+            if ok and done then done() end
+            return ok
+        end }
+    -- 建造工坊視窗開關計數（藍圖介面出來時收起，進規劃時打開）
+    local wins = { open = 0, close = 0 }
+    real.wopen, real.wclose = B.Window.open, B.Window.close
+    B.Window.open = function() wins.open = wins.open + 1 end
+    B.Window.close = function() wins.close = wins.close + 1 end
     local started = 0
     B.Runner = { state = function() return "idle" end,
         start = function()
@@ -15197,6 +15316,105 @@ end)()
         ground = nil
     end
 
+    do -- 規劃中有沒存的改動：面板搬、收起，藍圖庫與匯入框擺放、新的空白藍圖都不動作，說先按完成或取消
+        local a, b = sample("Dirty"), sample("Other")
+        ground, placed, blanked, dirty = a, 0, 0, true
+        local picked = 0
+        B.PlanMode.pickUp = function()
+            picked = picked + 1
+            return true
+        end
+        P.open(0)
+        dialogs, toasts = {}, {}
+        P.v:act("move")
+        P.v:act("clear")
+        L.placePlan(b, 0)
+        L.newBlank(0)
+        check(ground == a and picked == 0 and placed == 0 and blanked == 0 and #dialogs == 0 and #toasts == 4
+            and toasts[1] == "IGUI_MBLD_PlanUnsaved" and toasts[4] == "IGUI_MBLD_PlanUnsaved" and P.visible(),
+            "✗ 規劃中有沒存的改動：搬、收起、換一張、新的空白藍圖都不動作，各說一次先完成或取消")
+        dirty = false
+        P.v:act("move")
+        check(picked == 1, "反面：沒有沒存的改動時搬照舊")
+        B.PlanMode.pickUp = noop
+        ground = nil
+    end
+
+    do -- 藍圖介面出來時收起建造工坊視窗；從面板「規劃」、新的空白藍圖進規劃時打開
+        local W = B.Window
+        ground = sample("Win")
+        wins.open, wins.close = 0, 0
+        W.openPlans()
+        check(P.visible() and wins.close == 1, "工坊的藍圖鈕：地上有藍圖＝開藍圖面板、工坊視窗收起")
+        P.close()
+        ground = nil
+        W.openPlans()
+        check(L.visible() and wins.close == 2, "工坊的藍圖鈕：地上沒有＝開藍圖庫、工坊視窗收起")
+        L.close()
+        ground = sample("Win")
+        P.open(0)
+        P.v:act("edit")
+        check(not P.visible() and wins.open == 1, "面板「規劃」：進規劃後面板關、工坊視窗打開")
+        local asked = 0
+        B.PlanMode.planning = function() return true end
+        B.PlanMode.askFinish = function() asked = asked + 1 end
+        P.open(0)
+        P.v:act("edit")
+        check(asked == 1 and wins.open == 1, "規劃中按面板「完成」：走 askFinish（改過的先問覆蓋或另存），不再開工坊")
+        B.PlanMode.planning, B.PlanMode.askFinish = nil, nil
+        P.close()
+        ground, blanked = nil, 0
+        L.newBlank(0)
+        check(blanked == 1 and wins.open == 2, "新的空白藍圖：進規劃時工坊視窗打開")
+        ground = nil
+    end
+
+    do -- 三選一的小框：覆蓋原本的／另存新檔／取消；另存再問名稱；同時只開一個；closeAll 也關
+        local function press(title)
+            for _, c in ipairs(L.chooser.win.children) do if c.title == title then return c.onClick() end end
+            error("no button " .. title)
+        end
+        local got = {}
+        local function ask()
+            return L.askOverwrite(0, { name = "Foo", onOverwrite = function() got[#got + 1] = "over" end,
+                onNew = function(n) got[#got + 1] = "new:" .. n end })
+        end
+        dialogs = {}
+        check(ask() == true and L.chooser and L.chooser.win.visible and L.chooser.win.title == "IGUI_MBLD_SaveTitle",
+            "askOverwrite：開出三選一的小框")
+        local titles = {}
+        for _, c in ipairs(L.chooser.win.children) do if c.title then titles[#titles + 1] = c.title .. "/" .. tostring(c.style) end end
+        check(table.concat(titles, ",") == "IGUI_MBLD_SaveOverwrite/primary,IGUI_MBLD_SaveAsNew/nil,UI_Cancel/nil",
+            "三顆鈕：覆蓋原本的（primary）、另存新檔、取消 " .. table.concat(titles, ","))
+        local first = L.chooser.win
+        ask()
+        check(first.visible == false and L.chooser.win ~= first, "同時只開一個：再開一次先關掉舊的")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(got[1] == "over" and L.chooser == nil, "按覆蓋原本的：先關框再呼叫 onOverwrite")
+        ask()
+        press("IGUI_MBLD_SaveAsNew")
+        local d = dialogs[#dialogs]
+        check(L.chooser == nil and d and d.input and d.input.text == "Foo" and d.text == "IGUI_MBLD_SaveAsText",
+            "按另存新檔：關框、接一個名稱框（預設現在的名稱）")
+        d.onResult(true, "Bar")
+        check(got[2] == "new:Bar", "名稱框按確定：onNew 收到新名稱")
+        ask()
+        press("UI_Cancel")
+        check(#got == 2 and L.chooser == nil, "按取消：什麼都不做、關框")
+        ask()
+        L.chooser.win:close()
+        check(#got == 2 and L.chooser == nil, "X 關掉：什麼都不做")
+        ask()
+        local w = L.chooser.win
+        L.chooser.win.onEscape()
+        check(#got == 2 and L.chooser == nil and w.visible == false, "Esc：什麼都不做、關框")
+        ask()
+        w = L.chooser.win
+        L.placePlan(sample("Close"), 0)
+        check(L.chooser == nil and w.visible == false, "closeAll（擺放藍圖）也關掉三選一")
+        ground = nil
+    end
+
     do -- 審查：匯入框沒有可輸入的文字框，只能按鈕貼上；超長的不收、也沒有任何路徑送進剪貼簿
         local realClip = Clipboard
         local clip, sent = "", {}
@@ -15302,6 +15520,7 @@ end)()
         toasts = {}
         L.import(0)
         L.imp.plan = imp2
+        L.imp.rev = imp2.rev -- 讀進來後沒換過項目：照舊存
         L.imp:finish("store")
         local copy = PF.load("bravo2.txt")
         check(ground == mine and ground.file == "bravo.txt" and disk["MinidoracatBuilder/plans/bravo.txt"] == before
@@ -15309,6 +15528,70 @@ end)()
             "規劃中存進藍圖庫：另存成新的一張（bravo2.txt）並通知，原檔與地上那張都沒動")
         B.PlanMode.state = nil
         ground = nil
+    end
+
+    do -- 存進藍圖庫前三選一：從檔案讀的、讀進來後換過項目；分享碼、藍圖庫裡同名剛好一張才問
+        local function press(title)
+            for _, c in ipairs(L.chooser.win.children) do if c.title == title then return c.onClick() end end
+            error("no button " .. title)
+        end
+        local function fresh(plan)
+            Plan.add(plan, 9, 9, 0, 0, 0, Plan.item(plan, "fresh_01_0"))
+            return plan
+        end
+        local function imp(plan, rev)
+            L.import(0)
+            L.imp.plan, L.imp.rev = plan, rev
+            return L.imp
+        end
+        three()
+        ground = nil
+        local p = L.loadFile("alpha.txt")
+        local before = disk["MinidoracatBuilder/plans/alpha.txt"]
+        imp(p, p.rev)
+        fresh(p)
+        L.imp:finish("store")
+        check(L.chooser ~= nil and disk["MinidoracatBuilder/plans/alpha.txt"] == before,
+            "從檔案讀的、換過項目：先問覆蓋或另存，還沒寫檔")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(PF.load("alpha.txt").n == 4 and L.imp == nil, "按覆蓋原本的：寫回同一個檔、關掉匯入框")
+        three()
+        p = L.loadFile("alpha.txt")
+        before = disk["MinidoracatBuilder/plans/alpha.txt"]
+        imp(p, p.rev)
+        fresh(p)
+        dialogs = {}
+        L.imp:finish("store")
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Alpha Two")
+        check(disk["MinidoracatBuilder/plans/alpha.txt"] == before and p.file ~= "alpha.txt" and p.name == "Alpha Two"
+            and PF.load(p.file).n == 4, "按另存新檔：存成新名稱的新檔，原本的檔沒動 " .. tostring(p.file))
+        three()
+        local code = fresh(Plan.new("Charlie")) -- 分享碼讀進來的：沒有檔名
+        imp(code, code.rev)
+        local realChoose, said = L.choose, nil
+        L.choose = function(pn, o)
+            said = o.text
+            return realChoose(pn, o)
+        end
+        L.imp:finish("store")
+        L.choose = realChoose
+        check(L.chooser ~= nil and said == "IGUI_MBLD_Imp_SameName", "分享碼：藍圖庫裡剛好一張同名（Charlie）＝先問，說已經有一張")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(code.file == "charlie.txt" and PF.load("charlie.txt").n == 1, "按覆蓋：蓋掉同名那張")
+        local delta = fresh(Plan.new("Delta"))
+        imp(delta, delta.rev)
+        L.imp:finish("store")
+        check(L.chooser == nil and delta.file ~= nil and PF.load(delta.file) ~= nil, "✗ 分享碼、藍圖庫裡沒有同名：照舊直接存成新的一張")
+        local twin = Plan.new("Bravo")
+        Plan.add(twin, 1, 1, 0, 0, 0, Plan.item(twin, "okay_01_0"))
+        PF.save(twin, "bravo9.txt")
+        local b2 = fresh(Plan.new("Bravo"))
+        imp(b2, b2.rev)
+        L.imp:finish("store")
+        check(L.chooser == nil and b2.file ~= nil and b2.file ~= "bravo.txt" and b2.file ~= "bravo9.txt",
+            "✗ 分享碼、藍圖庫裡同名兩張：不問，照舊存成新的一張 " .. tostring(b2.file))
+        L.closeImport()
     end
 
     do -- 審查第 2 輪：面板存檔失敗只讓 PlanMode 說一次；跟著游標時不能存；拿不起來時面板留著
@@ -15346,6 +15629,7 @@ end)()
     getWorld, getCore, getItemName = real.world, real.core, real.item
     if B.Window then B.Window.ui = real.wui end
     B.PlanMode, B.PlanCheck, B.Runner, B.PlanGhost, B.Capture = real.PM, real.PC, real.R, real.PG, real.cap
+    B.Window.open, B.Window.close = real.wopen, real.wclose
     B.Messages.toast, PF.head, clockStep, handlers.OnTick = real.toast, real.head, real.step, real.ontick
     SandboxVars.MinidoracatBuilder.AllowAutoBuild = real.auto
     L.v, L.st, L.imp, L.pick, P.v, P.hooked = nil, nil, nil, nil, nil, nil
@@ -19647,8 +19931,10 @@ end)()
             code = PF.share(big, false)
         end
         typeIn(code)
-        check(#code >= 5000 and #f.text == 0 and imp.code == code and imp.plan ~= nil and imp.plan.n == big.n and imp.err == nil,
-            "文字欄收到 5,000 字的合法碼：框內清空、碼照全文收下並檢查")
+        local preview = code:sub(1, 60) .. "..."
+        check(#code >= 5000 and f.text == preview and #f.text <= imp.TYPE_MAX and imp.code == code and imp.plan ~= nil
+            and imp.plan.n == big.n and imp.err == nil,
+            "文字欄收到 5,000 字的合法碼：框裡換成開頭 60 字加「...」（不超過 TYPE_MAX）、碼照全文收下並檢查")
         local small = Plan.new("S")
         Plan.add(small, 0, 0, 0, 0, 0, Plan.item(small, "a_0"))
         local short = PF.share(small, false)
@@ -19690,20 +19976,26 @@ end)()
         check(cutChecked and placed == 0 and imp.plan == nil,
             "剪下後還沒到下一幀就按「檢查」或「擺放」：照框裡現在的字，不用剪下前的碼")
         frame()
-        typeIn(short) -- 框裡有字時按貼上鈕：清框不能讓下一幀把剛收下的長碼當成玩家清了框
+        typeIn(short) -- 框裡有字時按貼上鈕：框裡換成長碼的預覽，下一幀不能把預覽當成玩家打的字
         clip = code
         imp:paste()
         frame()
-        f.onChange(f, "")
-        check(imp.code == code and imp.plan ~= nil and f.text == "",
-            "✗ 貼上鈕讀進來的長碼：下一幀 onChange（框是空的）之後還在")
+        imp:check()
+        check(imp.code == code and imp.plan ~= nil and imp.plan.n == big.n and f.text == preview,
+            "✗ 貼上鈕讀進來的長碼：框裡是預覽，下一幀 onChange、按「檢查」之後碼還在")
+        typeIn(preview:sub(1, #preview - 1))
+        check(imp.code == nil and imp.plan == nil and imp.err == nil, "改框裡的預覽字：丟掉已讀到的碼、不寫錯誤")
+        clip = ""
+        typeIn(short)
+        imp:paste()
+        check(f.text == "" and imp.code == nil, "剪貼簿是空的：框照舊清空")
         typeIn(string.rep("x", 80))
         check(imp.err == nil and imp.plan == nil and imp.code == nil and #f.text == 80, "✗ 打到一半的 80 字亂碼：不顯示錯誤")
         imp:check()
         check(imp.err ~= nil and imp.err:find("IGUI_MBLD_PlanErr_", 1, true) == 1 and imp.plan == nil, "按「檢查」才把框裡的字當分享碼、顯示錯誤")
         clip = short
         imp:paste()
-        check(f.text == "" and imp.code == short and imp.plan ~= nil, "貼上鈕照舊：清掉文字欄、收剪貼簿的碼")
+        check(f.text == short and imp.code == short and imp.plan ~= nil, "貼上鈕收到短碼：框裡放整串、收剪貼簿的碼")
         typeIn("abc")
         imp.fileDD.onChange(imp)
         check(f.text == "" and imp.code == nil, "選資料夾裡的檔：清掉文字欄")

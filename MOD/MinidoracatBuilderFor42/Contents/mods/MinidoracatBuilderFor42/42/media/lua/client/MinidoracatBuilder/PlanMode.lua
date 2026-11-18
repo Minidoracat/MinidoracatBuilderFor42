@@ -423,14 +423,16 @@ end
 local function persist()
     local plan = S.plan
     if not plan or S.mode == "place" or not plan.ox or (plan.n == 0 and not plan.file) then return true end
+    local ok, why
     if plan.file and PlanStore.load().file == plan.file then
         if not storePlan(plan) then return nil, "STORE" end
-        return saveFile()
+        ok, why = saveFile()
+    else
+        ok, why = saveFile()
+        if ok and not storePlan(plan) then ok, why = nil, "STORE" end
     end
-    local ok, why = saveFile()
-    if not ok then return nil, why end
-    if not storePlan(plan) then return nil, "STORE" end
-    return true
+    if ok then S.savedRev = plan.rev end -- PM.unsaved 比這個
+    return ok, why
 end
 
 -- 存檔（藍圖面板的「存檔」）。回 true，或 nil, 原因
@@ -460,6 +462,15 @@ local function fileNamed(match)
         end
     end
     return found
+end
+
+-- 藍圖檔讀回來時的角：記錄的角；藍圖檔的角（pos）等於 prev＝記錄寫好、藍圖檔還沒寫成就斷掉，檔是上一版，照上一版的角
+local function savedCorner(plan, st)
+    local fx, fy, fz = plan.ox, plan.oy, plan.oz
+    if fx and not (fx == st.ox and fy == st.oy and fz == st.oz) and fx == st.px and fy == st.py and fz == st.pz then
+        return fx, fy, fz
+    end
+    return st.ox, st.oy, st.oz
 end
 
 -- 進遊戲：讀回地上的藍圖。確定沒了（刪掉、壞了、檔名給了別張）才清記錄，並說一聲
@@ -506,13 +517,7 @@ function PM.restore()
         storeEdit(storeForget)
         return false
     end
-    -- 藍圖檔的角（pos）等於 prev：記錄寫好、藍圖檔還沒寫成就斷掉，檔是上一版，照上一版的角
-    local fx, fy, fz = plan.ox, plan.oy, plan.oz
-    local ox, oy, oz = st.ox, st.oy, st.oz
-    if fx and not (fx == ox and fy == oy and fz == oz) and fx == st.px and fy == st.py and fz == st.pz then
-        ox, oy, oz = fx, fy, fz
-    end
-    plan.ox, plan.oy, plan.oz = ox, oy, oz
+    plan.ox, plan.oy, plan.oz = savedCorner(plan, st)
     S.plan, S.mode = plan, "fixed"
     -- 找回別的檔、或改名做到一半：記錄改成現在這個檔與名稱（寫不進去已說過，下次進遊戲照樣認得）
     if moved or st.renameTo then
@@ -624,7 +629,7 @@ function PM.toggle(playerNum)
         checkReset()
     end
     if not S.plan.ox then return false, "PLACING" end
-    S.mode, S.tool, S.hidden = "edit", "draw", false
+    S.mode, S.tool, S.hidden, S.savedRev = "edit", "draw", false, S.plan.rev
     setSel(nil)
     S.level = nil
     hooks(true)
@@ -640,17 +645,20 @@ function PM.blank(playerNum)
     return PM.toggle(PM.playerNum)
 end
 
+-- 規劃中那張整張丟掉（沒存過的），記錄不動
+local function dropPlan()
+    leaveEdit()
+    S.plan, S.mode = nil, "none"
+    checkReset()
+    fire()
+    return true
+end
+
 -- 結束規劃並存檔。存檔失敗時留在規劃裡（工具列還在、可以再按完成），回 false, 原因
 function PM.stopEdit()
     if S.mode ~= "edit" then return false, "NOT_EDIT" end
     local plan = S.plan
-    if plan.n == 0 and not plan.file then -- 空白、沒存過：直接丟掉，記錄不動（一時讀不到而保留的那筆要留著）
-        leaveEdit()
-        S.plan, S.mode = nil, "none"
-        checkReset()
-        fire()
-        return true
-    end
+    if plan.n == 0 and not plan.file then return dropPlan() end -- 空白、沒存過：直接丟掉，記錄不動（一時讀不到而保留的那筆要留著）
     local ok, why = persist()
     if not ok then return false, why end
     leaveEdit()
@@ -659,13 +667,115 @@ function PM.stopEdit()
     return true
 end
 
+local function openPanel()
+    local Panel = B.PlanPanel
+    if S.plan and Panel and Panel.open then pcall(Panel.open, PM.playerNum or 0) end
+end
+
 -- 「完成」：收起工具列、存檔、打開藍圖面板。回同 stopEdit
 function PM.finish()
     local ok, why = PM.stopEdit()
     if not ok then return false, why end
-    local Panel = B.PlanPanel
-    if S.plan and Panel and Panel.open then pcall(Panel.open, PM.playerNum or 0) end
+    openPanel()
     return true
+end
+
+-- 規劃中改過、還沒存（存過的藍圖才算；上一步回到原樣也算改過）
+function PM.unsaved()
+    return S.mode == "edit" and S.plan ~= nil and S.plan.file ~= nil and S.plan.rev ~= S.savedRev
+end
+
+-- 上次存檔的那份：記錄指著這個檔時照記錄的角（同 restore，認得上一版），否則照檔裡的 pos。回 plan，或 nil, 原因
+local function loadSaved(file)
+    local plan, why = PlanFile.load(file)
+    if not plan then return nil, why end
+    local st = PlanStore.load()
+    if st.file == file and st.ox then plan.ox, plan.oy, plan.oz = savedCorner(plan, st) end
+    if not plan.ox then return nil, "NO_POS" end
+    return plan
+end
+
+-- 「取消」：離開規劃、丟掉沒存的改動。存過的回到上次存檔的樣子與位置（讀不回來就留在規劃、說一聲，回 false, 原因）；
+-- 沒存過的整張丟掉。照圖蓋進規劃時已暫停，同「完成」之後要玩家再按
+function PM.cancelEdit()
+    if S.mode ~= "edit" then return false, "NOT_EDIT" end
+    local file = S.plan.file
+    if not file then return dropPlan() end
+    local plan, why = loadSaved(file)
+    if not plan then
+        print(LOG .. "plan cancel reload failed f=" .. tostring(file) .. ": " .. tostring(why))
+        say(getText("IGUI_MBLD_PlanCancelFail"))
+        return false, why
+    end
+    leaveEdit()
+    S.plan, S.mode = plan, "fixed"
+    checkReset()
+    fire()
+    return true
+end
+
+-- 工具列「取消」：有沒存的改動（或沒存過、有片）先確認（沒有框架就不丟）。取消了同「完成」打開藍圖面板
+function PM.askCancel()
+    if S.mode ~= "edit" then return false end
+    local fresh = not S.plan.file
+    local function go()
+        local ok, why = PM.cancelEdit()
+        if ok then openPanel() end
+        return ok, why
+    end
+    if not (PM.unsaved() or (fresh and S.plan.n > 0)) then return go() end
+    local L = B.PlanLibrary
+    return L ~= nil and L.confirm ~= nil and L.confirm(PM.playerNum or 0, { title = getText("IGUI_MBLD_PlanDiscardTitle"),
+        text = getText(fresh and "IGUI_MBLD_PlanDiscardNew" or "IGUI_MBLD_PlanDiscardText"),
+        ok = getText("IGUI_MBLD_PlanDiscard"), cancel = getText("IGUI_MBLD_PlanKeep"), danger = true, onYes = go }) ~= nil
+end
+
+-- 換個名稱另存成新的一張再做 save（原本的檔不動）。失敗時名稱與檔名改回去
+local function asNew(name, save)
+    local plan = S.plan
+    if not plan then return false, "NO_PLAN" end
+    local file, old = plan.file, plan.name
+    local n = Plan.cleanName(name)
+    if n ~= "" then plan.name = n end
+    plan.file = nil
+    local ok, why = save()
+    if not ok then plan.file, plan.name = file, old end
+    return ok, why
+end
+
+function PM.finishAs(name)
+    if S.mode ~= "edit" then return false, "NOT_EDIT" end
+    return asNew(name, PM.finish)
+end
+
+function PM.saveAs(name)
+    return asNew(name, PM.save)
+end
+
+-- 有沒存的改動：問覆蓋原本的、另存新檔還是取消（藍圖庫的三選一框）；沒有框架照舊覆蓋。問了回 true, "ASKED"
+local function askSaveTo(overwrite, saveAs)
+    local L = B.PlanLibrary
+    if PM.unsaved() and L and L.askOverwrite
+        and L.askOverwrite(PM.playerNum or 0, { name = S.plan.name, onOverwrite = overwrite, onNew = saveAs }) then
+        return true, "ASKED"
+    end
+    return overwrite()
+end
+
+-- 工具列「完成」、工具列 X、建造工坊「規劃」、面板「完成」
+function PM.askFinish()
+    return askSaveTo(PM.finish, PM.finishAs)
+end
+
+-- 藍圖面板「存檔」：同上但不離開規劃；存好了叫 done()
+function PM.askSave(...)
+    local done = ...
+    local function after(ok, why)
+        if ok and done then done() end
+        return ok, why
+    end
+    if S.mode ~= "edit" then return after(PM.save()) end
+    return askSaveTo(function() return after(PM.save()) end, function(name) return after(PM.saveAs(name)) end)
 end
 
 -- 只改記錄裡的「隱藏」，不重寫藍圖
@@ -1090,6 +1200,8 @@ local function beginPlace(plan, playerNum, prev)
         PM.dragCancel({ kind = "place" })
         return false
     end
+    local W = B.Window -- 擺放時建造工坊視窗收起，不擋地上
+    if W and W.close then W.close() end
     fire()
     return true
 end
@@ -1246,7 +1358,8 @@ local function buildBar(UI)
             if L and L.open then L.open(PM.playerNum or 0) end
         end)
         btn(S.hidden and "IGUI_MBLD_PlanShow" or "IGUI_MBLD_PlanHide", function() PM.setHidden(not S.hidden) end)
-        btn("IGUI_MBLD_PlanDone", PM.finish, { style = "primary" })
+        btn("UI_Cancel", PM.askCancel)
+        btn("IGUI_MBLD_PlanDone", PM.askFinish, { style = "primary" })
         if #S.sel > 0 then
             newRow()
             text(getText("IGUI_MBLD_PlanSelN", "4,096"), function() return getText("IGUI_MBLD_PlanSelN", tostring(#S.sel)) end)
@@ -1272,11 +1385,10 @@ local function buildBar(UI)
     local win = UI.Window.new({ x = 0, y = 0, width = w, height = 100, title = title, theme = theme, opaque = true,
         onClose = function()
             if S.mode == "edit" then
-                -- 存檔失敗留在規劃：視窗已經被 close 藏起來，重建一次讓「完成」還按得到
-                if not PM.finish() then
-                    Bar.key = nil
-                    PM.refreshBar()
-                end
+                -- 視窗已經被 close 藏起來：先重建，存檔失敗或問存哪裡時按「取消」，「完成」還按得到（完成了 fire 會收掉）
+                Bar.key = nil
+                PM.refreshBar()
+                PM.askFinish()
             elseif S.drag then
                 getCell():setDrag(nil, S.drag.player)
             end

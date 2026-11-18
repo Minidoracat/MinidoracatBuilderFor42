@@ -647,14 +647,22 @@ function Panel:act(what)
         return L.open(pn)
     end
     if not PM then return L.tell(getText("IGUI_MBLD_Lib_NoPlanMode")) end
+    -- 規劃中有沒存的改動：搬、收起會替玩家決定存不存，先請玩家在工具列完成或取消
+    if (what == "move" or what == "clear") and L.blockUnsaved() then return end
     if what == "move" and PM.pickUp then
         if PM.pickUp(pn) then P.close() end -- 拿不起來（存不了檔）時面板留著
+    elseif what == "edit" and PM.planning and PM.planning() and PM.askFinish then
+        -- 規劃中再按＝完成（改過的先問覆蓋或另存；完成後 PlanMode 自己打開面板）。存不了時留在規劃，面板也留著
+        PM.askFinish()
     elseif what == "edit" and PM.toggle then
-        -- 規劃中再按＝完成（stopEdit 先存檔）：存不了時 PlanMode 留在規劃，面板也留著
-        if PM.toggle(pn) ~= false then P.close() end
-    elseif what == "save" and PM.save then
-        -- 失敗的通知 PlanMode 自己跳過（PlanSaveFail），這裡只說成功
-        if PM.save() then L.tell(getText("IGUI_MBLD_Plan_Saved")) end
+        if PM.toggle(pn) ~= false then
+            P.close()
+            local W = B.Window -- 規劃要用建造工坊挑項目
+            if W and W.open then W.open(pn) end
+        end
+    elseif what == "save" and PM.askSave then
+        -- 規劃中改過的先問覆蓋或另存；失敗的通知 PlanMode 自己跳過（PlanSaveFail），這裡只說成功
+        PM.askSave(function() L.tell(getText("IGUI_MBLD_Plan_Saved")) end)
     elseif what == "clear" and PM.clear then
         local plan = planOf()
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),
