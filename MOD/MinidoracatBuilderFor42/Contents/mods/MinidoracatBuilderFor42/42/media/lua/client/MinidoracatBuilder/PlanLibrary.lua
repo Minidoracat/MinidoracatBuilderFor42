@@ -421,8 +421,8 @@ function L.loadUsed()
     end
     if #lines > 0 and lines[#lines] ~= END then print(LOG .. "plan usage times incomplete: kept the readable lines") end
     for i = 1, #lines do
-        local f, t = lines[i]:match("^([%w]+%.txt)\t(%d+)$")
-        if f then used[f] = tonumber(t) end
+        local f, t = lines[i]:match("^([^\t]+)\t([0-9]+)$") -- 檔名可以有空白、括號、中文（PlanFile.validFile）
+        if f and PlanFile.validFile(f) then used[f] = tonumber(t) end
     end
     return true
 end
@@ -564,7 +564,7 @@ function L.view()
     local out = {}
     for _, e in ipairs(st.files) do
         e.low = string.lower(nameOf(e))
-        if q == "" or e.low:find(q, 1, true) or e.file:find(q, 1, true) then out[#out + 1] = e end
+        if q == "" or e.low:find(q, 1, true) or e.file:lower():find(q, 1, true) then out[#out + 1] = e end
     end
     L.sort(out, LESS[st.sort] or LESS.used)
     st.rows, st.dirty = out, false

@@ -15171,6 +15171,22 @@ end)()
             "反面：讀不到紀錄檔時不載入也不覆寫")
         getFileReader = rd
         L.loadUsed()
+        -- 檔名照藍圖名稱取之後（2026-11-18）：檔名有大寫、空白、括號、中文
+        local odd = Plan.new("Zulu")
+        Plan.add(odd, 0, 0, 0, 0, 0, Plan.item(odd, "okay_01_0"))
+        PF.save(odd, "House (v2).txt")
+        L.scan()
+        while L.pending() > 0 do L.pump(1000) end
+        L.st.query = "house"
+        check(order("name") == "House (v2).txt", "搜尋：照檔名找也不分大小寫（檔名保留大小寫）")
+        L.st.query = ""
+        disk[USED] = "House (v2).txt\t500\n海邊 小屋.txt\t400\n../x.txt\t900\na\tb.txt\t7\n#end\n"
+        check(L.loadUsed() == true and L.usedAt("House (v2).txt") == 500 and L.usedAt("海邊 小屋.txt") == 400
+            and L.usedAt("../x.txt") == nil and L.usedAt("a\tb.txt") == nil,
+            "最近用過：檔名有空白、括號、中文的時間讀得回來；不合檔名規則的行不收")
+        PF.remove("House (v2).txt")
+        three()
+        L.loadUsed()
         local list = {}
         for i = 1, 2000 do list[i] = 2001 - i end
         L.sort(list, function(a, b) return a < b end)
@@ -15617,26 +15633,26 @@ end)()
         end
         three()
         ground = nil
-        local p = L.loadFile("alpha.txt")
-        local before = disk["MinidoracatBuilder/plans/alpha.txt"]
+        local p = L.loadFile("Alpha.txt")
+        local before = disk["MinidoracatBuilder/plans/Alpha.txt"]
         imp(p, p.rev)
         fresh(p)
         L.imp:finish("store")
-        check(L.chooser ~= nil and disk["MinidoracatBuilder/plans/alpha.txt"] == before,
+        check(L.chooser ~= nil and disk["MinidoracatBuilder/plans/Alpha.txt"] == before,
             "從檔案讀的、換過項目：先問覆蓋或另存，還沒寫檔")
         press("IGUI_MBLD_SaveOverwrite")
-        check(PF.load("alpha.txt").n == 4 and L.imp == nil, "按覆蓋原本的：寫回同一個檔、關掉匯入框")
+        check(PF.load("Alpha.txt").n == 4 and L.imp == nil, "按覆蓋原本的：寫回同一個檔、關掉匯入框")
         three()
-        p = L.loadFile("alpha.txt")
-        before = disk["MinidoracatBuilder/plans/alpha.txt"]
+        p = L.loadFile("Alpha.txt")
+        before = disk["MinidoracatBuilder/plans/Alpha.txt"]
         imp(p, p.rev)
         fresh(p)
         dialogs = {}
         L.imp:finish("store")
         press("IGUI_MBLD_SaveAsNew")
         dialogs[#dialogs].onResult(true, "Alpha Two")
-        check(disk["MinidoracatBuilder/plans/alpha.txt"] == before and p.file ~= "alpha.txt" and p.name == "Alpha Two"
-            and PF.load(p.file).n == 4, "按另存新檔：存成新名稱的新檔，原本的檔沒動 " .. tostring(p.file))
+        check(disk["MinidoracatBuilder/plans/Alpha.txt"] == before and p.file == "Alpha Two.txt" and p.name == "Alpha Two"
+            and PF.load(p.file).n == 4, "按另存新檔：存成新名稱的新檔（檔名照新名稱），原本的檔沒動 " .. tostring(p.file))
         three()
         local code = fresh(Plan.new("Charlie")) -- 分享碼讀進來的：沒有檔名
         imp(code, code.rev)
@@ -15649,18 +15665,18 @@ end)()
         L.choose = realChoose
         check(L.chooser ~= nil and said == "IGUI_MBLD_Imp_SameName", "分享碼：藍圖庫裡剛好一張同名（Charlie）＝先問，說已經有一張")
         press("IGUI_MBLD_SaveOverwrite")
-        check(code.file == "charlie.txt" and PF.load("charlie.txt").n == 1, "按覆蓋：蓋掉同名那張")
+        check(code.file == "Charlie.txt" and PF.load("Charlie.txt").n == 1, "按覆蓋：蓋掉同名那張")
         local delta = fresh(Plan.new("Delta"))
         imp(delta, delta.rev)
         L.imp:finish("store")
         check(L.chooser == nil and delta.file ~= nil and PF.load(delta.file) ~= nil, "✗ 分享碼、藍圖庫裡沒有同名：照舊直接存成新的一張")
         local twin = Plan.new("Bravo")
         Plan.add(twin, 1, 1, 0, 0, 0, Plan.item(twin, "okay_01_0"))
-        PF.save(twin, "bravo9.txt")
+        PF.save(twin, "Bravo9.txt")
         local b2 = fresh(Plan.new("Bravo"))
         imp(b2, b2.rev)
         L.imp:finish("store")
-        check(L.chooser == nil and b2.file ~= nil and b2.file ~= "bravo.txt" and b2.file ~= "bravo9.txt",
+        check(L.chooser == nil and b2.file ~= nil and b2.file:lower() ~= "bravo.txt" and b2.file:lower() ~= "bravo9.txt",
             "✗ 分享碼、藍圖庫裡同名兩張：不問，照舊存成新的一張 " .. tostring(b2.file))
         L.closeImport()
     end
