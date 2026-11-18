@@ -685,14 +685,16 @@ function PM.unsaved()
     return S.mode == "edit" and S.plan ~= nil and S.plan.file ~= nil and S.plan.rev ~= S.savedRev
 end
 
--- 上次存檔的那份：記錄指著這個檔時照記錄的角（同 restore，認得上一版），否則照檔裡的 pos。回 plan，或 nil, 原因
+-- 上次存檔的那份：記錄指著這個檔時照記錄的角（同 restore，認得上一版），否則照檔裡的 pos。
+-- 回 plan, 記錄裡的隱藏；或 nil, 原因
 local function loadSaved(file)
     local plan, why = PlanFile.load(file)
     if not plan then return nil, why end
     local st = PlanStore.load()
-    if st.file == file and st.ox then plan.ox, plan.oy, plan.oz = savedCorner(plan, st) end
+    local mine = st.file == file
+    if mine and st.ox then plan.ox, plan.oy, plan.oz = savedCorner(plan, st) end
     if not plan.ox then return nil, "NO_POS" end
-    return plan
+    return plan, mine and st.hidden == true
 end
 
 -- 「取消」：離開規劃、丟掉沒存的改動。存過的回到上次存檔的樣子與位置（讀不回來就留在規劃、說一聲，回 false, 原因）；
@@ -701,14 +703,14 @@ function PM.cancelEdit()
     if S.mode ~= "edit" then return false, "NOT_EDIT" end
     local file = S.plan.file
     if not file then return dropPlan() end
-    local plan, why = loadSaved(file)
+    local plan, more = loadSaved(file) -- more＝讀不回來的原因，或記錄裡的隱藏
     if not plan then
-        print(LOG .. "plan cancel reload failed f=" .. tostring(file) .. ": " .. tostring(why))
+        print(LOG .. "plan cancel reload failed f=" .. tostring(file) .. ": " .. tostring(more))
         say(getText("IGUI_MBLD_PlanCancelFail"))
-        return false, why
+        return false, more
     end
     leaveEdit()
-    S.plan, S.mode = plan, "fixed"
+    S.plan, S.mode, S.hidden = plan, "fixed", more -- 進規劃時先顯示出來了，照記錄改回去
     checkReset()
     fire()
     return true

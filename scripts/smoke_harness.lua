@@ -14598,6 +14598,12 @@ end)()
             and disk[path] == saved and PS.load().file == cfile and Cur.hook.commit == nil,
             "取消：片與位置回到上次存檔（擦掉最西邊一排、包圍盒變了也一樣），檔與記錄沒動、離開規劃")
         check(quit() == true and wx() == "200,201", "取消後重進：仍是存檔的樣子與位置")
+        PM.setHidden(true)
+        PM.toggle(0) -- 進規劃會先顯示出來；取消後要照記錄回到隱藏，不必等重進
+        PM.addCells(0, "pm_floor_01_0", { { 205, 50, 0, 0 } })
+        check(PM.hidden() == false and PM.cancelEdit() == true and PM.hidden() == true and PS.load().hidden == true,
+            "取消：規劃前是隱藏的，取消後照記錄仍是隱藏")
+        PM.setHidden(false)
         PM.toggle(0)
         PM.addCells(0, "pm_floor_01_0", { { 202, 50, 0, 0 } })
         check(PM.save() == true and PM.unsaved() == false and PM.planning(), "unsaved：存檔後是 false（留在規劃）")
