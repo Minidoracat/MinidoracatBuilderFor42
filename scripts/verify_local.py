@@ -123,7 +123,7 @@ def expands(arg):
 
 
 def short_calls(extra=()):
-    """MOD 的 Lua 裡，傳的引數比定義的固定參數少的呼叫。回 [(key, 位置說明)]，key＝檔|函式|傳幾個<要幾個。
+    """MOD 的 Lua 裡，傳的引數比定義的固定參數少的呼叫。回 [(key, 位置說明, 定義是不是 MOD 的)]，key＝檔|函式|傳幾個<要幾個。
     呼叫照「哪個模組的哪個函式」對定義：`Queue.cancel(`、`B.Queue.cancel(`、`local Q = B.Queue` 之後的 `Q.cancel(` 都對
     Queue.lua 的那一個（照名稱對、同名取最少的做法，別的模組有同名而參數較少的函式時會漏）。別名照呼叫的位置找：
     看得到、最近宣告的那個 `local 名稱 = …`（同一個檔裡 `local C = B.Check`、別的函式裡 `local C = B.Cursor` 各對各的），
@@ -173,9 +173,9 @@ def short_calls(extra=()):
     def scan(path):
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = texts[path] = lua_clean(fh.read())
-        # local a, b = e1, e2：（位置, 看得到的範圍結尾, 名稱, 運算式）
+        # local a, b = e1, e2（同一行分號後面的也算）：（位置, 看得到的範圍結尾, 名稱, 運算式）
         aliases[path] = [(m.end(1), scope_end(text, m.end(1)), n.strip(), e)
-                         for m in re.finditer(rf"^([ \t]*)local\s+({name_re}(?:\s*,\s*{name_re})*)\s*=\s*(.+)$", text, re.M)
+                         for m in re.finditer(rf"(?:^|;)([ \t]*)local\s+({name_re}(?:\s*,\s*{name_re})*)\s*=\s*([^;\n]+)", text, re.M)
                          for n, e in zip(m.group(2).split(","), split_top(m.group(3)))]
         roots[path] = {"MinidoracatBuilder"} | {a[2] for a in aliases[path] if a[3] == "MinidoracatBuilder"}
         root = "|".join(sorted(roots[path]))
@@ -211,21 +211,26 @@ def short_calls(extra=()):
     modkeys = {x for path in ours for x in mods[path].values()}
 
     def alias_of(path, name, at):
-        """呼叫位置看得到、最近宣告的 `local name = 運算式` 的運算式；沒有回 None。"""
+        """at 這個位置看得到、最近宣告的 `local name = 運算式` 那一筆（位置, 範圍結尾, 名稱, 運算式）；沒有回 None。"""
         seen = [a for a in aliases[path] if a[2] == name and a[0] < at < a[1]]
-        return max(seen)[3] if seen else None
+        return max(seen) if seen else None
+
+    def is_root(path, name, at):
+        a = alias_of(path, name, at)
+        return a[3] == "MinidoracatBuilder" if a else name == "MinidoracatBuilder"
 
     def modkey(path, chain, at):
-        """at 這個位置，a.b 這種接收者指的是哪個模組（MinidoracatBuilder.X 的 X）；認不出回 None。"""
+        """at 這個位置，a.b 這種接收者指的是哪個模組（MinidoracatBuilder.X 的 X）；認不出回 None。
+        別名的右邊照它宣告的位置解析（之後同名的變數換了別的東西，不影響先前取好的）。"""
         comps = chain.split(".")
-        if len(comps) == 2 and comps[0] in roots[path]:
+        if len(comps) == 2 and is_root(path, comps[0], at):
             return comps[1] if comps[1] in modkeys else None
         if len(comps) == 1:
-            expr = alias_of(path, chain, at)
-            m = expr and re.fullmatch(rf"({name_re})\.({name_re})(?:\s+or\s+\{{\s*\}})?", expr)
-            if m and m.group(1) in roots[path]:
+            a = alias_of(path, chain, at)
+            m = a and re.fullmatch(rf"({name_re})\.({name_re})(?:\s+or\s+\{{\s*\}})?", a[3])
+            if m and is_root(path, m.group(1), a[0]):
                 return m.group(2) if m.group(2) in modkeys else None
-            return mods[path].get(chain) or (chain if expr is None and chain in modkeys else None)
+            return mods[path].get(chain) or (chain if a is None and chain in modkeys else None)
         return None
 
     def of_module(name, key):
@@ -260,14 +265,14 @@ def short_calls(extra=()):
                 here = [d for d in named if d["form"] == "bare" and d["path"] == path]
                 scoped = [d for d in here if d["local"] and d["pos"] < m.start() < d["end"]]
                 alias = alias_of(path, name, m.start())
-                alias = alias if alias and re.fullmatch(rf"{name_re}(?:\.{name_re})+", alias) else None
+                alias = alias if alias and re.fullmatch(rf"{name_re}(?:\.{name_re})+", alias[3]) else None
                 if scoped:
                     cands = [max(scoped, key=lambda d: d["pos"])]
                 elif [d for d in here if not d["local"]]:   # 先宣告、後面才 `f = function` 的
                     cands = [d for d in here if not d["local"]]
                 elif alias:
-                    key = modkey(path, alias.rpartition(".")[0], m.start())
-                    cands = of_module(alias.rsplit(".", 1)[1], key) if key else []
+                    key = modkey(path, alias[3].rpartition(".")[0], alias[0])
+                    cands = of_module(alias[3].rsplit(".", 1)[1], key) if key else []
                     sep = "."
                 else:
                     cands = [d for d in named if d["form"] == "bare" and not d["local"] and d["path"] in ours]
@@ -292,8 +297,15 @@ def short_calls(extra=()):
                 d = min(cands, key=lambda d: d["need"])
                 line = text.count("\n", 0, m.start()) + 1
                 tail = expands(last)
-                callee = re.match(rf"\s*({chain_re}(?::{name_re})?)\s*\(", last) if tail else None
-                hits.append((f"{rel}|{name}|{count}{'~' if tail else '<'}{need}" + (f"|{callee.group(1) if callee else '?'}" if tail else ""),
+                callee = "?"   # f(x):g() 展開的是 g 的值：具名呼叫的右括號在引數最後面才記它的名字
+                cm = re.match(rf"({chain_re}(?::{name_re})?)\s*\(", last.strip()) if tail else None
+                depth = 0
+                for i in range(cm.end() - 1, len(last.strip())) if cm else ():
+                    depth += (last.strip()[i] == "(") - (last.strip()[i] == ")")
+                    if depth == 0:
+                        callee = cm.group(1) if i == len(last.strip()) - 1 else "?"
+                        break
+                hits.append((f"{rel}|{name}|{count}{'~' if tail else '<'}{need}" + (f"|{callee}" if tail else ""),
                              f"{rel}:{line}  {name} 傳 {count} 個{'（最後一個是呼叫，它回幾個值要自己看）' if tail else ''}、"
                              f"定義 {need} 個（{os.path.basename(d['path'])}:{d['line']}）", d["path"] in ours))
     return hits
@@ -314,11 +326,12 @@ def check_args(rebase):
     每次先拿 scripts/kahlua_args_fixture.lua 驗檢查本身：標 --! 的行要報、其他行不報。"""
     hits = short_calls([ARGS_FIXTURE])
     fixture = os.path.relpath(ARGS_FIXTURE, REPO).replace(os.sep, "/")
-    with open(ARGS_FIXTURE, encoding="utf-8") as fh:
-        want = {i for i, line in enumerate(fh, 1) if "--!" in line}
-    seen = {int(where.split("  ")[0].rsplit(":", 1)[1]) for key, where, _ in hits if key.startswith(fixture + "|")}
+    with open(ARGS_FIXTURE, encoding="utf-8") as fh:   # 行號 → 驚嘆號後面的字（尾端呼叫那一筆 key 最後記的函式名）
+        want = {i: m.group(1) for i, line in enumerate(fh, 1) for m in [re.search(r"--!(\S*)", line)] if m}
+    seen = {int(where.split("  ")[0].rsplit(":", 1)[1]): (key.rsplit("|", 1)[1] if "~" in key else "")
+            for key, where, _ in hits if key.startswith(fixture + "|")}
     if seen != want:
-        print(f"  FAIL  {ARGS_TITLE}：檢查本身壞了（{fixture} 標 --! 的行 {sorted(want)}，實際報的行 {sorted(seen)}）")
+        print(f"  FAIL  {ARGS_TITLE}：檢查本身壞了（{fixture} 標的 {sorted(want.items())}，實際報的 {sorted(seen.items())}）")
         return 1
     hits = [h for h in hits if not h[0].startswith(fixture + "|")]
     now = {}
