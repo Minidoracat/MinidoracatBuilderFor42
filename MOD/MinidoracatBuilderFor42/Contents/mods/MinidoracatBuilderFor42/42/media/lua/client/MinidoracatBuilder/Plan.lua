@@ -49,24 +49,28 @@ function Plan.cut(s, n)
     return s
 end
 
--- 顯示名稱：控制字元（含 Tab、換行，檔案用它們分欄）換成空白、去頭尾空白、超過 40 字截掉
+-- 顯示名稱：控制字元（含 Tab、換行，檔案用它們分欄）換成空白、去頭尾空白、超過 40 字截掉（截完結尾的空白也去掉，
+-- 再套一次才會一樣）
 function Plan.cleanName(s)
     s = tostring(s or ""):gsub("%c", " "):match("^%s*(.-)%s*$")
-    local n = 0
+    local n, keep = 0, #s
     for i = 1, #s do
         local b = s:byte(i)
         if b < 128 or b > 191 then
             n = n + 1
-            if n > Plan.MAX_NAME then return Plan.cut(s, i - 1) end
+            if n > Plan.MAX_NAME then
+                keep = i - 1
+                break
+            end
         end
     end
-    return Plan.cut(s, #s) -- 文字框自己截在代理對中間時也去掉那一半
+    return (Plan.cut(s, keep):gsub("%s+$", "")) -- cut：文字框自己截在代理對中間時也去掉那一半
 end
 
 function Plan.new(name)
     return {
         name = Plan.cleanName(name), items = {}, nItems = 0, pieces = {}, n = 0, rev = 0,
-        _top = 0, _byId = {}, _cells = {}, _xs = {}, _ys = {}, _zs = {}, _dirty = false,
+        _top = 0, _byId = {}, _cells = {}, _kinds = {}, _xs = {}, _ys = {}, _zs = {}, _dirty = false,
         _undo = {}, _redo = {}, _depth = 0, _step = nil,
     }
 end
@@ -92,6 +96,12 @@ local function dec(t, v)
     t[v] = c > 0 and c or nil
 end
 
+-- 同一格裡「項目、朝向、疊放」各有幾片（plan._kinds[格子鍵][kind]）：same() 先查這張，沒有就不必逐片掃。
+-- 別人給的碼或檔可以把 4,096 個不同項目疊在同一格，逐片掃是 840 萬次比對（實機解碼 1.2 秒）
+local function kind(it, d, o)
+    return (it * 16 + d) * 2 + o
+end
+
 local function place(plan, p)
     local i = plan._top + 1
     plan._top = i
@@ -104,6 +114,12 @@ local function place(plan, p)
         plan._cells[k] = list
     end
     list[#list + 1] = p
+    local kinds = plan._kinds[k]
+    if not kinds then
+        kinds = {}
+        plan._kinds[k] = kinds
+    end
+    inc(kinds, kind(p.it, p.d, p.o))
     inc(plan._xs, p.x); inc(plan._ys, p.y); inc(plan._zs, p.z)
     plan.items[p.it].n = plan.items[p.it].n + 1
     plan.n = plan.n + 1
@@ -129,7 +145,8 @@ local function unplace(plan, p)
             break
         end
     end
-    if #list == 0 then plan._cells[k] = nil end
+    dec(plan._kinds[k], kind(p.it, p.d, p.o))
+    if #list == 0 then plan._cells[k], plan._kinds[k] = nil, nil end
     dec(plan._xs, p.x); dec(plan._ys, p.y); dec(plan._zs, p.z)
     plan.items[p.it].n = plan.items[p.it].n - 1
     plan.n = plan.n - 1
@@ -142,8 +159,9 @@ end
 
 -- 同一格、同一項目、同一朝向、同樣疊放的另一片（except 那片不算）
 local function same(plan, x, y, z, d, o, it, except)
-    local list = plan._cells[cellKey(x, y, z)]
-    if not list then return nil end
+    local k = cellKey(x, y, z)
+    local list = plan._cells[k]
+    if not list or not plan._kinds[k][kind(it, d, o)] then return nil end
     for j = 1, #list do
         local q = list[j]
         if q ~= except and q.it == it and q.d == d and q.o == o then return q end

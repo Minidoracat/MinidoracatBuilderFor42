@@ -12557,6 +12557,10 @@ end)()
         local pl = Plan.new("  我的\t小屋  ")
         check(pl.name == "我的 小屋", "名稱：Tab 換空白、去頭尾空白")
         check(Plan.nameLen(Plan.cleanName(string.rep("字", 50))) == 40 and Plan.nameLen("ab字") == 3, "名稱超過 40 字截掉、中文一字算一字")
+        do -- 截到 40 字後結尾是空白的再去掉：套幾次都一樣（存檔與記錄都會再套一次）
+            local cut = Plan.cleanName(string.rep("a", 39) .. " bbbb")
+            check(cut == string.rep("a", 39) and Plan.cleanName(cut) == cut, "名稱截在空白後面：結尾不留空白（" .. #cut .. " 字）")
+        end
         local a = Plan.item(pl, "walls_01_4")
         check(Plan.item(pl, "walls_01_4", nil) == a and pl.nItems == 1, "同一個項目 ID 只有一個編號")
         local p1 = Plan.add(pl, 0, 0, 0, 1, 0, a)
@@ -12657,6 +12661,65 @@ end)()
         Plan.undo(rp)
         Plan.undo(rp)
         check(rp.n == 3 and rp.items[x].n == 2 and rp.items[y].n == 1, "撤銷兩次換成：回到原本三片")
+    end
+
+    do -- 同一格的去重索引（same 先查每格的計數表）：亂加、搬、轉、換成、拿掉、撤銷、重做之後，和逐片比對的結果一樣
+        local pl = Plan.new("dupidx")
+        local its = {}
+        for i = 1, 6 do its[i] = Plan.item(pl, "dup_01_" .. i) end
+        local seed, bad = 7, nil
+        local function rnd(k)
+            seed = (seed * 75 + 74) % 65537
+            return math.floor(seed / 7) % k
+        end
+        local function all()
+            local t = {}
+            Plan.each(pl, function(p) t[#t + 1] = p end)
+            return t
+        end
+        local function verify(tag)
+            local pcs = all()
+            if #pcs ~= pl.n then bad = bad or (tag .. " 片數不合") end
+            for _, p in ipairs(pcs) do -- 已經有的：再加一次要 DUP
+                local q, why = Plan.add(pl, p.x, p.y, p.z, p.d, p.o, p.it)
+                if q ~= nil or why ~= "DUP" then bad = bad or (tag .. " 重複的沒擋 " .. tostring(why)) end
+            end
+            for _ = 1, 40 do -- 隨便挑的：有沒有照逐片比對的結果
+                local x, y, z, d, o, it = rnd(4), rnd(4), rnd(2), rnd(6), rnd(2), its[rnd(6) + 1]
+                local there = false
+                for _, p in ipairs(all()) do
+                    if p.x == x and p.y == y and p.z == z and p.d == d and p.o == o and p.it == it then there = true end
+                end
+                local q, why = Plan.add(pl, x, y, z, d, o, it)
+                if there ~= (q == nil and why == "DUP") then bad = bad or (tag .. " 和逐片比對不一樣 " .. tostring(why)) end
+                if q then Plan.remove(pl, { q }) end
+            end
+        end
+        for round = 1, 400 do
+            local op, pcs = rnd(8), all()
+            if op <= 2 or #pcs < 2 then
+                Plan.add(pl, rnd(4), rnd(4), rnd(2), rnd(6), rnd(2), its[rnd(6) + 1])
+            elseif op == 3 then
+                Plan.move(pl, { pcs[1], pcs[#pcs] }, rnd(3) - 1, rnd(3) - 1, 0)
+            elseif op == 4 then
+                Plan.rotate(pl, { pcs[rnd(#pcs) + 1] }, function(p) return (p.d + 1) % 6, 0, 0 end)
+            elseif op == 5 then
+                Plan.remove(pl, { pcs[rnd(#pcs) + 1] })
+            elseif op == 6 then
+                Plan.replace(pl, its[rnd(6) + 1], "dup_01_" .. (rnd(6) + 1))
+            elseif rnd(2) == 0 then
+                Plan.undo(pl)
+            else
+                Plan.redo(pl)
+            end
+            if round % 25 == 0 then verify("第 " .. round .. " 步") end
+        end
+        check(bad == nil and pl.n > 0, "去重索引：400 步亂改後和逐片比對一致（" .. tostring(bad) .. "，" .. pl.n .. " 片）")
+        local t0 = os.clock() -- 4,096 個不同項目疊在同一格：每加一片不再掃整格
+        local st = Plan.new("stack")
+        for i = 1, 4096 do Plan.add(st, 0, 0, 0, 0, 0, Plan.item(st, "stack_01_" .. i)) end
+        local back = PF.decode(PF.encode(st))
+        check(st.n == 4096 and back ~= nil and back.n == 4096, "4,096 個不同項目疊在同一格：加得進去、存了讀得回來（" .. (os.clock() - t0) .. " 秒）")
     end
 
     -- 測試用的藍圖：帶空白的圖塊名、中文名稱、配方項目、疊放、兩層、負的相對座標、一排與一列
@@ -12854,9 +12917,26 @@ end)()
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4" .. string.rep("0", 700) .. ";", 1)), "TOO_BIG", "項目名稱 700 字", 6)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目寫兩次", 6)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Trecipe=3ABase=2ERainCollector,Tarp;", 1)), "FORMAT", "T 段的數字欄不是數字", 7)
-        do -- 解碼比編碼寬：冒號照寫的碼（手打、別的工具寫的）照收，解出同一張
-            local lit = PF.unshare(rechk(code:gsub("Trecipe=3ABase", "Trecipe:Base", 1)))
-            check(lit ~= nil and sig(lit) == sig(pl), "冒號照寫的碼照收，解出同一張")
+        -- 照寫的冒號不收：發布後解碼器只能放寬不能收緊，編碼器從不寫冒號，所以現在就不收
+        rejects(rechk(code:gsub("Trecipe=3ABase", "Trecipe:Base", 1)), "FORMAT", "照寫的冒號", 5)
+        do -- 多跳脫的寫法照收（以後編碼器可以多跳脫幾種字，不必換版本）；再分享回到原本那串
+            local over = PF.unshare(rechk(code:gsub("Trecipe=3ABase", "Tr=65cip=65=3ABas=65", 1)))
+            check(over ~= nil and sig(over) == sig(pl) and PF.share(over, true) == code, "英數寫成 =XX 的碼照收，解出同一張")
+            local pp = Plan.new("a-b/(c)")
+            Plan.add(pp, 0, 0, 0, 0, 0, Plan.item(pp, "w_1"))
+            local pc = PF.share(pp, false)
+            local alt = PF.unshare(rechk(pc:gsub("Na%-b/%(c%)", "Na=2Db=2F=28c=29", 1)))
+            check(pc:find(";Na-b/(c);", 1, true) ~= nil and alt ~= nil and alt.name == "a-b/(c)", "- / ( ) 寫成 =XX 的碼照收")
+        end
+        do -- 控制字元：編碼時換成空白（和存檔一樣），解回來和存檔讀回的一樣
+            local cp = Plan.new("ctl")
+            Plan.add(cp, 0, 0, 0, 0, 0, Plan.item(cp, "a\1b_1", { mod = "A\tB\nC", modName = "N\1M", version = "1\n2" }))
+            local viaCode, viaFile = PF.unshare(PF.share(cp, false)), PF.decode(PF.encode(cp))
+            check(viaCode ~= nil and viaFile ~= nil and viaCode.items[1].id == "a b_1" and viaCode.items[1].mod == "A B C"
+                and viaCode.items[1].modName == "N M" and viaCode.items[1].version == "1 2"
+                and viaCode.items[1].id == viaFile.items[1].id and viaCode.items[1].mod == viaFile.items[1].mod
+                and viaCode.items[1].modName == viaFile.items[1].modName and viaCode.items[1].version == viaFile.items[1].version,
+                "項目 ID 與 MOD 資訊帶控制字元：分享碼解回來和存檔讀回的一樣（換成空白）")
         end
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Tfloors.01.40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目換一種寫法再寫一次", 7)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,41;", 1)), "ITEM", "多一個項目、最後一個項目沒有 G 段", 8)

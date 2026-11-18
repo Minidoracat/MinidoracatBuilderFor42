@@ -317,7 +317,7 @@ PlanFile.SHARE_MAX = 60000
 --   G 段裡的數值都是一個字：0-9 A-Z a-z + /＝0..63（所以邊長上限 64、層數上限 4 寫死在格式裡）。
 -- 發布後玩家手上的分享碼要一直收得下：要改格式就換 MBLD3，MBLD2 的解碼留著。
 -- 字串欄位：英數與 - / ( ) 照寫，_ 寫成 .，空白寫成 +，其他（含冒號＝=3A）寫成 =XX（字碼 < 256）或 =uXXXX（Kahlua 的 UTF-16 字）。
---   解碼比編碼寬：照寫的冒號也收。
+--   照寫的冒號不收（發布後解碼只能放寬、不能收緊）；英數與 - / ( ) 寫成 =XX 照收，以後編碼可以多跳脫幾種字。
 --   S 的 MOD-ID、版本、MOD 名稱與 T 的前綴還原後最多 128 字、不能有控制字元，不合的整張拒收
 --   （這些字串很多項目共用，先擋才不會一段長字串被接成幾千份）。編碼時 MOD 資訊照存檔的截法截到 128 字。
 -- 檢查碼蓋住 K 之前的全部內容，改過一個字就拒收。
@@ -386,7 +386,7 @@ local function unesc(s)
             end
             if not ok then return nil end
             out[#out + 1] = text
-        elseif ch:match("^[A-Za-z0-9:%-/()]$") then
+        elseif ch:match("^[A-Za-z0-9%-/()]$") then
             out[#out + 1] = ch
             i = i + 1
         else
@@ -593,7 +593,6 @@ function PlanFile.unshare(code)
                     if not f[k]:match("^[0-9]+$") then return nil, "FORMAT", r end
                     id = pre .. "_" .. f[k]
                 end
-                if clean(id) ~= id then return nil, "FORMAT", r end -- 空的、太長的 parse 會擋；換行它擋不到
                 if #items >= Plan.MAX_PIECES then return nil, "ITEM", r end
                 items[#items + 1] = { id = id, mod = mod, ws = ws, ver = ver, modName = modName, r = r, n = 0 }
             end
