@@ -15452,42 +15452,137 @@ end)()
         ground = nil
     end
 
-    do -- 規劃中有沒存的改動：面板搬、收起，藍圖庫與匯入框擺放、新的空白藍圖都不動作，說先按完成或取消
+    do -- 規劃中有沒存的改動：面板搬、收起，藍圖庫擺放、新的空白藍圖先問覆蓋／另存／取消，答完接著做（使用者 2026-11-18 裁定）
+        local function press(title)
+            for _, c in ipairs(L.chooser.win.children) do if c.title == title then return c.onClick() end end
+            error("no button " .. title)
+        end
+        local keep = {}
+        for k, v in pairs(disk) do keep[k] = v end
         local a, b = sample("Dirty"), sample("Other")
-        ground, placed, blanked, dirty = a, 0, 0, true
-        local picked = 0
+        a.file = "Dirty.txt"
+        local picked, saved, savedAs, saveFail = 0, 0, nil, false
+        local realSave = B.PlanMode.save
         B.PlanMode.pickUp = function()
             picked = picked + 1
             return true
         end
+        B.PlanMode.save = function()
+            if saveFail then return nil, "WRITE" end
+            saved, dirty = saved + 1, false
+            return true
+        end
+        B.PlanMode.saveAs = function(name)
+            savedAs, dirty = name, false
+            return true
+        end
+        local mode = "edit"
+        B.PlanMode.state = function() return ground and mode or "none" end
+        local function reset()
+            ground, placed, blanked, dirty, picked, saved, savedAs, mode = a, 0, 0, true, 0, 0, nil, "edit"
+            dialogs, toasts = {}, {}
+            L.closeChooser()
+        end
+        -- 搬：沒有確認框，直接問
+        reset()
         P.open(0)
-        dialogs, toasts = {}, {}
         P.v:act("move")
+        check(L.chooser ~= nil and picked == 0 and saved == 0 and #toasts == 0, "✗ 搬：有沒存的改動先問，還沒存、還沒拿起來")
+        press("UI_Cancel")
+        check(picked == 0 and saved == 0 and dirty and P.visible(), "搬→取消：不存、不拿起來，面板留著")
+        P.v:act("move")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and picked == 1 and not P.visible(), "搬→覆蓋原本的：存好接著拿起來、關面板")
+        reset()
+        P.open(0)
+        P.v:act("move")
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Dirty Two")
+        check(savedAs == "Dirty Two" and saved == 0 and picked == 1, "搬→另存新檔：照新名稱另存、接著拿起來")
+        reset()
+        saveFail = true
+        P.open(0)
+        P.v:act("move")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(picked == 0 and P.visible(), "✗ 搬→覆蓋但存不了：不拿起來、面板留著")
+        saveFail = false
+        -- 收起：先確認、按確認才問
+        reset()
+        P.open(0)
         P.v:act("clear")
+        check(#dialogs == 1 and L.chooser == nil, "收起：先開確認框，還沒問存檔")
+        dialogs[#dialogs].onResult(true)
+        check(L.chooser ~= nil and ground == a, "✗ 收起→確認：有沒存的改動再問覆蓋或另存，還沒收")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and ground == nil and not P.visible(), "收起→覆蓋原本的：存好接著收起、關面板")
+        -- 換一張
+        reset()
         L.placePlan(b, 0)
+        dialogs[#dialogs].onResult(true)
+        check(L.chooser ~= nil and ground == a and placed == 0, "✗ 換一張→確認：先問，還沒換")
+        press("UI_Cancel")
+        check(ground == a and placed == 0 and saved == 0, "換一張→取消：地上那張照留、沒存")
+        L.placePlan(b, 0)
+        dialogs[#dialogs].onResult(true)
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and ground == b and placed == 1, "換一張→覆蓋原本的：存好接著換")
+        -- 新的空白藍圖
+        reset()
         L.newBlank(0)
-        check(ground == a and picked == 0 and placed == 0 and blanked == 0 and #dialogs == 0 and #toasts == 4
-            and toasts[1] == "IGUI_MBLD_PlanUnsaved" and toasts[4] == "IGUI_MBLD_PlanUnsaved" and P.visible(),
-            "✗ 規劃中有沒存的改動：搬、收起、換一張、新的空白藍圖都不動作，各說一次先完成或取消")
+        dialogs[#dialogs].onResult(true)
+        check(L.chooser ~= nil and blanked == 0 and ground == a, "✗ 新的空白藍圖→確認：先問，還沒開")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and blanked == 1 and ground ~= a and ground ~= nil, "新的空白藍圖→覆蓋原本的：存好、收起、開新的")
+        -- 三選一不擋畫面：答的時候已經不在規劃那一張 → 不存、不做
+        reset()
+        P.open(0)
+        P.v:act("move")
+        ground = b
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 0 and picked == 0, "✗ 答的時候地上已經換了一張：不存、不拿起來")
+        reset()
+        P.open(0)
+        P.v:act("move")
+        mode = "fixed"
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 0 and picked == 0, "✗ 答的時候已經離開規劃：不存、不拿起來")
+        -- 整張擦光了：沒有東西可以另存，只給覆蓋
+        reset()
+        ground = Plan.new("Wiped")
+        ground.file = "Wiped.txt"
+        P.open(0)
+        P.v:act("move")
+        local titles = {}
+        for _, c in ipairs(L.chooser.win.children) do if c.title then titles[#titles + 1] = c.title end end
+        check(table.concat(titles, ",") == "IGUI_MBLD_SaveOverwrite,UI_Cancel", "✗ 整張擦光了：三選一沒有另存新檔 " .. table.concat(titles, ","))
+        -- 藍圖庫擺的就是規劃中那個檔：當成「搬」地上那張，不另讀一份存檔前的舊內容
+        three()
+        reset()
+        ground = L.loadFile("Alpha.txt")
+        local cur = ground
+        L.placeFile("Alpha.txt", 0)
+        check(L.chooser ~= nil and placed == 0, "✗ 擺規劃中那個檔：先問")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(saved == 1 and placed == 1 and ground == cur, "✗ 擺規劃中那個檔→覆蓋：擺的是地上那張（不是存檔前讀的舊內容）")
+        -- 沒有沒存的改動：照舊，不問
+        reset()
         dirty = false
+        P.open(0)
         P.v:act("move")
-        check(picked == 1, "反面：沒有沒存的改動時搬照舊")
-        B.PlanMode.pickUp = noop
-        -- 審查 1118：確認框不擋畫面，開著的時候才去規劃、改了東西，按確認也不動作
-        dialogs, toasts = {}, {}
-        P.v:act("clear")
-        local dClear = dialogs[#dialogs]
-        L.placePlan(b, 0)
-        local dPlace = dialogs[#dialogs]
-        L.newBlank(0)
-        local dNew = dialogs[#dialogs]
-        check(#dialogs == 3 and #toasts == 0, "（準備）沒有沒存的改動：收起、換一張、新的空白藍圖各開一個確認框")
-        dirty = true
-        dClear.onResult(true)
-        dPlace.onResult(true)
-        dNew.onResult(true)
-        check(ground == a and placed == 0 and blanked == 0 and #toasts == 3 and toasts[3] == "IGUI_MBLD_PlanUnsaved",
-            "✗ 確認框開著的時候才改了東西：按確認不收起、不換、不開新的，各說一次先完成或取消")
+        check(L.chooser == nil and picked == 1 and saved == 0, "反面：沒有沒存的改動時搬照舊、不問")
+        -- 三選一開不出來：不替玩家決定，只說先按完成或取消
+        reset()
+        local realAsk = L.askOverwrite
+        L.askOverwrite = function() return nil end
+        P.open(0)
+        P.v:act("move")
+        L.askOverwrite = realAsk
+        check(picked == 0 and saved == 0 and #toasts == 1 and toasts[1] == "IGUI_MBLD_PlanUnsaved",
+            "✗ 三選一開不出來：不存、不拿起來，說先按完成或取消")
+        L.closeChooser()
+        B.PlanMode.pickUp, B.PlanMode.save, B.PlanMode.saveAs, B.PlanMode.state = noop, realSave, nil, nil
+        for k in pairs(disk) do disk[k] = nil end
+        for k, v in pairs(keep) do disk[k] = v end
         dirty = false
         ground = nil
     end

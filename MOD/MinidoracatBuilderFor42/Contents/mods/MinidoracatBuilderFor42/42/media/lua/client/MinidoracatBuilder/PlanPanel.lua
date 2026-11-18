@@ -647,10 +647,11 @@ function Panel:act(what)
         return L.open(pn)
     end
     if not PM then return L.tell(getText("IGUI_MBLD_Lib_NoPlanMode")) end
-    -- 規劃中有沒存的改動：搬、收起會替玩家決定存不存，先請玩家在工具列完成或取消
-    if (what == "move" or what == "clear") and L.blockUnsaved() then return end
     if what == "move" and PM.pickUp then
-        if PM.pickUp(pn) then P.close() end -- 拿不起來（存不了檔）時面板留著
+        -- 規劃中有沒存的改動先問覆蓋或另存，存好接著搬（L.saveFirst）。拿不起來（存不了檔）時面板留著
+        L.saveFirst(pn, function()
+            if PM.pickUp(pn) then P.close() end
+        end)
     elseif what == "edit" and PM.planning and PM.planning() and PM.askFinish then
         -- 規劃中再按＝完成（改過的先問覆蓋或另存；完成後 PlanMode 自己打開面板）。存不了時留在規劃，面板也留著
         PM.askFinish()
@@ -668,8 +669,10 @@ function Panel:act(what)
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),
             ok = getText("IGUI_MBLD_Plan_Clear"), danger = true,
             onYes = function()
-                -- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：再看一次。存不了時地上那張照留，面板也留著
-                if not L.blockUnsaved() and PM.clear() then P.close() end
+                -- 確認框不擋畫面：按確認的那一刻才看有沒有沒存的改動（L.saveFirst）。存不了時地上那張照留，面板也留著
+                L.saveFirst(pn, function()
+                    if PM.clear() then P.close() end
+                end)
             end })
     end
 end

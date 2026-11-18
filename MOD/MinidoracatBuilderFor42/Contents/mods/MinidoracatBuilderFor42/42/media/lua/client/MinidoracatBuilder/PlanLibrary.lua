@@ -633,18 +633,38 @@ local function closeAll()
     L.closeChooser()
 end
 
--- 地上那張規劃中有沒存的改動：換張、收起、搬會替玩家決定存不存，先請玩家在工具列完成或取消。回 true＝擋下了
-function L.blockUnsaved()
+-- 地上那張規劃中有沒存的改動：換張、收起、搬之前先問覆蓋／另存／取消（L.askOverwrite），存好了才接著做 go()；
+-- 沒有沒存的改動直接 go()。回 go() 的結果；問了回 true。三選一與名稱框不擋畫面：答的時候已經不在規劃那一張
+-- 就不存也不做；存不了（PlanMode 自己說過）也不做。三選一開不出來時不替玩家決定，只說先按完成或取消
+function L.saveFirst(pn, go)
     local PM = B.PlanMode
-    if not (PM and PM.unsaved and PM.unsaved()) then return false end
+    if not (PM and PM.unsaved and PM.unsaved()) then return go() end
     local cur = PM.plan()
-    L.tell(getText("IGUI_MBLD_PlanUnsaved", cur and cur.name or ""))
-    return true
+    local function after(save)
+        return function(...)
+            if PM.plan() ~= cur or PM.state() ~= "edit" then return false end
+            if not save(...) then return false end
+            return go()
+        end
+    end
+    -- 整張擦光了沒有東西可以另存（同 PlanMode 的 askSaveTo）
+    if L.askOverwrite(pn, { name = cur.name, onOverwrite = after(PM.save), onNew = cur.n > 0 and after(PM.saveAs) or nil }) then
+        return true
+    end
+    L.tell(getText("IGUI_MBLD_PlanUnsaved", cur.name or ""))
+    return false
 end
 
 -- 地上那張換成別張？同一張（同一個物件或同一個檔）＝PlanMode.place 自己當「搬」
 local function other(cur, plan)
     return cur ~= nil and cur ~= plan and not (plan.file ~= nil and cur.file == plan.file)
+end
+
+-- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張；擺到地上當成「搬」地上那張）
+local function editing(file)
+    local PM = B.PlanMode
+    local cur = PM and PM.plan and PM.plan()
+    return cur ~= nil and cur.file == file and PM.state ~= nil and PM.state() == "edit"
 end
 
 function L.doPlace(plan, pn)
@@ -662,26 +682,29 @@ function L.doPlace(plan, pn)
 end
 
 -- 擺到地上（整張跟著游標，PlanMode.place）。地上已經有別張時先確認（地上同時只有一張）。
--- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：按確認時再看一次 blockUnsaved（新的空白藍圖、面板的收起也是）
+-- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：按確認的那一刻才看有沒有沒存的改動（L.saveFirst；
+-- 新的空白藍圖、面板的收起也是）
 function L.placePlan(plan, pn)
     local PM = B.PlanMode
     if not (PM and PM.place) then
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
         return false
     end
-    if L.blockUnsaved() then return false end
+    local function go()
+        return L.saveFirst(pn, function() return L.doPlace(plan, pn) end)
+    end
     local cur = PM.plan and PM.plan()
     if other(cur, plan) then
         return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""),
             text = getText("IGUI_MBLD_Lib_ReplaceText", plan.name or ""), ok = getText("IGUI_MBLD_Lib_Replace"),
-            onYes = function()
-                if not L.blockUnsaved() then L.doPlace(plan, pn) end
-            end }) ~= nil
+            onYes = go }) ~= nil
     end
-    return L.doPlace(plan, pn)
+    return go()
 end
 
 function L.placeFile(file, pn)
+    -- 規劃中的就是這個檔：地上那張不比檔案舊，擺的是它（另讀一份會是存檔前的舊內容）
+    if editing(file) then return L.placePlan(B.PlanMode.plan(), pn) end
     local plan, err = L.loadFile(file)
     if not plan then
         L.tell(err)
@@ -773,15 +796,15 @@ function L.newBlank(pn)
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
         return false
     end
-    if L.blockUnsaved() then return false end
     local function go()
-        if L.blockUnsaved() then return false end
-        if PM.plan() and not PM.clear() then return false end
-        closeAll()
-        if PM.blank(pn) == false then return false end
-        local W = B.Window -- 規劃要用建造工坊挑項目
-        if W and W.open then W.open(pn) end
-        return true
+        return L.saveFirst(pn, function()
+            if PM.plan() and not PM.clear() then return false end
+            closeAll()
+            if PM.blank(pn) == false then return false end
+            local W = B.Window -- 規劃要用建造工坊挑項目
+            if W and W.open then W.open(pn) end
+            return true
+        end)
     end
     local cur = PM.plan()
     if not cur then return go() end
@@ -1446,13 +1469,6 @@ function L.sameName(name)
         end
     end
     return found
-end
-
--- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張）
-local function editing(file)
-    local PM = B.PlanMode
-    local cur = PM and PM.plan and PM.plan()
-    return cur ~= nil and cur.file == file and PM.state ~= nil and PM.state() == "edit"
 end
 
 -- 「存進藍圖庫」「擺到地上」。會蓋掉藍圖庫裡的檔之前先問覆蓋或另存（L.askOverwrite）：
