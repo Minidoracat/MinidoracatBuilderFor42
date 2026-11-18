@@ -146,7 +146,8 @@ end
 
 -- circuit：{ q, who, code, side, id, s = { { x, y, z, e } }, l, cand = { { x, y, z, e, k, c } }, auto, n, taken, skipped,
 -- later, jx, jy, moved, op, note }。player：單機時伺服器程式直接傳操作的人
-function Wiring.onServerCommand(cmd, args, player)
+function Wiring.onServerCommand(cmd, args, ...)
+    local player = ...
     if cmd ~= "circuit" then return end
     local list = Wiring.results
     list[#list + 1] = args
@@ -328,7 +329,8 @@ end
 -- 點一個：c（游標照圖選到的那一個），沒給時是 (x, y, z) 那一格現在選的那個。開關＝接成雙切（已在這條線路就拿掉）；
 -- 燈＝加入或移除。那一格有好幾個時，回覆後下一次點換下一個：記物件的鍵（apply 會重排清單，記第幾個會指回剛操作的
 -- 那一個）。被拒也換（不然每次都拒的那一個會擋住同一格其他的），限流不換
-function Wiring.click(x, y, z, c)
+function Wiring.click(x, y, z, ...)
+    local c = ...
     local m = Wiring.mode
     if c then x, y, z = c.x, c.y, c.z else c = Wiring.at(x, y, z) end
     if not c then return nil end
@@ -469,7 +471,8 @@ end
 local LINES = 8 -- 線路、上限、圖例兩列、說明三列、游標停的那一個
 
 -- 狀態圖示，缺圖時畫字。墊 surface 底（同 Cursor 的記號層），在亮的地板上也看得清楚
-local function drawMark(el, UI, k, x, y, bg)
+local function drawMark(el, UI, k, x, y, ...)
+    local bg = ...
     if bg then UI.Skin.fill(el, x - 2, y - 2, MARK + 4, MARK + 4, bg, nil, 1) end
     if not UI.Icons.draw(el, ICON[k], x, y, MARK, ICOL[k], 1) then
         el:drawText(ALT[k], x + 4, y, COLOR[k][1], COLOR[k][2], COLOR[k][3], 1, UIFont.Small)

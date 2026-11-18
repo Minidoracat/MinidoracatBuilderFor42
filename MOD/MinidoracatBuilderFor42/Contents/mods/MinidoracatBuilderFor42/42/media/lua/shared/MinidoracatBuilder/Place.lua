@@ -372,7 +372,8 @@ function Place.edgeHeldAt(kind, spr, x, y, z)
     return (side ~= nil and side:has(F.solidfloor)) or wallHeld(x, y, z, kind, n, w)
 end
 function Place.key(x, y, z) return (z * 100000 + x) * 100000 + y end
-function Place.roofAt(x, y, z, planned)
+function Place.roofAt(x, y, z, ...)
+    local planned = ...
     if z < 0 then return false end
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
@@ -398,7 +399,8 @@ end
 -- 45 度屋頂屋脊上一層的平頂片（帶 solidfloor，分類是地板）四周只有斜片在下一層，同層一片地板都還沒有。照座標查、不要這格存在
 -- （預覽時上一層的格子常常還沒建）；planned 同屋頂（同一排前面判定可蓋的地板格）
 local SIDES = { { -1, 0, "E" }, { 1, 0, "W" }, { 0, -1, "S" }, { 0, 1, "N" } } -- 鄰格與斜坡朝向（同 connectedWithFloor）
-function Place.floorAt(x, y, z, planned)
+function Place.floorAt(x, y, z, ...)
+    local planned = ...
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
     if below and below:HasStairs() then return false end
@@ -726,7 +728,8 @@ end
 -- 同一張圖照樣擋（同一張不算替換）。原版搬家具的判斷（IsMoveAble）不能叫它跳過，照舊看整格。
 -- overlap：疊放模式（見 overlapOk）。照原本的規則放得下就照原本的（桌上、疊箱子的高度照舊），放不下才照疊放，
 -- 這時第三個回傳值是 true（游標寫「疊放」、伺服器 log 記 over）；和 replacing 不會同時有（Check.item 疊放時不找替換）。
-function Place.check(kind, spr, sq, player, role, planned, replacing, overlap)
+function Place.check(kind, spr, sq, ...)
+    local player, role, planned, replacing, overlap = ...
     if sq:hasSlopedSurface() and not slopeOk(kind, spr) then return false end
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if kind == "ramp" then return rampOk(spr, sq, role) end
@@ -1328,7 +1331,8 @@ end
 -- 把 spr 掛到 sq 上它該掛的那一件（Place.host），寫記號、同步、記帳本（items＝拆了退什麼）。拆回用的紀錄（Place.undo；
 -- attached 欄位分辨紀錄與物件）在掛上之前就記進 placed（給了的話），後面幾步出錯時照樣拆得回；也當回傳值。
 -- 沒有那一件、附加圖滿了丟錯（Place.check 已擋）。
-function Place.attach(sq, spr, items, placed)
+function Place.attach(sq, spr, items, ...)
+    local placed = ...
     local host, edge = Place.host(sq, spr, nil) -- 後面的參數明寫：Kahlua 少傳的參數不保證是 nil
     if not host then error("nothing to hang on at " .. at(sq)) end
     if attachedCount(host) >= MAX_ATTACHED then error("overlays full at " .. at(sq)) end

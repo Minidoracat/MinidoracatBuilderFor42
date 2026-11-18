@@ -85,8 +85,9 @@ end
 -- 省略就不畫排隊虛影；overlap＝疊放（Client.build）。opts.owner＝"drag"（預設）或 "plan"，opts.onDone(sum) 整組結束時叫一次。
 -- 手拖的進來時先取消照圖蓋的（玩家動手＝照圖蓋暫停）。沒有在跑的就立刻送，有就接在後面。
 -- 回 組的 id 與（立刻送出時的）nonce；立刻送卻送不出去回 nil, 原因碼
-function Queue.push(player, name, anchors, parts, overlap, ...)
-    local opts = (...) or {}
+function Queue.push(player, name, anchors, ...)
+    local parts, overlap, opts = ...
+    opts = opts or {}
     local owner = opts.owner or "drag"
     local pn = player:getPlayerNum()
     local s = slots[pn]
@@ -123,7 +124,8 @@ end
 
 -- 取消這位玩家還沒蓋完的（owner 省略＝全部）。正在跑的那一筆屬於這個 owner 時清掉角色排著的動作；不通知
 -- （放開前游標、選單已經寫出會取消幾格），照圖蓋的 onDone 收到 stopped
-function Queue.cancel(player, owner)
+function Queue.cancel(player, ...)
+    local owner = ...
     local s = slots[player:getPlayerNum()]
     if not s then return end
     local keep, gone = {}, {}
@@ -149,7 +151,8 @@ function Queue.busy(player)
 end
 
 -- 還沒蓋好的格數（含排著的）；owner＝"drag"｜"plan" 只算那一種，省略＝全部
-function Queue.left(player, owner)
+function Queue.left(player, ...)
+    local owner = ...
     local s = slots[player:getPlayerNum()]
     if not s then return 0 end
     local n = 0

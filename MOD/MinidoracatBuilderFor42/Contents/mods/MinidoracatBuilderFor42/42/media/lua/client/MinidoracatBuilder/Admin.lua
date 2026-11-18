@@ -166,7 +166,8 @@ end
 -- changes = { kinds = { [種類] = 開 }, sources = { [MOD ID] = 關 }, tilesets = { [tileset] = 關 },
 --             rules = { [選項短名] = 值 } }，每段都可省略。onDone(ok) 選填：伺服器的值到了（或單機改好）時 true，逾時 false。
 -- 回 true，或 false＋原因碼（BUSY／NO_PERMISSION／NOTHING／TOO_LONG／UNKNOWN_KIND／UNKNOWN_OPTION）＋鍵。
-function Admin.apply(changes, onDone)
+function Admin.apply(changes, ...)
+    local onDone = ...
     if Admin.pending then return false, "BUSY" end
     if not Admin.canManage() then return false, "NO_PERMISSION" end
     changes = changes or EMPTY

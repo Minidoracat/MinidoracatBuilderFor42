@@ -785,7 +785,8 @@ end
 -- 藍圖面板「存檔」：同上但不離開規劃；存好了叫 done()
 function PM.askSave(...)
     local done = ...
-    local function after(ok, why)
+    local function after(ok, ...)
+        local why = ...
         if ok and done then done() end
         return ok, why
     end

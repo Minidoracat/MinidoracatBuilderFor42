@@ -96,48 +96,129 @@ def call_args(text, open_at):
     return None
 
 
-def short_calls():
+def expands(arg):
+    """引數是不是單獨一個呼叫（放在最後會展開成它全部的回傳值）。有運算子、或整個包在括號裡的只算一個值。"""
+    if not arg.endswith(")"):
+        return False
+    depth, first_zero, i, n = 0, None, 0, len(arg)
+    while i < n:
+        c = arg[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0 and first_zero is None:
+                first_zero = i
+        elif depth == 0:
+            if c in "+-*/%^#<>=~" or arg.startswith("..", i):
+                return False
+            if c.isalpha() or c == "_":
+                word = re.match(r"\w+", arg[i:]).group(0)
+                if word in ("and", "or", "not"):
+                    return False
+                i += len(word)
+                continue
+        i += 1
+    return not (arg[0] == "(" and first_zero == n - 1)
+
+
+def short_calls(extra=()):
     """MOD 的 Lua 裡，傳的引數比定義的固定參數少的呼叫。回 [(key, 位置說明)]，key＝檔|函式|傳幾個<要幾個。
-    只報確定少傳的：最後一個引數是呼叫或 ... 的（個數不定）不報；同名函式有好幾個定義時照最少的那個算。
+    呼叫照「哪個模組的哪個函式」對定義：`Queue.cancel(`、`B.Queue.cancel(`、`local Q = B.Queue` 之後的 `Q.cancel(` 都對
+    Queue.lua 的那一個（照名稱對、同名取最少的做法，別的模組有同名而參數較少的函式時會漏）。沒前綴的呼叫對同檔
+    最近、還在範圍內的 local 函式，`local f = Check.safehouse` 這種別名跟著對；`self:f(` 對同檔的方法；認不出接收者的
+    `obj:f(` 照方法名對（同名取最少的），`x.f(` 不看（別人的表或欄位裡的函式：`ArrayList.new()`、`UI.Button.new`）。
+    最後一個引數是 ... 的不報；是單獨一個呼叫的（會展開成好幾個值）當一個算、照報，key 的 < 換成 ~。
     定義只認 `function A.b(…)`、`function A:b(…)`、`local function b(…)`、`A.b = function(…)`（表建構式裡的欄位不算）；
-    沒前綴的呼叫只對同檔的 local 函式與全域函式；`pcall(f, …)` 當成呼叫 f。"""
+    `pcall(f, …)` 當成呼叫 f。extra＝另外要看的目錄或檔（harness、E2E 情境）：只看裡面的呼叫。"""
     lua_root = os.path.dirname(os.path.dirname(os.path.dirname(ADMIN)))   # …/media/lua
-    defs, texts, def_parens = {}, {}, set()
     name_re = r"[A-Za-z_]\w*"
+    chain_re = rf"{name_re}(?:\.{name_re})*"
+    texts, defs, def_parens, roots, mods, fn_alias, ours = {}, {}, set(), {}, {}, {}, set()
 
     def fixed(params):
         return len([p for p in (q.strip() for q in params.split(",")) if p and p != "..."])
 
-    def add(name, path, pos, form, params, local):
-        defs.setdefault(name, []).append((path, texts[path].count("\n", 0, pos) + 1, form, fixed(params), local))
+    def scope_end(text, pos):
+        """local 函式看得到的範圍：到縮排比它淺的下一行（外層區塊收尾）為止；頂層的到檔尾。"""
+        start = text.rfind("\n", 0, pos) + 1
+        indent = len(text[start:pos]) - len(text[start:pos].lstrip())
+        if indent:
+            for m in re.finditer(r"\n([ \t]*)\S", text[pos:]):
+                if len(m.group(1)) < indent:
+                    return pos + m.start() + 1
+        return len(text)
 
-    for folder, _, names in os.walk(lua_root):
-        for name in sorted(names):
-            if not name.endswith(".lua"):
-                continue
-            path = os.path.join(folder, name)
-            with open(path, encoding="utf-8", errors="replace") as fh:
-                text = texts[path] = lua_clean(fh.read())
-            for m in re.finditer(rf"(local\s+)?\bfunction\s+({name_re}(?:\.{name_re})*)(?::({name_re}))?\s*\(([^)]*)\)", text):
-                local, dotted, method, params = m.groups()
-                def_parens.add((path, text.index("(", m.start(2))))
-                if method:
-                    add(method, path, m.start(), "colon", params, False)
-                elif "." in dotted:
-                    add(dotted.rsplit(".", 1)[1], path, m.start(), "dot", params, False)
-                else:
-                    add(dotted, path, m.start(), "bare", params, bool(local))
-            for m in re.finditer(rf"^[ \t]*(local\s+)?({name_re}(?:\.{name_re})*)\s*=\s*function\s*\(([^)]*)\)", text, re.M):
-                local, dotted, params = m.groups()
-                if "." in dotted:
-                    add(dotted.rsplit(".", 1)[1], path, m.start(), "dot", params, False)
-                else:
-                    add(dotted, path, m.start(), "bare", params, bool(local))
+    def add(name, path, pos, table, form, params, local):
+        text = texts[path]
+        defs.setdefault(name, []).append({
+            "path": path, "line": text.count("\n", 0, pos) + 1, "pos": pos, "table": table, "form": form,
+            "need": fixed(params), "local": local, "end": scope_end(text, pos) if local else len(text)})
+
+    def scan(path):
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = texts[path] = lua_clean(fh.read())
+        roots[path] = {"MinidoracatBuilder"} | set(
+            re.findall(rf"\blocal\s+({name_re})\s*=\s*MinidoracatBuilder[ \t]*$", text, re.M))
+        root = "|".join(sorted(roots[path]))
+        mods[path] = {t: x for x, t in re.findall(rf"^[ \t]*(?:{root})\.({name_re})\s*=\s*({name_re})[ \t]*$", text, re.M)}
+        mods[path].update(re.findall(
+            rf"\blocal\s+({name_re})\s*=\s*(?:{root})\.({name_re})(?:\s+or\s+\{{\s*\}})?[ \t]*$", text, re.M))
+        fn_alias[path] = {m.group(1): (m.start(), m.group(2)) for m in re.finditer(
+            rf"\blocal\s+({name_re})\s*=\s*({name_re}(?:\.{name_re})+)[ \t]*$", text, re.M)}
+        for m in re.finditer(rf"(local\s+)?\bfunction\s+({chain_re})(?::({name_re}))?\s*\(([^)]*)\)", text):
+            local, dotted, method, params = m.groups()
+            def_parens.add((path, text.index("(", m.start(2))))
+            if method:
+                add(method, path, m.start(), dotted, "colon", params, False)
+            elif "." in dotted:
+                add(dotted.rsplit(".", 1)[1], path, m.start(), dotted.rsplit(".", 1)[0], "dot", params, False)
+            else:
+                add(dotted, path, m.start(), None, "bare", params, bool(local))
+        for m in re.finditer(rf"^[ \t]*(local\s+)?({chain_re})\s*=\s*function\s*\(([^)]*)\)", text, re.M):
+            local, dotted, params = m.groups()
+            if "." in dotted:
+                add(dotted.rsplit(".", 1)[1], path, m.start(), dotted.rsplit(".", 1)[0], "dot", params, False)
+            else:
+                add(dotted, path, m.start(), None, "bare", params, bool(local))
+
+    def lua_files(top):
+        if os.path.isfile(top):
+            return [top]
+        return sorted(os.path.join(folder, name) for folder, _, names in os.walk(top) for name in names if name.endswith(".lua"))
+
+    for path in lua_files(lua_root):
+        scan(path)
+        ours.add(path)
+    for top in extra:
+        for path in lua_files(os.path.abspath(top)):
+            if path not in texts:
+                scan(path)
+    modkeys = {x for path in ours for x in mods[path].values()}
+
+    def modkey(path, chain):
+        """a.b 這種接收者指的是哪個模組（MinidoracatBuilder.X 的 X）；認不出回 None。"""
+        comps = chain.split(".")
+        if len(comps) == 2 and comps[0] in roots[path]:
+            return comps[1] if comps[1] in modkeys else None
+        if len(comps) == 1:
+            return mods[path].get(chain) or (chain if chain in modkeys else None)
+        return None
+
+    def of_module(name, key):
+        return [d for d in defs.get(name, [])
+                if d["path"] in ours and d["form"] != "bare" and d["table"] and modkey(d["path"], d["table"]) == key]
+
+    def receiver(text, at):
+        """at 是呼叫名稱前面那個 . 或 : 的位置。回接收者（a.b 這種一串名字）；前面是運算式（x[i].f、g().f）回 None。"""
+        head = text[max(0, at - 160):at]
+        m = re.search(rf"({chain_re})\s*$", head)
+        return None if not m or head[:m.start()].rstrip()[-1:] in (".", ":") else m.group(1)
 
     keywords = {"if", "and", "or", "not", "return", "while", "until", "elseif", "in", "function", "for", "do", "then", "else", "end", "local"}
     hits = []
     for path, text in texts.items():
-        rel = os.path.relpath(path, lua_root).replace(os.sep, "/")
+        rel = os.path.relpath(path, lua_root if path in ours else REPO).replace(os.sep, "/")
         for m in re.finditer(rf"([.:]?)\b({name_re})\s*\(", text):
             sep, name = m.groups()
             open_at = m.end() - 1
@@ -147,21 +228,49 @@ def short_calls():
             if not got:
                 continue
             count, first, last = got
-            if name == "pcall" and sep == "" and re.fullmatch(rf"{name_re}(?:\.{name_re})*", first or ""):
-                sep, name, count = ("." if "." in first else ""), first.rsplit(".", 1)[-1], count - 1
-            cands = defs.get(name, [])
+            chain = receiver(text, m.start()) if sep else None
+            if name == "pcall" and sep == "" and re.fullmatch(chain_re, first or ""):
+                chain, name, count = first.rpartition(".")[0] or None, first.rsplit(".", 1)[-1], count - 1
+                sep = "." if chain else ""
+            named = defs.get(name, [])
             if sep == "":
-                cands = [d for d in cands if d[2] == "bare" and (not d[4] or d[0] == path)]
+                here = [d for d in named if d["form"] == "bare" and d["path"] == path]
+                scoped = [d for d in here if d["local"] and d["pos"] < m.start() < d["end"]]
+                alias = fn_alias[path].get(name)
+                if scoped:
+                    cands = [max(scoped, key=lambda d: d["pos"])]
+                elif [d for d in here if not d["local"]]:   # 先宣告、後面才 `f = function` 的
+                    cands = [d for d in here if not d["local"]]
+                elif alias and alias[0] < m.start():
+                    key = modkey(path, alias[1].rpartition(".")[0])
+                    cands = of_module(alias[1].rsplit(".", 1)[1], key) if key else []
+                    sep = "."
+                else:
+                    cands = [d for d in named if d["form"] == "bare" and not d["local"] and d["path"] in ours]
             else:
-                cands = [d for d in cands if d[2] != "bare"]
-            if not cands or last.endswith(")") or last == "...":
+                key = chain and modkey(path, chain)
+                mine = [d for d in named if d["form"] != "bare" and d["path"] == path]
+                if key:
+                    cands = of_module(name, key)
+                elif chain == "self" and mine:
+                    cands = mine
+                elif chain and [d for d in mine if d["table"] == chain]:
+                    cands = [d for d in mine if d["table"] == chain]
+                elif sep == ":":   # 認不出是誰的方法呼叫：照方法名，同名取最少的
+                    cands = [d for d in named if d["path"] in ours and d["form"] == "colon"]
+                else:              # 別人的表或欄位裡的函式
+                    cands = []
+            if not cands or last == "...":
                 continue
-            need = min(d[3] + (1 if sep == "." and d[2] == "colon" else -1 if sep == ":" and d[2] == "dot" else 0) for d in cands)
+            need = min(d["need"] + (1 if sep == "." and d["form"] == "colon" else -1 if sep == ":" and d["form"] == "dot" else 0)
+                       for d in cands)
             if count < need:
-                d = min(cands, key=lambda d: d[3])
+                d = min(cands, key=lambda d: d["need"])
                 line = text.count("\n", 0, m.start()) + 1
-                hits.append((f"{rel}|{name}|{count}<{need}",
-                             f"{rel}:{line}  {name} 傳 {count} 個、定義 {need} 個（{os.path.basename(d[0])}:{d[1]}）"))
+                tail = expands(last)
+                hits.append((f"{rel}|{name}|{count}{'~' if tail else '<'}{need}",
+                             f"{rel}:{line}  {name} 傳 {count} 個{'（最後一個是呼叫，它回幾個值要自己看）' if tail else ''}、"
+                             f"定義 {need} 個（{os.path.basename(d['path'])}:{d['line']}）"))
     return hits
 
 
@@ -184,7 +293,8 @@ def check_args(rebase):
         with open(ARGS_BASE, "w", encoding="utf-8", newline="\n") as fh:
             fh.write("# 既有的「固定參數少傳」呼叫（scripts/verify_local.py 的 check_args）。只會變少：改掉一處就重跑\n"
                      "# python scripts/verify_local.py --rebase-args。不要為了讓新的呼叫通過而重跑：少的補 nil 傳齊，\n"
-                     "# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法（例 ArrayList.new()）才加進來。\n")
+                     "# 或把選用參數改成 ... 接。只有確定呼叫的是 Java 方法，或最後一個引數的呼叫確定回夠多個值\n"
+                     "# （key 裡是 ~）才加進來。\n")
             for key in sorted(now):
                 fh.write(f"{len(now[key])}\t{key}\n")
         print(f"  note  {ARGS_TITLE}：baseline 重寫，{len(hits)} 處")
@@ -267,4 +377,8 @@ def check_rules():
 
 
 if __name__ == "__main__":
+    if "--args-also" in sys.argv:   # 盤點用：連 harness、E2E 情境裡的呼叫一起列，只列不判
+        for _, where in short_calls(sys.argv[sys.argv.index("--args-also") + 1:]):
+            print(where)
+        sys.exit(0)
     sys.exit(check_rules() | check_args("--rebase-args" in sys.argv))

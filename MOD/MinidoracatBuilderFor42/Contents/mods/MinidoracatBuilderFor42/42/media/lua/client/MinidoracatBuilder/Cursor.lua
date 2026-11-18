@@ -93,7 +93,8 @@ end
 -- 順時針一圈（2W＋2H 條邊）。edge 是範圍最外圈的格子，也順時針。
 function Cursor.shape(ax, ay, az, ex, ey, mode, limit)
     local out = {}
-    local function add(x, y, side)
+    local function add(x, y, ...)
+        local side = ...
         if #out < limit then out[#out + 1] = { x, y, az, side = side } end
     end
     local x1, x2, y1, y2 = math.min(ax, ex), math.max(ax, ex), math.min(ay, ey), math.max(ay, ey)
@@ -197,7 +198,8 @@ end
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、配方拖一排的 OVER_MAX）的不跑 Check.item，照那個碼。
 -- overlap：疊放模式（Check.item 的 opts.overlap），放開時隨請求送給伺服器。
 -- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
-function Cursor.preview(player, name, d, anchors, S, overlap)
+function Cursor.preview(player, name, d, anchors, S, ...)
+    local overlap = ...
     local work
     if S then
         work = {}
@@ -311,7 +313,8 @@ function Cursor.new(player, entry, d, overlap)
 end
 
 -- 開始放置：建游標交給引擎。項目已經不能蓋（目錄過期、管理員關了來源）就發通知、不開。
-function Cursor.start(playerNum, name, d, overlap)
+function Cursor.start(playerNum, name, d, ...)
+    local overlap = ...
     local player = getSpecificPlayer(playerNum)
     if not player then return nil end
     local entry, code = Entry.resolve(name)
@@ -1218,7 +1221,8 @@ end
 -- 送一次建造（游標放開時，契約 C4）：交給排程（Queue.push，手拖的），前面有排著的就接在後面。anchors＝{ { x, y, z, d }, ... }
 -- （每格自己的朝向 0..5）；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，省略就不畫排隊虛影。overlap＝疊放模式。
 -- 回 nonce（排在別筆後面、還沒送出時回組的 id），或 nil, 原因碼。
-function Cursor.send(player, name, anchors, parts, overlap)
+function Cursor.send(player, name, anchors, ...)
+    local parts, overlap = ...
     local id, n = Queue.push(player, name, anchors, parts, overlap)
     if not id then return nil, n end
     return n or id

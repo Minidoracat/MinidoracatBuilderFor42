@@ -88,7 +88,8 @@ end
 
 -- 記下 sq 掛上的 name 拆了退什麼（items；沒付料的是空表）。帳本還沒建（不該發生）、退料表不是「物品型別 → 數量」或
 -- 每一片都滿了時只記 log：之後這張本工具拆不了。
-function Overlays.put(sq, name, items, edge)
+function Overlays.put(sq, name, items, ...)
+    local edge = ...
     local k = pos(sq, edge)
     if not k then
         print(LOG .. "overlay ledger not ready or position out of range; not recorded: " .. at(sq, edge, name))
@@ -108,7 +109,8 @@ function Overlays.put(sq, name, items, edge)
 end
 
 -- sq 上本 MOD 掛的 name 拆了退什麼；沒有那一筆回 nil。回的表很多筆共用，不能改
-function Overlays.get(sq, name, edge)
+function Overlays.get(sq, name, ...)
+    local edge = ...
     local k = pos(sq, edge)
     local here = k and S:get(k)
     return here and here[name] or nil
@@ -116,7 +118,8 @@ end
 
 -- sq 那一件（地板或那條邊的牆）帳本的複本（{ [圖名] = 退料表 }）；沒有回 nil。原地換一樓地板、換牆前先記下來，
 -- 換好再照它掛回去（Server.complete）
-function Overlays.at(sq, edge)
+function Overlays.at(sq, ...)
+    local edge = ...
     local k = pos(sq, edge)
     local here = k and S:get(k)
     if not here then return nil end
@@ -128,7 +131,8 @@ end
 -- 回 true＝帳本已經沒有那一張。strict（拆除用，還沒動那張圖）：剩下的記不回去時什麼都不動、回 false，呼叫端不拆。
 -- 不是 strict（那張圖已經不在了：回滾、換牆掛不回去）：剩下的記不回去就整件清掉，寧可剩下的本工具拆不了，不留一筆
 -- 已經拆掉的退料
-function Overlays.forget(sq, name, edge, strict)
+function Overlays.forget(sq, name, ...)
+    local edge, strict = ...
     local k = pos(sq, edge)
     local here = k and S:get(k)
     if not (here and here[name]) then return true end

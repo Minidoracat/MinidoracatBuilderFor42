@@ -50,7 +50,8 @@ end
 
 -- sq 上本 MOD 蓋的每一件 → out：{ obj 或 overlay, kind, route, name＝sprite 名稱, plan（builder 才有） }。
 -- 同一件（多格、樓梯三片）只收一次（seen）。roof＝true：正上方那層，只收本工具拆的屋頂。memo 見 Dismantle.classOf
-function Area.scan(sq, seen, out, roof, memo)
+function Area.scan(sq, seen, out, roof, ...)
+    local memo = ...
     if not sq then return end
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
@@ -319,7 +320,8 @@ function Area.pick(list, on, max)
 end
 
 -- 送出並在輪完或停下時跳總結。kept＝面板上就擋下的（照碼數件數），併進通知的「留著 K 件：原因 數」
-function Area.send(player, items, kept)
+function Area.send(player, items, ...)
+    local kept = ...
     local one = #items == 1 and Names.of(items[1].name, items[1].kind) or nil
     Client.dismantleMany(player, items, function(summary)
         -- 一件都還沒拆就整批被拒：Client 已經跳了拒絕原因；拆到一半才被拒照停下跳總結（拆了幾件、退了什麼）

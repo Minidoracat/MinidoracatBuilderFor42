@@ -244,7 +244,8 @@ end
 -- （指著牆、門的上半時滑鼠下的地板格是牆後那一格；別層看得到的東西也拿得到），沒點到物件時列滑鼠那格（sq）。
 -- 只有一張能蓋（或同一件東西有能蓋的那一項、或是看得到的配方的圖）就直接選；好幾張就在滑鼠旁跳出和右鍵「挑圖塊」子選單
 -- 同一份清單（addPick）；格子上沒有圖就說一聲
-function Menu.pickAt(playerNum, sq, obj)
+function Menu.pickAt(playerNum, sq, ...)
+    local obj = ...
     sq = obj and obj:getSquare() or sq
     local tiles = {}
     if sq then squareTiles(sq, tiles, {}) end

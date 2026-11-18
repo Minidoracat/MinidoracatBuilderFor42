@@ -426,7 +426,8 @@ end
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
 --   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
-function Dismantle.check(player, kind, plan, preview, toolMemo)
+function Dismantle.check(player, kind, plan, ...)
+    local preview, toolMemo = ...
     local cells = {}
     for i, o in ipairs(plan.remove) do
         local sq = o:getSquare()

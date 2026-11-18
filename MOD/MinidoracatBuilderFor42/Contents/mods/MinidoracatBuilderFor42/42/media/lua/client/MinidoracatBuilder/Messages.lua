@@ -62,7 +62,8 @@ function Messages.missing(need, tools)
     return what
 end
 
-function Messages.refusal(code, extra)
+function Messages.refusal(code, ...)
+    local extra = ...
     if not Messages.CODES[code] then return getText("IGUI_MBLD_Refuse_Other", tostring(code)) end
     local key = "IGUI_MBLD_Refuse_" .. code
     -- 疊放的上限照這台最後收到的沙盒值（伺服器只送碼與格子）
@@ -109,7 +110,8 @@ end
 -- 照原因數件數，每個碼一行，件數多的在前（同數照碼名；逐筆插入，不用 table.sort，家族規則）。
 -- counts＝{ [碼] = 件數 } 或 { [碼] = { n = 件數, extra = 拒絕附帶的欄位 } }（缺料、缺工具要 extra 才寫得出缺什麼）。
 -- unbuild＝true：拆除碼的短字＋件數（「裡面還有東西 1」）；否則建造的一句話＋格數（游標拖一片時每種原因一行，審查 #6）
-function Messages.reasons(counts, unbuild)
+function Messages.reasons(counts, ...)
+    local unbuild = ...
     local rows = {}
     for code, v in pairs(counts or {}) do
         local n = type(v) == "table" and v.n or v
@@ -171,8 +173,8 @@ end
 -- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」；
 -- maxLines 省略＝8（超過的最後一行截字；Toast 只長到實際行數）。4 行時 CatLang 字型下英文的缺料句就放不下，
 -- 法、西、德文更寬
-function Messages.toast(player, text, title, ...)
-    local maxLines = ...
+function Messages.toast(player, text, ...)
+    local title, maxLines = ...
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI and UI.Toast and UI.Toast.show then
         UI.Toast.show({ title = title or getText("IGUI_MBLD_NotBuilt"), message = text, maxLines = maxLines or 8 })

@@ -109,8 +109,8 @@ end
 -- checkPermissions 只在伺服器回 true（LuaManager.java:3075-3078），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
 -- why＝"build"（預設）、"dismantle" 或 "wire"（接線，Circuits）：拆除、接線一樣要 BUILD 權限（原版大錘、ISDismantleAction
 -- 也是），但不看 WhereCanBuild。
-function Check.safehouse(player, c, preview, why)
-    why = why or "build"
+function Check.safehouse(player, c, preview, ...)
+    local why = (...) or "build"
     if c.sq and not (isServer() and checkPermissions(player, Capability.CanGoInsideSafehouses) == true)
         and SafeHouse.isSafeHouse(c.sq, player:getUsername(), true) ~= nil then
         return "SAFEHOUSE"
@@ -162,7 +162,8 @@ end
 -- opts.overlap：疊放模式（Place.check 的 overlap；只對 Place.OVERLAP 的種類有用）。玩家在建造視窗打開，隨請求送到伺服器
 -- （Server.intent 的 o），伺服器只帶這一欄（沒有 preview，照樣補格子、不查摘要）。開著時不找原地替換：玩家要的是疊上去。
 -- 伺服器（opts 為 nil 或只有 overlap）不查材料：Server.complete 自己 plan。
-function Check.item(player, name, d, anchor, opts)
+function Check.item(player, name, d, anchor, ...)
+    local opts = ...
     local preview = opts ~= nil and opts.preview == true
     local walk = preview and opts.walk == true
     local planned = preview and opts.planned or nil

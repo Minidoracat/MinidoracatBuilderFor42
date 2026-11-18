@@ -108,7 +108,8 @@ local STATE_KEYS = { "OpenTileOffset", "SmashedTileOffset", "GlassRemovedOffset"
 local WINDOW_STATE = Rules.windowStateSet or {}
 Rules.windowStateSet = WINDOW_STATE
 -- Rules.windowStates：記了幾張；nil＝還沒記
-function Rules.recordWindowStates(sprites, late)
+function Rules.recordWindowStates(sprites, ...)
+    local late = ...
     local t0 = getTimestampMs()
     local wins, targets, idx, indeg, wn = {}, {}, {}, {}, 0
     for i = 0, sprites:size() - 1 do

@@ -111,7 +111,8 @@ function W.setPerRow(n)
 end
 
 -- 框架探測（UI AGENTS 契約 2；QU/Draw.lua:21-30）：缺一項就回 nil，不帶半套狀態
-function W.ui(caps)
+function W.ui(...)
+    local caps = ...
     if not (MinidoracatUI and MinidoracatUI.v1) then pcall(require, "MinidoracatUI/V1") end
     local UI = MinidoracatUI and MinidoracatUI.v1
     if UI == nil or UI.API_MAJOR ~= 1 or (UI.API_REVISION or 0) < W.MIN_REV then return nil end
@@ -1213,7 +1214,8 @@ end
 -- ===== 套用篩選 =====
 
 -- 原因碼 → 玩家看的說明（Entry.why；右鍵挑圖塊的提示也用）。name＝那張圖：ENTITY 時查它有沒有建造配方
-function W.whyText(code, arg, name)
+function W.whyText(code, arg, ...)
+    local name = ...
     if code == "ENTITY" and name then
         -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件；審查 1109 Claude）：別叫玩家去學配方。
         -- Recipes.bySprite 收全部建造配方的每一張圖，這位玩家看不看得到都收

@@ -32,8 +32,8 @@ Client.RATE_WINDOW_MS, Client.RATE_MAX = 5000, 20
 local sends = {} -- 最近送出請求的時間（舊的在前）；分割畫面幾位玩家合算（寧可少送）
 
 -- 最近一個限流窗（含兩端，同 Server 的 rateOk）送過幾個請求。順便原地丟掉窗外的與時鐘往回調後「在未來」的紀錄
-function Client.recentSends(t)
-    t = t or getTimestampMs()
+function Client.recentSends(...)
+    local t = (...) or getTimestampMs()
     local n = 0
     for i = 1, #sends do
         local s = sends[i]
@@ -89,7 +89,8 @@ end
 -- 與原因碼。會清掉玩家目前排著的動作（每人只留一個請求，設計稿）。動作等伺服器回 accepted 才排（單機當場就回）。
 -- overlap＝true：疊放模式（建造視窗的「疊放」鈕），隨請求送去，伺服器照沙盒重算。
 -- 車庫門只送一個錨點，第 5 欄是寬度（格數，Cursor.garageAnchor），送成 args.w；其他項目不送 w（伺服器收到會回 BAD_REQUEST）
-function Client.build(player, e, cells, overlap)
+function Client.build(player, e, cells, ...)
+    local overlap = ...
     local entry, code = Entry.resolve(e)
     if not entry then return nil, code end
     local flat = {}
@@ -419,7 +420,8 @@ function Client.dismantleMany(player, items, ...)
 end
 
 -- 拆 obj（本 MOD 蓋的那件，Dismantle.kindOf 是 kind；own＝同一件各片所在的格子）
-function Client.dismantle(player, obj, kind, own)
+function Client.dismantle(player, obj, kind, ...)
+    local own = ...
     local spr, sq = obj:getSprite(), obj:getSquare()
     return Client.dismantleMany(player, { { x = sq:getX(), y = sq:getY(), z = sq:getZ(), name = spr:getName(), kind = kind,
         north = Entry.north(kind, spr), own = own, route = "builder", obj = obj } })

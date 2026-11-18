@@ -43,7 +43,8 @@ end
 Entry.KIND_OFF = { well = true, water = true }
 
 -- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
-function Entry.kindOn(kind, s)
+function Entry.kindOn(kind, ...)
+    local s = ...
     local key = Entry.KIND_KEY[kind]
     if key == nil then return true end
     local v = (s or Entry.settings())[key]
