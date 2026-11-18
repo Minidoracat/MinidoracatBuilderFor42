@@ -893,12 +893,14 @@ local function alive(file)
     return line ~= nil and line ~= "" and line ~= TOMB
 end
 
--- 確定是刪掉的：讀得到刪除標記（正式檔是空的看備份檔）。打不開、空的都不算：不知道是什麼就不重用那個檔名，
--- 不然一時讀不到的藍圖會被另存、改名寫進去，原檔與備份都蓋掉
-local function tombed(file)
+-- 確定是刪掉的：正式檔讀得到刪除標記，備份檔也是刪除標記或根本沒有（hasBack＝資料夾裡有備份檔）；正式檔是空的看備份檔。
+-- 打不開、空的都不算：不知道是什麼就不重用那個檔名，不然一時讀不到的藍圖會被另存、改名寫進去，原檔與備份都蓋掉。
+-- 備份檔是別的內容也不算：刪掉後又存同名、正式檔還沒寫就斷掉，備份是那張唯一完整的一份
+local function tombed(file, hasBack)
     local line = firstLine(path(file))
-    if line == "" then line = firstLine(backupOf(path(file))) end
-    return line == TOMB
+    local back = hasBack and firstLine(backupOf(path(file)))
+    if line == "" then return back == TOMB end
+    return line == TOMB and (back == false or back == TOMB)
 end
 
 -- 藍圖資料夾裡的藍圖檔名（不含已刪除的），和略過的 .txt 檔數（檔名不合規則）。每個檔讀第一行判斷有沒有刪掉
@@ -1049,7 +1051,7 @@ local function pickName(name, keep)
         if not used[f:lower()] and not used[back:lower()] and not opens(path(f)) and not opens(path(back)) then return f end
         if i == 1 then
             local have = used[f:lower()] or f -- 分大小寫的檔案系統上 f 可能不存在，要看的是資料夾裡那個
-            local okA, gone = pcall(tombed, have)
+            local okA, gone = pcall(tombed, have, used[backupOf(have):lower()] ~= nil)
             if okA and gone then return have end
         end
     end

@@ -14731,6 +14731,23 @@ end)()
                 check(okL3 == true and PM.plan().file == "Lone2.txt" and disk[lone] == wasMain,
                     "✗ 另存、同名的只剩備份檔：存成另一個檔名，備份沒被蓋掉 " .. tostring(PM.plan().file))
                 disk[lone] = nil
+                -- 複審第二次：正式檔是刪除標記、備份檔卻是別的內容（刪掉後又存同名、正式檔還沒寫就斷掉）。
+                -- 備份是那張唯一完整的一份：檔名不重用。兩個都是刪除標記、或沒有備份檔才重用
+                local tp, tb = "MinidoracatBuilder/plans/Tomb.txt", "MinidoracatBuilder/plans/Tomb.cfg"
+                disk[tp], disk[tb] = wasMain, wasMain
+                local okT = PF.remove("Tomb.txt")
+                local tomb = disk[tp]
+                check(okT == true and tomb ~= wasMain and disk[tb] == tomb and PF.fileName("Tomb") == "Tomb.txt",
+                    "反面：正式檔與備份檔都是刪除標記：檔名照舊重用")
+                disk[tb] = wasMain
+                check(PF.fileName("Tomb") == "Tomb2.txt" and disk[tb] == wasMain,
+                    "✗ 正式檔是刪除標記、備份檔是別的內容：檔名不重用 " .. tostring(PF.fileName("Tomb")))
+                locked[tb] = true
+                check(PF.fileName("Tomb") == "Tomb2.txt", "✗ 正式檔是刪除標記、備份檔一時打不開：檔名不重用")
+                locked[tb] = nil
+                disk[tb] = nil
+                check(PF.fileName("Tomb") == "Tomb.txt", "反面：正式檔是刪除標記、沒有備份檔：重用")
+                disk[tp] = nil
             end
             B.PlanLibrary = { askOverwrite = function() return nil end }
         end
@@ -16053,6 +16070,32 @@ end)()
         check(L.chooser ~= nil and said == "IGUI_MBLD_Imp_SameName", "分享碼：藍圖庫裡剛好一張同名（Charlie）＝先問，說已經有一張")
         press("IGUI_MBLD_SaveOverwrite")
         check(code.file == "Charlie.txt" and PF.load("Charlie.txt").n == 1, "按覆蓋：蓋掉同名那張")
+        -- 複審第二次：同名覆蓋寫不進（磁碟滿、檔被占用）。這份還是分享碼來的：留著檔名的話，再按「存進藍圖庫」
+        -- 會當成已經在藍圖庫、說已存好，其實藍圖庫裡還是舊的那張
+        three()
+        local code2 = fresh(Plan.new("Charlie"))
+        imp(code2, code2.rev)
+        L.imp:finish("store")
+        local realWriter = getFileWriter
+        getFileWriter = function() return { write = function() end, close = function() end } end
+        press("IGUI_MBLD_SaveOverwrite")
+        getFileWriter = realWriter
+        check(code2.file == nil and L.imp ~= nil and PF.load("Charlie.txt").n ~= code2.n, "✗ 同名覆蓋寫不進：匯入框留著、這份不算已經在藍圖庫")
+        if L.imp then L.imp:finish("store") end
+        check(L.chooser ~= nil, "✗ 同名覆蓋寫不進後再按存進藍圖庫：照樣再問一次（不是直接說已存好）")
+        if L.chooser then press("IGUI_MBLD_SaveOverwrite") end
+        check(PF.load("Charlie.txt").n == code2.n, "✗ 重試覆蓋：藍圖庫裡是這份的內容")
+        -- 同名分享碼的三選一也一樣：匯入框關了再按另存新檔不開名稱框
+        three()
+        local code3 = fresh(Plan.new("Charlie"))
+        imp(code3, code3.rev)
+        L.imp:finish("store")
+        L.closeImport()
+        dialogs = {}
+        press("IGUI_MBLD_SaveAsNew")
+        check(#dialogs == 0 and L.namer == nil, "✗ 同名分享碼的三選一開著時按匯入框的取消：再按另存新檔不開名稱框")
+        L.closeChooser()
+        three()
         local delta = fresh(Plan.new("Delta"))
         imp(delta, delta.rev)
         L.imp:finish("store")

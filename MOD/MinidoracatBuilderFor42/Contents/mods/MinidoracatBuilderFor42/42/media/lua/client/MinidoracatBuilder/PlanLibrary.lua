@@ -1484,12 +1484,17 @@ function Imp:render()
     end
 end
 
+-- 回 存好了嗎
 function Imp:store(plan)
     local file, asNew = L.store(plan)
-    if not file then return L.tell(asNew) end
+    if not file then
+        L.tell(asNew)
+        return false
+    end
     L.tell(getText(asNew and "IGUI_MBLD_Imp_StoredNew" or "IGUI_MBLD_Imp_Stored", plan.name, file))
     L.closeImport()
     if L.visible() and L.v then L.v:reload(file) end
+    return true
 end
 
 -- 藍圖庫裡顯示名稱完全相同的：剛好一張才回它的檔名（藍圖庫讀好的檔頭先用）
@@ -1559,13 +1564,15 @@ function Imp:finish(how)
     elseif not place then
         local same = L.sameName(plan.name)
         if same and not locked(same) then
-            return L.askOverwrite(self.pn, { name = plan.name, text = getText("IGUI_MBLD_Imp_SameName", plan.name),
-                onOverwrite = live(function()
+            return L.askOverwrite(self.pn, { name = plan.name, text = getText("IGUI_MBLD_Imp_SameName", plan.name), live = alive,
+                onOverwrite = function()
                     -- 框開著的時候藍圖庫可能變了：那個檔還是同名的那張、沒被地上那張佔著才蓋，不然存成新的一張
                     local head = PlanFile.head(same)
-                    if head and head.name == plan.name and not locked(same) then plan.file = same end
-                    self:store(plan)
-                end), onNew = live(asNew) })
+                    local over = head and head.name == plan.name and not locked(same)
+                    if over then plan.file = same end
+                    -- 沒存成：這份還是分享碼來的。留著檔名的話，再按一次會當成已經在藍圖庫、說已存好
+                    if not self:store(plan) and over then plan.file = nil end
+                end, onNew = live(asNew) })
         end
     end
     return go()
