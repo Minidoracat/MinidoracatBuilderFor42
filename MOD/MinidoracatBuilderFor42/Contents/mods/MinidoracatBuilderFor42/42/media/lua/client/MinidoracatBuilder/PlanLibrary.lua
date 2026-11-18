@@ -636,8 +636,10 @@ end
 -- 地上那張規劃中有沒存的改動：換張、收起、搬之前先問覆蓋／另存／取消（L.askOverwrite），存好了才接著做 go()；
 -- 沒有沒存的改動直接 go()。回 go() 的結果；問了回 true。三選一與名稱框不擋畫面：答的時候已經不在規劃那一張
 -- 就不存也不做；存不了（PlanMode 自己說過）也不做。三選一開不出來時不替玩家決定，只說先按完成或取消。
--- live（選用）＝這次動作還算數嗎（匯入框的：框關了或換了一份就不算）：答的時候不算也是不存、不做
-function L.saveFirst(pn, go, live)
+-- live（選用）＝這次動作還算數嗎（匯入框的：框關了或換了一份就不算）：答的時候不算也是不存、不做，名稱框也不開。
+-- 選用的參數用 ... 接（L.placePlan、L.placeFile 也是）：Kahlua 不替少傳的固定參數補 nil，會拿到堆疊上的舊值
+function L.saveFirst(pn, go, ...)
+    local live = ...
     local PM = B.PlanMode
     if not (PM and PM.unsaved and PM.unsaved()) then return go() end
     local cur = PM.plan()
@@ -649,7 +651,7 @@ function L.saveFirst(pn, go, live)
         end
     end
     -- 整張擦光了沒有東西可以另存（同 PlanMode 的 askSaveTo）
-    if L.askOverwrite(pn, { name = cur.name, onOverwrite = after(PM.save), onNew = cur.n > 0 and after(PM.saveAs) or nil }) then
+    if L.askOverwrite(pn, { name = cur.name, live = live, onOverwrite = after(PM.save), onNew = cur.n > 0 and after(PM.saveAs) or nil }) then
         return true
     end
     L.tell(getText("IGUI_MBLD_PlanUnsaved", cur.name or ""))
@@ -693,7 +695,8 @@ end
 -- 新的空白藍圖、面板的收起也是）。框上寫的是原本地上那張：答的時候地上換了別張就不做。live（選用）同 L.saveFirst。
 -- fresh（選用）＝重讀要擺的那份，回 plan 或 nil（已說過原因）：問過才擺的，擺之前用它換掉手上那份。框開著的時候
 -- 藍圖庫那個檔可能存了新內容、刪掉了，擺手上那份舊的，定位時會把舊內容寫回去
-function L.placePlan(plan, pn, live, fresh)
+function L.placePlan(plan, pn, ...)
+    local live, fresh = ...
     local PM = B.PlanMode
     if not (PM and PM.place) then
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
@@ -722,7 +725,8 @@ function L.placePlan(plan, pn, live, fresh)
     return go()
 end
 
-function L.placeFile(file, pn, live)
+function L.placeFile(file, pn, ...)
+    local live = ...
     -- 規劃中的就是這個檔：地上那張不比檔案舊，擺的是它（另讀一份會是存檔前的舊內容）
     if editing(file) then return L.placePlan(B.PlanMode.plan(), pn, live) end
     local function load()
@@ -1540,10 +1544,11 @@ function Imp:finish(how)
         if plan.rev ~= self.rev then
             -- 那個檔被地上那張佔著就不問：擺到地上看規劃中（跟著游標的照舊問），存進藍圖庫連跟著游標的也算
             if not (place and editing or locked)(file) then
-                return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
+                return L.askOverwrite(self.pn, { name = plan.name, live = alive, onOverwrite = go, onNew = live(asNew) })
             end
         elseif place then
-            return L.placeFile(file, self.pn, alive)
+            -- 確認框開著時才換了項目：這條路擺的是藍圖庫裡沒換過的那份，不算數（匯入框留著，再按一次走上面那條）
+            return L.placeFile(file, self.pn, function() return alive() and plan.rev == self.rev end)
         elseif PlanFile.exists(file) then
             L.markUsed(file, nil)
             L.tell(getText("IGUI_MBLD_Imp_Stored", plan.name, file))
@@ -1812,13 +1817,18 @@ function L.closeChooser()
     if box and UI and UI.Dialog.close then UI.Dialog.close(box, false) end
 end
 
--- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, onOverwrite(), onNew(新名稱)? }；
--- 另存新檔再問名稱（預設現在的名稱）；沒給 onNew 就沒有這顆（整張擦光了，沒有東西可以另存）。回 true；沒有框架回 nil
+-- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, live()?, onOverwrite(), onNew(新名稱)? }；
+-- 另存新檔再問名稱（預設現在的名稱）；沒給 onNew 就沒有這顆（整張擦光了，沒有東西可以另存）。
+-- live 回 false（發起的那個動作不算數了）：兩顆都不做事，也不開名稱框。回 true；沒有框架回 nil
 function L.askOverwrite(pn, o)
     local name = o.name or ""
-    local buttons = { { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = o.onOverwrite } }
+    local function live() return not o.live or o.live() end
+    local buttons = { { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = function()
+        if live() then return o.onOverwrite() end
+    end } }
     if o.onNew then
         buttons[2] = { text = getText("IGUI_MBLD_SaveAsNew"), onClick = function()
+            if not live() then return end
             L.namer = L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
                 input = { text = name }, ok = getText("IGUI_MBLD_SaveAsNew"), onYes = function(t) o.onNew(t or "") end })
         end }

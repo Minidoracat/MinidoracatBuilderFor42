@@ -14724,6 +14724,13 @@ end)()
                 disk["MinidoracatBuilder/plans/Void.txt"] = ""
                 check(PF.fileName("Void") == "Void2.txt", "✗ 空的檔、沒有備份（不知道是什麼）：檔名不重用 " .. tostring(PF.fileName("Void")))
                 disk["MinidoracatBuilder/plans/Void.txt"] = nil
+                -- 複審：只剩備份檔（第一次存、正式檔還沒建立就斷掉）。那個名稱不算沒人用：拿來存會把唯一完整的一份蓋掉
+                local lone = "MinidoracatBuilder/plans/Lone.cfg"
+                disk[lone] = wasMain
+                local okL3 = PM.saveAs("Lone")
+                check(okL3 == true and PM.plan().file == "Lone2.txt" and disk[lone] == wasMain,
+                    "✗ 另存、同名的只剩備份檔：存成另一個檔名，備份沒被蓋掉 " .. tostring(PM.plan().file))
+                disk[lone] = nil
             end
             B.PlanLibrary = { askOverwrite = function() return nil end }
         end
@@ -16160,6 +16167,19 @@ end)()
             L.closeImport()
             press("IGUI_MBLD_SaveOverwrite")
             check(saves == 0 and placed == 0 and ground == old, "✗ 地上那張的存檔三選一開著時按匯入框的取消：答了不存、不擺")
+            -- 複審：作廢之後按「另存新檔」連名稱框都不開（輸入完才發現不算數，還會把別的確認框擠掉）
+            begin(true)
+            dialogs[#dialogs].onResult(true)
+            L.closeImport()
+            local nDlg = #dialogs
+            press("IGUI_MBLD_SaveAsNew")
+            check(#dialogs == nDlg and L.namer == nil and saves == 0 and placed == 0 and ground == old,
+                "✗ 地上那張的存檔三選一開著時按匯入框的取消：再按另存新檔不開名稱框")
+            L.closeChooser()
+            local c2 = begin(false)
+            Plan.replace(c2, 1, "swapped_01_0")
+            dialogs[#dialogs].onResult(true)
+            check(placed == 1 and ground == c2, "反面：分享碼來的、確認框開著時換了項目：按確定擺的就是手上這份（換過的）")
             local c = begin(true)
             dialogs[#dialogs].onResult(true)
             press("IGUI_MBLD_SaveOverwrite")
@@ -16174,6 +16194,29 @@ end)()
             L.closeImport()
             dialogs[#dialogs].onResult(true)
             check(placed == 0 and ground == old, "✗ 沒換過項目的檔、換一張的確認框開著時按匯入框的取消：按確定不擺")
+            -- 複審：沒換過項目的檔走「擺藍圖庫裡現在那個檔」；確認框開著時才在匯入框換了項目（同一份、rev 變），
+            -- 再按確定會擺沒換過的那份、關掉匯入框，剛換的就沒了：不算數，匯入框留著讓玩家再按一次
+            three()
+            ground, placed, dirty, dialogs = old, 0, false, {}
+            p = L.loadFile("Alpha.txt")
+            imp(p, p.rev)
+            L.imp:finish("place")
+            local nSwap = Plan.replace(p, 1, "swapped_01_0")
+            dialogs[#dialogs].onResult(true)
+            check(nSwap > 0 and placed == 0 and ground == old and L.imp ~= nil and L.imp.plan == p and L.imp.win:getIsVisible(),
+                "✗ 沒換過項目的檔、換一張的確認框開著時才換項目：按確定不擺沒換過的那份、匯入框留著")
+            -- 匯入自己的三選一（換過項目、問覆蓋或另存）也一樣：匯入框關了再按另存新檔不開名稱框
+            L.closeImport()
+            three()
+            ground, placed, dialogs = nil, 0, {}
+            p = L.loadFile("Alpha.txt")
+            imp(p, p.rev)
+            Plan.replace(p, 1, "swapped_01_0")
+            L.imp:finish("place")
+            check(L.chooser ~= nil, "（準備）換過項目擺到地上：問覆蓋或另存")
+            L.closeImport()
+            press("IGUI_MBLD_SaveAsNew")
+            check(#dialogs == 0 and L.namer == nil and placed == 0, "✗ 匯入的三選一開著時按匯入框的取消：再按另存新檔不開名稱框")
             B.PlanMode.save, B.PlanMode.state = realSave3, nil
             dirty, ground, placed = false, nil, 0
             L.closeChooser()

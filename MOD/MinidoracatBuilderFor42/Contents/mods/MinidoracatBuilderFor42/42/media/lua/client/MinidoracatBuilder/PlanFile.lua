@@ -1044,7 +1044,9 @@ local function pickName(name, keep)
         if RESERVED[base:upper()] then base = base .. "_" end
         local f = base .. ".txt"
         if f:lower() == low then return keep end
-        if not used[f:lower()] and not opens(path(f)) then return f end
+        -- 備份檔也要不在：只剩備份的是第一次存到一半斷掉的那張，拿它的檔名來存會把唯一完整的一份蓋掉
+        local back = backupOf(f)
+        if not used[f:lower()] and not used[back:lower()] and not opens(path(f)) and not opens(path(back)) then return f end
         if i == 1 then
             local have = used[f:lower()] or f -- 分大小寫的檔案系統上 f 可能不存在，要看的是資料夾裡那個
             local okA, gone = pcall(tombed, have)
