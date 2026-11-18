@@ -603,6 +603,8 @@ local function leaveEdit()
     stopTool()
     S.tool = "draw"
     setSel(nil)
+    local L = B.PlanLibrary
+    if L and L.closeChooser then L.closeChooser() end -- 存檔前的三選一跟著規劃關（它不擋畫面）
 end
 
 -- 開關規劃：沒有藍圖就在腳下建一張空的；關掉時存檔（空的、沒存過的直接丟掉）。
@@ -732,10 +734,12 @@ function PM.askCancel()
         ok = getText("IGUI_MBLD_PlanDiscard"), cancel = getText("IGUI_MBLD_PlanKeep"), danger = true, onYes = go }) ~= nil
 end
 
--- 換個名稱另存成新的一張再做 save（原本的檔不動）。失敗時名稱與檔名改回去
+-- 換個名稱另存成新的一張再做 save（原本的檔不動）。失敗時名稱與檔名改回去。
+-- 整張擦光了不做（回 false, "EMPTY"）：沒有檔名的空白藍圖不存檔，完成時會整張丟掉，地上那張就不見了
 local function asNew(name, save)
     local plan = S.plan
     if not plan then return false, "NO_PLAN" end
+    if plan.n == 0 then return false, "EMPTY" end
     local file, old = plan.file, plan.name
     local n = Plan.cleanName(name)
     if n ~= "" then plan.name = n end
@@ -751,14 +755,23 @@ function PM.finishAs(name)
 end
 
 function PM.saveAs(name)
+    if S.mode ~= "edit" then return false, "NOT_EDIT" end
     return asNew(name, PM.save)
 end
 
--- 有沒存的改動：問覆蓋原本的、另存新檔還是取消（藍圖庫的三選一框）；沒有框架照舊覆蓋。問了回 true, "ASKED"
+-- 有沒存的改動：問覆蓋原本的、另存新檔還是取消（藍圖庫的三選一框）；沒有框架照舊覆蓋。問了回 true, "ASKED"。
+-- 框不擋畫面：按下去時已經離開規劃（取消了）或地上換了一張就不做。整張擦光了不給「另存新檔」
 local function askSaveTo(overwrite, saveAs)
-    local L = B.PlanLibrary
+    local L, plan = B.PlanLibrary, S.plan
+    local function live(fn)
+        return function(...)
+            if S.plan ~= plan or S.mode ~= "edit" then return false, "NOT_EDIT" end
+            return fn(...)
+        end
+    end
     if PM.unsaved() and L and L.askOverwrite
-        and L.askOverwrite(PM.playerNum or 0, { name = S.plan.name, onOverwrite = overwrite, onNew = saveAs }) then
+        and L.askOverwrite(PM.playerNum or 0, { name = plan.name, onOverwrite = live(overwrite),
+            onNew = plan.n > 0 and live(saveAs) or nil }) then
         return true, "ASKED"
     end
     return overwrite()
@@ -1217,8 +1230,8 @@ function PM.placeHome()
     return true
 end
 
--- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）。規劃中改的先存：擺放中不存檔，跟著游標時換一張（收起）
--- 會把沒存的改動整個丟掉。存不了留在規劃，回 false, 原因
+-- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）。規劃中改的先存，存不了留在規劃，回 false, 原因
+-- （不先存的話：擺放中不存檔，跟著游標時換一張會把沒存的改動整個丟掉）
 function PM.pickUp(playerNum)
     PM.playerNum = playerNum or PM.playerNum or 0
     local plan = S.plan

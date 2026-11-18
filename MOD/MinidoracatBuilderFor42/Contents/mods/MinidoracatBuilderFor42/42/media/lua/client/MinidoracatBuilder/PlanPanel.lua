@@ -668,7 +668,8 @@ function Panel:act(what)
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),
             ok = getText("IGUI_MBLD_Plan_Clear"), danger = true,
             onYes = function()
-                if PM.clear() then P.close() end -- 存不了時地上那張照留，面板也留著
+                -- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：再看一次。存不了時地上那張照留，面板也留著
+                if not L.blockUnsaved() and PM.clear() then P.close() end
             end })
     end
 end

@@ -661,7 +661,8 @@ function L.doPlace(plan, pn)
     return true
 end
 
--- 擺到地上（整張跟著游標，PlanMode.place）。地上已經有別張時先確認（地上同時只有一張）
+-- 擺到地上（整張跟著游標，PlanMode.place）。地上已經有別張時先確認（地上同時只有一張）。
+-- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：按確認時再看一次 blockUnsaved（新的空白藍圖、面板的收起也是）
 function L.placePlan(plan, pn)
     local PM = B.PlanMode
     if not (PM and PM.place) then
@@ -673,7 +674,9 @@ function L.placePlan(plan, pn)
     if other(cur, plan) then
         return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""),
             text = getText("IGUI_MBLD_Lib_ReplaceText", plan.name or ""), ok = getText("IGUI_MBLD_Lib_Replace"),
-            onYes = function() L.doPlace(plan, pn) end }) ~= nil
+            onYes = function()
+                if not L.blockUnsaved() then L.doPlace(plan, pn) end
+            end }) ~= nil
     end
     return L.doPlace(plan, pn)
 end
@@ -772,6 +775,7 @@ function L.newBlank(pn)
     end
     if L.blockUnsaved() then return false end
     local function go()
+        if L.blockUnsaved() then return false end
         if PM.plan() and not PM.clear() then return false end
         closeAll()
         if PM.blank(pn) == false then return false end
@@ -1288,7 +1292,7 @@ function Imp:take(s)
     if self.field then
         local shown = #s <= Imp.TYPE_MAX and s or (Plan.cut(s, Imp.SHOW) .. "...")
         self.field:setText(shown)
-        self.seen = shown
+        self.seen, self.shown = shown, shown
     end
     self:check(true)
 end
@@ -1297,7 +1301,7 @@ end
 function Imp:clearField()
     if not self.field then return end
     self.field:setText("")
-    self.seen = ""
+    self.seen, self.shown = "", nil
 end
 
 -- 讀到的是遊戲視窗上次取得焦點時的剪貼簿（Display.java:227-236、Clipboard.java:32-49）：讀不到或不是分享碼時多寫一行怎麼辦。
@@ -1316,20 +1320,27 @@ end
 -- 文字欄的回呼（同步的 onTextChange 與每幀的 onChange 都走這裡；同一段字只處理一次）。
 -- 超過 TYPE_MAX：先清框（框裡永遠不留長字串，就沒有東西能被複製）再照貼上鈕收；同步回呼拿到的字可能比 maxLength 長
 -- （截字要等 update），照長度判斷正好接住。
+-- 框裡還放著上次收下的碼（take 放的整串或開頭，Imp.shown）、又貼了一串在後面或前面：只看新貼的那段。
 -- 其餘的字就是框裡現在的字：是完整的分享碼就直接採用；不是（打到一半、剪掉了）就丟掉上次讀到的碼與結果、不寫錯誤，
 -- 按「檢查」才檢查框裡的字。分享碼的錯誤由 L.parseCode 回原因、不丟錯
 function Imp:typed(_, text)
     text = text or ""
     if text == self.seen then return end
     self.seen = text
+    local old = self.shown
+    self.shown = nil
+    if old and old ~= "" and #text > #old then
+        if text:sub(1, #old) == old then
+            text = text:sub(#old + 1)
+        elseif text:sub(-#old) == old then
+            text = text:sub(1, #text - #old)
+        end
+    end
     if #text > Imp.TYPE_MAX then
         self:clearField()
         return self:take(text)
     end
-    if text ~= "" and L.parseCode(text) then
-        self:setCode(text)
-        return self:check(true)
-    end
+    if text ~= "" and L.parseCode(text) then return self:take(text) end
     if self.code or self.plan or self.err then
         self:setCode(nil)
         self.plan, self.err = nil, nil
@@ -1437,34 +1448,64 @@ function L.sameName(name)
     return found
 end
 
--- 「存進藍圖庫」：從檔案讀的、換過項目＝問覆蓋原本的或另存；分享碼、藍圖庫裡剛好一張同名＝問蓋掉它或另存。
--- 其他照舊（從檔案讀的存回同一個檔，分享碼存成新的一張）
+-- 地上正在規劃的就是這個檔（存進藍圖庫蓋不了它，L.store 會另存成新的一張）
+local function editing(file)
+    local PM = B.PlanMode
+    local cur = PM and PM.plan and PM.plan()
+    return cur ~= nil and cur.file == file and PM.state ~= nil and PM.state() == "edit"
+end
+
+-- 「存進藍圖庫」「擺到地上」。會蓋掉藍圖庫裡的檔之前先問覆蓋或另存（L.askOverwrite）：
+-- 從檔案讀的、換過項目（擺到地上也問：定位後的存檔會寫回那個檔）；分享碼存進藍圖庫、藍圖庫裡剛好一張同名。
+-- 要蓋的那張正在地上規劃時不問，照 L.store 另存成新的一張。從檔案讀的、沒換過項目存進藍圖庫：檔已經在藍圖庫裡，
+-- 不重寫（匯入框不擋畫面，開著的時候那個檔可能存了新的內容）。其他照舊（分享碼存成新的一張）。
+-- 三選一與名稱框也不擋畫面：按下去時匯入框已經關了或換了一份就不做
 function Imp:finish(how)
     sync(self)
     local plan = self.plan
     if not plan then return end
-    if how ~= "store" then return L.placePlan(plan, self.pn) end
+    local place = how ~= "store"
+    local function live(fn)
+        return function(...)
+            if L.imp == self and self.plan == plan then return fn(...) end
+        end
+    end
+    local function go()
+        if place then return L.placePlan(plan, self.pn) end
+        self:store(plan)
+    end
     local function asNew(name)
         plan.file = nil
         local n = Plan.cleanName(name)
         if n ~= "" then plan.name = n end
-        self:store(plan)
+        go()
     end
-    if plan.file then
+    local file = plan.file
+    if file then
         if plan.rev ~= self.rev then
-            return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = function() self:store(plan) end, onNew = asNew })
+            if place or not editing(file) then
+                return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
+            end
+        elseif not place and PlanFile.exists(file) then
+            L.markUsed(file, nil)
+            L.tell(getText("IGUI_MBLD_Imp_Stored", plan.name, file))
+            L.closeImport()
+            if L.visible() and L.v then L.v:reload(file) end
+            return
         end
-    else
+    elseif not place then
         local same = L.sameName(plan.name)
-        if same then
+        if same and not editing(same) then
             return L.askOverwrite(self.pn, { name = plan.name, text = getText("IGUI_MBLD_Imp_SameName", plan.name),
-                onOverwrite = function()
-                    plan.file = same
+                onOverwrite = live(function()
+                    -- 框開著的時候藍圖庫可能變了：那個檔還是同名的那張、沒在規劃才蓋，不然存成新的一張
+                    local head = PlanFile.head(same)
+                    if head and head.name == plan.name and not editing(same) then plan.file = same end
                     self:store(plan)
-                end, onNew = asNew })
+                end), onNew = live(asNew) })
         end
     end
-    self:store(plan)
+    return go()
 end
 
 function L.import(...)
@@ -1708,18 +1749,20 @@ function L.closeChooser()
     discard("chooser")
 end
 
--- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, onOverwrite(), onNew(新名稱) }；
--- 另存新檔再問名稱（預設現在的名稱）。回 true；沒有框架回 nil
+-- 存檔前三選一：覆蓋原本的／另存新檔／取消。o＝{ name, text?, onOverwrite(), onNew(新名稱)? }；
+-- 另存新檔再問名稱（預設現在的名稱）；沒給 onNew 就沒有這顆（整張擦光了，沒有東西可以另存）。回 true；沒有框架回 nil
 function L.askOverwrite(pn, o)
     local name = o.name or ""
+    local buttons = { { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = o.onOverwrite } }
+    if o.onNew then
+        buttons[2] = { text = getText("IGUI_MBLD_SaveAsNew"), onClick = function()
+            L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
+                input = { text = name }, ok = getText("IGUI_MBLD_SaveAsNew"), onYes = function(t) o.onNew(t or "") end })
+        end }
+    end
+    buttons[#buttons + 1] = { text = getText("UI_Cancel") }
     return L.choose(pn, { title = getText("IGUI_MBLD_SaveTitle", name), text = o.text or getText("IGUI_MBLD_SaveText", name),
-        buttons = {
-            { text = getText("IGUI_MBLD_SaveOverwrite"), style = "primary", onClick = o.onOverwrite },
-            { text = getText("IGUI_MBLD_SaveAsNew"), onClick = function()
-                L.confirm(pn, { title = getText("IGUI_MBLD_SaveAsNew"), text = getText("IGUI_MBLD_SaveAsText", tostring(Plan.MAX_NAME)),
-                    input = { text = name }, ok = getText("IGUI_MBLD_SaveAsNew"), onYes = function(t) o.onNew(t or "") end })
-            end },
-            { text = getText("UI_Cancel") } } })
+        buttons = buttons })
 end
 
 if first then

@@ -748,8 +748,10 @@ end
 -- 主檔名最多幾個字：名稱的上限，加撞名的編號與保留名稱的 _
 local STEM_MAX = Plan.MAX_NAME + 8
 
-local RESERVED = { CON = true, PRN = true, AUX = true, NUL = true } -- Windows 的保留裝置名，不分大小寫
-for i = 1, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
+-- Windows 的保留裝置名，不分大小寫；上標的 1、2、3 也算（微軟「Naming Files, Paths, and Namespaces」）
+local RESERVED = { CON = true, PRN = true, AUX = true, NUL = true }
+for i = 0, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
+for _, d in ipairs({ "\194\185", "\194\178", "\194\179" }) do RESERVED["COM" .. d], RESERVED["LPT" .. d] = true, true end
 
 -- 合規則的藍圖檔名：清過一次不變（擋路徑字元、. 、控制字元、頭尾或連續空白、U+FFFD…）、主檔名不是空的、
 -- 字數在上限內（Kahlua 算字、標準 Lua 算解出來的字，40 個中文字都過）。舊的英數檔名也合。
@@ -757,7 +759,7 @@ for i = 1, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
 local function validFile(file)
     if type(file) ~= "string" or #file > STEM_MAX * 3 + 4 or file:sub(-4) ~= ".txt" then return false end
     local stem = file:sub(1, -5)
-    local clean, n = cleanStem(stem)
+    local clean, n = cleanStem(stem, nil)
     return stem ~= "" and clean == stem and n <= STEM_MAX and not RESERVED[stem:upper()]
 end
 PlanFile.validFile = validFile
@@ -1013,7 +1015,7 @@ end
 -- 這台電腦存不住非英數檔名時（unicodeOk）退回舊規則：只留英數、轉小寫、最多 24 字。
 -- 撞名加 2、3…（照小寫比：Windows 的檔名不分大小寫）。資料夾有 N 個檔時前 N+1 個編號一定有空的，所以沒有上限。
 -- 清單裡沒有的候選還要開不起來才用：會改寫檔名的檔案系統清單回來的名稱和寫的不同，只看清單會寫進別張的檔。
--- 不加編號的那個檔名是刪除標記時直接重用。keep＝這個檔名（不分大小寫）就算有檔也能用：
+-- 不加編號的那個檔名是刪除標記時直接重用，回資料夾裡原本的檔名（大小寫可能和算出來的不同，Windows 上是同一個檔）。keep＝這個檔名（不分大小寫）就算有檔也能用：
 -- 只差大小寫時回 keep 本身，不然 Windows 上新舊檔名是同一個檔，改名把舊檔標成刪除就刪掉了新檔。
 -- 回 檔名，或 nil, "READ"（列不出資料夾）
 local function pickName(name, keep)
@@ -1024,7 +1026,10 @@ local function pickName(name, keep)
     local ok, files = pcall(listFilesInZomboidLuaDirectory, PlanFile.DIR)
     if not ok or not files then return nil, "READ" end
     local used, n = {}, files:size()
-    for i = 0, n - 1 do used[tostring(files:get(i)):lower()] = true end
+    for i = 0, n - 1 do
+        local have = tostring(files:get(i))
+        used[have:lower()] = have
+    end
     local low = keep and keep:lower()
     for i = 1, n + 1 do
         local base = stem .. (i > 1 and i or "")
@@ -1033,8 +1038,9 @@ local function pickName(name, keep)
         if f:lower() == low then return keep end
         if not used[f:lower()] and not opens(path(f)) then return f end
         if i == 1 then
-            local okA, live = pcall(alive, f)
-            if okA and not live then return f end
+            local have = used[f:lower()] or f -- 分大小寫的檔案系統上 f 可能不存在，要看的是資料夾裡那個
+            local okA, live = pcall(alive, have)
+            if okA and not live then return have end
         end
     end
     return nil, "READ"

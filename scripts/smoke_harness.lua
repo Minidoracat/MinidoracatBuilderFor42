@@ -13216,6 +13216,9 @@ end)()
             "零寬字、方向控制、BOM、C1 控制字元、U+FFFD、表情符號去掉；NBSP 與全形空白當空白、連續空白併成一個、去頭尾")
         check(PF.fileName("con") == "con_.txt" and PF.fileName("COM1") == "COM1_.txt" and PF.fileName("Lpt9") == "Lpt9_.txt"
             and PF.fileName("Console") == "Console.txt", "Windows 保留名稱（不分大小寫）後面加 _")
+        check(PF.fileName("COM\194\179") == "COM\194\179_.txt" and PF.fileName("lpt\194\185") == "lpt\194\185_.txt"
+            and PF.fileName("com0") == "com0_.txt" and not PF.validFile("COM\194\178.txt") and not PF.validFile("lpt0.txt"),
+            "Windows 保留名稱也包含 COM0／LPT0 與上標的 COM¹²³／LPT¹²³（審查 1118）")
         check(PF.fileName("...") == "plan.txt" and PF.fileName("\240\159\152\128") == "plan.txt" and PF.fileName(nil) == "plan.txt",
             "清完是空的：plan")
         check(PF.fileName(string.rep("長", 50)) == string.rep("長", 40) .. ".txt", "最多 Plan.MAX_NAME 個字")
@@ -13308,6 +13311,11 @@ end)()
             "清單回的名稱和寫的不同：退回英數規則")
         check(f4 == "한글집.txt" and PF.unicodeNames == true and logged[3] == "[MinidoracatBuilderFor42] plan file names: unicode=true ok",
             "測試小檔三樣都對：用新規則")
+        do -- 審查 1118：重用刪除標記時回資料夾裡原本的檔名（保留大小寫之後才會不同；Windows 上是同一個檔）
+            local c = sample()
+            check(PF.save(c, "CaseHouse.txt") == true and PF.remove("CaseHouse.txt") == true, "（準備）存一張 CaseHouse.txt 再刪掉")
+            check(PF.fileName("casehouse") == "CaseHouse.txt", "重用刪除標記：回資料夾裡的檔名，不是照新名稱算出來的大小寫 " .. tostring(PF.fileName("casehouse")))
+        end
     end
 
     do -- 存檔寫到一半斷掉（審查 C1）：任何時間點都留得住完整的一版；刪除不會從備份復活
@@ -14664,6 +14672,41 @@ end)()
         check(PM.askCancel() == false and PM.planning() and PM.plan().n == 8, "✗ 沒有確認框：askCancel 不丟改動")
         check(PM.askFinish() == true and not PM.planning() and PF.load(PM.plan().file).n == 8,
             "✗ 沒有三選一的框：askFinish 照舊覆蓋原本的")
+        -- 審查 1118：三選一與另存的名稱框不擋畫面，按下去時已經離開規劃（取消了）就不做；離開規劃時關掉三選一
+        do
+            local shut = 0
+            B.PlanLibrary = { askOverwrite = function(_, o) asked = o; return true end, confirm = function(_, o) conf = o; return o end,
+                closeChooser = function() shut = shut + 1 end }
+            PM.toggle(0)
+            PM.addCells(0, "pm_floor_01_0", { { 210, 50, 0, 0 } })
+            local keepFile, keepName = PM.plan().file, PM.plan().name
+            asked = nil
+            PM.askSave()
+            local stale = asked
+            check(stale ~= nil and PM.cancelEdit() == true and shut >= 1, "離開規劃（取消）：關掉還開著的三選一")
+            local nFiles = 0
+            for p in pairs(disk) do if p:find("plans/", 1, true) then nFiles = nFiles + 1 end end
+            local okS = stale.onNew("Stale Copy")
+            local okO = stale.onOverwrite()
+            local nAfter = 0
+            for p in pairs(disk) do if p:find("plans/", 1, true) then nAfter = nAfter + 1 end end
+            check(okS == false and okO == false and nAfter == nFiles and PM.plan().file == keepFile and PM.plan().name == keepName
+                and PS.load().file == keepFile, "✗ 取消之後才按舊框的另存新檔／覆蓋：不存、地上那張與記錄不變")
+            check(PM.saveAs("Not Editing") == false and PM.plan().file == keepFile, "✗ 不在規劃：saveAs 不做")
+            -- 擦光之後另存：沒有東西可以存成新的一張（三選一不給「另存新檔」，程式介面回 EMPTY）
+            PM.toggle(0)
+            local gx, gy = PM.origin()
+            PM.eraseRect(gx - 5, gy - 5, gx + 30, gy + 5)
+            asked = nil
+            PM.askFinish()
+            local okE1, whyE1 = PM.finishAs("Empty Copy")
+            local okE2 = PM.saveAs("Empty Copy")
+            check(PM.plan().n == 0 and asked and asked.onNew == nil and asked.onOverwrite ~= nil and okE1 == false and whyE1 == "EMPTY"
+                and okE2 == false and PM.planning() and PM.plan().file == keepFile and PM.plan().name == keepName,
+                "✗ 整張擦光了：三選一沒有另存新檔，finishAs／saveAs 不存、留在規劃")
+            check(PM.cancelEdit() == true and PM.plan().n > 0, "（收尾）取消：擦掉的回來")
+            B.PlanLibrary = { askOverwrite = function() return nil end }
+        end
         check(PM.clear() == true and PM.blank(0) == true, "（準備）收起，開一張空白的")
         PM.addCells(0, "pm_floor_01_0", { { 50, 60, 0, 0 } })
         conf = nil
@@ -15430,6 +15473,22 @@ end)()
         P.v:act("move")
         check(picked == 1, "反面：沒有沒存的改動時搬照舊")
         B.PlanMode.pickUp = noop
+        -- 審查 1118：確認框不擋畫面，開著的時候才去規劃、改了東西，按確認也不動作
+        dialogs, toasts = {}, {}
+        P.v:act("clear")
+        local dClear = dialogs[#dialogs]
+        L.placePlan(b, 0)
+        local dPlace = dialogs[#dialogs]
+        L.newBlank(0)
+        local dNew = dialogs[#dialogs]
+        check(#dialogs == 3 and #toasts == 0, "（準備）沒有沒存的改動：收起、換一張、新的空白藍圖各開一個確認框")
+        dirty = true
+        dClear.onResult(true)
+        dPlace.onResult(true)
+        dNew.onResult(true)
+        check(ground == a and placed == 0 and blanked == 0 and #toasts == 3 and toasts[3] == "IGUI_MBLD_PlanUnsaved",
+            "✗ 確認框開著的時候才改了東西：按確認不收起、不換、不開新的，各說一次先完成或取消")
+        dirty = false
         ground = nil
     end
 
@@ -15613,7 +15672,7 @@ end)()
         toasts = {}
         L.import(0)
         L.imp.plan = imp2
-        L.imp.rev = imp2.rev -- 讀進來後沒換過項目：照舊存
+        L.imp.rev = imp2.rev - 1 -- 讀進來後換過項目；要蓋的那張正在規劃，不問、直接另存
         L.imp:finish("store")
         local copy = PF.load("Bravo2.txt")
         check(ground == mine and ground.file == "Bravo.txt" and disk["MinidoracatBuilder/plans/Bravo.txt"] == before
@@ -15685,6 +15744,81 @@ end)()
         check(L.chooser == nil and b2.file ~= nil and b2.file:lower() ~= "bravo.txt" and b2.file:lower() ~= "bravo9.txt",
             "✗ 分享碼、藍圖庫裡同名兩張：不問，照舊存成新的一張 " .. tostring(b2.file))
         L.closeImport()
+        -- 審查 1118：從檔案讀的、換過項目按「擺到地上」也先問（定位後的存檔會寫回那個檔）
+        three()
+        ground, placed = nil, 0
+        p = L.loadFile("Alpha.txt")
+        imp(p, p.rev)
+        fresh(p)
+        L.imp:finish("place")
+        check(L.chooser ~= nil and placed == 0, "從檔案讀的、換過項目按擺到地上：先問覆蓋或另存，還沒擺")
+        press("IGUI_MBLD_SaveOverwrite")
+        check(placed == 1 and ground == p and p.file == "Alpha.txt", "按覆蓋原本的：照舊擺到地上（之後存回同一個檔）")
+        ground, placed = nil, 0
+        p = L.loadFile("Bravo.txt")
+        imp(p, p.rev)
+        fresh(p)
+        dialogs = {}
+        L.imp:finish("place")
+        press("IGUI_MBLD_SaveAsNew")
+        dialogs[#dialogs].onResult(true, "Bravo Two")
+        check(placed == 1 and ground == p and p.file == nil and p.name == "Bravo Two",
+            "按另存新檔：擺到地上的那份沒有檔名（定位後存成新的一張）、名稱照輸入的")
+        ground, placed = nil, 0
+        p = L.loadFile("Alpha.txt")
+        imp(p, p.rev)
+        L.imp:finish("place")
+        check(L.chooser == nil and placed == 1, "✗ 從檔案讀的、沒換過項目按擺到地上：不問")
+        -- 從檔案讀的、沒換過：檔已經在藍圖庫裡，不重寫（匯入框開著的時候那個檔可能存了新的內容）
+        ground, placed = nil, 0
+        three()
+        p = L.loadFile("Alpha.txt")
+        imp(p, p.rev)
+        local newer = fresh(L.loadFile("Alpha.txt"))
+        PF.save(newer, "Alpha.txt")
+        local onDisk = disk["MinidoracatBuilder/plans/Alpha.txt"]
+        toasts = {}
+        L.imp:finish("store")
+        check(disk["MinidoracatBuilder/plans/Alpha.txt"] == onDisk and L.imp == nil and toasts[1]
+            and toasts[1]:find("IGUI_MBLD_Imp_Stored", 1, true) == 1, "從檔案讀的、沒換過按存進藍圖庫：不重寫那個檔（不會蓋掉後來存的內容）")
+        -- 三選一開著的時候藍圖庫變了：同名那張被刪掉、檔名被另一張重用，按覆蓋不能寫進去
+        three()
+        code = fresh(Plan.new("Charlie"))
+        imp(code, code.rev)
+        L.imp:finish("store")
+        check(L.chooser ~= nil, "（準備）分享碼和藍圖庫的 Charlie 同名：三選一開著")
+        check(PF.remove("Charlie.txt") == true, "（準備）這時刪掉藍圖庫的 Charlie")
+        local reuse = Plan.new("Other")
+        Plan.add(reuse, 1, 1, 0, 0, 0, Plan.item(reuse, "okay_01_0"))
+        Plan.add(reuse, 2, 1, 0, 0, 0, Plan.item(reuse, "okay_01_0"))
+        PF.save(reuse, "Charlie.txt")
+        local reused = disk["MinidoracatBuilder/plans/Charlie.txt"]
+        press("IGUI_MBLD_SaveOverwrite")
+        check(disk["MinidoracatBuilder/plans/Charlie.txt"] == reused and code.file ~= nil and code.file ~= "Charlie.txt"
+            and PF.load(code.file).n == 1, "✗ 按覆蓋時同名那張已經不是原本那張：不寫進去，存成新的一張 " .. tostring(code.file))
+        -- 要蓋的那張正在地上規劃：不問（蓋不了），照舊另存成新的一張並說明
+        three()
+        ground = PF.load("Charlie.txt")
+        B.PlanMode.state = function() return "edit" end
+        code = fresh(Plan.new("Charlie"))
+        imp(code, code.rev)
+        toasts = {}
+        L.imp:finish("store")
+        check(L.chooser == nil and code.file ~= nil and code.file ~= "Charlie.txt" and toasts[1]
+            and toasts[1]:find("IGUI_MBLD_Imp_Stored", 1, true) == 1, "✗ 同名那張正在規劃：不問覆蓋，直接存成新的一張 " .. tostring(code.file))
+        B.PlanMode.state = nil
+        ground = nil
+        -- 匯入框關掉之後才按舊的三選一：不做
+        three()
+        p = L.loadFile("Alpha.txt")
+        before = disk["MinidoracatBuilder/plans/Alpha.txt"]
+        imp(p, p.rev)
+        fresh(p)
+        L.imp:finish("store")
+        local staleWin = L.chooser.win
+        L.closeImport()
+        for _, c in ipairs(staleWin.children) do if c.title == "IGUI_MBLD_SaveOverwrite" then c.onClick() end end
+        check(disk["MinidoracatBuilder/plans/Alpha.txt"] == before, "✗ 匯入框關掉之後才按舊框的覆蓋：不寫檔")
     end
 
     do -- 審查第 2 輪：面板存檔失敗只讓 PlanMode 說一次；跟著游標時不能存；拿不起來時面板留著
@@ -20089,6 +20223,26 @@ end)()
         clip = short
         imp:paste()
         check(f.text == short and imp.code == short and imp.plan ~= nil, "貼上鈕收到短碼：框裡放整串、收剪貼簿的碼")
+        do -- 審查 1118：框裡還放著收下的碼（或它的開頭）、又貼一串在後面或前面：只看新貼的那段
+            local two = Plan.new("T")
+            Plan.add(two, 1, 0, 0, 0, 0, Plan.item(two, "a_0"))
+            local short2 = PF.share(two, false)
+            typeIn(short .. short2)
+            check(imp.code == short2 and imp.plan and imp.plan.name == "T" and f.text == short2,
+                "框裡已經有短碼、又接著貼一串：收下新貼的那串，框裡換成它")
+            typeIn(short .. f.text)
+            check(imp.code == short and imp.plan and imp.plan.name == "S" and f.text == short, "貼在前面也一樣")
+            clip = code
+            imp:paste()
+            typeIn(f.text .. short2)
+            check(imp.code == short2 and f.text == short2, "框裡是長碼的預覽、又接著貼一串：收下新貼的那串")
+            imp:paste()
+            typeIn(f.text .. code)
+            check(imp.code == code and f.text == preview and imp.plan and imp.plan.n == big.n,
+                "預覽後面接著貼長碼：收下新貼的長碼，框裡是它的預覽")
+            clip = short
+            imp:paste()
+        end
         typeIn("abc")
         imp.fileDD.onChange(imp)
         check(f.text == "" and imp.code == nil, "選資料夾裡的檔：清掉文字欄")
