@@ -13224,12 +13224,12 @@ end)()
             "validFile 收 40 個中文字（加編號）、舊的英數檔名、pickName 產得出來的名稱")
         local bad = { "../x.txt", "a/b.txt", "a\\b.txt", "..txt", ".txt", " a.txt", "a .txt", "a  b.txt", "a?.txt", "a:b.txt",
             "a\1b.txt", "a\tb.txt", "a.b.txt", "a\239\191\189.txt", "a\226\128\139.txt", "a.TXT", "a.cfg", "",
-            string.rep("長", 49) .. ".txt" }
+            string.rep("長", 49) .. ".txt", "con.txt", "NUL.txt", "Com1.txt", "lpt9.txt" }
         local leaked
         for _, f in ipairs(bad) do
             if PF.validFile(f) or select(2, PF.load(f)) ~= "FILE" or select(2, PF.save(pl, f)) ~= "FILE" or PF.exists(f) then leaked = f end
         end
-        check(leaked == nil and not PF.validFile(5) and not PF.validFile(nil), "validFile 擋路徑、. 、控制字元、頭尾或連續空白、? : 、U+FFFD、太長（" .. tostring(leaked) .. "）")
+        check(leaked == nil and not PF.validFile(5) and not PF.validFile(nil), "validFile 擋路徑、. 、控制字元、頭尾或連續空白、? : 、U+FFFD、太長、Windows 保留裝置名（" .. tostring(leaked) .. "）")
         check(PF.save(pl, "海邊 小屋.txt") == true and pl.file == "海邊 小屋.txt"
             and disk[P .. "海邊 小屋.txt"] == PF.encode(pl) and disk[P .. "海邊 小屋.cfg"] == PF.encode(pl),
             "存檔：中文檔名寫進 plans 資料夾（另有 .cfg 備份）、記住檔名")

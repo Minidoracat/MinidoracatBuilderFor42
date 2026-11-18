@@ -748,13 +748,17 @@ end
 -- 主檔名最多幾個字：名稱的上限，加撞名的編號與保留名稱的 _
 local STEM_MAX = Plan.MAX_NAME + 8
 
+local RESERVED = { CON = true, PRN = true, AUX = true, NUL = true } -- Windows 的保留裝置名，不分大小寫
+for i = 1, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
+
 -- 合規則的藍圖檔名：清過一次不變（擋路徑字元、. 、控制字元、頭尾或連續空白、U+FFFD…）、主檔名不是空的、
--- 字數在上限內（Kahlua 算字、標準 Lua 算解出來的字，40 個中文字都過）。舊的英數檔名也合
+-- 字數在上限內（Kahlua 算字、標準 Lua 算解出來的字，40 個中文字都過）。舊的英數檔名也合。
+-- 保留裝置名不收：Windows 上 con.txt 開到的是裝置不是檔（世界記錄、最近用過的清單是本機檔，可能被改過）
 local function validFile(file)
     if type(file) ~= "string" or #file > STEM_MAX * 3 + 4 or file:sub(-4) ~= ".txt" then return false end
     local stem = file:sub(1, -5)
     local clean, n = cleanStem(stem)
-    return stem ~= "" and clean == stem and n <= STEM_MAX
+    return stem ~= "" and clean == stem and n <= STEM_MAX and not RESERVED[stem:upper()]
 end
 PlanFile.validFile = validFile
 
@@ -998,9 +1002,6 @@ local function ascii(s)
     end
     return true
 end
-
-local RESERVED = { CON = true, PRN = true, AUX = true, NUL = true } -- Windows 的保留裝置名，不分大小寫
-for i = 1, 9 do RESERVED["COM" .. i], RESERVED["LPT" .. i] = true, true end
 
 local function opens(p)
     local r = openReader(p)
