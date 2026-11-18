@@ -3,7 +3,7 @@
 
 [b]English summary[/b]
 [list]
-[*] Blueprints: plan a build as a ghost, keep it in your library, share it by code or capture an existing building, then let your character build it piece by piece, fetching materials from supply boxes you pick.
+[*] Blueprints: plan a build as a ghost (Cancel drops changes you don't want), keep it in your library under its own name, share it by code or capture an existing building, then let your character build it piece by piece, fetching materials from supply boxes you pick.
 [*] Roof helper: pick a sloped roof, drag over the house, and the whole roof (gable, hip or shed; 45-degree sets also flat) is added to the blueprint at once.
 [*] Ramps: a 20-tile ramp that rises one level, placed as one set; people and vehicles can use it.
 [*] Garage doors (drag for the width) and double doors, built and dismantled as one set.
@@ -13,7 +13,7 @@
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]藍圖[/b]：按「規劃」先在地上畫好虛影，不扣料；能存進藍圖庫、用分享碼傳給朋友，也能框選現成房子存成藍圖。
+[*] [b]藍圖[/b]：按「規劃」先在地上畫好虛影，不扣料，改壞了按「取消」回到上次存的樣子；能存進藍圖庫（檔名就是藍圖名稱）、用分享碼傳給朋友，也能框選現成房子存成藍圖。
 [*] [b]照圖蓋[/b]：角色照著藍圖一片片自己蓋，缺料時去你點名的材料箱拿。
 [*] [b]屋頂助手[/b]：選一款斜屋頂，拖出房子的範圍，整片屋頂連底下的天花板一次排進藍圖。
 [*] [b]坡道[/b]：一整組 20 格長、升一層，人和車都上得去。

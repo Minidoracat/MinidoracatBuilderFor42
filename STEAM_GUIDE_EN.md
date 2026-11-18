@@ -685,11 +685,11 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 {{img:18-plan-en.jpg}}
 [h3]Start planning[/h3]
 [list]
-[*] [b]Open[/b]: press Plan in the build window, or New blank blueprint in the library. The Plan Blueprint toolbar appears at the top of the screen, and you can drag it elsewhere.
+[*] [b]Open[/b]: press Plan in the build window, or New blank blueprint in the library. The Plan Blueprint toolbar appears at the top of the screen, and you can drag it elsewhere. Starting from Edit in the blueprint panel or from New blank blueprint opens the build window for you, so you can pick items.
 [*] [b]Draw[/b]: pick items in the window and click or drag rows as usual; what you place is only added to the blueprint as a pale purple ghost, not built and not charged. The box by the mouse says "Planning: release to add N pieces to the blueprint".
 [*] [b]Pick something else[/b]: the quick pick bar and the eyedropper work as usual.
 [*] [b]Build recipes[/b]: recipes can be drawn in too, ignoring materials, tools and skill; only the terrain can block them. Wall paint, wallpaper and plaster can't be added to a blueprint.
-[*] [b]Finish[/b]: press Done on the toolbar, or Plan in the window again; the blueprint is saved and the blueprint panel opens.
+[*] [b]Finish[/b]: press Done on the toolbar, or Plan in the window again; the blueprint is saved and the blueprint panel opens. If a saved blueprint was changed, you're asked how to save it first, see Limits and saving. To drop this round of changes, press Cancel.
 [*] [b]One at a time[/b]: only one blueprint can be on the ground.
 [*] [b]A whole roof[/b]: select a sloped roof and press Roof helper, then drag an area to add the whole roof to the blueprint, see Blueprints: Roof Helper.
 [/list]
@@ -701,7 +701,8 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [*] [b]Piece count[/b]: shows "N/4,096 pieces".
 [*] [b]Library[/b]: opens the blueprint library.
 [*] [b]Hide/Show[/b]: hides the blueprint ghost on the ground, only hides it and doesn't save; it can also have a key (Blueprint: hide/show, unbound by default).
-[*] [b]Done[/b]: saves, closes the toolbar and opens the blueprint panel.
+[*] [b]Cancel[/b]: leaves planning and drops unsaved changes. A saved blueprint goes back to how and where it was last saved; one that was never saved is gone. If anything changed you're asked "Discard these changes?" first: Discard drops them, Keep planning takes you back. If the last saved version can't be read back, your changes stay and you can press Done to save them.
+[*] [b]Done[/b]: saves, closes the toolbar and opens the blueprint panel; if a saved blueprint was changed, you're asked how to save it first. Closing the toolbar with its X does the same.
 [/list]
 [h3]Select and erase[/h3]
 [list]
@@ -715,7 +716,9 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [h3]Limits and saving[/h3]
 [list]
 [*] [b]Size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces. Going over shows a notice with the reason when you release, and nothing is added.
-[*] [b]When it saves[/b]: on Done, Save, Move in the panel while planning, Put away and when you place it; if the game crashes in between, the unsaved part is lost. If it can't save, the blueprint stays and a notice asks you to check your disk space; Put away, Done, Move and swapping blueprints wait until it can save.
+[*] [b]When it saves[/b]: on Done, Save, Put away and when you place it; a blueprint that was never saved also saves first when you press Move in the panel while planning. If the game crashes in between, the unsaved part is lost. If it can't save, the blueprint stays and a notice asks you to check your disk space; Put away, Done, Move and swapping blueprints wait until it can save.
+[*] [b]Overwrite or save as new[/b]: when a blueprint already in your library was changed while planning (changing something and undoing it back still counts), pressing Done, closing the toolbar, pressing Plan in the build window or Save in the blueprint panel first asks: Overwrite, Save as new or Cancel. Save as new asks for a name and saves a new blueprint; the one on the ground becomes the new one, and the original is left as it was.
+[*] [b]Halfway through[/b]: while a saved blueprint has unsaved changes, Move and Put away in the blueprint panel, Place in the library or Import, and New blank blueprint don't run; a notice asks you to press Done or Cancel on the planning toolbar first.
 [/list]
 === 🧰 Blueprints: Roof Helper
 Pick a sloped roof, drag over the house's footprint on the ground, and the whole roof is added to the blueprint at once. Then build from the blueprint or follow it yourself.
@@ -752,19 +755,19 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 {{img:19-plan-panel-en.jpg}}
 [h3]Placing on the ground[/h3]
 [list]
-[*] [b]From the library[/b]: pick one and press Place, and the whole blueprint follows the mouse; R (LB/RB on a gamepad) rotates 90°, a click places it, right-click (B) cancels.
+[*] [b]From the library[/b]: pick one and press Place; the build window closes and the whole blueprint follows the mouse; R (LB/RB on a gamepad) rotates 90°, a click places it, right-click (B) cancels.
 [*] [b]Back to original spot[/b]: when the saved position is within 100 tiles, the toolbar has Back to original spot (X on a gamepad).
-[*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays.
-[*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was. While planning it saves first, and stays in planning if it can't save.
+[*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays. If the old one has unsaved changes from planning, it isn't swapped; you're asked to press Done or Cancel first.
+[*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was. While planning, a blueprint that was never saved is saved first and stays in planning if it can't save; a saved blueprint with unsaved changes isn't moved, and you're asked to press Done or Cancel first.
 [*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark. Pieces waiting for nearby pieces to be built first (a roof for its walls, a door for its frame) are drawn as buildable.
 [*] [b]Coming back[/b]: the blueprint is still there when you return. Every save and every server keeps its own, stored on your computer. If the blueprint file can't be opened this time, it's hidden but its spot is kept and it's read again next time you load; it's only removed when the file was deleted or damaged.
 [/list]
 [h3]Blueprint panel[/h3]
 [list]
-[*] [b]Open[/b]: press Blueprints in the build window while a blueprint is on the ground; it also opens after Done in planning.
+[*] [b]Open[/b]: press Blueprints in the build window while a blueprint is on the ground, and the build window closes; it also opens after Done or Cancel in planning.
 [*] [b]Status line[/b]: pieces built out of the total, what building from the blueprint is doing, the item being built, and the reason when it stops.
-[*] [b]Buttons[/b]: Build from blueprint (Pause while building, Resume once paused), Move, Edit (back to planning), Save, Library, Put away.
-[*] [b]Put away[/b]: asks first, saves, then removes the blueprint from the ground; what's built stays in the world, and you can place it again from the library. If it can't save, the blueprint stays.
+[*] [b]Buttons[/b]: Build from blueprint (Pause while building, Resume once paused), Move, Edit (back to planning, and the build window opens too; while planning it works as Done), Save (asks Overwrite or Save as new when a saved blueprint was changed while planning), Library, Put away.
+[*] [b]Put away[/b]: asks first, saves, then removes the blueprint from the ground; what's built stays in the world, and you can place it again from the library. If it can't save, the blueprint stays; with unsaved changes from planning, you're asked to press Done or Cancel first.
 [/list]
 [h3]Materials tab[/h3]
 [list]
@@ -819,23 +822,24 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 {{img:21-library-en.jpg}}
 [h3]Blueprint library[/h3]
 [list]
-[*] [b]Open[/b]: press Blueprints in the build window when no blueprint is on the ground; the Plan Blueprint toolbar and the blueprint panel have Library too.
+[*] [b]Open[/b]: press Blueprints in the build window when no blueprint is on the ground (the build window closes); the Plan Blueprint toolbar and the blueprint panel have Library too.
 [*] [b]Where they are kept[/b]: each blueprint is a file on your computer, shared by every save and every server; Open folder opens the blueprint folder. There's no limit on how many.
 [*] [b]Backups[/b]: every blueprint has a .cfg backup with the same name next to it; if saving is cut off halfway, you still get a whole version back next time you load. If a rename is cut off halfway (a disconnect or crash), the blueprint is still found next time you load.
-[*] [b]File names[/b]: files you put in the folder yourself can only use letters and numbers in the name; others aren't listed, and the title row says how many files weren't listed.
+[*] [b]File names[/b]: the file is named after the blueprint, so "Test house" is saved as "Test house.txt", and the selected blueprint shows its file name below. Characters the system can't use are dropped, and a 2, 3 and so on is added when the name is taken; if this computer can't keep names in other scripts (such as Chinese), only letters and numbers are used. Renaming renames the file too; files saved before keep their names and still load.
+[*] [b]Files you put in the folder yourself[/b]: names can use letters in any script, numbers, spaces and - _ ( ); names with a full stop or other symbols, or that are too long, aren't listed, and the title row says how many files weren't listed.
 [*] [b]The list[/b]: Name, Size, Pieces, Can't build, Last used; search by name, sort by Recently used, Name or Pieces.
 [*] [b]For each blueprint[/b]: Place, Share, Rename, Duplicate, Delete (asks first, with the name and piece count).
 [*] [b]Names[/b]: up to 40 characters.
 [*] [b]Other buttons[/b]: Import, Open folder, Capture a building, New blank blueprint.
-[*] [b]New blank blueprint[/b]: if a blueprint is on the ground it asks first, saves and puts that one away (built pieces stay), then opens a blank one.
-[*] [b]The file of the one on the ground[/b]: renaming it renames the one on the ground; deleting it turns the one on the ground into an unsaved blueprint that gets a new file name when saved. Placing the same file again after its contents changed: if the one on the ground isn't being planned, the file's version replaces it and right-click leaves it where it was; while planning, it asks first, and if you swap, the one on the ground is saved and put away and the new one is later saved under another file name.
+[*] [b]New blank blueprint[/b]: if a blueprint is on the ground it asks first, saves and puts that one away (built pieces stay), then opens a blank one along with the build window. If the one on the ground has unsaved changes from planning, it doesn't open; you're asked to press Done or Cancel first.
+[*] [b]The file of the one on the ground[/b]: renaming it renames the one on the ground; deleting it turns the one on the ground into an unsaved blueprint that gets a new file name when saved. Placing the same file again after its contents changed: if the one on the ground isn't being planned, the file's version replaces it and right-click leaves it where it was; while planning, with unsaved changes you're asked to press Done or Cancel first, otherwise it asks first, and if you swap, the one on the ground is saved and put away and the new one is later saved under another file name.
 [/list]
 [h3]Sharing[/h3]
 [list]
 [*] [b]Share code[/b]: pick one and press Share; the share code is copied to the clipboard, so just paste it to your friend.
 [*] [b]Include the position?[/b]: blueprints with a saved position ask first; with it, a friend on the same map can put it back in the same spot.
 [*] [b]Long share codes[/b]: over 2,000 characters chat apps may cut it off, so you're told to send the file instead, with Open folder at hand.
-[*] [b]Sending the file[/b]: send the .txt file from your blueprint folder, and your friend puts it in theirs; the .cfg is a backup and isn't needed.
+[*] [b]Sending the file[/b]: send the .txt file (named after the blueprint) from your blueprint folder, and your friend puts it in theirs; the .cfg is a backup and isn't needed.
 [/list]
 [h3]Import[/h3]
 <!-- 圖：匯入框貼上分享碼、按「檢查」後的結果 -->
@@ -843,12 +847,14 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]Open[/b]: press Import in the library.
 [*] [b]Paste a share code[/b]: copy the share code, then press Paste from clipboard; it says "Share code read (N characters)," and pressing it again replaces the code. If what you just copied doesn't show up, switch to another window and back to the game, then press it again. Codes that are too long can't be pasted; use the blueprint file instead.
-[*] [b]Paste or type into the box[/b]: with the newer Minidoracat UI Library, the first row has a "Paste or type a share code here" box with Paste from clipboard to its right. A complete share code pasted or typed into it is read right away; a half-typed one shows no error until you press Check. Pressing Paste from clipboard or picking a file from the folder clears the box. Older versions of the library don't have the box.
-[*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder, which clears any share code read. File names can only use letters and numbers; others aren't listed, and it says how many weren't.
+[*] [b]Paste or type into the box[/b]: with the newer Minidoracat UI Library, the first row has a "Paste or type a share code here" box with Paste from clipboard to its right. A complete share code pasted or typed into it is read right away; a half-typed one shows no error until you press Check. A code read with Paste from clipboard also shows in the box: in full up to 200 characters, otherwise the first 60 characters followed by "..."; editing the box switches to what you type. Picking a file from the folder clears the box. Older versions of the library don't have the box.
+[*] [b]From a file[/b]: put your friend's blueprint file in the blueprint folder and pick it under Or pick a file from the folder, which clears any share code read. File names follow the same rules as the library: names with a full stop or other symbols, or that are too long, aren't listed, and it says how many weren't.
 [*] [b]Check[/b]: press Check to see how many pieces can be built here; a share code that's incomplete or was edited says why.
 [*] [b]Pieces you can't build here[/b]: listed by reason: a mod isn't enabled (with the mod name and Workshop ID, and Open Workshop page), a mod is enabled but some tiles are gone, turned off by the server, not buildable; mods updated since the blueprint was saved are listed with both versions. Each list shows up to 30, then says how many more weren't listed.
 [*] [b]Swap for...[/b]: each missing item can be swapped for one available here, all at once. Or leave them: you can still save and place it, and those pieces are marked as unbuildable.
-[*] [b]Keep it[/b]: Save to library, or Place it on the ground straight away. When Save to library uses the same file as the one on the ground, that one is replaced with what you saved; if it's being planned, it's saved as a new blueprint instead, and the notice gives the new name.
+[*] [b]Keep it[/b]: Save to library, or Place it on the ground straight away. Place doesn't work while the one on the ground has unsaved changes from planning; you're asked to press Done or Cancel first.
+[*] [b]Asked before saving to the library[/b]: when a blueprint read from a file had items swapped with Swap for..., or a share code's name matches exactly one blueprint in your library, you're asked Overwrite, Save as new or Cancel; Overwrite replaces that file, Save as new asks for a name. Otherwise it just saves: an unchanged file goes back to the same file, and a share code becomes a new blueprint.
+[*] [b]When the one on the ground uses the same file[/b]: if it isn't being planned, it's replaced with what you saved; if it's being planned, this is saved as a new blueprint instead, and the notice gives the new name.
 [/list]
 [h3]When a mod is updated or removed[/h3]
 [list]
@@ -1062,7 +1068,7 @@ end)
 [*] [b]New keys and the quick pick bar[/b]: only for the first player. The key hints in the box by the mouse don't show combinations with Shift or Ctrl; check the key bindings page.
 [*] [b]Undo last build[/b]: only remembers the last batch you placed yourself in this session, and forgets it when you restart the game.
 [*] [b]Blueprint size[/b]: up to 64 tiles per side, 4 floors and 4,096 pieces.
-[*] [b]When planning saves[/b]: only on Done, Save, Move while planning, Put away and placing; Hide doesn't save. If the game crashes in between, the unsaved part is lost.
+[*] [b]When planning saves[/b]: only on Done, Save, Put away and placing (and Move while planning, for a blueprint that was never saved); Hide doesn't save, and Cancel drops unsaved changes. If the game crashes in between, the unsaved part is lost.
 [*] [b]Deleted blueprints leave tiny files[/b]: the game can't really delete files, so deleting or renaming leaves a marker file of about 20 bytes and its .cfg backup in the blueprint folder; the library doesn't list them, and a new blueprint with the same name reuses them. To clear them, delete them by hand from Open folder.
 [*] [b]A share code you just copied won't paste[/b]: switch to another window and back to the game, then press Paste from clipboard again.
 [*] [b]Skipped when building from a blueprint[/b]: wall paint, wallpaper and plaster; pieces two or more floors away from you (go there and press it again).
@@ -1164,7 +1170,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [h3]How do I give a house I built to a friend?[/h3]
 [list]
 [*] Press Capture a building in the library, select it and save it as a blueprint, then press Share and send the share code; your friend copies it, presses Import in their library, then Paste from clipboard and Check, then saves it to the library or places it straight away.
-[*] If the share code is too long, send the file instead: find the .txt file with Open folder (the .cfg with the same name is a backup and isn't needed), and your friend puts it in their blueprint folder and picks it in Import.
+[*] If the share code is too long, send the file instead: find the .txt file with Open folder (it's named after the blueprint; the .cfg with the same name is a backup and isn't needed), and your friend puts it in their blueprint folder and picks it in Import.
 [*] If your friend lacks a mod you used, Import lists which one, and the missing items can be swapped for others.
 [/list]
 [h3]Why did building from a blueprint stop?[/h3]
