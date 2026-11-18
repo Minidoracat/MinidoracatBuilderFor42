@@ -12753,7 +12753,7 @@ end)()
     do -- 分享碼
         local pl = sample()
         local code = PF.share(pl, true)
-        check(code:match("^[A-Za-z0-9:%-/()%.%+=,;]+$") ~= nil, "分享碼只用英數與 :-/().+=,; （剪貼簿、聊天室貼得過去）")
+        check(code:match("^[A-Za-z0-9%-/()%.%+=,;]+$") ~= nil, "分享碼只用英數與 -/().+=,; （沒有冒號：:名稱: 在聊天軟體會被換成表情）")
         local back, why, at = PF.unshare(code)
         check(back ~= nil and sig(back) == sig(pl) and back.name == pl.name and back.ox == 98 and back.oy == 200,
             "分享碼來回一致、帶位置（" .. tostring(why) .. " " .. tostring(at) .. "）")
@@ -12768,8 +12768,19 @@ end)()
             "MBLD2 開頭；帶位置才有 P 段")
         check(code:find(";G0=0090;", 1, true) and code:find(";GW=0104;", 1, true), "連續的一排與一列各寫成一個長方形")
         check(code:find(";G153,553;", 1, true) ~= nil, "同一個項目的兩組（疊放不同）寫在同一個 G 段，逗號分開")
-        check(code:find(";Trecipe:Base=2ERainCollector.Tarp;Tfloors.01,40;STPMod,123456,1=2E2,Tile+Pack;Tpack.two.Tile+Pack.01,64;G", 1, true)
+        check(code:find(";Trecipe=3ABase=2ERainCollector.Tarp;Tfloors.01,40;STPMod,123456,1=2E2,Tile+Pack;Tpack.two.Tile+Pack.01,64;G", 1, true)
             ~= nil, "項目：原版的排前面、不寫來源；MOD 的來源寫一個 S 段；圖塊名拆成前綴與數字")
+        do -- 名稱裡的冒號寫成 =3A：:house:、:) 這類字不會出現在分享碼裡（2026-11-18 審查）
+            for _, nm in ipairs({ "my:house:", "hi :)", "cool:D", ":+1:" }) do
+                local cp = Plan.new(nm)
+                Plan.add(cp, 0, 0, 0, 0, 0, Plan.item(cp, "floor_01_0", { mod = "M:smile:", modName = "Mod :fire: Pack", version = "1:2" }))
+                local cc = PF.share(cp, false)
+                local cb = PF.unshare(cc)
+                check(not cc:find(":", 1, true) and cb ~= nil and cb.name == nm and cb.items[1].mod == "M:smile:"
+                    and cb.items[1].modName == "Mod :fire: Pack" and cb.items[1].version == "1:2",
+                    "名稱「" .. nm .. "」與 MOD 資訊裡的冒號：分享碼裡沒有冒號、解回來一樣")
+            end
+        end
         -- 同一組圖塊的名稱只寫一次
         local row = Plan.new("row")
         for i = 0, 19 do Plan.add(row, i, 0, 0, 0, 0, Plan.item(row, "walls_exterior_house_01_" .. i)) end
@@ -12842,7 +12853,11 @@ end)()
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4" .. string.rep("0", 120) .. ";", 1)), "FORMAT", "項目名稱超過 128 字", 6)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,4" .. string.rep("0", 700) .. ";", 1)), "TOO_BIG", "項目名稱 700 字", 6)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目寫兩次", 6)
-        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Trecipe:Base=2ERainCollector,Tarp;", 1)), "FORMAT", "T 段的數字欄不是數字", 7)
+        rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Trecipe=3ABase=2ERainCollector,Tarp;", 1)), "FORMAT", "T 段的數字欄不是數字", 7)
+        do -- 解碼比編碼寬：冒號照寫的碼（手打、別的工具寫的）照收，解出同一張
+            local lit = PF.unshare(rechk(code:gsub("Trecipe=3ABase", "Trecipe:Base", 1)))
+            check(lit ~= nil and sig(lit) == sig(pl), "冒號照寫的碼照收，解出同一張")
+        end
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40;Tfloors.01.40;", 1):gsub(";GW=", ";G011;GW=", 1)), "ITEM", "同一個項目換一種寫法再寫一次", 7)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";Tfloors.01,40,41;", 1)), "ITEM", "多一個項目、最後一個項目沒有 G 段", 8)
         rejects(rechk(code:gsub(";Tfloors.01,40;", ";", 1)), "ITEM", "少一個項目、G 段多一段", 10)
