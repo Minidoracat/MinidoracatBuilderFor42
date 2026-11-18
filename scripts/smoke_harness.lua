@@ -14705,6 +14705,26 @@ end)()
                 and okE2 == false and PM.planning() and PM.plan().file == keepFile and PM.plan().name == keepName,
                 "✗ 整張擦光了：三選一沒有另存新檔，finishAs／saveAs 不存、留在規劃")
             check(PM.cancelEdit() == true and PM.plan().n > 0, "（收尾）取消：擦掉的回來")
+            -- 第二條審查線：另存時同名的原檔一時打不開（在資料夾裡、讀不到）。不能當成刪掉的檔名重用：
+            -- 重用的話這次另存寫進原檔，原檔與備份都被蓋掉。讀得到刪除標記才重用（空的、打不開的都不算）
+            do
+                PM.toggle(0)
+                PM.addCells(0, "pm_floor_01_0", { { 212, 50, 0, 0 } })
+                local kp = "MinidoracatBuilder/plans/" .. keepFile
+                local kb = (kp:gsub("%.txt$", ".cfg"))
+                local wasMain, wasBack = disk[kp], disk[kb]
+                locked[kp], locked[kb] = true, true
+                local okL2 = PM.saveAs(keepName)
+                locked[kp], locked[kb] = nil, nil
+                local nf2 = PM.plan().file
+                check(wasMain ~= nil and disk[kp] == wasMain and disk[kb] == wasBack,
+                    "✗ 另存、同名的原檔一時打不開：原檔與備份沒被蓋掉")
+                check(okL2 == true and nf2 ~= keepFile and PF.load(nf2).n == PM.plan().n and PF.load(keepFile).n == PM.plan().n - 1,
+                    "✗ 另存、同名的原檔一時打不開：存成另一個檔名，原檔還是另存前的內容 " .. tostring(nf2))
+                disk["MinidoracatBuilder/plans/Void.txt"] = ""
+                check(PF.fileName("Void") == "Void2.txt", "✗ 空的檔、沒有備份（不知道是什麼）：檔名不重用 " .. tostring(PF.fileName("Void")))
+                disk["MinidoracatBuilder/plans/Void.txt"] = nil
+            end
             B.PlanLibrary = { askOverwrite = function() return nil end }
         end
         check(PM.clear() == true and PM.blank(0) == true, "（準備）收起，開一張空白的")
@@ -15686,6 +15706,72 @@ end)()
         check(copy.file == nil and #dialogs == 1 and placed == 0, "✗ 三選一開著才去規劃同一個檔、再答覆蓋：那份當成另一張，先問要不要換掉地上那張")
         L.closeChooser()
         L.closeImport()
+        do -- 第二條審查線（2026-11-19）：確認框、三選一都不擋畫面，答的時候世界可能變了
+            local function grow(file)
+                local pl = L.loadFile(file)
+                Plan.add(pl, 9, 9, 0, 0, 0, Plan.item(pl, "fresh_01_0"))
+                PF.save(pl, file)
+                return pl.n
+            end
+            -- 換一張的確認框開著時，要擺的那個檔在藍圖庫存了新內容：按確定擺的是現在的內容
+            -- （擺按下去那一刻讀的舊內容，定位時會把舊的寫回去、蓋掉剛存的）
+            three()
+            reset()
+            dirty = false
+            L.placeFile("Alpha.txt", 0)
+            local nowN = grow("Alpha.txt")
+            dialogs[#dialogs].onResult(true)
+            check(placed == 1 and ground ~= a and ground.n == nowN, "✗ 換一張的確認框開著時那個檔存了新內容：按確定擺的是藍圖庫裡現在的內容")
+            -- 地上那張有沒存的改動時還要答一次三選一：那段時間存的新內容也算
+            three()
+            reset()
+            L.placeFile("Alpha.txt", 0)
+            dialogs[#dialogs].onResult(true)
+            nowN = grow("Alpha.txt")
+            press("IGUI_MBLD_SaveOverwrite")
+            check(saved == 1 and placed == 1 and ground.n == nowN, "✗ 地上那張的三選一開著時那個檔存了新內容：答完擺的是現在的內容")
+            -- 確認框開著時那個檔刪掉了：不擺（擺了的話定位時會把刪掉的檔寫回來）、說一聲
+            three()
+            reset()
+            dirty = false
+            L.placeFile("Bravo.txt", 0)
+            PF.remove("Bravo.txt")
+            toasts = {}
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == a and #toasts == 1, "✗ 換一張的確認框開著時那個檔刪掉了：不擺、說一聲")
+            -- 確認框上寫的是原本地上那張：答的時候地上換了別張就不做
+            local swapped = sample("Swapped")
+            three()
+            reset()
+            dirty, mode = false, "fixed"
+            L.placePlan(b, 0)
+            ground = swapped
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == swapped, "✗ 換一張的確認框開著時地上換了別張：不換")
+            reset()
+            dirty, mode = false, "fixed"
+            L.newBlank(0)
+            ground = swapped
+            dialogs[#dialogs].onResult(true)
+            check(blanked == 0 and ground == swapped, "✗ 新的空白藍圖的確認框開著時地上換了別張：不收起、不開新的")
+            reset()
+            dirty, mode = false, "fixed"
+            P.open(0)
+            P.v:act("clear")
+            ground = swapped
+            dialogs[#dialogs].onResult(true)
+            check(ground == swapped, "✗ 收起的確認框開著時地上換了別張：不收起")
+            -- 作廢的三選一（藍圖庫的檔變了、離開規劃）：舊按鈕還被按到也不做事
+            three()
+            reset()
+            L.placePlan(L.loadFile("Bravo.txt"), 0)
+            dialogs[#dialogs].onResult(true)
+            local stale
+            for _, c in ipairs(L.chooser.win.children) do if c.title == "IGUI_MBLD_SaveOverwrite" then stale = c.onClick end end
+            L.closeChooser()
+            stale()
+            check(saved == 0 and placed == 0 and ground == a, "✗ 作廢的三選一再按覆蓋：不存、不換")
+        end
         -- 三選一開不出來：不替玩家決定，只說先按完成或取消
         reset()
         local realAsk = L.askOverwrite
@@ -16035,6 +16121,64 @@ end)()
         L.rename("Charlie.txt", "Zed")
         check(p.file == nil, "✗ 藍圖庫改名：匯入框手上那份的檔名清掉")
         L.closeImport()
+        -- 第二條審查線（2026-11-19）：按「擺到地上」之後才關匯入框（取消鈕、右上角的 X）或換了一份，
+        -- 還開著的確認框、地上那張的存檔三選一都不算數：不存地上那張、不擺
+        do
+            local old = sample("Old")
+            old.file = "Old.txt"
+            local saves, realSave3 = 0, B.PlanMode.save
+            B.PlanMode.save = function()
+                saves = saves + 1
+                return true
+            end
+            B.PlanMode.state = function() return ground and "edit" or "none" end
+            local function begin(isDirty)
+                L.closeChooser()
+                L.closeImport()
+                three()
+                ground, placed, dirty, saves, dialogs = old, 0, isDirty, 0, {}
+                local c = fresh(Plan.new("Code"))
+                imp(c, c.rev)
+                L.imp:finish("place")
+                return c
+            end
+            begin(false)
+            L.closeImport()
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == old, "✗ 換一張的確認框開著時按匯入框的取消：按確定不擺")
+            begin(false)
+            L.imp.win:close() -- 右上角的 X：只藏起來，L.imp 還在
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == old, "✗ 換一張的確認框開著時按匯入框的 X：按確定不擺")
+            begin(false)
+            L.imp.plan = fresh(Plan.new("Another"))
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == old, "✗ 換一張的確認框開著時匯入框換了一份：按確定不擺")
+            begin(true)
+            dialogs[#dialogs].onResult(true)
+            check(L.chooser ~= nil, "（準備）地上那張有沒存的改動：存檔三選一開著")
+            L.closeImport()
+            press("IGUI_MBLD_SaveOverwrite")
+            check(saves == 0 and placed == 0 and ground == old, "✗ 地上那張的存檔三選一開著時按匯入框的取消：答了不存、不擺")
+            local c = begin(true)
+            dialogs[#dialogs].onResult(true)
+            press("IGUI_MBLD_SaveOverwrite")
+            check(saves == 1 and placed == 1 and ground == c, "反面：匯入框還開著同一份：存好地上那張、擺下去")
+            -- 沒換過項目的檔（L.placeFile 那條路）也一樣
+            L.closeImport()
+            three()
+            ground, placed, dirty, dialogs = old, 0, false, {}
+            p = L.loadFile("Alpha.txt")
+            imp(p, p.rev)
+            L.imp:finish("place")
+            L.closeImport()
+            dialogs[#dialogs].onResult(true)
+            check(placed == 0 and ground == old, "✗ 沒換過項目的檔、換一張的確認框開著時按匯入框的取消：按確定不擺")
+            B.PlanMode.save, B.PlanMode.state = realSave3, nil
+            dirty, ground, placed = false, nil, 0
+            L.closeChooser()
+            L.closeImport()
+        end
         -- 從檔案讀的、沒換過：檔已經在藍圖庫裡，不重寫（匯入框開著的時候那個檔可能存了新的內容）
         ground, placed = nil, 0
         three()

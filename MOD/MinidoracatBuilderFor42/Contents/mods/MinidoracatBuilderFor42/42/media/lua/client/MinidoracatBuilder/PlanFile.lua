@@ -893,6 +893,14 @@ local function alive(file)
     return line ~= nil and line ~= "" and line ~= TOMB
 end
 
+-- 確定是刪掉的：讀得到刪除標記（正式檔是空的看備份檔）。打不開、空的都不算：不知道是什麼就不重用那個檔名，
+-- 不然一時讀不到的藍圖會被另存、改名寫進去，原檔與備份都蓋掉
+local function tombed(file)
+    local line = firstLine(path(file))
+    if line == "" then line = firstLine(backupOf(path(file))) end
+    return line == TOMB
+end
+
 -- 藍圖資料夾裡的藍圖檔名（不含已刪除的），和略過的 .txt 檔數（檔名不合規則）。每個檔讀第一行判斷有沒有刪掉
 function PlanFile.list()
     local out, skipped = {}, 0
@@ -1015,7 +1023,7 @@ end
 -- 這台電腦存不住非英數檔名時（unicodeOk）退回舊規則：只留英數、轉小寫、最多 24 字。
 -- 撞名加 2、3…（照小寫比：Windows 的檔名不分大小寫）。資料夾有 N 個檔時前 N+1 個編號一定有空的，所以沒有上限。
 -- 清單裡沒有的候選還要開不起來才用：會改寫檔名的檔案系統清單回來的名稱和寫的不同，只看清單會寫進別張的檔。
--- 不加編號的那個檔名是刪除標記時直接重用，回資料夾裡原本的檔名（大小寫可能和算出來的不同，Windows 上是同一個檔）。keep＝這個檔名（不分大小寫）就算有檔也能用：
+-- 不加編號的那個檔名讀得到刪除標記時直接重用（tombed；打不開、空的不重用），回資料夾裡原本的檔名（大小寫可能和算出來的不同，Windows 上是同一個檔）。keep＝這個檔名（不分大小寫）就算有檔也能用：
 -- 只差大小寫時回 keep 本身，不然 Windows 上新舊檔名是同一個檔，改名把舊檔標成刪除就刪掉了新檔。
 -- 回 檔名，或 nil, "READ"（列不出資料夾）
 local function pickName(name, keep)
@@ -1039,8 +1047,8 @@ local function pickName(name, keep)
         if not used[f:lower()] and not opens(path(f)) then return f end
         if i == 1 then
             local have = used[f:lower()] or f -- 分大小寫的檔案系統上 f 可能不存在，要看的是資料夾裡那個
-            local okA, live = pcall(alive, have)
-            if okA and not live then return have end
+            local okA, gone = pcall(tombed, have)
+            if okA and gone then return have end
         end
     end
     return nil, "READ"

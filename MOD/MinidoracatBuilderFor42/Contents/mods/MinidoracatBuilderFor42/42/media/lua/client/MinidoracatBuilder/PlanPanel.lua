@@ -669,7 +669,9 @@ function Panel:act(what)
         L.confirm(pn, { title = getText("IGUI_MBLD_Plan_ClearTitle", plan and plan.name or ""), text = getText("IGUI_MBLD_Plan_ClearText"),
             ok = getText("IGUI_MBLD_Plan_Clear"), danger = true,
             onYes = function()
-                -- 確認框不擋畫面：按確認的那一刻才看有沒有沒存的改動（L.saveFirst）。存不了時地上那張照留，面板也留著
+                -- 確認框不擋畫面：框上寫的是原本那張，地上換了別張就不做；按確認的那一刻才看有沒有沒存的改動
+                -- （L.saveFirst）。存不了時地上那張照留，面板也留著
+                if planOf() ~= plan then return end
                 L.saveFirst(pn, function()
                     if PM.clear() then P.close() end
                 end)

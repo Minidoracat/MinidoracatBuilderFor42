@@ -635,14 +635,15 @@ end
 
 -- 地上那張規劃中有沒存的改動：換張、收起、搬之前先問覆蓋／另存／取消（L.askOverwrite），存好了才接著做 go()；
 -- 沒有沒存的改動直接 go()。回 go() 的結果；問了回 true。三選一與名稱框不擋畫面：答的時候已經不在規劃那一張
--- 就不存也不做；存不了（PlanMode 自己說過）也不做。三選一開不出來時不替玩家決定，只說先按完成或取消
-function L.saveFirst(pn, go)
+-- 就不存也不做；存不了（PlanMode 自己說過）也不做。三選一開不出來時不替玩家決定，只說先按完成或取消。
+-- live（選用）＝這次動作還算數嗎（匯入框的：框關了或換了一份就不算）：答的時候不算也是不存、不做
+function L.saveFirst(pn, go, live)
     local PM = B.PlanMode
     if not (PM and PM.unsaved and PM.unsaved()) then return go() end
     local cur = PM.plan()
     local function after(save)
         return function(...)
-            if PM.plan() ~= cur or PM.state() ~= "edit" then return false end
+            if PM.plan() ~= cur or PM.state() ~= "edit" or (live and not live()) then return false end
             if not save(...) then return false end
             return go()
         end
@@ -689,34 +690,49 @@ end
 
 -- 擺到地上（整張跟著游標，PlanMode.place）。地上已經有別張時先確認（地上同時只有一張）。
 -- 確認框不擋畫面，開著的時候可能才去規劃、改了東西：按確認的那一刻才看有沒有沒存的改動（L.saveFirst；
--- 新的空白藍圖、面板的收起也是）
-function L.placePlan(plan, pn)
+-- 新的空白藍圖、面板的收起也是）。框上寫的是原本地上那張：答的時候地上換了別張就不做。live（選用）同 L.saveFirst。
+-- fresh（選用）＝重讀要擺的那份，回 plan 或 nil（已說過原因）：問過才擺的，擺之前用它換掉手上那份。框開著的時候
+-- 藍圖庫那個檔可能存了新內容、刪掉了，擺手上那份舊的，定位時會把舊內容寫回去
+function L.placePlan(plan, pn, live, fresh)
     local PM = B.PlanMode
     if not (PM and PM.place) then
         L.tell(getText("IGUI_MBLD_Lib_NoPlanMode"))
         return false
     end
+    local asked = false
     local function go()
-        return L.saveFirst(pn, function() return L.doPlace(plan, pn) end)
+        return L.saveFirst(pn, function()
+            if asked and fresh then
+                plan = fresh()
+                if not plan then return false end
+            end
+            return L.doPlace(plan, pn)
+        end, live)
     end
     local cur = PM.plan and PM.plan()
     if other(cur, plan) then
         return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""),
             text = getText("IGUI_MBLD_Lib_ReplaceText", plan.name or ""), ok = getText("IGUI_MBLD_Lib_Replace"),
-            onYes = go }) ~= nil
+            onYes = function()
+                if PM.plan() ~= cur or (live and not live()) then return false end
+                asked = true
+                return go()
+            end }) ~= nil
     end
     return go()
 end
 
-function L.placeFile(file, pn)
+function L.placeFile(file, pn, live)
     -- 規劃中的就是這個檔：地上那張不比檔案舊，擺的是它（另讀一份會是存檔前的舊內容）
-    if editing(file) then return L.placePlan(B.PlanMode.plan(), pn) end
-    local plan, err = L.loadFile(file)
-    if not plan then
-        L.tell(err)
-        return false
+    if editing(file) then return L.placePlan(B.PlanMode.plan(), pn, live) end
+    local function load()
+        local plan, err = L.loadFile(file)
+        if not plan then L.tell(err) end
+        return plan
     end
-    return L.placePlan(plan, pn)
+    local plan = load()
+    if not plan then return false end
+    return L.placePlan(plan, pn, live, load)
 end
 
 -- 分享碼放進剪貼簿；太長時提示改傳檔案（附「開資料夾」）；放不進剪貼簿時開一個框讓玩家自己複製。回 code, copied
@@ -820,7 +836,11 @@ function L.newBlank(pn)
     local cur = PM.plan()
     if not cur then return go() end
     return L.confirm(pn, { title = getText("IGUI_MBLD_Lib_ReplaceTitle", cur.name or ""), text = getText("IGUI_MBLD_Lib_NewText"),
-        ok = getText("IGUI_MBLD_Lib_New"), onYes = go }) ~= nil
+        ok = getText("IGUI_MBLD_Lib_New"),
+        onYes = function()
+            if PM.plan() ~= cur then return false end -- 框上寫的是原本那張：地上換了別張就不做
+            return go()
+        end }) ~= nil
 end
 
 -- 刪除先確認（危險樣式，寫出名稱與片數）；按確認才刪。onDone(ok, 句子)
@@ -1487,15 +1507,19 @@ end
 -- 要蓋的那張正在地上規劃時不問：存進藍圖庫照 L.store 另存成新的一張，擺到地上的那份清掉檔名、當成另一張。
 -- 從檔案讀的、沒換過項目：檔已經在藍圖庫裡，存進藍圖庫不重寫、擺到地上擺藍圖庫裡現在的那個檔
 -- （匯入框不擋畫面，開著的時候那個檔可能存了新的內容，手上這份是舊的）。其他照舊（分享碼存成新的一張）。
--- 三選一與名稱框也不擋畫面：按下去時匯入框已經關了或換了一份就不做
+-- 三選一與名稱框也不擋畫面：按下去時匯入框已經關了（右上角的 X 只是藏起來，也算關了）或換了一份就不做；
+-- 擺到地上之後的確認框、地上那張的存檔三選一也一樣（alive 傳給 L.placePlan／L.placeFile）
 function Imp:finish(how)
     sync(self)
     local plan = self.plan
     if not plan then return end
     local place = how ~= "store"
+    local function alive()
+        return L.imp == self and self.plan == plan and self.win:getIsVisible()
+    end
     local function live(fn)
         return function(...)
-            if L.imp == self and self.plan == plan then return fn(...) end
+            if alive() then return fn(...) end
         end
     end
     local function go()
@@ -1503,7 +1527,7 @@ function Imp:finish(how)
         -- 地上正在規劃同一個檔（按下去之後才去規劃也算）：這份當成另一張、定位後另取檔名。留著檔名的話，
         -- 地上那張被問怎麼存、選了另存新檔之後檔名就不同了，這份會照原檔名擺下去、定位時不問就寫回原檔
         if plan.file and editing(plan.file) then plan.file = nil end
-        return L.placePlan(plan, self.pn)
+        return L.placePlan(plan, self.pn, alive)
     end
     local function asNew(name)
         plan.file = nil
@@ -1519,7 +1543,7 @@ function Imp:finish(how)
                 return L.askOverwrite(self.pn, { name = plan.name, onOverwrite = live(go), onNew = live(asNew) })
             end
         elseif place then
-            return L.placeFile(file, self.pn)
+            return L.placeFile(file, self.pn, alive)
         elseif PlanFile.exists(file) then
             L.markUsed(file, nil)
             L.tell(getText("IGUI_MBLD_Imp_Stored", plan.name, file))
@@ -1746,7 +1770,8 @@ function L.choose(pn, o)
             local fn = b.onClick
             btns[i] = UI.Button.new({ x = 0, y = 0, title = b.text, style = b.style, theme = theme,
                 onClick = function()
-                    if L.chooser == v then discard("chooser") end
+                    if L.chooser ~= v then return end -- 作廢的框（藍圖庫的檔變了、離開規劃）：按鈕還被按到也不做事
+                    discard("chooser")
                     if fn then fn() end
                 end })
             win:addChild(btns[i])
