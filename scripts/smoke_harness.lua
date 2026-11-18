@@ -14747,6 +14747,16 @@ end)()
                 locked[tb] = nil
                 disk[tb] = nil
                 check(PF.fileName("Tomb") == "Tomb.txt", "反面：正式檔是刪除標記、沒有備份檔：重用")
+                -- 複審第三次：資料夾列不出來（引擎回空清單）但照檔名開得到。清單沒列備份不代表沒有備份：照樣開來看
+                disk[tb] = wasMain
+                local realList = listFilesInZomboidLuaDirectory
+                listFilesInZomboidLuaDirectory = function() return javaList({}) end
+                local nameT = PF.fileName("Tomb")
+                local okT2 = PM.saveAs("Tomb")
+                listFilesInZomboidLuaDirectory = realList
+                check(nameT ~= "Tomb.txt" and disk[tb] == wasMain and disk[tp] == tomb and PM.plan().file ~= "Tomb.txt",
+                    "✗ 資料夾列不出來、正式檔是刪除標記、備份檔是別的內容：另存不蓋掉備份 " .. tostring(nameT) .. " " .. tostring(okT2) .. " " .. tostring(PM.plan().file))
+                disk[tb] = nil
                 disk[tp] = nil
             end
             B.PlanLibrary = { askOverwrite = function() return nil end }
