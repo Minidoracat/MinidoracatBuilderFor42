@@ -33,6 +33,58 @@ function getTimestampMs()
 end
 function isClient() return false end
 function isServer() return true end
+-- 引擎 Translator.getText 回傳前一律 text.formatted(args)（Translator.java:509-531）；開發模式（Core.IS_DEV）遇到不合法的 %
+-- 丟 IllegalFormatException（例 "100%"），一般模式才吞掉。查不到翻譯時 text 就是傳進來的字串（:497），翻譯檔的 %1 讀檔時已
+-- 換成 %1$s（formatFixer）。假翻譯回 key，所以照 Java 格式規則查傳進來的字串，模擬開發模式。
+-- 情境換掉 getText 時也要查：getText 不放進 _G，指派與讀取都經過 _G 的 metatable，讀到的是外面包一層檢查的版本
+do
+    local function javaFormatOk(s)
+        local i = 1
+        while true do
+            local p = s:find("%", i, true)
+            if not p then return true end
+            local j = p + 1
+            local arg = s:match("^%d+%$", j) or s:match("^<", j)
+            if arg then j = j + #arg end
+            j = j + #s:match("^[-#+ 0,(]*", j)
+            j = j + #s:match("^%d*", j)
+            if s:sub(j, j) == "." then
+                local pr = s:match("^%d+", j + 1)
+                if not pr then return false end
+                j = j + 1 + #pr
+            end
+            local c = s:sub(j, j)
+            if c == "t" or c == "T" then
+                if s:sub(j + 1, j + 1) == "" then return false end
+                j = j + 1
+            elseif c == "" or not c:find("^[bBhHsScCdoxXeEfgGaA%%n]") then
+                return false
+            end
+            i = j + 1
+        end
+    end
+    local gateOf, implOf, impl = {}, {}, nil
+    local function gate(f)
+        local g = gateOf[f]
+        if not g then
+            g = function(k, ...)
+                if type(k) == "string" and not javaFormatOk(k) then
+                    error("java.util.UnknownFormatConversionException（開發模式的 getText 格式錯）: getText(\"" .. k .. "\")", 2)
+                end
+                return f(k, ...)
+            end
+            gateOf[f], implOf[g] = g, f
+        end
+        return g
+    end
+    setmetatable(_G, {
+        __index = function(_, k) if k == "getText" and impl then return gate(impl) end end,
+        __newindex = function(t, k, v)
+            if k == "getText" then impl = implOf[v] or v else rawset(t, k, v) end
+        end,
+    })
+    HARNESS_JAVA_FORMAT_OK = javaFormatOk
+end
 function getText(key) return key end
 function getTextOrNull() return nil end
 function getRecipeDisplayName(name) return "R:" .. name end -- 標出有翻成配方顯示名稱
@@ -1780,7 +1832,86 @@ do
     function getItemName(ft) return ft end
     require "MinidoracatBuilder/Names"
     require "MinidoracatBuilder/Favorites"
-    require "MinidoracatBuilder/Window"
+    -- 載入時有原版的 PZAPI.ModOptions 與 UI 框架（備份、更新概要）：檔尾那段登記要全部跑到（實機 E2E 抓到：選項下拉寫字面
+    -- "100%"，原版 addItem 對它 getText，開發模式丟錯，Window.lua 頂層停在那一行，按鍵、讀選項、Dock、更新概要都沒登記）
+    ;(function()
+        -- 照原版 lua/client/PZAPI/ModOptions.lua（42.22）：只做 Window.lua 用到的；有 getText 的地方照樣叫
+        local Options = {}
+        function Options:new(modOptionsID, name)
+            local o = setmetatable({ data = {}, dict = {}, modOptionsID = modOptionsID, name = name }, self)
+            self.__index = self
+            return o
+        end
+        function Options:apply() end
+        function Options:getOption(id) return self.dict[id] end
+        function Options:addDescription(text) table.insert(self.data, { type = "description", text = getText(text) }) end
+        function Options:addTickBox(id, name, value, _tooltip)
+            local option = { type = "tickbox", id = id, name = name, value = value, tooltip = _tooltip, isEnabled = true }
+            option.getValue = function(self) return self.value end
+            option.setValue = function(self, v) self.value = v end
+            table.insert(self.data, option)
+            self.dict[id] = option
+            return option
+        end
+        function Options:addComboBox(id, name, _tooltip)
+            local option = { type = "combobox", id = id, name = name, tooltip = _tooltip, isEnabled = {}, values = {}, selected = 1 }
+            option.addItem = function(self, itemName, _isSelected)
+                table.insert(self.values, getText(itemName))
+                if _isSelected then self.selected = #self.values end
+            end
+            option.getValue = function(self) return self.selected end
+            option.setValue = function(self, v) self.selected = v end
+            table.insert(self.data, option)
+            self.dict[id] = option
+            return option
+        end
+        local realPZAPI, realMUI = PZAPI, MinidoracatUI
+        local made, protected, news = {}, nil, nil
+        PZAPI = { ModOptions = {} }
+        function PZAPI.ModOptions:create(modOptionsID, name)
+            local options = Options:new(modOptionsID, name or modOptionsID)
+            made[modOptionsID] = options
+            return options
+        end
+        MinidoracatUI = { v1 = { API_MAJOR = 1, API_REVISION = 99, CAPABILITIES = { modOptionsBackup = true, whatsNew = true },
+            ModOptionsBackup = { protect = function(o) protected = o end },
+            WhatsNew = { register = function(t) news = t end } } }
+        local n0 = { key = count("OnKeyPressed"), boot = count("OnGameBoot"), start = count("OnGameStart") }
+        local okLoad, errLoad = pcall(require, "MinidoracatBuilder/Window")
+        PZAPI, MinidoracatUI = realPZAPI, realMUI
+        local W = MinidoracatBuilder.Window
+        local o = W and W.options
+        local op = o and o:getOption("WindowOpacity")
+        check(okLoad and o == made.MinidoracatBuilderFor42 and protected == o and op and #op.values == 3 and op:getValue() == 1
+            and o:getOption("ShowDock") and news and news.modId == "MinidoracatBuilderFor42"
+            and count("OnKeyPressed") == n0.key + 1 and count("OnGameBoot") == n0.boot + 1 and count("OnGameStart") == n0.start + 1,
+            "載入工坊（開發模式的 getText）：檔尾全部登記到——選項（不透明度三項、預設第 1 項）、選項備份、更新概要、按鍵與開局事件"
+                .. (okLoad and "" or "（" .. tostring(errLoad) .. "）"))
+        if not (okLoad and op) then return end
+        -- 用這份選項走一次：選 1／2／3 → 不透明度 1、0.75、0.5；Dock 勾掉 → 不顯示
+        local realV, realAlpha, realDock = W.v, W.alpha, W.showDock
+        W.v = nil
+        local got = {}
+        for i = 1, 3 do
+            op:setValue(i)
+            W.applyOptions()
+            got[i] = W.alpha
+        end
+        o:getOption("ShowDock"):setValue(false)
+        W.readOptions()
+        local dockOff = W.showDock
+        o:getOption("ShowDock"):setValue(true)
+        op:setValue(1)
+        W.readOptions()
+        check(got[1] == 1 and got[2] == 0.75 and got[3] == 0.5 and dockOff == false and W.showDock == true and W.alpha == 1,
+            "選項下拉選 100%／75%／50%：工坊不透明度 1、0.75、0.5；Dock 勾掉就不顯示")
+        W.v, W.alpha, W.showDock = realV, realAlpha, realDock
+        W.options = nil -- 後面的情境照舊沒有選項（readOptions 什麼都不做），要選項的自己換
+    end)()
+    check(not HARNESS_JAVA_FORMAT_OK("100%") and not HARNESS_JAVA_FORMAT_OK("100% 不透明") and not HARNESS_JAVA_FORMAT_OK("%1")
+        and HARNESS_JAVA_FORMAT_OK("100%%") and HARNESS_JAVA_FORMAT_OK("%1$s 與 %2$d") and HARNESS_JAVA_FORMAT_OK("%s%n")
+        and HARNESS_JAVA_FORMAT_OK("IGUI_MinidoracatUI_Dock_Opacity100"),
+        "假 getText 照 Java 格式規則：不成對的 % 算錯（開發模式丟錯），%%、%1$s、%s 這類合法")
     isServer = realIsServer
     local W, Names, Fav = MinidoracatBuilder.Window, MinidoracatBuilder.Names, MinidoracatBuilder.Favorites
     -- 帶參數的 getText 把參數接在後面，名稱組合與數量才看得出來

@@ -3568,10 +3568,10 @@ if first then
         o:addTickBox("ShowDock", "UI_MinidoracatBuilder_ShowDock", true, "UI_MinidoracatBuilder_ShowDock_tooltip")
         local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity")
         -- addItem 會 getText，getText 對回傳的字做 formatted：字面的 "100%" 在開發模式丟錯、整個檔停在這裡
-        -- （PZAPI/ModOptions.lua:132；Translator.java:509-531）。用框架現成的字（值寫成 "100%%"），同它的 Dock 不透明度
-        op:addItem("IGUI_MinidoracatUI_Dock_Opacity100", true)
-        op:addItem("IGUI_MinidoracatUI_Dock_Opacity75", false)
-        op:addItem("IGUI_MinidoracatUI_Dock_Opacity50", false)
+        -- （PZAPI/ModOptions.lua:132；Translator.java:509-531）。所以選項用自己的翻譯 key，值寫成兩個百分號（"100%%"）
+        op:addItem("UI_MinidoracatBuilder_Opacity_100", true)
+        op:addItem("UI_MinidoracatBuilder_Opacity_75", false)
+        op:addItem("UI_MinidoracatBuilder_Opacity_50", false)
         -- 原版選項頁的下拉不設 tooltip（只有勾選框設，MainOptions.lua:2809-2812,2910-2933），說明改寫在下拉下面。
         -- 說明沒有 id、getValue，存檔與備份都跳過（PZAPI/ModOptions.lua:263；MinidoracatUI ModOptionsBackup.lua:133,180）
         o:addDescription("UI_MinidoracatBuilder_Opacity_tooltip")
