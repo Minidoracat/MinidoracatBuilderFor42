@@ -62,10 +62,13 @@ Events = setmetatable({}, {
     end,
 })
 local function fire(name, ...)
-    -- 照引擎：每個 IsoObject 都有 isFloor（IsoObject.java:363）；情境裡臨時做的物件沒寫的當成不是地板
+    -- 照引擎：每個 IsoObject 都有 isFloor（IsoObject.java:363）、hasModData；情境裡臨時做的物件沒寫的當成不是地板、照 getModData 判
     local obj = ...
     if name == "OnObjectAboutToBeRemoved" and type(obj) == "table" and obj.isFloor == nil then
         obj.isFloor = function() return false end
+    end
+    if name == "OnObjectAboutToBeRemoved" and type(obj) == "table" and obj.hasModData == nil then
+        obj.hasModData = function(o) return o.getModData ~= nil and next(o:getModData()) ~= nil end
     end
     local list = {}
     for i, f in ipairs(handlers[name] or {}) do list[i] = f end -- 照遊戲：觸發中移除不影響這一輪
@@ -2640,7 +2643,8 @@ local function newKinds()
         function o:createContainersFromSpriteProperties()
             self.container = self.container or { type = spr:getProperties():get("container"), cap = 50,
                 getType = function(s) return s.type end, getCapacity = function(s) return s.cap end,
-                setCapacity = function(s, v) s.cap = v end }
+                setCapacity = function(s, v) s.cap = v end,
+                getCustomName = function(s) return o.md[s.type .. "_customContainerName"] end }
         end
         fires[#fires + 1] = o
         return o
@@ -5768,6 +5772,92 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         check(onLoad == false and s3.moved == true and up.changed == 0,
             "撿放過的擋路家電讀檔：照目前的打不壞選項改（開→不給打、關→打得壞），讀檔不重推尋路")
         sb.ZombieProof = true
+
+        -- 第三輪 #1：舊版已經撿放過一次（只剩巢狀記號）的牆櫃，更新後直接讀檔：補上 movableData，再撿放容量照倍率
+        local oldShelf = gen({ modData = { builderEntry = "zp_crate_01_0" } })
+        Place.migrate(oldShelf)
+        local shelfNext = carry(oldShelf)
+        fire("OnObjectAdded", shelfNext)
+        check(oldShelf.md.movableData and oldShelf.md.movableData.builderEntry == "zp_crate_01_0"
+            and shelfNext.boxes[1].cap == 100 and shelfNext.md.builderEntry == nil,
+            "舊版撿放過一次的牆櫃（只有巢狀記號）讀檔：補上 movableData，更新後再撿放容量照倍率補回（50×2）")
+
+        -- 第三輪 #3：帶 movableData 的容器撿放，原版不抄容器名稱（<種類>_customContainerName）：撿走時照序號記下、放下時寫回
+        local realRand, realClient, realServer, seq = ZombRand, isClient, isServer, 0
+        ZombRand = function() seq = seq + 1 return seq end
+        local function mode(client, server)
+            isClient = function() return client end
+            isServer = function() return server end
+        end
+        -- 容器名稱照引擎存在物件的 modData 頂層（ItemContainer.getCustomName 讀它，ItemContainer.java:3832-3840）
+        local function withNames(g)
+            g.sent = 0
+            function g:transmitModData() self.sent = self.sent + 1 end
+            for _, b in ipairs(g.boxes) do
+                function b:getCustomName() return g.md[self.t .. "_customContainerName"] end
+            end
+            return g
+        end
+        local function shelfOf(name) -- 蓋好的牆櫃第一次撿放後（巢狀記號）放下：拿到序號；name＝玩家取的名字
+            local g = withNames(gen({ modData = { builderEntry = "zp_crate_01_0" } }))
+            fire("OnObjectAdded", g)
+            g.md.crate_customContainerName = name
+            return g
+        end
+        local function move(g) -- 撿走（OnObjectAboutToBeRemoved）再放下：原版只帶 movableData
+            Place.onAboutToBeRemoved(g)
+            local n = withNames(carry(g))
+            fire("OnObjectAdded", n)
+            return n
+        end
+        mode(false, false)
+        local a = shelfOf("工具")
+        local a2 = move(a)
+        local again = withNames(carry(a))
+        fire("OnObjectAdded", again)
+        local a3 = move(a2)
+        check(a.md.movableData.builderUid ~= nil and a2.md.crate_customContainerName == "工具" and a2.sent == 0
+            and again.md.crate_customContainerName == nil
+            and a3.md.crate_customContainerName == "工具" and a3.md.movableData.builderUid == a.md.movableData.builderUid,
+            "單機撿放取了名字的牆櫃：放下後名字還在、不送封包；同一筆只還原一次；再撿放一代序號不變、名字照樣還原")
+        local b, c = shelfOf("甲"), shelfOf("乙")
+        Place.onAboutToBeRemoved(b)
+        Place.onAboutToBeRemoved(c)
+        local c2 = withNames(carry(c))
+        fire("OnObjectAdded", c2)
+        local b2 = withNames(carry(b))
+        fire("OnObjectAdded", b2)
+        local d2 = move(shelfOf(nil))
+        local hasNameKey = false
+        for k in pairs(d2.md) do if tostring(k):find("_customContainerName", 1, true) then hasNameKey = true end end
+        check(b2.md.crate_customContainerName == "甲" and c2.md.crate_customContainerName == "乙" and not hasNameKey,
+            "兩個同款牆櫃不同名字、交錯撿放：各自還原自己的名字；沒取名的不寫名稱鍵")
+        mode(false, true)
+        local e2, f2 = move(shelfOf("伺服器")), move(shelfOf(nil))
+        check(e2.md.crate_customContainerName == "伺服器" and e2.sent == 1 and f2.sent == 0,
+            "伺服器：還原名字後送一次 modData 給客戶端；沒有名字可還原時不送")
+        -- 客戶端（另一個 Lua 環境，carried 只有伺服器那份；這裡同一個環境，只驗客戶端自己不記、不發序號、放下不丟錯）
+        local k = shelfOf("客戶端撿")
+        mode(true, false)
+        local h = withNames(gen({ modData = { builderEntry = "zp_crate_01_0" } }))
+        fire("OnObjectAdded", h)
+        Place.onAboutToBeRemoved(k)
+        local kOnClient = withNames(carry(k))
+        local okClient = pcall(fire, "OnObjectAdded", kOnClient)
+        mode(false, false)
+        local k2 = withNames(carry(k))
+        fire("OnObjectAdded", k2)
+        check(okClient and h.md.movableData and h.md.movableData.builderEntry == "zp_crate_01_0" and h.md.movableData.builderUid == nil
+            and kOnClient.md.crate_customContainerName == nil and kOnClient.sent == 0 and k2.md.crate_customContainerName == nil,
+            "客戶端：記號照記但不發序號（等伺服器的）、撿走時不記名字、放下時不還原也不丟錯")
+        local o1 = withNames(gen({ movableData = { builderEntry = "zp_crate_01_0" } }))
+        fire("OnObjectAdded", o1)
+        local o2 = withNames(gen({ movableData = { builderEntry = "zp_crate_01_0" } }))
+        Place.migrate(o2)
+        check(o1.md.movableData.builderUid ~= nil and o2.md.movableData.builderUid ~= nil
+            and o1.md.movableData.builderUid ~= o2.md.movableData.builderUid,
+            "上一版撿放過的（movableData 只有記號、沒有序號）：放下或讀檔時補上序號，之後撿放名字才帶得走")
+        ZombRand, isClient, isServer = realRand, realClient, realServer
     end
     sb.ZombieProof, sb.ContainerCapacityMultiplier = nil, nil
     instanceof = realInst
@@ -7704,6 +7794,12 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
         and Place.caution("fence", fenceN, a1) == "RAMP_EXIT" and Place.caution("doorFrame", dframeN, a1) == nil
         and Place.caution("post", postS, a1) == nil,
         "坡頂出口：窗框、柵欄會擋路要提醒；門（開著走得過）、門框、柱子不提醒（審查 #12）")
+    do -- 原版柵欄門、車庫門的圖同時帶 doorN 與 collideN（fixtures_doors_fences_01_1）：照種類算門，不提醒；同一條邊放牆照舊提醒
+        local gateN = sprite("zz_gate_01_1", 9337, { flags = { "doorN", "collideN" } })
+        check(Place.caution("door", gateN, a1) == nil and Place.caution("door", gateN, up1) == nil
+            and Place.caution("wall", wallN, a1) == "RAMP_EXIT",
+            "坡頂出口：帶 collide 的柵欄門、車庫門照樣算門、不提醒；同一條邊放牆照舊提醒")
+    end
 
     -- 游標：提醒只寫在標籤、不擋（照樣可蓋）；提醒本身丟錯時照樣可蓋
     local realItem, realCaution = B.Check.item, Place.caution
@@ -15486,25 +15582,39 @@ end)()
     check(drags[0].ox == turnedAt[1] and drags[0].oy == turnedAt[2] and table.concat(PG.outline(), ",", 1, 4) == b2s,
         "擺放轉 90 度、滑鼠不動：原點與外框已照滑鼠那格對齊（和移一下滑鼠的結果一樣）")
     drags[0]:tryBuild(60, 60, 0)
-    -- 審查 #6：配方片的虛影只畫第一格，外框照那一面整塊（Recipes.span）；span 丟錯時 log 一次、退回錨點那格
+    -- 審查 #6：配方片的虛影只畫第一格，外框照那一面整塊（真的 Recipes.span）；span 丟錯時 log 一次、退回錨點那格。
+    -- 配方資料用假的 BuildEntity info（面 1＝西 3×1、面 2＝北 1×3，照 Recipes 的 FACE_OF 對到 getFace(1)、getFace(0)）
     PM.clear()
     local realR, realPrint, spanLogs = B.Recipes, print, 0
-    B.Recipes = { faces = function() return nil end, span = function() return 2, 2 end }
-    local rp = Plan.new("配方")
-    Plan.add(rp, 0, 0, 0, 0, 0, Plan.item(rp, "recipe:Base.RainCollector_Tarp"))
-    PM.place(rp, 0)
-    drags[0]:isValid(sq(60, 60, 0))
-    PG.draw()
-    local rb = PG.outline()
-    local rw, rh = rb and rb[3] - rb[1], rb and rb[4] - rb[2]
-    getCell():setDrag(nil, 0)
+    local RR = real.recipes -- 情境開頭換成假的之前的真模組
+    local RID = "recipe:Base.HarnessBench"
+    local keepList, keepBy = RR.list, RR.byId
+    local function face(w, h) -- 格子沒有圖（TileInfo 回 nil）：虛影照樣畫不出，外框只靠 span
+        return { getWidth = function() return w end, getHeight = function() return h end, getTileInfo = function() return nil end }
+    end
+    local FACES = { [1] = face(3, 1), [0] = face(1, 3) }
+    RR.list, RR.byId = { n = 0 }, { [RID] = { id = RID, info = { getFace = function(_, f) return FACES[f] end } } }
+    B.Recipes = RR
+    local function recipeBox(d)
+        PM.clear()
+        local rp = Plan.new("配方")
+        Plan.add(rp, 0, 0, 0, d, 0, Plan.item(rp, RID))
+        PM.place(rp, 0)
+        drags[0]:isValid(sq(60, 60, 0))
+        PG.draw()
+        local b = PG.outline()
+        getCell():setDrag(nil, 0)
+        return b and (b[3] - b[1]) .. "x" .. (b[4] - b[2])
+    end
+    local westBox, northBox = recipeBox(1), recipeBox(2)
+    RR.list, RR.byId = keepList, keepBy
     PM.clear()
-    B.Recipes.span = function() error("boom") end
+    B.Recipes = { faces = function() return nil end, span = function() error("boom") end }
     print = function(s, ...)
         if tostring(s):find("span failed", 1, true) then spanLogs = spanLogs + 1 else realPrint(s, ...) end
     end
     local rp2 = Plan.new("配方2")
-    Plan.add(rp2, 0, 0, 0, 0, 0, Plan.item(rp2, "recipe:Base.RainCollector_Tarp"))
+    Plan.add(rp2, 0, 0, 0, 1, 0, Plan.item(rp2, RID))
     PM.place(rp2, 0)
     drags[0]:isValid(sq(60, 60, 0))
     PG.draw()
@@ -15513,8 +15623,8 @@ end)()
     print = realPrint
     getCell():setDrag(nil, 0)
     B.Recipes = realR
-    check(rw == 2 and rh == 2 and eb and eb[3] - eb[1] == 1 and eb[4] - eb[2] == 1 and spanLogs == 1,
-        "配方片擺放外框：照那一面整塊（2×2，不只畫圖那格）；查不到整塊大小時退回錨點那格、log 只印一次")
+    check(westBox == "3x1" and northBox == "1x3" and eb and eb[3] - eb[1] == 1 and eb[4] - eb[2] == 1 and spanLogs == 1,
+        "配方片擺放外框：照那一面整塊（西面 3×1、北面 1×3，不只畫圖那格）；查不到整塊大小時退回錨點那格、log 只印一次")
     PM.clear()
     local strip2 = Plan.new("條")
     for x = 0, 2 do Plan.add(strip2, x, 0, 0, 0, 0, Plan.item(strip2, "pm_floor_01_0")) end

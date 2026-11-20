@@ -408,7 +408,9 @@ function Place.caution(kind, spr, sq)
         local same, any = shapedFrame(sq, n == true, shape)
         if not same and (any or Rules.TALL_WINDOW[shape]) then return "WINDOW_SHAPE" end
     end
-    if (n and blocksEdge(p, true) and rampExit(sq, true)) or (w and blocksEdge(p, false) and rampExit(sq, false)) then
+    -- 門不提醒（使用者裁定）。柵欄門、車庫門的圖同時帶 collide，blocksEdge 分不出來，照種類排除
+    if kind ~= "door"
+        and ((n and blocksEdge(p, true) and rampExit(sq, true)) or (w and blocksEdge(p, false) and rampExit(sq, false))) then
         return "RAMP_EXIT"
     end
     return nil
@@ -1414,10 +1416,33 @@ local function markMovable(obj, id)
     if instanceof(obj, "IsoThumpable") or obj:getContainerCount() == 0 then return end
     local md = obj:getModData()
     local m = type(md.movableData) == "table" and md.movableData or {}
-    if m.builderEntry ~= id then
-        m.builderEntry = id
-        md.movableData = m
+    if m.builderEntry == id and (m.builderUid or isClient()) then return end
+    m.builderEntry = id
+    -- 序號：撿走時照它記下容器的名字（carried）。客戶端不發，等伺服器的
+    if not isClient() then
+        m.builderUid = m.builderUid or string.format("%d-%d", ZombRand(1000000000), ZombRand(1000000000))
     end
+    md.movableData = m
+end
+-- 原版放下時，物品帶 movableData 就不抄它的其他鍵；容器的自訂名稱（<種類>_customContainerName，ItemContainer.java:3832-3840）
+-- 只在物件已有容器時補抄，而容器晚一步才建（ISMoveableSpriteProps.lua:2423-2447,2486）：帶記號的容器撿放會掉名字。
+-- 撿走時照序號記下名字（序號跟著 movableData 到新物件），放下時寫回（onAdded）。只在伺服器、單機做，客戶端等 transmitModData。
+-- shortcut: 名字只記在記憶體，東西還在玩家身上時伺服器重啟就掉名字；有人回報再改存 ModData
+local carried = {}
+local function stashNames(obj)
+    local m = obj:hasModData() and obj:getModData().movableData
+    local uid = type(m) == "table" and m.builderUid
+    if not uid then return end
+    local names
+    for i = 0, obj:getContainerCount() - 1 do
+        local c = obj:getContainerByIndex(i)
+        local name = c and c:getCustomName()
+        if name then
+            names = names or {}
+            names[c:getType() .. "_customContainerName"] = name
+        end
+    end
+    carried[uid] = names
 end
 -- 原版撿起再放下的本 MOD 物件的記號（頂層記號沒了的）：巢狀那份（不擋路的 IsoThumpable 第一次撿放，:2427-2436）或 movableData
 local function movedEntry(md)
@@ -1780,6 +1805,7 @@ end
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
+    if not isClient() then stashNames(obj) end -- 撿走帶記號的容器：記下名字，放下時寫回
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
     if instanceof(obj, "IsoDoor") then
@@ -1839,6 +1865,13 @@ function Place.onAdded(obj)
         if sq and was ~= obj:isMovedThumpable() then sq:setSquareChanged() end
     end
     Place.fitContainers(obj)
+    local m = md.movableData
+    local names = type(m) == "table" and m.builderUid and carried[m.builderUid]
+    if names then -- 撿走時記下的容器名字（carried）
+        carried[m.builderUid] = nil
+        for k, v in pairs(names) do md[k] = v end
+        if isServer() then obj:transmitModData() end
+    end
     markMovable(obj, id)
 end
 Events.OnObjectAdded.Add(function(obj) MinidoracatBuilder.Place.onAdded(obj) end)
@@ -1951,7 +1984,10 @@ function Place.migrate(obj)
         -- 照目前的倍率補容量
         local moved = obj:hasModData() and movedEntry(obj:getModData())
         if moved and Place.keyed(obj) then Place.harden(obj) end -- 撿放過的家電（onAdded）；讀檔早於註冊尋路，不必重推
-        if moved then Place.fitContainers(obj) end
+        if moved then
+            Place.fitContainers(obj)
+            markMovable(obj, moved) -- 舊版撿放過的只有巢狀記號：補上，再撿放才認得
+        end
         -- 雙開門第 2、3 片開關過就換成沒記號、耐久照預設的新物件（IsoDoor.java:2738-2742）：照第一片認，讀檔時重套「殭屍敲不破門」
         -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）；同一場裡開關的由 Place.reharden 補
         if instanceof(obj, "IsoDoor") and Place.ourDoor(obj) then Place.harden(obj) end
