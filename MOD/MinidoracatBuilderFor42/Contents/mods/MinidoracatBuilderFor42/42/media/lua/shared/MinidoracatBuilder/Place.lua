@@ -210,6 +210,51 @@ local function doorFrameAt(sq, north)
     return sq:has(F.DoorWallW) or sq:has("DoorWallWTrans")
 end
 
+-- 那條邊（cutN／cutW）上不是窗的物件裡，有沒有 WindowShape 等於 shape 的；第二個回傳＝有沒有任何一件寫了形狀。
+-- 窗跳過：IsoWindow 建構子替窗的圖補 cutN／W（IsoWindow.java:84-102）
+local function shapedFrame(sq, north, shape)
+    local objects, cut, any = sq:getObjects(), north and F.cutN or F.cutW, false
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local p = not instanceof(o, "IsoWindow") and o:getProperties()
+        local s = p and p:has(cut) and p:get("WindowShape")
+        if s then
+            if s == shape then return true, true end
+            any = true
+        end
+    end
+    return false, any
+end
+
+-- 沒有窗框旗標時：同形狀的牆飾或雙開門框牆也算框（原版地圖 walls_exterior_house_06_14 配 fixtures_windows_white_14）。
+-- 那條邊沒有門、沒有擋路的牆（collideN／W）
+local function tallFrame(sq, north, shape)
+    return shape ~= nil and sq:getDoor(north and NS or EW) == nil
+        and not sq:has(north and F.collideN or F.collideW) and (shapedFrame(sq, north, shape))
+end
+
+-- 那條邊有沒有窗框（帶 WindowN／W 的物件）。窗自己的圖也帶（引擎替 windowN／W 補，IsoWorld.java:919-926），跳過窗
+local function windowFrameOn(sq, north)
+    local objects, flag = sq:getObjects(), north and F.WindowN or F.WindowW
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        if not instanceof(o, "IsoWindow") and o:getProperties() and o:getProperties():has(flag) then return true end
+    end
+    return false
+end
+local function framesOn(o, sq, north, s)
+    local win = o:getProperties():has(north and F.cutN or F.cutW) and sq:getWindow(north and NS or EW)
+    -- 開著、破了的窗圖照關著那張補屬性（IsoWindow.java:113-126），形狀讀得到
+    return win and win:getProperties():get("WindowShape") == s and not windowFrameOn(sq, north) or false
+end
+-- o 是不是那條邊上全高窗的框（tallFrame 認的那種：帶 cut 旗標與 WindowShape、同一條邊的窗形狀相同、那條邊沒有窗框）。
+-- 拆了窗會懸空，Dismantle.blocked 照 ATTACHED 擋
+function Place.framesWindow(o, sq)
+    local p = not instanceof(o, "IsoWindow") and o:getProperties()
+    local s = p and p:get("WindowShape")
+    return s ~= nil and (framesOn(o, sq, true, s) or framesOn(o, sq, false, s))
+end
+
 -- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:397-408）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
 local function splitsGrid(sq, n, w, skip)
     local objects = sq:getObjects()
@@ -293,6 +338,34 @@ local function edgeBlocked(sq, north)
     return sq:has(F.collideW) or sq:has(F.windowW) or sq:has(F.doorW)
 end
 
+-- 格上有沒有往 (dx, dy) 上坡的坡頂片（同 Dismantle.lua 的 rampInto 的找法）
+local function topAt(sq, dx, dy)
+    local objects = sq and sq:hasSlopedSurface() and sq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local s = objects:get(i):getSprite()
+        local tx, ty
+        if s then tx, ty = Entry.rampTop(s) end -- Kahlua 的 a and f() 只留一個回傳值
+        if tx == dx and ty == dy then return true end
+    end
+    return false
+end
+-- sq 的北（西）邊是不是某組坡道的坡頂出口（rampOk 查的那條邊的反向）：往北、西上坡的坡頂片在這格或正下方；往南、東的
+-- 在北（西）鄰格或它正下方
+local function rampExit(sq, north)
+    local cell, x, y, z = getCell(), sq:getX(), sq:getY(), sq:getZ()
+    local ux, uy = north and 0 or -1, north and -1 or 0
+    for dz = 0, 1 do
+        if topAt(cell:getGridSquare(x, y, z - dz), ux, uy)
+            or topAt(cell:getGridSquare(x + ux, y + uy, z - dz), -ux, -uy) then return true end
+    end
+    return false
+end
+-- 要放的圖會不會擋那條邊：和 edgeBlocked 同三項，讀圖的屬性
+local function blocksEdge(p, north)
+    if north then return p:has(F.collideN) or p:has(F.windowN) or p:has(F.doorN) end
+    return p:has(F.collideW) or p:has(F.windowW) or p:has(F.doorW)
+end
+
 -- 坡道一片（Entry.cells；role＝platform 是坡頂上一層的平台，同樓梯的平台只要不實心）。比照樓梯：不在最高層、踩在地板上
 -- （z=0 的地面也算），不放在高草、樹、水、實心或擋放置的東西上，格上沒有人、沒有車，不擋到樓梯，格上原本的東西留得下
 -- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門，不然走到坡頂
@@ -317,6 +390,23 @@ local function rampOk(spr, sq, role)
     end
     if not sq:getMovingObjects():isEmpty() then return false, "OCCUPIED" end
     return not buildUtil.stairIsBlockingPlacement(sq, true)
+end
+
+-- 預覽提醒（不擋、伺服器不算）：回 "WINDOW_SHAPE"／"RAMP_EXIT"／nil。只給 Cursor.preview 呼叫。
+-- 窗框沒寫形狀、窗是一般形狀時不提醒（44 個 tileset、730 張窗框牆沒寫形狀，標準窗配木窗框會每次誤報）
+function Place.caution(kind, spr, sq)
+    if not Entry.EDGE[kind] then return nil end
+    local p = spr:getProperties()
+    local n, w = Entry.edges(kind, spr)
+    local shape = kind == "window" and not Rules.framedWindow(spr:getType()) and p:get("WindowShape")
+    if shape then
+        local same, any = shapedFrame(sq, n == true, shape)
+        if not same and (any or Rules.TALL_WINDOW[shape]) then return "WINDOW_SHAPE" end
+    end
+    if (n and blocksEdge(p, true) and rampExit(sq, true)) or (w and blocksEdge(p, false) and rampExit(sq, false)) then
+        return "RAMP_EXIT"
+    end
+    return nil
 end
 
 -- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
@@ -761,17 +851,19 @@ function Place.check(kind, spr, sq, ...)
             -- 車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身帶牆屬性，雙開門原版配方也不要門框
             -- （entity_wood_doubledoor.txt 的 dontNeedFrame）
             if not doorPairExists(spr) then return false end
-            if (n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil)
-                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil) then
+            if (n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil)
+                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil) then
                 return true
             end
             if not Rules.gate(p) then return false end
         end
-        -- 一般的窗要放進同方向、還沒有窗的窗框。牆型窗（Rules.framedWindow：窗和窗框同一張，地圖也不另放窗框）照下面
-        -- 一般格邊判斷：那條邊已經有窗框（地圖的或本工具蓋的）、牆、窗時 edgeTaken 擋下，不疊兩層框（BLOCKED）
+        -- 一般的窗要放進同方向、還沒有窗的窗框；沒有窗框時同形狀的牆飾或雙開門框牆也行（tallFrame，全高窗原版沒有窗框牆）。
+        -- 牆型窗（Rules.framedWindow：窗和窗框同一張，地圖也不另放窗框）照下面一般格邊判斷：那條邊已經有窗框（地圖的或
+        -- 本工具蓋的）、牆、窗時 edgeTaken 擋下，不疊兩層框（BLOCKED）。雙開門框牆上有窗時門放不進（上面門分支）
         if kind == "window" and not Rules.framedWindow(spr:getType()) then
-            return (n and sq:has(F.WindowN) and sq:getWindow(NS) == nil)
-                or (w and sq:has(F.WindowW) and sq:getWindow(EW) == nil)
+            local shape = p:get("WindowShape")
+            return (n and sq:getWindow(NS) == nil and (sq:has(F.WindowN) or tallFrame(sq, true, shape)))
+                or (w and sq:getWindow(EW) == nil and (sq:has(F.WindowW) or tallFrame(sq, false, shape)))
         end
         -- 不擋樓梯：底片前面、頂片上一層出口那條邊不能蓋（原版木牆、門框都查，ISWoodenWall.lua:129、
         -- ISWoodenDoorFrame.lua:46、ISBuildUtil.lua:438-480）
@@ -1005,6 +1097,20 @@ local function proofDmg(thump, dmg) return PROOF_DMG - (thump and 1 or 0) - (dmg
 -- 只能把耐久調高；maxHealth 沒有 setter（:2401,2639），關掉時夾回 maxHealth（建構子照圖塊設的，:807-821）
 local DOOR_HP = 1000000000
 local function proof(key) return Entry.settings()[key] == true end
+-- 蓋好後的耐久, 目前沙盒下殭屍打不打得壞（詳情用；數字和 thumpable、Place.build 同一份）。nil＝殭屍本來就不打
+function Place.durabilityOf(kind, spr)
+    local p = spr:getProperties()
+    if kind == "door" then return spr:getName():find("fences", 1, true) and 100 or 500, proof("ZombieProofDoors") end -- IsoDoor.java:103,704-715
+    if kind == "window" then return 50, false end -- IsoWindow.java:65,139-141：一律單層玻璃
+    if kind == "light" or (kind == "container" and Place.applianceOf(spr)) then -- 一般物件，擋路的才打得壞（IsoObject.java:207）
+        if not (p:has(F.solid) or p:has(F.solidtrans)) then return nil end
+        return 100, proof("ZombieProof")
+    end
+    if kind == "ramp" or kind == "water" or kind == "curtain" then return nil end
+    local hp = durability(kind, p)
+    if not hp then return nil end
+    return hp, proof("ZombieProof")
+end
 local function thumpable(c, kind, north)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
@@ -1144,11 +1250,14 @@ local function placeWindow(sq, obj, north, ...)
     local window = ...
     local index = -1
     local objects = sq:getObjects()
-    -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）；牆型窗沒有窗框，
-    -- 和牆一樣插在最後一個地板後面（地圖照讀檔順序，CellLoader.java:128-137）
+    local cut, shape = north and F.cutN or F.cutW, window and obj:getProperties():get("WindowShape")
+    -- 窗、面向 S／E 的窗簾插在窗框（和窗）後面（ISMoveableSpriteProps.lua:2141-2170,2196-2210）；全高窗同樣插在同形狀的
+    -- 牆飾或門框牆（tallFrame）後面。牆型窗沒有窗框，和牆一樣插在最後一個地板後面（地圖照讀檔順序，CellLoader.java:128-137）
     for i = 0, objects:size() - 1 do
         local p = objects:get(i):getProperties()
-        if p and p:has(north and F.WindowN or F.WindowW) then index = i + 1 end
+        if p and (p:has(north and F.WindowN or F.WindowW) or (shape and p:has(cut) and p:get("WindowShape") == shape)) then
+            index = i + 1
+        end
     end
     if index < 0 and window then index = edgeIndex(sq, "wall", north) end
     finish(sq, obj, index)
@@ -1677,6 +1786,18 @@ function Place.onAboutToBeRemoved(obj)
     if obj:hasModData() and obj:getModData().builderEntry then wipe(obj:getBuildMaterials()) end
 end
 Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAboutToBeRemoved(obj) end)
+
+-- 原版撿起再放下是建新物件：容量、殭屍打不壞回到原版值，照目前沙盒值補回（同讀檔的 migrate；兩個都冪等，本 MOD 自己蓋的、
+-- 多人客戶端收到的再走一次不變）。記號：實心家具由原版寫回頂層（ISMoveableSpriteProps.lua:1335-1349）；不擋路的（牆櫃、
+-- 桌上的）只剩巢狀那份（:2427-2436），只補容量、不提升成頂層（提升會讓拆除把原版放下的物件認成本 MOD 的）。
+-- 伺服器的事件在 transmitCompleteItemToClients 之後才發，封包帶舊容量；客戶端靠自己的這支補（AddItemToMapPacket.java:94）
+function Place.onAdded(obj)
+    if not (obj and obj:hasModData()) then return end
+    local md = obj:getModData()
+    if md.builderEntry then Place.harden(obj) end
+    if md.builderEntry or (type(md.modData) == "table" and md.modData.builderEntry) then Place.fitContainers(obj) end
+end
+Events.OnObjectAdded.Add(function(obj) MinidoracatBuilder.Place.onAdded(obj) end)
 
 -- 讀檔時修舊版蓋的（每格載入一次，兩端都跑，重複跑結果一樣）：
 --   一樓以下的地板：不給原版搬動工具拆（兩端）；只在伺服器、帳本建好時清掉 buildMaterials，本工具會拆的、圖和蓋的時候

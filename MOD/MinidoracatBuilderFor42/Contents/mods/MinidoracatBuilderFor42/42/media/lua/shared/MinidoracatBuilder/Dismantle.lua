@@ -395,6 +395,7 @@ function Dismantle.blocked(kind, plan)
         local p = spr:getProperties()
         if not o:isObjectNoContainerOrEmpty() or (p:has("IsTable") and sq:has("IsTableTop")) then return "NOT_EMPTY", at end
         if (kind == "doorFrame" or kind == "windowFrame") and attached(kind, o, sq, spr) then return "ATTACHED", at end
+        if Place.framesWindow(o, sq) then return "ATTACHED", at end -- 牆飾、門框牆當全高窗的框（Place.check 的 tallFrame）
     end
     return nil
 end

@@ -1221,7 +1221,13 @@ function W.whyText(code, detail, ...)
         -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件；審查 1109 Claude）：別叫玩家去學配方。
         -- Recipes.bySprite 收全部建造配方的每一張圖，這位玩家看不看得到都收
         Recipes.all()
-        if not Recipes.bySprite[name] then code = "ENTITY_NONE" end
+        local r = Recipes.bySprite[name]
+        if not r then
+            code = "ENTITY_NONE"
+        elseif r.onAdd == "ignoreFromBuildMenu" then
+            -- 配方的 MOD 把它收在自己的介面：原版這支一律回 false（CraftRecipe_BuildMenu.lua:236-238；Neat Building 用它）
+            return getText("IGUI_MBLD_Why_ENTITY_HIDDEN", detail and getRecipeDisplayName(detail) or r.name, W.sourceLabel(r.source))
+        end
     end
     if code == "DISABLED_KIND" then
         -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
@@ -1595,11 +1601,23 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             y = y + lh
         end
     end
+    -- 蓋好後的耐久（Place.durabilityOf：和 Place.build 同一份數字；nil＝殭屍本來就不打，不寫）
+    local hp, proofed = B.Place.durabilityOf(e.kind, e.spr)
+    if hp then
+        local key = proofed and "IGUI_MBLD_Detail_HealthProof" or "IGUI_MBLD_Detail_Health"
+        for _, line in ipairs(Text.wrap(getText(key, tostring(math.floor(hp))), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+    end
     -- 永久上鎖的窗照樣列（使用者 2026-10-30 選），蓋之前標出來：原版建構子設成永久上鎖，開窗一開頭就跳過
     -- （IsoWindow.java:91,737）；打破窗不看這個鎖（:264-306）
     if e.kind == "window" and e.spr:getProperties():has("WindowLocked") then
         y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowLocked"), y, dw)
     end
+    -- 原版沒有窗框牆可配的全高窗：指出它的框是哪一種（Rules.TALL_WINDOW）
+    local frame = e.kind == "window" and B.Rules.TALL_WINDOW[p:get("WindowShape") or ""]
+    if frame then y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowFrame_" .. frame), y, dw) end
     -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
     if refund == "none" then
@@ -1793,6 +1811,9 @@ local function recipeFull(v, ops, r, need)
     end
     if r.info then
         y = para(v, ops, getText("IGUI_MBLD_Detail_Size", tostring(fw), tostring(fd), tostring(faces)), 0, y, dw, c.textMuted)
+        -- 別的 MOD 的配方腳本可能缺欄位：讀不到就不寫。配方蓋的是原版物件，防殭屍沙盒不管它，一律用 Health 那句
+        local okH, hp = pcall(Recipes.health, W.playerNum, r)
+        if okH and hp then y = para(v, ops, getText("IGUI_MBLD_Detail_Health", tostring(math.floor(hp))), 0, y, dw, c.textMuted) end
     end
     if not need.learned then y = warnLines(v, ops, getText("IGUI_MBLD_Recipe_NotLearned"), y + 4, dw) end
     if need.dark then y = warnLines(v, ops, getText("IGUI_MBLD_Recipe_TooDark"), y + 4, dw) end
@@ -2687,7 +2708,8 @@ function W.openPlans()
     elseif B.PlanLibrary then
         opened = B.PlanLibrary.open(pn)
     end
-    if opened then W.close() end
+    -- plansClosed：工坊是被藍圖面板收起的（PlanMode.pickUp 讀，放下後要不要重開工坊）
+    if opened then W.plansClosed = W.visible(); W.close() end
     return opened
 end
 
@@ -3190,6 +3212,7 @@ end
 function W.create(UI)
     local st = W.st
     local theme = UI.Theme.create({ variant = "dark" })
+    theme.alpha = W.alpha or 1 -- 框架只拿它乘底色與邊框，文字、圖示不乘（Widgets/Window.lua:60-65）；這個 theme 只給工坊
     local font = UIFont.Small
     local tm = getTextManager()
     local fh = tm:getFontHeight(font)
@@ -3216,7 +3239,8 @@ function W.create(UI)
         minWidth = math.floor(360 * s), minHeight = math.floor(320 * s),
         onResize = function() MinidoracatBuilder.Window.layout() end,
         onClose = function() MinidoracatBuilder.Window.onClosed() end }
-    if UI.CAPABILITIES.opaqueWindow == true then opts.opaque = true end -- 疊在別的視窗上時看得清楚（SH/Client.lua:44-47）
+    -- 疊在別的視窗上時看得清楚（SH/Client.lua:44-47）。opaque 時框架不乘 theme.alpha（Widgets/Window.lua:148-149），調淡時不給
+    if UI.CAPABILITIES.opaqueWindow == true and (W.alpha or 1) >= 1 then opts.opaque = true end
     local win = UI.Window.new(opts)
     win.onEscape = function()
         win:close()
@@ -3423,6 +3447,7 @@ function W.open(playerNum)
         v = W.v
     end
     v.hiddenForBuild = false
+    W.plansClosed = nil
     v.sumAt = 0 -- 下一幀就重算材料
     W.resetPick(v) -- 關了又開：第一下只是選取（審查 1103 Codex）
     W.syncSettings(v)
@@ -3456,14 +3481,26 @@ local function tick(o, id)
     return t == nil or t:getValue() ~= false
 end
 
+-- 視窗不透明度：ModOptions 下拉的第幾項（getValue 回 1 起算的序號，PZAPI/ModOptions.lua:137）→ theme.alpha
+local OPACITY = { 1, 0.75, 0.5 }
+
 function W.readOptions()
-    if W.options then W.showDock = tick(W.options, "ShowDock") end
+    if not W.options then return end
+    W.showDock = tick(W.options, "ShowDock")
+    local op = W.options:getOption("WindowOpacity")
+    W.alpha = op and OPACITY[op:getValue()] or 1
 end
 
 function W.applyOptions()
     W.readOptions()
     local UI = W.ui({ "dock" })
     if UI and UI.Dock then UI.Dock.refresh() end
+    -- 框架每幀讀這兩個欄位（Widgets/Window.lua:63,148）：視窗開著也當場換
+    local v = W.v
+    if v then
+        v.theme.alpha = W.alpha
+        v.win.opaque = W.alpha >= 1 and v.UI.CAPABILITIES.opaqueWindow == true
+    end
 end
 
 -- Dock 回呼每幀被 pcall：只讀快取，不配置（UI ARCH §3.16）。入口圖照家族定案用彩色「遊戲物品風」（UI ARCH 第 1004 行；
@@ -3526,6 +3563,10 @@ if first then
     if PZAPI and PZAPI.ModOptions then
         local o = PZAPI.ModOptions:create("MinidoracatBuilderFor42", "UI_MinidoracatBuilder_Options")
         o:addTickBox("ShowDock", "UI_MinidoracatBuilder_ShowDock", true, "UI_MinidoracatBuilder_ShowDock_tooltip")
+        local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity", "UI_MinidoracatBuilder_Opacity_tooltip")
+        op:addItem("100%", true)
+        op:addItem("75%", false)
+        op:addItem("50%", false)
         o.apply = function() MinidoracatBuilder.Window.applyOptions() end
         W.options = o
         -- 框架 rev 23 備份：載入時、原版讀設定之前呼叫（UI AGENTS 契約 7；QU/Entry.lua:59-66）

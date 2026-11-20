@@ -3,6 +3,7 @@
 -- 一幀最多畫 DRAW_MAX 片：片照藍圖座標 10×10 分桶，從玩家（擺放時是滑鼠）那一桶一圈一圈往外取，近的先畫。
 -- 樓層：規劃時正在規劃那層清楚、下面淡、上面不畫；在地上時畫玩家那層與下面；跟著游標時整張都畫。
 -- 片的狀態照 PlanCheck.state（done 不畫、缺料黃、被擋或少了紅並加警告記號；在等旁邊先蓋好的照能蓋的畫）；選到的片青色。
+-- 擺放時另畫整張的外框（片太多畫不完時也看得到範圍）
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Plan"
 
@@ -21,14 +22,15 @@ local BAD_STATE = { blocked = true, missing = true, off = true, closed = true }
 local FLASH_MS = 1000
 
 -- plan、rev：分桶照的那張；buckets[key]＝片的陣列；parts[key]＝這種片的圖（false＝畫不出來）；
--- marks：這一幀的警告記號位置（世界座標），overlay 照它畫
-local G = { buckets = {}, parts = {}, mx = {}, my = {}, mz = {}, mn = 0 }
+-- marks：這一幀的警告記號位置（世界座標），overlay 照它畫；box：整張佔的格子範圍（藍圖座標，rev 變了才重算）；
+-- outline：這一幀擺放中的外框（世界座標 { x0, y0, x1, y1, z }，格子邊界），overlay 照它畫
+local G = { buckets = {}, parts = {}, mx = {}, my = {}, mz = {}, mn = 0, ol = {} }
 PG.lastDrawn = 0
 
 local function bucketKey(bx, by) return (bx + 4096) * 8192 + (by + 4096) end
 
 local function rebuild(plan)
-    G.plan, G.rev, G.buckets, G.parts = plan, plan.rev, {}, {}
+    G.plan, G.rev, G.buckets, G.parts, G.box = plan, plan.rev, {}, {}, nil
     local buckets = G.buckets
     Plan.each(plan, function(p)
         local k = bucketKey(math.floor(p.x / BUCKET), math.floor(p.y / BUCKET))
@@ -80,6 +82,24 @@ local function partsOf(plan, p)
     return v
 end
 
+-- 整張佔的格子範圍 { x0, y0, x1, y1 }（藍圖座標）：多格物件、車庫門照 partsOf 的格子算，畫不出圖的片算錨點
+local ANCHOR = { { 0, 0 } }
+local function extent(plan)
+    local x0, y0, x1, y1
+    Plan.each(plan, function(p)
+        local parts = partsOf(plan, p) or ANCHOR
+        for i = 1, #parts do
+            local x, y = p.x + parts[i][1], p.y + parts[i][2]
+            if not x0 then
+                x0, y0, x1, y1 = x, y, x, y
+            else
+                x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
+            end
+        end
+    end)
+    return x0 and { x0, y0, x1, y1 } or nil
+end
+
 local function mark(x, y, z)
     local n = G.mn
     if n >= MARK_MAX then return end
@@ -96,12 +116,16 @@ local function drawPiece(plan, p, x, y, z, col, a, floorSpr, warn)
         mark(x, y, z)
         return
     end
+    -- 圖塊照原色畫（看得出材質）；狀態色（能蓋紫、缺料黃、被擋紅）只染地框。選到的、閃的整片染色
+    local whole = col == SEL or col == FLASH
+    local tr, tg, tb = 1, 1, 1
+    if whole then tr, tg, tb = r, g, b end
     for i = 1, #parts do
         local c = parts[i]
         local cx, cy, cz = x + c[1], y + c[2], z + c[3]
         local spr = (cx + cy) % 2 == 0 and c[4] or c[5]
-        if spr then spr:RenderGhostTileColor(cx, cy, cz, 0, 0, r, g, b, a) end
-        floorSpr:RenderGhostTileColor(cx, cy, cz, r, g, b, a * 0.6)
+        if spr then spr:RenderGhostTileColor(cx, cy, cz, 0, 0, tr, tg, tb, a) end
+        floorSpr:RenderGhostTileColor(cx, cy, cz, r, g, b, whole and a * 0.6 or a)
     end
     if warn then mark(x, y, z) end
 end
@@ -125,6 +149,7 @@ function PG.draw()
     local PM = B.PlanMode
     local plan = PM and PM.plan()
     PG.lastDrawn = 0
+    G.outline = nil
     if not plan then return end
     G.mn = 0
     local state = PM.state()
@@ -140,6 +165,16 @@ function PG.draw()
         if not ox then return end
     end
     if plan ~= G.plan or plan.rev ~= G.rev then rebuild(plan) end
+    if placing then
+        G.box = G.box or extent(plan)
+        local b = G.box
+        if b then
+            local _, _, z0 = Plan.bounds(plan)
+            local o = G.ol
+            o[1], o[2], o[3], o[4], o[5] = b[1] + ox, b[2] + oy, b[3] + ox + 1, b[4] + oy + 1, oz + (z0 or 0)
+            G.outline = o
+        end
+    end
     local pl = getSpecificPlayer(PM.playerNum or 0)
     if not pl then return end
     local floorSpr = ISBuildingObject.getFloorCursorSprite()
@@ -243,6 +278,22 @@ local function overRender(self)
             self:drawText("!", sx + ICON / 2 - 2, sy, warn.r, warn.g, warn.b, 1, font)
         end
     end
+    local ol = G.outline
+    if ol then
+        -- 四角換到螢幕，四條邊各畫兩次（y 差 1，2 px 粗）
+        local x0, y0, x1, y1, z = ol[1], ol[2], ol[3], ol[4], ol[5]
+        local ax, ay = isoToScreenX(pn, x0, y0, z), isoToScreenY(pn, x0, y0, z)
+        local bx, by = isoToScreenX(pn, x1, y0, z), isoToScreenY(pn, x1, y0, z)
+        local cx, cy = isoToScreenX(pn, x1, y1, z), isoToScreenY(pn, x1, y1, z)
+        local dx, dy = isoToScreenX(pn, x0, y1, z), isoToScreenY(pn, x0, y1, z)
+        local r, g, b = PLAN[1], PLAN[2], PLAN[3]
+        for t = 0, 1 do
+            self:drawLine2(ax, ay + t, bx, by + t, 0.9, r, g, b)
+            self:drawLine2(bx, by + t, cx, cy + t, 0.9, r, g, b)
+            self:drawLine2(cx, cy + t, dx, dy + t, 0.9, r, g, b)
+            self:drawLine2(dx, dy + t, ax, ay + t, 0.9, r, g, b)
+        end
+    end
     local d = PM.floating()
     local lines = d and d.lines
     if not lines or not d.kx then return end
@@ -272,6 +323,9 @@ function PG.overlay()
     overlay = o
     return o
 end
+
+-- 擺放中的外框（給檢查用；不在擺放時 nil）
+function PG.outline() return G.outline end
 
 if not PG.loaded then
     PG.loaded = true

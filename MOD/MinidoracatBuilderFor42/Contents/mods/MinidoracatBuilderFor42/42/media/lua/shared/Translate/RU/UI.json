@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Показывать кнопку на панели",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Кнопка Build Anything на панели модов Minidoracat. Если она выключена, открывайте окно клавишей из «Назначение клавиш > Minidoracat Build Anything».",
+  "UI_MinidoracatBuilder_Opacity": "Непрозрачность окна",
+  "UI_MinidoracatBuilder_Opacity_tooltip": "Непрозрачность фона окна Build Anything. Бледнеет только фон.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Открыть или закрыть окно строительства",
   "UI_optionscreen_binding_MinidoracatBuilder_LayerUp": "Курсор строительства: уровнем выше",

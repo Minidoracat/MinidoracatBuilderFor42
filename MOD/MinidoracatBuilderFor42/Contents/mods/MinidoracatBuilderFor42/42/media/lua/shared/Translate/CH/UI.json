@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "自由建造",
   "UI_MinidoracatBuilder_ShowDock": "顯示工具列按鈕",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具列上的「建造工坊」按鈕。關掉後仍可用「按鍵綁定 > Minidoracat 自由建造」裡綁的鍵開啟。",
+  "UI_MinidoracatBuilder_Opacity": "視窗不透明度",
+  "UI_MinidoracatBuilder_Opacity_tooltip": "建造工坊視窗背景的不透明度。只有背景變淡，文字和圖示不變。",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat 自由建造",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "開關建造工坊",
   "UI_optionscreen_binding_MinidoracatBuilder_LayerUp": "建造游標：改蓋上一層",

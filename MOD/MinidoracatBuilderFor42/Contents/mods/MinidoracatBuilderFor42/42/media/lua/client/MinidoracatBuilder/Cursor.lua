@@ -232,6 +232,18 @@ function Cursor.preview(player, name, d, anchors, S, ...)
             if info and info.entry and LAYERED[info.entry.kind] then
                 for _, c in ipairs(info.cells) do planned[B.Place.key(c.x, c.y, c.z)] = true end
             end
+            -- 預覽提醒（Place.caution：全高窗的框不合、坡頂出口）只提醒不擋：丟錯時照樣可蓋。不放進 Check.item：
+            -- 藍圖檢查與照圖蓋也帶 walk 呼叫它（PlanCheck、Runner），會每片多算一次
+            if info then
+                for _, c in ipairs(info.cells) do
+                    local okW, w = false, nil
+                    if c.sq then okW, w = pcall(B.Place.caution, info.entry.kind, c.spr, c.sq) end -- a and f() 只留一個回傳值
+                    if okW and w then
+                        info.warn = w
+                        break
+                    end
+                end
+            end
         elseif SHORT[code] then
             short = short + 1
         end
@@ -896,6 +908,15 @@ function Cursor:texts()
     add(self.stack, col.text)
     add(self.swap, col.text)
     add(self.label3, self.label3warn and col.warning or col.text)
+    -- 預覽提醒（Cursor.preview 的 info.warn）：每種碼寫一次。長句照其他段由 layout 斷行
+    local warned = {}
+    for _, r in ipairs(res) do
+        local w = r.info and r.info.warn
+        if w and not warned[w] then
+            warned[w] = true
+            add(getText("IGUI_MBLD_Warn_" .. w), col.warning)
+        end
+    end
     add(self.tip, col.text)
     add(hint, col.textMuted)
     local repl = hook("label", self, src)

@@ -940,6 +940,23 @@ local function endDrag(o)
     getCell():setDrag(nil, o.player)
 end
 
+-- 「搬」的那張放下或取消後回到原本的畫面（S.back，PM.pickUp 記）：規劃中搬的回規劃，工坊原本開著就重開；
+-- 定住時從藍圖面板搬的把面板開回來（面板一開工坊就收起，兩條互斥）。延後一個 tick：
+-- dragCancel 是在 setDrag 的 deactivate 回呼裡被叫的，PM.toggle 自己也會 setDrag(nil)，當場回規劃會巢狀進 toggle
+local function resume()
+    local back, plan = S.back, S.plan
+    S.back = nil
+    if not back then return end
+    local function go()
+        Events.OnTick.Remove(go)
+        if S.plan ~= plan or S.mode ~= "fixed" or S.drag then return end -- 這一 tick 之間換了張、收起、又拿起來：不做
+        if back.panel then return openPanel() end
+        local W = B.Window
+        if PM.toggle(PM.playerNum or 0) and back.win and W and W.open then W.open(PM.playerNum or 0) end
+    end
+    Events.OnTick.Add(go)
+end
+
 -- 定位：原點設好、存檔、記進這個存檔的地上藍圖
 local function settle(ox, oy, oz)
     local plan = S.plan
@@ -948,6 +965,7 @@ local function settle(ox, oy, oz)
     persist()
     checkReset()
     fire()
+    resume()
 end
 
 -- 搬、複製中按旋轉只轉預覽（另做一份片，位置照 Plan.turned），放下才照預覽改藍圖；取消時原片完全沒動
@@ -1028,6 +1046,7 @@ function PM.dragCancel(o)
     end
     checkReset()
     fire()
+    resume()
 end
 
 local function dragClass()
@@ -1199,6 +1218,7 @@ end
 -- ===== 擺放 =====
 
 local function beginPlace(plan, playerNum, prev)
+    S.back = nil
     local p = getSpecificPlayer(playerNum)
     if not p then return false end
     if S.mode == "edit" then leaveEdit() end
@@ -1232,16 +1252,26 @@ function PM.placeHome()
 end
 
 -- 「搬」：地上的藍圖回到跟著游標（取消就回原位置）。規劃中改的先存，存不了留在規劃，回 false, 原因
--- （不先存的話：擺放中不存檔，跟著游標時換一張會把沒存的改動整個丟掉）
+-- （不先存的話：擺放中不存檔，跟著游標時換一張會把沒存的改動整個丟掉）。規劃中搬的，放下或取消後回規劃（resume）
 function PM.pickUp(playerNum)
     PM.playerNum = playerNum or PM.playerNum or 0
     local plan = S.plan
     if not plan or S.mode == "place" or not plan.ox then return false end
+    local back
     if S.mode == "edit" then
         local ok, why = persist()
         if not ok then return false, why end
+        -- 工坊開著，或剛被「藍圖」鈕收起（W.openPlans 開面板時關掉工坊、記 plansClosed；面板「搬」走到這裡時已看不到）
+        local W = B.Window
+        back = { win = W ~= nil and W.visible ~= nil and (W.visible() or W.plansClosed == true) }
+    else
+        -- 定住時從藍圖面板搬：面板在 pickUp 成功後才關（PlanPanel 的 act("move")），這時還開著
+        local Panel = B.PlanPanel
+        if Panel and Panel.visible and Panel.visible() then back = { panel = true } end
     end
-    return beginPlace(plan, PM.playerNum, { ox = plan.ox, oy = plan.oy, oz = plan.oz })
+    local ok = beginPlace(plan, PM.playerNum, { ox = plan.ox, oy = plan.oy, oz = plan.oz })
+    S.back = ok and back or nil
+    return ok
 end
 
 local function sameFile(cur, plan)

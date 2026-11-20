@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Pokaż przycisk na pasku narzędzi",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Przycisk Build Anything na wspólnym pasku narzędzi modów Minidoracat. Gdy jest wyłączony, otwieraj okno klawiszem ustawionym w Przypisanie klawiszy > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_Opacity": "Nieprzezroczystość okna",
+  "UI_MinidoracatBuilder_Opacity_tooltip": "Nieprzezroczystość tła okna Build Anything. Blednie tylko tło.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Otwórz lub zamknij okno budowania",
   "UI_optionscreen_binding_MinidoracatBuilder_LayerUp": "Kursor budowania: poziom wyżej",

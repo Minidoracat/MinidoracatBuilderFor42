@@ -321,6 +321,16 @@ function Recipes.size(r)
     return w, h, math.max(1, faces)
 end
 
+-- 蓋好後的耐久：同原版建好時寫的 maxHealth（ISBuildIsoEntity.lua:666-677）。nil＝殭屍不打：腳本寫 isThumpable=false
+-- （:904 → ISBuildUtil.lua:379 setIsThumpable），或 isProp 的照家具放、不走這段（:606-611）
+function Recipes.health(playerNum, r)
+    local sc = r.info and r.info:getScript()
+    if not sc or sc:isProp() or not sc:getIsThumpable() then return nil end
+    local m = getSandboxOptions():getOptionByName("ConstructionBonusPoints"):getValue()
+    return math.max(sc:getHealth(), 0) + sc:getBonusHealth() * (({ 0.5, 0.7, 1, 1.3, 1.5 })[m] or 1)
+        + r.recipe:getHighestRelevantSkillLevel(getSpecificPlayer(playerNum)) * sc:getSkillBaseHealth()
+end
+
 -- ===== 建造：開原版的游標 =====
 
 local live = {} -- { { pn, cursor, L, player, sq, at }, … }：游標還在，或放完動作還在跑，或拖的一排還沒蓋完

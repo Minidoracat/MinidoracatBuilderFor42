@@ -558,6 +558,10 @@ function Rules.framedWindow(t)
     return t == T.wall
 end
 
+-- 沒有窗框牆（帶 WindowN/W 的牆）可配的 WindowShape → 它的框是哪一種（詳情指路、預覽提醒用；放置規則不靠這張表）。
+-- 42.22.2 tiledef 統計（2026-11-21）：cut 牆飾（wallOverlay）有形狀 8、3、4，雙開門框牆（doorFrame）有 11、12
+Rules.TALL_WINDOW = { ["3"] = "wallOverlay", ["4"] = "wallOverlay", ["8"] = "wallOverlay", ["11"] = "doorFrame", ["12"] = "doorFrame" }
+
 -- 柵欄門：不用門框就能蓋的門。原版配方寫 dontNeedFrame（entity_wood_fencegate.txt 等），地圖上的也沒有門框；圖塊沒有
 -- 這個欄位，照「能翻過去」或 CustomName 帶 gate 認（原版 18 張單片柵欄門都叫 Fence gate；圖塊包另有 Fence Gate、
 -- Railing Gate、Cell Gate）。p＝門的屬性；只在放門時查，不進目錄迴圈

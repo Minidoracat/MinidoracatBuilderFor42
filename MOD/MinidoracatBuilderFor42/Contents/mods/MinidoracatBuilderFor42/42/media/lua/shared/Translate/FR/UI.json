@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Afficher le bouton dans la barre",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Le bouton Build Anything de la barre de la famille de mods. Désactivé, ouvrez la fenêtre avec la touche définie dans Configuration des touches > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_Opacity": "Opacité de la fenêtre",
+  "UI_MinidoracatBuilder_Opacity_tooltip": "Opacité du fond de la fenêtre Build Anything. Seul le fond s'estompe.",
   "UI_optionscreen_binding_MinidoracatBuilder": "Minidoracat Build Anything",
   "UI_optionscreen_binding_MinidoracatBuilder_Toggle": "Ouvrir ou fermer la fenêtre de construction",
   "UI_optionscreen_binding_MinidoracatBuilder_LayerUp": "Curseur de construction : étage du dessus",

@@ -2221,7 +2221,7 @@ do
         if a[1] == 2 then return "BLOCKED", { x = 2 } end
         local have = opts.summary.items["Base.Plank"]
         if have < 2 then return "NO_MATERIAL", { need = { ["Base.Plank"] = 2 - have } } end
-        return nil, nil, { total = { items = { ["Base.Plank"] = 2 }, tools = {} } }
+        return nil, nil, { total = { items = { ["Base.Plank"] = 2 }, tools = {} }, cells = {} }
     end
     local S = { cheat = false, tools = {}, items = setmetatable({}, { __index = function(t, k)
         local v = k == "Base.Plank" and 5 or 0
@@ -2628,6 +2628,7 @@ local function newKinds()
         function o:transmitCompleteItemToClients() self.sent = true end
         function o:getSquare() return sq end
         function o:getSprite() return spr end
+        function o:getProperties() return spr:getProperties() end
         function o:getSpriteGridObjectsIncludingSelf() return javaList({ self }) end
         function o:isConnectedSpriteGridObject(x) return x == self end
         function o:isObjectNoContainerOrEmpty() return true end
@@ -3585,6 +3586,9 @@ local function circuitScenario()
         function o:setOutlineHighlightCol() end
         function o:getCanBeModified() return false end
         function o:canSwitchLight() return false end
+        function o:isMovedThumpable() return self.moved == true end
+        function o:setMovedThumpable(v) self.moved = v end
+        function o:getContainerCount() return 0 end
         if how == "ours" or how == "mark" then o.md.builderEntry = spr:getName() end
         if how == "ours" then Ledger.put(o, {}) end
         sq.objects[#sq.objects + 1] = o
@@ -4425,6 +4429,23 @@ do
         and Entry.why("nope_01_0") == "UNKNOWN" and Entry.why("door_x_01_0") == nil,
         "Entry.why：開著的門改選關著那張（−2）、配方的牆說是哪個配方、沒有這張圖 UNKNOWN、能蓋的沒有原因")
     check(W.whyText("ENTITY", a2) == "IGUI_MBLD_Why_ENTITY(R:Base.WoodWall)", "配方的原因寫配方的顯示名稱，不寫腳本 ID")
+    -- 2026-11-21 回饋 F4：配方的 MOD 把它收在自己的介面（onAdd＝ignoreFromBuildMenu，例：Neat Building）：說去哪個 MOD 的介面蓋，
+    -- 不叫玩家去學配方；其他的照舊
+    ;(function()
+        local R = MinidoracatBuilder.Recipes
+        local realAll, realBy = R.all, R.bySprite
+        R.all = function() end
+        R.bySprite = { wall_x_01_0 = { onAdd = "ignoreFromBuildMenu", source = "nbmod", name = "Wood Wall N" },
+            wall_y_01_0 = { onAdd = "other", source = "nbmod", name = "Wood Wall Y" } }
+        local hidden = W.whyText("ENTITY", "Base.WoodWall", "wall_x_01_0")
+        check(hidden == getText("IGUI_MBLD_Why_ENTITY_HIDDEN", "R:Base.WoodWall", W.sourceLabel("nbmod"))
+            and W.whyText("ENTITY", nil, "wall_x_01_0") == getText("IGUI_MBLD_Why_ENTITY_HIDDEN", "Wood Wall N", W.sourceLabel("nbmod")),
+            "收在別的 MOD 介面的配方：說配方名稱（沒有腳本 ID 時用配方名）與來源 MOD，不說「去學配方」")
+        check(W.whyText("ENTITY", "Base.WoodWall", "wall_y_01_0") == "IGUI_MBLD_Why_ENTITY(R:Base.WoodWall)"
+            and W.whyText("ENTITY", "Base.WoodWall", "wall_z_01_0") == getTextOrNull("IGUI_MBLD_Why_ENTITY_NONE", "Base.WoodWall"),
+            "一般建造選單的配方照舊說要哪個配方；沒有建造配方的設施照舊說沒有配方")
+        R.all, R.bySprite = realAll, realBy
+    end)()
     -- 種類開關：伺服器回 DISABLED、說明是哪個種類、算進設定摘要
     local d0 = Entry.digest()
     sb.KindPost = false
@@ -5349,6 +5370,24 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         and S2 and S2.set.setIsThumpable == true and S2.set.setThumpDmg == 1,
         "關掉後新蓋的照原版：牆打得壞、thumpDmg 不改；家具一隻殭屍就能打（thumpDmg 1）")
 
+    -- 2026-11-21 回饋 F5e：詳情的耐久（Place.durabilityOf）和實際蓋出來的同一份數字；第二個值是目前沙盒下殭屍打不打得壞
+    local function dur(spr, kind) return Place.durabilityOf(kind or Rules.classify(spr), spr) end
+    local function pair(a, b) return tostring(a) .. "/" .. tostring(b) end
+    check(pair(dur(wallS)) == pair(W.set.setMaxHealth, false) and pair(dur(sinkS)) == pair(S.set.setMaxHealth, false)
+        and pair(dur(fenceS)) == pair(Fe.set.setMaxHealth, false), "詳情耐久：牆、家具、柵欄和實際蓋出來的一樣（450、50、300），選項關著打得壞")
+    sb.ZombieProof = true
+    check(select(2, dur(wallS)) == true and select(2, dur(sinkS)) == true and select(2, dur(doorS, "door")) == false,
+        "詳情耐久：「殭屍打不壞」開著，牆、家具標成打不壞；門不受這個選項影響")
+    sb.ZombieProof = nil
+    sb.ZombieProofDoors = true
+    local fenceGate = sprite("fences_zp_01_0", 2715)
+    check(pair(dur(doorS, "door")) == "500/true" and pair(dur(fenceGate, "door")) == "100/true",
+        "詳情耐久：門 500、柵欄門 100（照引擎），「殭屍敲不破門」開著標成打不壞")
+    sb.ZombieProofDoors = nil
+    check(pair(dur(doorS, "window")) == "50/false" and dur(frameS, "doorFrame") == nil and dur(floorS, "floor") == nil
+        and pair(dur(lampS, "light")) == "100/false" and dur(dimS, "light") == nil,
+        "詳情耐久：窗 50；門框、地板、不擋路的燈殭屍本來就不打（不寫耐久）；擋路的燈 100")
+
     -- 門：記號一律寫；「殭屍敲不破門」打開時耐久 10 億，關著不改
     local doors = {}
     IsoDoor = { new = function(_, sq, name, north)
@@ -5398,6 +5437,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
             max = o.max or 500, boxes = o.boxes or {} }
         if o.entry ~= false then x.md.builderEntry = spr:getName() end
         function x:getSprite() return self.spr end
+        function x:getProperties() return self.spr:getProperties() end
         function x:hasModData() return next(self.md) ~= nil end
         function x:getModData() return self.md end
         function x:getSquare() return up end
@@ -5620,6 +5660,24 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
             "一樓拆掉牆：送一次剩下的位元（地板）；下一個 tick 前格子卸載了：不推、不出錯，tick 事件照樣摘掉")
         IsoRegions = realRegions
     end)()
+
+    -- 2026-11-21 回饋 F2：原版「撿起再放下」是建新物件，容量與殭屍打不壞回到原版值：放下（OnObjectAdded）時照目前沙盒補回。
+    -- 實心家具的記號原版寫回頂層；不擋路的只剩巢狀那份，只補容量、不提升成本 MOD 的
+    local picked = loaded("IsoThumpable", crateS, { thump = true, dmg = 1, boxes = { box("crate", 50) } })
+    local shelf = loaded("IsoThumpable", crateS, { thump = true, entry = false, boxes = { box("crate", 50) } })
+    shelf.md.modData = { builderEntry = "zp_crate_01_0" }
+    local stray = loaded("IsoThumpable", crateS, { thump = true, entry = false, boxes = { box("crate", 50) } })
+    stray.md.other = true
+    sb.ZombieProof, sb.ContainerCapacityMultiplier = true, 2
+    for _, o in ipairs({ picked, shelf, stray }) do fire("OnObjectAdded", o) end
+    check(picked.thump == false and picked.dmg == PROOF - 3 and picked.boxes[1].cap == 100,
+        "撿起再放下本 MOD 的實心家具：照目前沙盒補回殭屍打不壞與容量倍率（50×2＝100）")
+    fire("OnObjectAdded", picked)
+    check(picked.thump == false and picked.dmg == PROOF - 3 and picked.boxes[1].cap == 100, "再放一次：結果一樣（冪等）")
+    check(shelf.boxes[1].cap == 100 and shelf.thump == true and shelf.dmg == 8 and shelf.md.builderEntry == nil,
+        "記號只剩巢狀的（牆櫃、桌上的）：只補容量，不改打不打得壞、不提升成本 MOD 的")
+    check(stray.boxes[1].cap == 50 and stray.thump == true and stray.dmg == 8, "沒有本 MOD 記號的：放下時不動")
+    sb.ZombieProof, sb.ContainerCapacityMultiplier = nil, nil
     instanceof = realInst
     IsoDoor = nil
 end)()
@@ -7406,6 +7464,162 @@ print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框�
     world(old)
 end)()
 
+print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的牆飾或雙開門框牆（沒有窗框）、形狀不合與坡頂出口的預覽提醒")
+;(function()
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Cursor"
+    local Place, Dismantle, Cursor = B.Place, B.Dismantle, B.Cursor
+    local EW = GridSquareEdgeFacingDirection.EAST_WEST
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local function win(name, id, shape)
+        return sprite(name, id, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" }, keys = { WindowShape = shape } })
+    end
+    local win8, win1, win5, bare = win("zz_win_01_8", 9301, "8"), win("zz_win_01_1", 9302, "1"), win("zz_win_01_5", 9303, "5"),
+        win("zz_win_01_0", 9304, nil)
+    -- 原版地圖的全高窗：沒有窗框牆，窗配同形狀的牆飾（fixtures_windows_white_14 這類，只帶 cutW 與 WindowShape）
+    local ov8 = sprite("zz_fix_01_8", 9305, { flags = { "cutW" }, keys = { WindowShape = "8" } })
+    local ov3 = sprite("zz_fix_01_3", 9306, { flags = { "cutW" }, keys = { WindowShape = "3" } })
+    local frame1 = sprite("zz_frame_01_1", 9307, { flags = { "WindowW", "cutW", "collideW" }, keys = { WindowW = "", WindowShape = "1" } })
+    local frame0 = sprite("zz_frame_01_0", 9308, { flags = { "WindowW", "cutW", "collideW" }, keys = { WindowW = "" } })
+    local floorS = sprite("zz_floor_01_0", 9309, { flags = { "solidfloor" } })
+    local chairS = sprite("zz_chair_01_0", 9310, { flags = { "solid" } })
+    local door = sprite("zz_door_01_0", 9311, { flags = { "doorW" } })
+    local doorOpen = sprite("zz_door_01_2", 9312, { flags = { "doorW", "open" } })
+    local old = IsoSpriteManager.instance:getNamedMap():values()._raw
+    local list = {}
+    for i, s in ipairs(old) do list[i] = s end
+    for _, s in ipairs({ win8, win1, win5, bare, ov8, ov3, frame1, frame0, floorS, chairS, door, doorOpen }) do list[#list + 1] = s end
+    world(list)
+    local function obj(spr, sq, class)
+        return { class = class, getProperties = function() return spr:getProperties() end, getSprite = function() return spr end,
+            getSquare = function() return sq end, isObjectNoContainerOrEmpty = function() return true end }
+    end
+    local nextX = 300
+    local function at(objs, o) -- 新的一格（x 往後排），objs＝格上的圖，o＝square 的選項
+        nextX = nextX + 1
+        local sq = square(nextX, 300, 0, o or { flags = {} })
+        for i, spr in ipairs(objs or {}) do sq.objects[i] = obj(spr, sq) end
+        return sq
+    end
+
+    -- 放：窗框照舊；沒有窗框時同形狀的牆飾也算框（那條邊沒有門、沒有擋路的牆、還沒有窗）
+    check(Place.check("window", win8, at({}, { flags = { WindowW = true } })) == true
+        and Place.check("window", win8, at({ ov8 })) == true, "全高窗：有窗框照舊能放；沒有窗框、有同形狀的牆飾也能放")
+    check(not Place.check("window", win8, at({ ov3 })) and not Place.check("window", win8, at({ ov8 }, { flags = { collideW = true } }))
+        and not Place.check("window", win8, at({ ov8 }, { doors = { [EW] = {} } }))
+        and not Place.check("window", win8, at({ ov8 }, { flags = { WindowW = true }, windows = { [EW] = {} } }))
+        and not Place.check("window", bare, at({ ov8 })),
+        "全高窗：牆飾形狀不同、那條邊有擋路的牆或門、已經有窗、窗沒寫形狀都不能放")
+    world(list)
+    check(Place.check("door", door, at({}, { flags = { DoorWallW = true } })) == true
+        and not Place.check("door", door, at({}, { flags = { DoorWallW = true }, windows = { [EW] = {} } })),
+        "雙開門框牆上已經裝了全高窗：門放不進（對照：空的門框照舊能放）")
+
+    -- 預覽提醒 WINDOW_SHAPE：框寫了形狀卻不合、或沒寫形狀的框放全高窗；標準窗配沒寫形狀的木窗框不提醒
+    check(Place.caution("window", win5, at({ frame1 })) == "WINDOW_SHAPE" and Place.caution("window", win1, at({ frame0 })) == nil
+        and Place.caution("window", win8, at({ frame0 })) == "WINDOW_SHAPE" and Place.caution("window", win8, at({ ov8 })) == nil,
+        "形狀提醒：框的形狀不合、沒寫形狀的框放全高窗會提醒；標準窗配一般窗框、全高窗配同形狀牆飾不提醒")
+
+    -- 拆：牆飾正在當全高窗的框（拆了窗會懸空）擋 ATTACHED；窗拿掉後、或那條邊另有窗框時照常拆
+    local hold = { flags = {} }
+    local hq = at({ ov8 }, hold)
+    local W8 = obj(win8, hq, "IsoWindow")
+    hold.windows = { [EW] = W8 }
+    local fix = hq.objects[1]
+    check(Place.framesWindow(fix, hq) == true and Dismantle.blocked("wallOverlay", { remove = { fix } }) == "ATTACHED"
+        and not Place.framesWindow(W8, hq), "拆牆飾：正在當全高窗的框擋下（ATTACHED）；窗本身不算框")
+    hq.objects[2] = obj(frame0, hq)
+    check(not Place.framesWindow(fix, hq), "那條邊另有窗框：牆飾不是框，照常拆")
+    hq.objects[2] = nil
+    hold.windows = nil
+    check(not Place.framesWindow(fix, hq) and Dismantle.blocked("wallOverlay", { remove = { fix } }) == nil, "窗拿掉後：牆飾照常拆")
+
+    -- 蓋：窗插在同形狀的牆飾後面（不排到最後，畫的順序照原版地圖）
+    local realWindow = IsoWindow
+    local made
+    IsoWindow = { new = function(_, sq, spr, north)
+        made = obj(spr, sq, "IsoWindow")
+        made.north = north
+        function made:setIsLocked() end
+        function made:setExplored() end
+        function made:transmitCompleteItemToClients() end
+        function made:getContainerCount() return 0 end
+        return made
+    end }
+    local bq = at({ floorS, ov8, chairS })
+    local o1, o2, o3 = bq.objects[1], bq.objects[2], bq.objects[3]
+    Place.build("window", { { sq = bq, spr = win8, cost = { items = {} } } }, {})
+    IsoWindow = realWindow
+    check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
+        "蓋全高窗：插在同形狀的牆飾後面")
+    check(B.Entry.digest():sub(1, 4) == "r19:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+
+    -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
+    local function top(dir, id)
+        return sprite("zz_ramp_01_" .. id, 9320 + id, { keys = { SlopedSurfaceDirection = dir, SlopedSurfaceHeightMin = "50",
+            SlopedSurfaceHeightMax = "100" } })
+    end
+    local rN, rS, rW, rE = top("N", 1), top("S", 2), top("W", 3), top("E", 4)
+    local wallN = sprite("zz_wall_01_0", 9330, { flags = { "WallN", "collideN" }, keys = { WallN = "" } })
+    local wallW = sprite("zz_wall_01_1", 9331, { flags = { "WallW", "collideW" }, keys = { WallW = "" } })
+    local doorN = sprite("zz_door_01_8", 9332, { flags = { "doorN" } })
+    local frameN = sprite("zz_frame_01_8", 9333, { flags = { "WindowN", "collideN" }, keys = { WindowN = "" } })
+    local fenceN = sprite("zz_fence_01_0", 9334, { flags = { "HoppableN", "collideN" } })
+    local dframeN = sprite("zz_dframe_01_0", 9335, { flags = { "DoorWallN" }, keys = { DoorWallN = "" } })
+    local postS = sprite("zz_post_01_0", 9336, { flags = { "WallSE" } })
+    local rx = 320
+    local function ramp(spr, dx, dy) -- 新的一塊：坡頂片放在 (rx+dx, 320+dy)，回 (rx, 320) 那格與它正上方那格
+        rx = rx + 3
+        local a, up = square(rx, 320, 0), square(rx, 320, 1)
+        local r = (dx == 0 and dy == 0) and a or square(rx + dx, 320 + dy, 0)
+        r.objects[#r.objects + 1] = obj(spr, r)
+        return a, up
+    end
+    local a1, up1 = ramp(rN, 0, 0)
+    local a2 = ramp(rS, 0, -1)
+    local a3 = ramp(rW, 0, 0)
+    local a4 = ramp(rE, -1, 0)
+    check(Place.caution("wall", wallN, a1) == "RAMP_EXIT" and Place.caution("wall", wallN, up1) == "RAMP_EXIT"
+        and Place.caution("wall", wallN, a2) == "RAMP_EXIT" and Place.caution("wall", wallW, a3) == "RAMP_EXIT"
+        and Place.caution("wall", wallW, a4) == "RAMP_EXIT",
+        "坡頂出口：往北、南、西、東上坡的坡頂那條邊（這一層與上一層）放牆會提醒")
+    check(Place.caution("wall", wallW, a1) == nil and Place.caution("wall", wallN, a3) == nil
+        and Place.caution("wall", wallN, at({})) == nil, "坡頂出口：同一格的另一條邊、旁邊沒有坡道的格子不提醒")
+    check(Place.caution("door", doorN, a1) == "RAMP_EXIT" and Place.caution("windowFrame", frameN, a1) == "RAMP_EXIT"
+        and Place.caution("fence", fenceN, a1) == "RAMP_EXIT" and Place.caution("doorFrame", dframeN, a1) == nil
+        and Place.caution("post", postS, a1) == nil, "坡頂出口：門、窗框、柵欄會擋路要提醒；門框、柱子不擋路不提醒")
+
+    -- 游標：提醒只寫在標籤、不擋（照樣可蓋）；提醒本身丟錯時照樣可蓋
+    local realItem, realCaution = B.Check.item, Place.caution
+    B.Check.item = function() return nil, nil, { cells = { { sq = a1, spr = wallN } }, entry = { kind = "wall" } } end
+    local out, okN = Cursor.preview(player({ id = 381 }), "zz_wall_01_0", 0, { { a1:getX(), a1:getY(), 0 } })
+    check(okN == 1 and out[1].code == nil and out[1].info.warn == "RAMP_EXIT", "游標預覽：坡頂出口照樣可蓋，帶提醒")
+    Place.caution = function() error("boom") end
+    local out2, okN2 = Cursor.preview(player({ id = 381 }), "zz_wall_01_0", 0, { { a1:getX(), a1:getY(), 0 } })
+    Place.caution = realCaution
+    B.Check.item = realItem
+    check(okN2 == 1 and out2[1].info.warn == nil, "提醒丟錯：照樣可蓋、不帶提醒")
+    local warnCol = { r = 1 }
+    local res = {}
+    for i = 1, 3 do res[i] = { a = { 0, 0, 0 }, info = { warn = "RAMP_EXIT" } } end
+    local cur = setmetatable({ res = res, okN = 3, swapN = 0, states = { n = 1 }, entry = { kind = "wall" }, name = "zz_wall_01_0",
+        d = 0, colors = { text = {}, warning = warnCol, textMuted = {} }, player = 7, joypad = true,
+        character = { getPlayerNum = function() return 7 end }, reasons = function() end, swapText = function() end,
+        layout = function() end }, { __index = Cursor })
+    cur:texts()
+    local hits, colored = 0, true
+    for i = 1, #cur.src, 2 do
+        if cur.src[i] == getText("IGUI_MBLD_Warn_RAMP_EXIT") then
+            hits = hits + 1
+            colored = colored and cur.src[i + 1] == warnCol
+        end
+    end
+    check(hits == 1 and colored, "游標標籤：拖一排三格都碰到坡頂出口，提醒只寫一行、用警告色")
+    world(old)
+    instanceof = realInst
+end)()
+
 print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組的柵欄照 ABAB 交替（伺服器、預覽、游標虛影同一張）")
 ;(function()
     nowMs = nowMs + 180000
@@ -8760,6 +8974,30 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     getCell():setDrag(nil, 0)
     B.Messages.toast = realToast2
     ISBuildingObject, getCore, ISTimedActionQueue = realBase, realCore, realQueue
+
+    -- 2026-11-21 回饋 F5e：建造配方詳情的耐久＝原版建好時寫的 maxHealth（health＋加成×沙盒「建造加成」倍率＋相關技能等級×每級血量）
+    local realSandbox, bonus = getSandboxOptions, 1
+    getSandboxOptions = function()
+        return { getOptionByName = function(_, n)
+            return n == "ConstructionBonusPoints" and { getValue = function() return bonus end } or nil
+        end }
+    end
+    local function rec(o)
+        local sc = { isProp = function() return o.prop == true end, getIsThumpable = function() return o.thump ~= false end,
+            getHealth = function() return o.hp end, getBonusHealth = function() return 200 end,
+            getSkillBaseHealth = function() return 50 end }
+        return { info = { getScript = function() return sc end },
+            recipe = { getHighestRelevantSkillLevel = function() return 6 end } }
+    end
+    local h1 = Recipes.health(0, rec({ hp = 150 }))
+    bonus = 5
+    local h5 = Recipes.health(0, rec({ hp = -1 }))
+    bonus = 3
+    check(h1 == 150 + 100 + 300 and h5 == 0 + 300 + 300 and Recipes.health(0, rec({ hp = 150 })) == 150 + 200 + 300,
+        "配方耐久：照原版公式（建造加成最低 ×0.5、最高 ×1.5，技能 6 級 ×50），腳本寫負的 health 當 0")
+    check(Recipes.health(0, rec({ hp = 150, thump = false })) == nil and Recipes.health(0, rec({ hp = 150, prop = true })) == nil,
+        "配方耐久：腳本寫殭屍不打（isThumpable=false）、照家具放的（isProp）不寫耐久")
+    getSandboxOptions = realSandbox
 
     getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText = realSpecific, realCell, realInfos, realGetText
     ISTimedActionQueue.isPlayerDoingAction, Recipes.onEnd, clockStep, JoypadState = realDoing, realOnEnd, step0, realJoy
@@ -14244,16 +14482,19 @@ end)()
         table.sort(names)
         return javaList(names)
     end
-    -- 虛影：每張圖記畫了幾次、畫在哪
-    local ghostN, ghostAt = 0, {}
+    -- 虛影：每張圖記畫了幾次、畫在哪、什麼顏色（tint.tile／tint.floor["x,y,z"]＝{ r, g, b, a }，圖塊與地框分開記）
+    local ghostN, ghostAt, tint = 0, {}, { tile = {}, floor = {} }
     local function ghostly(s)
-        s.RenderGhostTileColor = function(_, x, y, z)
+        s.RenderGhostTileColor = function(_, x, y, z, _, _, r, g, b, a)
             ghostN = ghostN + 1
             ghostAt[x .. "," .. y .. "," .. z] = true
+            tint.tile[x .. "," .. y .. "," .. z] = { r, g, b, a }
         end
         return s
     end
-    local floorCursor = { RenderGhostTileColor = function() end }
+    local floorCursor = { RenderGhostTileColor = function(_, x, y, z, r, g, b, a)
+        tint.floor[x .. "," .. y .. "," .. z] = { r, g, b, a }
+    end }
     ISBuildingObject = { init = function() end, onJoypadPressButton = function() end,
         getFloorCursorSprite = function() return floorCursor end }
     ISBuildingObject.derive = function(self, name) return setmetatable({ Type = name }, { __index = self }) end
@@ -14936,6 +15177,152 @@ end)()
     PG.draw()
     check(ghostN == 2 and PG.lastDrawn == 2, "隱藏時「在哪」照閃：一秒內叫的片一起閃")
     PM.setHidden(false)
+
+    -- 2026-11-21 回饋 F5f：圖塊照原色畫（看得出材質），能蓋、缺料、被擋只染地框；選到的整片染選取色、地框淡一點
+    local function rgba(t, r, g, b, a)
+        return t ~= nil and math.abs(t[1] - r) < 1e-6 and math.abs(t[2] - g) < 1e-6 and math.abs(t[3] - b) < 1e-6
+            and math.abs(t[4] - a) < 1e-6
+    end
+    fakeCheck = function(p)
+        if p.y + big.oy ~= 50 then return nil end
+        local x = p.x + big.ox
+        return x == 51 and "short" or x == 52 and "blocked" or nil
+    end
+    tint.tile, tint.floor = {}, {}
+    PG.draw()
+    local tt, ft = tint.tile, tint.floor
+    check(rgba(tt["50,50,0"], 1, 1, 1, 0.5) and rgba(tt["51,50,0"], 1, 1, 1, 0.5) and rgba(tt["52,50,0"], 1, 1, 1, 0.5),
+        "虛影：能蓋、缺料、被擋的片圖塊都照原色畫（不再整片染紫，看得出是哪種材質）")
+    check(rgba(ft["50,50,0"], 0.75, 0.6, 1, 0.5) and rgba(ft["51,50,0"], 1, 0.8, 0.3, 0.5)
+        and rgba(ft["52,50,0"], 0.95, 0.35, 0.35, 0.5), "虛影：狀態改染地框（能蓋紫、缺料黃、被擋紅），還分得出哪片有問題")
+    fakeCheck = nil
+    PM.toggle(0)
+    tint.tile, tint.floor = {}, {}
+    check(PM.selectRect(53, 50, 53, 50) == 1, "規劃中框選一片（對照組）")
+    PG.draw()
+    check(rgba(tint.tile["53,50,0"], 0.4, 0.9, 1, 0.5) and rgba(tint.floor["53,50,0"], 0.4, 0.9, 1, 0.3)
+        and rgba(tint.tile["54,50,0"], 1, 1, 1, 0.5), "虛影：選到的片圖塊與地框都染選取色（地框淡一點），沒選到的照原色")
+    PM.toggle(0)
+
+    -- F5a：擺放中畫整張的外框：照包圍盒（多格家具伸出去的格子也算）、跟著游標、轉向後寬深對調、放下就沒有
+    PM.clear()
+    local bed0 = ghostly(sprite("pm_bed_01_0", 3130, { keys = { IsMoveAble = "" } }))
+    local bed1 = ghostly(sprite("pm_bed_01_1", 3131, { keys = { IsMoveAble = "" } }))
+    fakeGrid(2, 1, { { bed0, bed1 } })
+    spriteMap[bed0.name], spriteMap[bed1.name] = bed0, bed1
+    spriteOrder[#spriteOrder + 1], spriteOrder[#spriteOrder + 2] = bed0, bed1
+    local ob = Plan.new("框")
+    local obf = Plan.item(ob, "pm_floor_01_0")
+    Plan.add(ob, 0, 0, 0, 0, 0, obf)
+    Plan.add(ob, 1, 0, 0, 0, 0, obf)
+    Plan.add(ob, 2, 1, 0, 0, 0, Plan.item(ob, "pm_bed_01_0"))
+    local function box()
+        local b = PG.outline()
+        return b and table.concat({ b[1], b[2], b[3], b[4], b[5] }, ",")
+    end
+    PM.place(ob, 0)
+    drags[0]:isValid(sq(60, 60, 0))
+    local lines2, realScr = 0, { x = isoToScreenX, y = isoToScreenY, font = UIFont, tm = getTextManager }
+    ISUIElement = { derive = function(self) return setmetatable({}, { __index = self }) end,
+        new = function(cls) return setmetatable({}, { __index = cls }) end, initialise = function() end,
+        addToUIManager = function() end, backMost = function() end,
+        drawLine2 = function() lines2 = lines2 + 1 end, drawText = function() end, drawRect = function() end }
+    isoToScreenX = function(_, x, y) return (x - y) * 32 end
+    isoToScreenY = function(_, x, y, z) return (x + y) * 16 - z * 96 end
+    UIFont = UIFont or { Small = 1 }
+    getTextManager = function()
+        return { getFontHeight = function() return 14 end, MeasureStringX = function(_, _, s) return #s end }
+    end
+    PG.draw()
+    check(box() == "59,60,63,62,0", "擺放外框：照整張的包圍盒（床伸出去那格也算），格子邊界、跟著游標")
+    local ov = PG.overlay()
+    ov:render()
+    check(lines2 == 8, "擺放外框：畫在世界上（四條邊各畫兩次，2 px 粗）")
+    drags[0]:tryBuild(60, 60, 0)
+    PG.draw()
+    ov:render()
+    check(PM.state() == "fixed" and box() == nil and lines2 == 8, "點一下定位後外框就沒有、不再畫")
+    PM.clear()
+    local strip = Plan.new("條")
+    local sf = Plan.item(strip, "pm_floor_01_0")
+    for x = 0, 2 do Plan.add(strip, x, 0, 0, 0, 0, sf) end
+    PM.place(strip, 0)
+    drags[0]:isValid(sq(60, 60, 0))
+    PG.draw()
+    local b1 = { PG.outline()[1], PG.outline()[2], PG.outline()[3], PG.outline()[4] }
+    drags[0]:rotateKey(19)
+    PG.draw()
+    local b2 = PG.outline()
+    check(b1[3] - b1[1] == 3 and b1[4] - b1[2] == 1 and b2 and b2[3] - b2[1] == 1 and b2[4] - b2[2] == 3,
+        "擺放外框：轉 90 度後跟著轉（3×1 變 1×3）")
+    drags[0]:tryBuild(60, 60, 0)
+    ISUIElement, isoToScreenX, isoToScreenY, UIFont, getTextManager = nil, realScr.x, realScr.y, realScr.font, realScr.tm
+
+    -- F5b：「搬」放下或取消後回到原本的畫面：規劃中搬的回規劃（工坊原本開著、或剛被藍圖面板收起就重開），
+    -- 定住時從藍圖面板搬的把面板開回來；延後一個 tick，這一 tick 之間收起或換一張就不做
+    local realWin, realPanel = B.Window, B.PlanPanel
+    local wins, panels = 0, 0
+    local W2, Pn = { shown = true }, { shown = false }
+    W2.visible = function() return W2.shown end
+    W2.close = function() end
+    W2.open = function() wins = wins + 1 end
+    B.PlanCheck.onTick = function() end -- 下面要跑 OnTick：PlanCheck 掛的那個轉呼叫 B.PlanCheck.onTick（這段用假的）
+    W2.ui = function(need)
+        if not (need and need[1] == "dialog") then return nil end
+        return { Dialog = { show = function(d) d.onResult(true) end }, Theme = { create = function() return {} end } }
+    end
+    Pn.visible = function() return Pn.shown end
+    Pn.open = function() panels = panels + 1 end
+    B.Window, B.PlanPanel = W2, Pn
+    PM.toggle(0)
+    check(PM.pickUp(0) == true, "規劃中工坊開著按「搬」（對照組）")
+    drags[0]:isValid(sq(70, 70, 0))
+    drags[0]:tryBuild(70, 70, 0)
+    check(PM.state() == "fixed" and wins == 0, "搬的放下：當下先定住（回規劃延後一個 tick）")
+    fire("OnTick")
+    check(PM.state() == "edit" and wins == 1, "規劃中搬的放下：下一個 tick 回規劃，工坊原本開著就重開")
+    fire("OnTick")
+    check(wins == 1, "回規劃只做一次")
+    W2.shown = false
+    PM.pickUp(0)
+    PM.placeHome()
+    fire("OnTick")
+    check(PM.state() == "edit" and wins == 1, "工坊原本就關著：放回原位置後回規劃，不開工坊")
+    W2.plansClosed = true
+    PM.pickUp(0)
+    W2.plansClosed = nil
+    getCell():setDrag(nil, 0) -- 右鍵、B、換別的游標都走這裡（拖曳物件 deactivate → dragCancel）
+    fire("OnTick")
+    check(PM.state() == "edit" and wins == 2, "工坊剛被藍圖面板收起（plansClosed）：取消也回規劃、重開工坊")
+    PM.toggle(0)
+    Pn.shown = true
+    PM.pickUp(0)
+    drags[0]:isValid(sq(72, 72, 0))
+    drags[0]:tryBuild(72, 72, 0)
+    fire("OnTick")
+    check(PM.state() == "fixed" and panels == 1 and wins == 2, "定住時從藍圖面板搬：放下後面板開回來，不進規劃")
+    Pn.shown = false
+    PM.pickUp(0)
+    PM.placeHome()
+    fire("OnTick")
+    check(PM.state() == "fixed" and panels == 1, "定住時面板沒開著搬：放下後什麼都不開")
+    W2.shown = true
+    PM.toggle(0)
+    PM.pickUp(0)
+    local other2 = Plan.new("另一張")
+    Plan.add(other2, 0, 0, 0, 0, 0, Plan.item(other2, "pm_floor_01_0"))
+    check(PM.place(other2, 0) == true, "搬到一半換一張（對照組）")
+    drags[0]:isValid(sq(75, 75, 0))
+    drags[0]:tryBuild(75, 75, 0)
+    fire("OnTick")
+    check(PM.plan() == other2 and PM.state() == "fixed" and wins == 2, "搬到一半換一張：放下新的那張後不回規劃、不開工坊")
+    PM.toggle(0)
+    PM.pickUp(0)
+    PM.placeHome()
+    PM.clear()
+    fire("OnTick")
+    check(PM.state() == "none" and PM.plan() == nil and wins == 2, "放下後同一 tick 收起藍圖：不回規劃、不開工坊")
+    B.Window, B.PlanPanel = realWin, realPanel
 
     -- 按鍵登記：接在本工具那一節後面，上一步、下一步帶 Ctrl
     keyBinding, Keyboard = {}, { KEY_Z = 44, KEY_Y = 21, KEY_DELETE = 211 }
@@ -21249,6 +21636,37 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         local narrowShown = pick("roofs_01_3")
         check(okAll and narrowShown and v.mode == "narrow" and v.roofBtn.title == "" and v.roofBtn.width == v.buildBtn.height
             and v.roofBtn.x == v.setBtn.x and v.roofBtn.y == v.setBtn.y, "窄版：屋頂助手鈕只有圖示、在整套鈕的位置")
+
+        -- 2026-11-21 回饋：詳情寫蓋好後的耐久（打不壞時換一句）；地板殭屍不打不寫；全高窗指出它的框是哪一種
+        place(1100, 700)
+        local wl = {}
+        for i, s in ipairs(IsoSpriteManager.instance:getNamedMap():values()._raw) do wl[i] = s end
+        wl[#wl + 1] = sprite("walls_dt_01_0", 9905, { type = T.wall, flags = { "WallW", "collideW", "cutW" }, keys = { WallW = "" } })
+        wl[#wl + 1] = sprite("floors_dt_01_0", 9906, { flags = { "solidfloor" } })
+        wl[#wl + 1] = sprite("fixtures_dt_01_8", 9907, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" },
+            keys = { WindowShape = "8" } })
+        world(wl)
+        local function detail(name)
+            v.setKey = nil
+            pick(name)
+            local s = {}
+            for i = 1, v.ops.n do if v.ops[i].t == "text" then s[#s + 1] = v.ops[i].s end end
+            return table.concat(s, "\n")
+        end
+        local realProof, realTurn = sb.ZombieProof, W.turnHint
+        W.turnHint = function() return nil end -- 假環境沒有 KeybindId（旋轉鍵提示不是這裡要驗的）
+        sb.ZombieProof = false
+        local wallT, floorT, winT = detail("walls_dt_01_0"), detail("floors_dt_01_0"), detail("fixtures_dt_01_8")
+        sb.ZombieProof = true
+        local wallP = detail("walls_dt_01_0")
+        sb.ZombieProof, W.turnHint = realProof, realTurn
+        -- 這段的 getText 只回鍵（數字已在情境二十七的 durabilityOf 驗）：整行比對，Health 才不會配到 HealthProof
+        local has = function(s, key, ...) return ("\n" .. s .. "\n"):find("\n" .. getText(key, ...) .. "\n", 1, true) ~= nil end
+        check(okAll and has(wallT, "IGUI_MBLD_Detail_Health", "450") and has(wallP, "IGUI_MBLD_Detail_HealthProof", "450")
+            and not has(wallP, "IGUI_MBLD_Detail_Health", "450"), "詳情：牆寫蓋好後的耐久；殭屍打不壞開著時換成打不壞那句")
+        check(okAll and floorT ~= "" and not floorT:find("Detail_Health", 1, true), "詳情：地板殭屍不打，不寫耐久")
+        check(okAll and has(winT, "IGUI_MBLD_Detail_WindowFrame_wallOverlay") and not has(wallT, "IGUI_MBLD_Detail_WindowFrame_wallOverlay"),
+            "詳情：8 號全高窗指出它要配同形狀的牆飾（牆不寫）")
         getTexture, getScriptManager = realTex, realSM
 
         -- 搜完整圖塊名（listFor 不看頁籤、分類、來源）：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格一致；
@@ -21308,6 +21726,33 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         if not okJ then check(false, "搜完整圖塊名的頁籤與下拉：" .. tostring(errJ)) end
         W.filter, W.categories, W.sources, W.st.jumpPrev, B.Index.bucket = realFilter, realCats, realSources, nil, realBucket
     end
+
+    -- 2026-11-21 回饋：工坊視窗可以調淡（ModOptions 下拉 100%／75%／50%，getValue 回 1 起算的序號）
+    local realOpts, realAlpha, realDock, realNew = W.options, W.alpha, W.showDock, UI.Window.new
+    local opacity, made = 2, nil
+    W.options = { getOption = function(_, id)
+        return { getValue = function() if id == "WindowOpacity" then return opacity end return true end }
+    end }
+    UI.Window.new = function(o)
+        made = o
+        return realNew(o)
+    end
+    W.readOptions()
+    W.v = nil
+    local okF = pcall(W.create, UI)
+    check(okF and made.theme.alpha == 0.75 and made.opaque == nil, "選 75%：工坊開出來底色乘 0.75，不設不透明（opaque 時框架不乘 alpha）")
+    opacity = 1
+    W.readOptions()
+    W.v = nil
+    local okO = pcall(W.create, UI)
+    check(okO and made.theme.alpha == 1 and made.opaque == true, "選 100%：照舊不透明")
+    opacity = 3
+    W.applyOptions()
+    local faded = W.v.theme.alpha == 0.5 and W.v.win.opaque == false
+    opacity = 1
+    W.applyOptions()
+    check(faded and W.v.theme.alpha == 1 and W.v.win.opaque == true, "工坊開著時改成 50% 當場變淡，改回 100% 當場不透明")
+    UI.Window.new, W.options, W.alpha, W.showDock = realNew, realOpts, realAlpha, realDock
 
     MinidoracatUI, ISPanel, getTextManager, UIFont = real.ui, real.panel, real.tm, real.font
     getPlayerScreenTop, getPlayerScreenLeft, getPlayerScreenWidth, getPlayerScreenHeight = real.top, real.left, real.sw, real.sh
