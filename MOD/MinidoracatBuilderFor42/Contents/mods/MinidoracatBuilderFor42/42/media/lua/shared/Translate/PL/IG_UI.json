@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "To okno pokazane jako otwarte, rozbite lub bez szyby. Poszukaj zamkniętego okna.",
   "IGUI_MBLD_Why_PREFIX": "Uprawy, drzewa, krzaki, nakładki śniegu i nakładki poświaty włączonych lamp nie są wyświetlane. Uprawy hoduj zwykłym rolnictwem z gry.",
   "IGUI_MBLD_Why_ENTITY": "Należy do przepisu budowy %1, którego teraz nie ma na twojej liście przepisów: jeszcze go nie znasz, to nie twój poziom umiejętności (np. drewniane ściany zmieniają się z poziomem Stolarstwa) albo administrator wyłączył jego rodzaj.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Należy do przepisu budowy %1. %2 trzyma ten przepis we własnym menu budowy, więc nie pokazuje go ani okno budowy z gry bazowej, ani Build Anything. Zbuduj go z menu %2.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Należy do przepisu budowy %1. %2 ukrywa ten przepis w menu budowy, więc nie pokazuje go ani okno budowy z gry bazowej, ani Build Anything. Jeśli %2 ma własne menu budowy, zbuduj go stamtąd.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Obiekty o specjalnych funkcjach bez przepisu budowy nie są wyświetlane (np. ekspresy do kawy).",
   "IGUI_MBLD_Why_TREE": "Drzew nie można budować.",
   "IGUI_MBLD_Why_PLANT": "Drzewa, krzaki i obiekty o specjalnych funkcjach (dystrybutory paliwa, generatory, sprzęt AGD) nie są wyświetlane.",

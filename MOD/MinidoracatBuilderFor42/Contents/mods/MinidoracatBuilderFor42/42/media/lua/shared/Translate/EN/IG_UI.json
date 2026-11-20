@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "This is a window shown open, broken or without glass. Search for the closed window instead.",
   "IGUI_MBLD_Why_PREFIX": "Crops, trees, bushes, snow overlays and the glow overlays of lights are not listed. Grow crops with vanilla farming.",
   "IGUI_MBLD_Why_ENTITY": "It belongs to the build recipe %1, which is not in your recipe list right now: not learned yet, not your skill tier (for example, wooden walls change with Carpentry level), or an admin turned off its kind.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "It belongs to the build recipe %1. %2 keeps this recipe in its own build menu, so neither the vanilla build window nor Build Anything lists it. Build it from %2's menu.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "It belongs to the build recipe %1. %2 hides this recipe from the build menu, so neither the vanilla build window nor Build Anything lists it. If %2 has its own build menu, build it from there.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Objects with special functions and no build recipe are not listed (coffee machines, for example).",
   "IGUI_MBLD_Why_TREE": "Trees can't be built.",
   "IGUI_MBLD_Why_PLANT": "Trees, bushes and things with a special function (fuel pumps, generators, appliances) are not listed.",

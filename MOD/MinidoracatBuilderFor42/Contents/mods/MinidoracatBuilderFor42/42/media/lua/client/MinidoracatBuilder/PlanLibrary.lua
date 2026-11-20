@@ -1011,7 +1011,10 @@ function Lib.new(UI, pn)
     local w, h = math.min(sw - 20, math.floor(600 * s)), math.min(sh - 40, math.floor(640 * s))
     local win = UI.Window.new({ x = sx + math.floor((sw - w) / 2), y = sy + math.floor((sh - h) / 2), width = w, height = h,
         title = getText("IGUI_MBLD_Lib_Title"), icon = "folder", theme = theme, opaque = true,
-        onClose = function(wnd) UI.Dropdown.close(wnd) end })
+        onClose = function(wnd)
+            UI.Dropdown.close(wnd)
+            L.plansGone()
+        end })
     win.onEscape = function()
         win:close()
         return true
@@ -1220,6 +1223,14 @@ end
 
 function L.visible()
     return L.v ~= nil and L.v.win:getIsVisible()
+end
+
+-- 藍圖庫或藍圖面板關掉、兩個都不在了：清掉「工坊是被藍圖鈕收起的」記號（Window.openPlans 記、PlanMode.pickUp 讀），
+-- 之後從別的路搬藍圖，放下時不會把工坊叫回來。框架先藏起視窗再叫 onClose（MinidoracatUI Widgets/Window.lua:280-287），
+-- 這時關的那個已經看不到。面板按「藍圖庫」轉過去時藍圖庫先開（PlanPanel 的 act("library")），記號留著
+function L.plansGone()
+    local W, P = B.Window, B.PlanPanel
+    if W and not L.visible() and not (P and P.visible and P.visible()) then W.plansClosed = nil end
 end
 
 -- ---------------------------------------------------------------- 匯入框

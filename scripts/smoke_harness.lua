@@ -330,6 +330,7 @@ square = function(x, y, z, o)
     function sq:clearWater() end
     function sq:disableErosion() end
     function sq:RecalcAllWithNeighbours() end
+    function sq:setSquareChanged() self.changed = (self.changed or 0) + 1 end -- 尋路重推（計數，撿放後 harden 驗用）
     function sq:getWorldObjects() return javaList(self.world) end
     function sq:getSpecialObjects() return javaList(self.objects) end
     -- 照引擎：一塊 8×8，getGridSquare 收這一塊裡的座標（IsoChunk.java:3157-3160）；格子沒建過回 nil
@@ -5677,6 +5678,97 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
     check(shelf.boxes[1].cap == 100 and shelf.thump == true and shelf.dmg == 8 and shelf.md.builderEntry == nil,
         "記號只剩巢狀的（牆櫃、桌上的）：只補容量，不改打不打得壞、不提升成本 MOD 的")
     check(stray.boxes[1].cap == 50 and stray.thump == true and stray.dmg == 8, "沒有本 MOD 記號的：放下時不動")
+    check(shelf.md.movableData == nil, "IsoThumpable 撿放時原版寫回頂層或巢狀記號：不另建 movableData")
+    do
+        -- 審查 #2：殭屍打不壞由放下時才改成不給打，尋路在加進格子時已讀了位元：改了要再推一次（打開才推、只推一次）
+        up.changed = 0
+        local t1 = loaded("IsoThumpable", crateS, { thump = true, dmg = 1, boxes = { box("crate", 50) } })
+        fire("OnObjectAdded", t1)
+        local onOnce = up.changed
+        fire("OnObjectAdded", t1)
+        local onTwice = up.changed
+        sb.ZombieProof = nil
+        local t2 = loaded("IsoThumpable", crateS, { thump = true, dmg = 1, boxes = { box("crate", 50) } })
+        fire("OnObjectAdded", t2)
+        check(onOnce == 1 and onTwice == 1 and up.changed == 1 and t1.thump == false and t2.thump == true,
+            "撿放本 MOD 的實心家具、殭屍打不壞開著：改成不給打並重推那格尋路一次，再放一次不重推；關著時不動、不推")
+        sb.ZombieProof = true
+
+        -- 審查 #1：不擋路、有容器的（原版放成一般物件）第一次撿放只剩巢狀記號；之後原版只帶 movableData。補進 movableData，
+        -- 第二、三代照樣補容量；頂層不補（拆除照頂層認本 MOD 的），movableData 別的鍵留著
+        local function gen(md)
+            local g = loaded("IsoObject", crateS, { entry = false, boxes = { box("crate", 50) } })
+            for k, v in pairs(md) do g.md[k] = v end
+            return g
+        end
+        local g1 = gen({ modData = { builderEntry = "zp_crate_01_0" }, movableData = { other = "keep" } })
+        fire("OnObjectAdded", g1)
+        local function carry(g) -- 原版撿起只帶 movableData（ISMoveableSpriteProps.lua:1403-1404），放下照抄回去（:2423-2424）
+            local m = {}
+            for k, v in pairs(g.md.movableData or {}) do m[k] = v end
+            return gen({ movableData = m })
+        end
+        local g2 = carry(g1)
+        fire("OnObjectAdded", g2)
+        local g3 = carry(g2)
+        fire("OnObjectAdded", g3)
+        check(g1.boxes[1].cap == 100 and g2.boxes[1].cap == 100 and g3.boxes[1].cap == 100 and g3.md.builderEntry == nil
+            and g1.md.builderEntry == nil and g3.md.movableData.other == "keep",
+            "不擋路的本 MOD 容器撿放三次：每一代都照倍率補回容量（50×2）；不提升成本 MOD 頂層記號，別的 MOD 寫在 movableData 的鍵留著")
+        sb.ContainerCapacityMultiplier = 1.5
+        Place.migrate(g3)
+        local bare = loaded("IsoObject", sinkS, { entry = false })
+        bare.md.modData = { builderEntry = "zp_sink_01_0" }
+        fire("OnObjectAdded", bare)
+        check(g3.boxes[1].cap == 75 and bare.md.movableData == nil,
+            "第三代讀檔、倍率改成 1.5：容量跟著變成 75；沒有容器的不記 movableData")
+        sb.ContainerCapacityMultiplier = 2
+        local oldFridge = loaded("IsoStove", fridgeS, { moved = false, boxes = { box("fridge", 40) } })
+        Place.migrate(oldFridge)
+        local firstMove = carry(oldFridge)
+        check(oldFridge.md.movableData and oldFridge.md.movableData.builderEntry == "zp_fridge_01_0"
+            and firstMove.md.movableData.builderEntry == "zp_fridge_01_0",
+            "舊存檔的家電（頂層有記號、沒有 movableData）：讀檔補上 movableData，撿起時原版帶得走")
+
+        -- 撿放的家電（只剩 movableData 記號）：原版照擋路與否設 movedThumpable，殭屍打不壞開著時改回不給打、重推尋路一次
+        local function moved(spr, mv)
+            local a = loaded("IsoStove", spr, { moved = mv, entry = false })
+            a.md.movableData = { builderEntry = spr:getName() }
+            return a
+        end
+        up.changed = 0
+        local s1 = moved(sinkS, true)
+        fire("OnObjectAdded", s1)
+        local c1 = up.changed
+        fire("OnObjectAdded", s1)
+        local c1b = up.changed
+        local d1 = moved(dimS, true)
+        fire("OnObjectAdded", d1)
+        local c2 = up.changed
+        local topS = loaded("IsoStove", sinkS, { moved = true })
+        fire("OnObjectAdded", topS)
+        local c3 = up.changed
+        sb.ZombieProof = nil
+        local s2 = moved(sinkS, true)
+        fire("OnObjectAdded", s2)
+        local c4 = up.changed
+        local d2 = moved(dimS, true)
+        fire("OnObjectAdded", d2)
+        check(s1.moved == false and c1 == 1 and c1b == 1 and d1.moved == false and c2 == 2 and topS.moved == false and c3 == 2
+            and s2.moved == true and c4 == 2 and d2.moved == false and up.changed == 3,
+            "撿放的家電：擋路的在打不壞開著時改成不給打、重推一次（再放一次不推）；關著照原版打得壞、不推；不擋路的一律不給打，"
+                .. "原版設錯時改並重推；剛蓋好的（頂層記號）建造時已設好，不重推")
+        up.changed = 0
+        local s3 = moved(sinkS, true)
+        sb.ZombieProof = true
+        Place.migrate(s3)
+        local onLoad = s3.moved
+        sb.ZombieProof = nil
+        Place.migrate(s3)
+        check(onLoad == false and s3.moved == true and up.changed == 0,
+            "撿放過的擋路家電讀檔：照目前的打不壞選項改（開→不給打、關→打得壞），讀檔不重推尋路")
+        sb.ZombieProof = true
+    end
     sb.ZombieProof, sb.ContainerCapacityMultiplier = nil, nil
     instanceof = realInst
     IsoDoor = nil
@@ -7535,6 +7627,28 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     hold.windows = nil
     check(not Place.framesWindow(fix, hq) and Dismantle.blocked("wallOverlay", { remove = { fix } }) == nil, "窗拿掉後：牆飾照常拆")
 
+    -- 審查 #13：牆角柱（WallSE；載入器替它補 cutW，室內牆 296 張帶形狀 3／4）不算框
+    local win3 = win("zz_win_01_3", 9313, "3")
+    local post3 = sprite("zz_post_01_3", 9314, { flags = { "WallSE", "cutW" }, keys = { WindowShape = "3" } })
+    list[#list + 1], list[#list + 2] = win3, post3
+    world(list)
+    local pHold = { flags = {} }
+    local pq = at({ post3 }, pHold)
+    local pNot = Place.check("window", win3, pq)
+    pHold.windows = { [EW] = obj(win3, pq, "IsoWindow") }
+    check(not pNot and not Place.framesWindow(pq.objects[1], pq),
+        "牆角柱帶 cutW 與形狀 3：形狀 3 的全高窗不能掛在只有柱子的邊；那條邊有窗時柱子也不算框（照常拆）")
+    -- 審查 #9：同一條邊兩片同形狀的牆飾加一扇窗：拆其中一片窗不懸空（不擋）；只剩一片時那片擋
+    local two = { flags = {} }
+    local tq = at({ ov8, ov8 }, two)
+    two.windows = { [EW] = obj(win8, tq, "IsoWindow") }
+    local f1, f2 = tq.objects[1], tq.objects[2]
+    local bothFree = not Place.framesWindow(f1, tq) and not Place.framesWindow(f2, tq)
+        and Dismantle.blocked("wallOverlay", { remove = { f1 } }) == nil
+    tq.objects[1], tq.objects[2] = f2, nil
+    check(bothFree and Place.framesWindow(f2, tq) == true and Dismantle.blocked("wallOverlay", { remove = { f2 } }) == "ATTACHED",
+        "同一條邊兩片同形狀牆飾＋窗：拆哪一片都不擋；拆到只剩一片時那片擋（ATTACHED）")
+
     -- 蓋：窗插在同形狀的牆飾後面（不排到最後，畫的順序照原版地圖）
     local realWindow = IsoWindow
     local made
@@ -7586,20 +7700,29 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
         "坡頂出口：往北、南、西、東上坡的坡頂那條邊（這一層與上一層）放牆會提醒")
     check(Place.caution("wall", wallW, a1) == nil and Place.caution("wall", wallN, a3) == nil
         and Place.caution("wall", wallN, at({})) == nil, "坡頂出口：同一格的另一條邊、旁邊沒有坡道的格子不提醒")
-    check(Place.caution("door", doorN, a1) == "RAMP_EXIT" and Place.caution("windowFrame", frameN, a1) == "RAMP_EXIT"
+    check(Place.caution("door", doorN, a1) == nil and Place.caution("windowFrame", frameN, a1) == "RAMP_EXIT"
         and Place.caution("fence", fenceN, a1) == "RAMP_EXIT" and Place.caution("doorFrame", dframeN, a1) == nil
-        and Place.caution("post", postS, a1) == nil, "坡頂出口：門、窗框、柵欄會擋路要提醒；門框、柱子不擋路不提醒")
+        and Place.caution("post", postS, a1) == nil,
+        "坡頂出口：窗框、柵欄會擋路要提醒；門（開著走得過）、門框、柱子不提醒（審查 #12）")
 
     -- 游標：提醒只寫在標籤、不擋（照樣可蓋）；提醒本身丟錯時照樣可蓋
     local realItem, realCaution = B.Check.item, Place.caution
     B.Check.item = function() return nil, nil, { cells = { { sq = a1, spr = wallN } }, entry = { kind = "wall" } } end
     local out, okN = Cursor.preview(player({ id = 381 }), "zz_wall_01_0", 0, { { a1:getX(), a1:getY(), 0 } })
     check(okN == 1 and out[1].code == nil and out[1].info.warn == "RAMP_EXIT", "游標預覽：坡頂出口照樣可蓋，帶提醒")
-    Place.caution = function() error("boom") end
+    -- 提醒丟錯：照樣可蓋、只印一次，之後不再問（cautionBroken 是模組層的旗標：這之後的情境都不再有提醒，排在提醒測試的最後）
+    local realPrint, said, asked = print, 0, 0
+    print = function(s, ...)
+        if tostring(s):find("caution failed", 1, true) then said = said + 1 else realPrint(s, ...) end
+    end
+    Place.caution = function() asked = asked + 1 error("boom") end
     local out2, okN2 = Cursor.preview(player({ id = 381 }), "zz_wall_01_0", 0, { { a1:getX(), a1:getY(), 0 } })
+    local out3, okN3 = Cursor.preview(player({ id = 381 }), "zz_wall_01_0", 0, { { a1:getX(), a1:getY(), 0 } })
+    print = realPrint
     Place.caution = realCaution
     B.Check.item = realItem
-    check(okN2 == 1 and out2[1].info.warn == nil, "提醒丟錯：照樣可蓋、不帶提醒")
+    check(okN2 == 1 and out2[1].info.warn == nil and okN3 == 1 and out3[1].info.warn == nil and said == 1 and asked == 1,
+        "提醒丟錯：照樣可蓋、不帶提醒；log 只印一次，之後不再問（審查 #15）")
     local warnCol = { r = 1 }
     local res = {}
     for i = 1, 3 do res[i] = { a = { 0, 0, 0 }, info = { warn = "RAMP_EXIT" } } end
@@ -8972,6 +9095,103 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     seats[1] = nil
     getCell():setDrag(nil, 1)
     getCell():setDrag(nil, 0)
+
+    -- 2026-11-21 回饋 F6（審查 #8）：配方游標對坡頂出口也提醒。圖塊牆對真的坡頂在情境三十八之二驗過；這裡驗配方游標把
+    -- 這一面的種類、圖與那一格交給同一支 Place.caution，提醒寫在游標旁的提示框，拖一排同一種提醒只寫一次
+    do
+        local realCaution, asked = B.Place.caution, {}
+        local ramp = {}
+        for x = 70, 73 do ramp[getCell():getGridSquare(x, 70, 0)] = true end
+        B.Place.caution = function(kind, spr, sq)
+            asked[#asked + 1] = kind .. "|" .. spr:getName()
+            return ramp[sq] and "RAMP_EXIT" or nil
+        end
+        local wc = Recipes.build(0, wallR.id)
+        wc.nSprite, wc.canBeBuild, wc.isLeftDown, wc.build = 2, true, false, false
+        nowMs = nowMs + 600
+        wc:render(70, 70, 0, getCell():getGridSquare(70, 70, 0))
+        local single = wc.mbldWarn and table.concat(wc.mbldWarn, ";")
+        local shownAt = hintShown[0]
+        wc:render(70, 75, 0, getCell():getGridSquare(70, 75, 0))
+        local away = wc.mbldWarn
+        check(single == "IGUI_MBLD_Warn_RAMP_EXIT" and shownAt == true and asked[1] == "wall|rcp_walls_01_0" and away == nil,
+            "配方牆游標停在坡頂出口：提示框寫坡頂出口提醒（問的是這一面的牆圖）；移到別格提醒收起")
+        wc.square, wc.isLeftDown = getCell():getGridSquare(70, 70, 0), true
+        wc:rotateMouse(73, 70)
+        nowMs = nowMs + 600
+        wc:render(70, 70, 0, wc.square)
+        local rowWarn = wc.mbldWarn and table.concat(wc.mbldWarn, ";")
+        wc.isLeftDown, wc.square = false, nil
+        check(rowWarn == "IGUI_MBLD_Warn_RAMP_EXIT" and wc.canBeBuild == true,
+            "配方牆拖一排經過 4 格坡頂出口：提醒只寫一次、照樣可放")
+        -- 不能拖的配方（窗框）：游標停在坡頂出口同樣寫提醒
+        getCell():setDrag(nil, 0)
+        local fc = Recipes.build(0, "recipe:Base.WoodFrame")
+        fc.nSprite, fc.canBeBuild = 2, true
+        nowMs = nowMs + 600
+        fc:render(71, 70, 0, getCell():getGridSquare(71, 70, 0))
+        check(fc.mbldRow == nil and fc.mbldWarn and table.concat(fc.mbldWarn, ";") == "IGUI_MBLD_Warn_RAMP_EXIT"
+            and asked[#asked] == "windowFrame|rcp_walls_01_8",
+            "不能拖的配方（窗框）游標停在坡頂出口：同樣寫坡頂出口提醒")
+        getCell():setDrag(nil, 0)
+        wc = Recipes.build(0, wallR.id)
+        -- 提醒丟錯（審查 #15）：照樣可放、不帶提醒，log 只印一次，之後這場遊戲不再問（cautionOff 是模組層旗標，排在配方提醒測試最後）
+        local realPrint, said, n0 = print, 0, 0
+        print = function(s, ...)
+            if tostring(s):find("caution failed", 1, true) then said = said + 1 else realPrint(s, ...) end
+        end
+        B.Place.caution = function() n0 = n0 + 1 error("boom") end
+        wc.canBeBuild = true
+        nowMs = nowMs + 600
+        wc:render(71, 70, 0, getCell():getGridSquare(71, 70, 0))
+        local brokeWarn, brokeOk = wc.mbldWarn, wc.canBeBuild
+        nowMs = nowMs + 600
+        wc:render(72, 70, 0, getCell():getGridSquare(72, 70, 0))
+        print = realPrint
+        B.Place.caution = realCaution
+        check(brokeWarn == nil and brokeOk == true and wc.mbldWarn == nil and said == 1 and n0 == 1,
+            "配方游標的提醒丟錯：照樣可放、不寫提醒；log 只印一次，之後不再問")
+        getCell():setDrag(nil, 0)
+
+        -- 2026-11-21 回饋 F3（審查 #3）：本 MOD 開的配方門游標，那條邊已經裝了全高窗時放不進（圖塊門由 Place.check 擋）
+        local oldSprites = {}
+        for i, s in ipairs(IsoSpriteManager.instance:getNamedMap():values()._raw) do oldSprites[i] = s end
+        local withDoor = {}
+        for i, s in ipairs(oldSprites) do withDoor[i] = s end
+        withDoor[#withDoor + 1] = sprite("rcp_door_01_0", 4220, { flags = { "EntityScript", "doorN" }, type = T.doorN })
+        withDoor[#withDoor + 1] = sprite("rcp_door_01_1", 4221, { flags = { "EntityScript", "doorW" }, type = T.doorW })
+        world(withDoor)
+        local rDoor = recipe("Base.WoodDoor", { label = "Wood Door", cat = "Carpentry" })
+        infos[#infos + 1] = info(rDoor, { "rcp_door_01_0", "rcp_door_01_1" }, 1, 1)
+        all[#all + 1] = rDoor
+        Recipes.list = nil
+        Names.reset()
+        Recipes.all()
+        local realPer, vanillaOk = ISBuildIsoEntity.isValidPerSquare, true
+        ISBuildIsoEntity.isValidPerSquare = function() return vanillaOk end
+        local dc = Recipes.build(0, "recipe:Base.WoodDoor")
+        local NSd = GridSquareEdgeFacingDirection.NORTH_SOUTH
+        local winN = square(76, 76, 0, { flags = {}, windows = { [NSd] = {} } })
+        local tDoor = { getSpriteName = function() return "rcp_door_01_0" end }
+        dc.nSprite = 2
+        dc:getSprite()
+        local onWin = dc:isValidPerSquare(winN, tDoor)
+        dc.nSprite = 1
+        dc:getSprite()
+        local otherEdge = dc:isValidPerSquare(winN, tDoor)
+        vanillaOk = false
+        local vanillaNo = dc:isValidPerSquare(square(77, 76, 0, { flags = {} }), tDoor)
+        ISBuildIsoEntity.isValidPerSquare = realPer
+        getCell():setDrag(nil, 0)
+        local wallNoHook = rawget(Recipes.build(0, wallR.id), "isValidPerSquare") == nil
+        getCell():setDrag(nil, 0)
+        check(dc and onWin == false and otherEdge == true and vanillaNo == false and wallNoHook,
+            "配方門游標：那條邊已經裝了全高窗放不進；另一條邊沒窗照原版能放、原版擋的照擋；牆配方不掛這個檢查")
+        infos[#infos], all[#all] = nil, nil
+        world(oldSprites)
+        Recipes.list = nil
+        Names.reset()
+    end
     B.Messages.toast = realToast2
     ISBuildingObject, getCore, ISTimedActionQueue = realBase, realCore, realQueue
 
@@ -8985,7 +9205,7 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
     local function rec(o)
         local sc = { isProp = function() return o.prop == true end, getIsThumpable = function() return o.thump ~= false end,
             getHealth = function() return o.hp end, getBonusHealth = function() return 200 end,
-            getSkillBaseHealth = function() return 50 end }
+            getSkillBaseHealth = function() return 50 end, getOnCreate = function() return o.onCreate end }
         return { info = { getScript = function() return sc end },
             recipe = { getHighestRelevantSkillLevel = function() return 6 end } }
     end
@@ -8997,6 +9217,10 @@ print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 
         "配方耐久：照原版公式（建造加成最低 ×0.5、最高 ×1.5，技能 6 級 ×50），腳本寫負的 health 當 0")
     check(Recipes.health(0, rec({ hp = 150, thump = false })) == nil and Recipes.health(0, rec({ hp = 150, prop = true })) == nil,
         "配方耐久：腳本寫殭屍不打（isThumpable=false）、照家具放的（isProp）不寫耐久")
+    check(Recipes.health(0, rec({ hp = 150, onCreate = "BuildRecipeCode.fenceOrWall.OnCreate" })) == 150 + 200 + 300
+        and Recipes.health(0, rec({ hp = 150, onCreate = "BuildRecipeCode.windowGlass.OnCreate" })) == nil
+        and Recipes.health(0, rec({ hp = 150, onCreate = "OtherMod.Thing.OnCreate" })) == nil,
+        "配方耐久：普通牆（OnCreate 沿用施工那件）照算；玻璃窗（OnCreate 換成窗，實際 50）和別的 MOD 的 OnCreate 不寫")
     getSandboxOptions = realSandbox
 
     getSpecificPlayer, getCell, SpriteConfigManager.GetObjectInfoList, getText = realSpecific, realCell, realInfos, realGetText
@@ -15255,6 +15479,48 @@ end)()
     local b2 = PG.outline()
     check(b1[3] - b1[1] == 3 and b1[4] - b1[2] == 1 and b2 and b2[3] - b2[1] == 1 and b2[4] - b2[2] == 3,
         "擺放外框：轉 90 度後跟著轉（3×1 變 1×3）")
+    -- 審查 #14：轉是繞包圍盒的角，轉完不動滑鼠也要照滑鼠那格重新對齊（外框和放下的位置跟移一下滑鼠一樣）
+    local turnedAt, b2s = { drags[0].ox, drags[0].oy }, table.concat(b2, ",", 1, 4)
+    PM.dragMoved(drags[0], 60, 60, 0)
+    PG.draw()
+    check(drags[0].ox == turnedAt[1] and drags[0].oy == turnedAt[2] and table.concat(PG.outline(), ",", 1, 4) == b2s,
+        "擺放轉 90 度、滑鼠不動：原點與外框已照滑鼠那格對齊（和移一下滑鼠的結果一樣）")
+    drags[0]:tryBuild(60, 60, 0)
+    -- 審查 #6：配方片的虛影只畫第一格，外框照那一面整塊（Recipes.span）；span 丟錯時 log 一次、退回錨點那格
+    PM.clear()
+    local realR, realPrint, spanLogs = B.Recipes, print, 0
+    B.Recipes = { faces = function() return nil end, span = function() return 2, 2 end }
+    local rp = Plan.new("配方")
+    Plan.add(rp, 0, 0, 0, 0, 0, Plan.item(rp, "recipe:Base.RainCollector_Tarp"))
+    PM.place(rp, 0)
+    drags[0]:isValid(sq(60, 60, 0))
+    PG.draw()
+    local rb = PG.outline()
+    local rw, rh = rb and rb[3] - rb[1], rb and rb[4] - rb[2]
+    getCell():setDrag(nil, 0)
+    PM.clear()
+    B.Recipes.span = function() error("boom") end
+    print = function(s, ...)
+        if tostring(s):find("span failed", 1, true) then spanLogs = spanLogs + 1 else realPrint(s, ...) end
+    end
+    local rp2 = Plan.new("配方2")
+    Plan.add(rp2, 0, 0, 0, 0, 0, Plan.item(rp2, "recipe:Base.RainCollector_Tarp"))
+    PM.place(rp2, 0)
+    drags[0]:isValid(sq(60, 60, 0))
+    PG.draw()
+    PG.draw()
+    local eb = PG.outline()
+    print = realPrint
+    getCell():setDrag(nil, 0)
+    B.Recipes = realR
+    check(rw == 2 and rh == 2 and eb and eb[3] - eb[1] == 1 and eb[4] - eb[2] == 1 and spanLogs == 1,
+        "配方片擺放外框：照那一面整塊（2×2，不只畫圖那格）；查不到整塊大小時退回錨點那格、log 只印一次")
+    PM.clear()
+    local strip2 = Plan.new("條")
+    for x = 0, 2 do Plan.add(strip2, x, 0, 0, 0, 0, Plan.item(strip2, "pm_floor_01_0")) end
+    PM.place(strip2, 0)
+    drags[0]:isValid(sq(60, 60, 0))
+    drags[0]:rotateKey(19)
     drags[0]:tryBuild(60, 60, 0)
     ISUIElement, isoToScreenX, isoToScreenY, UIFont, getTextManager = nil, realScr.x, realScr.y, realScr.font, realScr.tm
 
@@ -15290,11 +15556,35 @@ end)()
     check(PM.state() == "edit" and wins == 1, "工坊原本就關著：放回原位置後回規劃，不開工坊")
     W2.plansClosed = true
     PM.pickUp(0)
-    W2.plansClosed = nil
+    local markUsed = W2.plansClosed == nil
     getCell():setDrag(nil, 0) -- 右鍵、B、換別的游標都走這裡（拖曳物件 deactivate → dragCancel）
     fire("OnTick")
-    check(PM.state() == "edit" and wins == 2, "工坊剛被藍圖面板收起（plansClosed）：取消也回規劃、重開工坊")
-    PM.toggle(0)
+    check(PM.state() == "edit" and wins == 2 and markUsed,
+        "工坊剛被藍圖面板收起（plansClosed）：取消也回規劃、重開工坊；記號搬一次就清掉（之後別的路搬不會叫回工坊）")
+    -- 審查 #4：搬的那張放下時存不了：回規劃後照樣算沒存（完成、面板會再問），不當成已存
+    local function moveTurnDrop(x, failing)
+        PM.pickUp(0)
+        drags[0]:rotateKey(19)
+        drags[0]:isValid(sq(x, 80, 0))
+        failWrite = failing
+        drags[0]:tryBuild(x, 80, 0)
+        failWrite = false
+        fire("OnTick")
+    end
+    moveTurnDrop(80, true)
+    local failState, failUnsaved = PM.state(), PM.unsaved()
+    moveTurnDrop(84, false)
+    check(failState == "edit" and failUnsaved == true and PM.state() == "edit" and PM.unsaved() == false,
+        "規劃中搬、轉向後放下但存不了：回規劃後算沒存；存得了的同一流程算已存")
+    -- 審查 #5：搬到一半拿了別的游標（工坊的油漆、配方）：下一個 tick 不回規劃，別的游標留在手上（之後定住，接下面的定住情境）
+    PM.pickUp(0)
+    local paintCursor = {}
+    getCell():setDrag(paintCursor, 0)
+    local w0 = wins
+    fire("OnTick")
+    check(PM.state() == "fixed" and drags[0] == paintCursor and wins == w0,
+        "搬到一半換成別的游標：不回規劃、不收掉手上的游標、不開工坊")
+    drags[0] = nil
     Pn.shown = true
     PM.pickUp(0)
     drags[0]:isValid(sq(72, 72, 0))
@@ -16236,6 +16526,32 @@ end)()
         ground, blanked = nil, 0
         L.newBlank(0)
         check(blanked == 1 and wins.open == 2, "新的空白藍圖：進規劃時工坊視窗打開")
+        -- 審查 #10：「工坊被藍圖鈕收起」的記號（plansClosed，搬的放下後要不要叫回工坊）：面板與藍圖庫都關掉才清；
+        -- 面板按「藍圖庫」轉過去時留著（藍圖庫先開）。搬一次就清在規劃那段驗
+        local realVis = W.visible
+        W.visible = function() return true end
+        ground = sample("Win")
+        W.openPlans() -- 面板
+        L.open(0)
+        P.close()
+        local libStill = W.plansClosed
+        L.close()
+        local bothGone = W.plansClosed
+        ground = nil
+        W.openPlans() -- 藍圖庫
+        ground = sample("Win")
+        P.open(0)
+        L.close()
+        local panelStill = W.plansClosed
+        P.close()
+        local bothGone2 = W.plansClosed
+        W.openPlans() -- 面板
+        P.v:act("library")
+        local switched = W.plansClosed == true and L.visible() and not P.visible()
+        L.close()
+        W.visible = realVis
+        check(libStill == true and bothGone == nil and panelStill == true and bothGone2 == nil and switched and W.plansClosed == nil,
+            "工坊被藍圖鈕收起的記號：面板、藍圖庫還有一個開著就留著，兩個都關了才清；面板轉藍圖庫時留著，藍圖庫再關才清")
         ground = nil
     end
 
@@ -17657,13 +17973,20 @@ end)()
 
         -- 主選單、載入中沒有世界（getCell() 是 nil）：按鍵與放開右鍵的事件照樣進來，不丟錯
         -- （1.0.0 回報：主選單每按一鍵跳一次 getDrag of non-table）
-        local cellNow, coreNow = getCell, getCore
+        -- 2026-11-21 回饋 F1：主選單沒有玩家，按到開工坊的鍵（isKey 一律 true＝每個鍵都綁到）也不開視窗、不丟錯
+        local cellNow, coreNow, specNow, toggleNow = getCell, getCore, getSpecificPlayer, B.Window.toggle
+        local opened = 0
         getCell = function() return nil end
         getCore = function() return { isKey = function() return false end } end
         local okCur, noCur = pcall(RC.cursor, 0)
         local okKey, okRight = pcall(B.Window.onKeyPressed, 15), pcall(B.Cursor.onRightMouseUp)
+        getCore = function() return { isKey = function() return true end } end
+        getSpecificPlayer = function() return nil end
+        B.Window.toggle = function() opened = opened + 1 end
+        local okAll = pcall(B.Window.onKeyPressed, 15) and pcall(B.Runner.onKey, 15) and pcall(B.Cursor.onRightMouseUp)
+        getCell, getCore, getSpecificPlayer, B.Window.toggle = cellNow, coreNow, specNow, toggleNow
         check(okCur and noCur == nil and okKey and okRight, "沒有世界時：查配方游標回 nil，按鍵、放開右鍵不丟錯")
-        getCell, getCore = cellNow, coreNow
+        check(okAll and opened == 0, "主選單沒有玩家：每個鍵都當成綁到的鍵，工坊、照圖蓋、游標的按鍵處理都不丟錯，工坊不開")
 
         -- 收尾：游標放掉、讓 Recipes 的追蹤（OnTick）自己收掉
         drag = {}
@@ -21645,6 +21968,11 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         wl[#wl + 1] = sprite("floors_dt_01_0", 9906, { flags = { "solidfloor" } })
         wl[#wl + 1] = sprite("fixtures_dt_01_8", 9907, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" },
             keys = { WindowShape = "8" } })
+        wl[#wl + 1] = sprite("fixtures_dt_01_11", 9908, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" },
+            keys = { WindowShape = "11" } })
+        local wallWin = sprite("walls_dt_01_11", 9909, { type = T.wall, flags = { "windowW", "cutW", "WindowW" },
+            keys = { WindowShape = "11" } })
+        wl[#wl + 1] = wallWin
         world(wl)
         local function detail(name)
             v.setKey = nil
@@ -21667,6 +21995,12 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         check(okAll and floorT ~= "" and not floorT:find("Detail_Health", 1, true), "詳情：地板殭屍不打，不寫耐久")
         check(okAll and has(winT, "IGUI_MBLD_Detail_WindowFrame_wallOverlay") and not has(wallT, "IGUI_MBLD_Detail_WindowFrame_wallOverlay"),
             "詳情：8 號全高窗指出它要配同形狀的牆飾（牆不寫）")
+        W.turnHint = function() return nil end
+        local win11T, wallWinT = detail("fixtures_dt_01_11"), detail("walls_dt_01_11")
+        W.turnHint = realTurn
+        check(okAll and has(win11T, "IGUI_MBLD_Detail_WindowFrame_doorFrame") and B.Rules.classify(wallWin) == "window"
+            and wallWinT ~= "" and not wallWinT:find("Detail_WindowFrame", 1, true),
+            "詳情：11 號全高窗指出它要配雙開門框牆；牆型窗（窗框畫在同一張）形狀寫 11 也不指路（審查 #16）")
         getTexture, getScriptManager = realTex, realSM
 
         -- 搜完整圖塊名（listFor 不看頁籤、分類、來源）：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格一致；

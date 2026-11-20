@@ -82,20 +82,47 @@ local function partsOf(plan, p)
     return v
 end
 
--- 整張佔的格子範圍 { x0, y0, x1, y1 }（藍圖座標）：多格物件、車庫門照 partsOf 的格子算，畫不出圖的片算錨點
+-- 配方片那一面整塊的寬、深（Recipes.span）：虛影只畫第一格有圖的（computeParts），範圍要算整塊。
+-- spans 是這次 extent 的快取（項目、朝向 → { w, h } 或 false）
+local function recipeSpan(plan, p, spans)
+    local k = p.it * 8 + (p.d or 0)
+    local v = spans[k]
+    if v == nil then
+        v = false
+        local item, R = plan.items[p.it], B.Recipes
+        local id = item and item.id
+        if type(id) == "string" and id:sub(1, 7) == "recipe:" and R and R.span then
+            local ok, w, h = pcall(R.span, id, p.d)
+            if not ok then print(LOG .. "plan ghost span failed: " .. tostring(w)) end
+            if ok and w then v = { w, h } end
+        end
+        spans[k] = v
+    end
+    return v
+end
+
+-- 整張佔的格子範圍 { x0, y0, x1, y1 }（藍圖座標）：多格物件、車庫門照 partsOf 的格子算，配方照那一面整塊，
+-- 畫不出圖的片算錨點
 local ANCHOR = { { 0, 0 } }
 local function extent(plan)
     local x0, y0, x1, y1
-    Plan.each(plan, function(p)
-        local parts = partsOf(plan, p) or ANCHOR
-        for i = 1, #parts do
-            local x, y = p.x + parts[i][1], p.y + parts[i][2]
-            if not x0 then
-                x0, y0, x1, y1 = x, y, x, y
-            else
-                x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
-            end
+    local function add(x, y)
+        if not x0 then
+            x0, y0, x1, y1 = x, y, x, y
+        else
+            x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
         end
+    end
+    local spans = {}
+    Plan.each(plan, function(p)
+        local s = recipeSpan(plan, p, spans)
+        if s then
+            add(p.x, p.y)
+            add(p.x + s[1] - 1, p.y + s[2] - 1)
+            return
+        end
+        local parts = partsOf(plan, p) or ANCHOR
+        for i = 1, #parts do add(p.x + parts[i][1], p.y + parts[i][2]) end
     end)
     return x0 and { x0, y0, x1, y1 } or nil
 end

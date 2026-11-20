@@ -210,14 +210,16 @@ local function doorFrameAt(sq, north)
     return sq:has(F.DoorWallW) or sq:has("DoorWallWTrans")
 end
 
--- 那條邊（cutN／cutW）上不是窗的物件裡，有沒有 WindowShape 等於 shape 的；第二個回傳＝有沒有任何一件寫了形狀。
--- 窗跳過：IsoWindow 建構子替窗的圖補 cutN／W（IsoWindow.java:84-102）
-local function shapedFrame(sq, north, shape)
+-- 那條邊（cutN／cutW）上不是窗的物件裡（skip 那件不算），有沒有 WindowShape 等於 shape 的；第二個回傳＝有沒有任何一件寫了形狀。
+-- 窗跳過：IsoWindow 建構子替窗的圖補 cutN／W（IsoWindow.java:84-102）。牆角柱（WallSE）跳過：載入器替它補 cutW
+-- （IsoWorld.java:978-982），室內牆有 296 張柱子帶形狀 3／4，不跳過的話全高窗掛得上只有柱子的西邊
+local function shapedFrame(sq, north, shape, ...)
+    local skip = ...
     local objects, cut, any = sq:getObjects(), north and F.cutN or F.cutW, false
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
-        local p = not instanceof(o, "IsoWindow") and o:getProperties()
-        local s = p and p:has(cut) and p:get("WindowShape")
+        local p = o ~= skip and not instanceof(o, "IsoWindow") and o:getProperties()
+        local s = p and p:has(cut) and not p:has(F.WallSE) and p:get("WindowShape")
         if s then
             if s == shape then return true, true end
             any = true
@@ -243,16 +245,18 @@ local function windowFrameOn(sq, north)
     return false
 end
 local function framesOn(o, sq, north, s)
-    local win = o:getProperties():has(north and F.cutN or F.cutW) and sq:getWindow(north and NS or EW)
-    -- 開著、破了的窗圖照關著那張補屬性（IsoWindow.java:113-126），形狀讀得到
-    return win and win:getProperties():get("WindowShape") == s and not windowFrameOn(sq, north) or false
+    local win = sq:getWindow(north and NS or EW)
+    -- 開著、破了的窗圖照關著那張補屬性（IsoWindow.java:113-126），形狀讀得到。同一條邊另有同形狀的框（兩片牆飾疊著）時拆這片不懸空
+    return win and win:getProperties():get("WindowShape") == s and not windowFrameOn(sq, north)
+        and not shapedFrame(sq, north, s, o) or false
 end
--- o 是不是那條邊上全高窗的框（tallFrame 認的那種：帶 cut 旗標與 WindowShape、同一條邊的窗形狀相同、那條邊沒有窗框）。
--- 拆了窗會懸空，Dismantle.blocked 照 ATTACHED 擋
+-- o 是不是那條邊上全高窗最後一個框（tallFrame 認的那種：帶 cut 旗標與 WindowShape、不是牆角柱、同一條邊的窗形狀相同、
+-- 那條邊沒有窗框）。拆了窗會懸空，Dismantle.blocked 照 ATTACHED 擋
 function Place.framesWindow(o, sq)
     local p = not instanceof(o, "IsoWindow") and o:getProperties()
-    local s = p and p:get("WindowShape")
-    return s ~= nil and (framesOn(o, sq, true, s) or framesOn(o, sq, false, s))
+    local s = p and not p:has(F.WallSE) and p:get("WindowShape")
+    if not s then return false end
+    return (p:has(F.cutN) and framesOn(o, sq, true, s)) or (p:has(F.cutW) and framesOn(o, sq, false, s)) or false
 end
 
 -- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:397-408）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
@@ -360,10 +364,11 @@ local function rampExit(sq, north)
     end
     return false
 end
--- 要放的圖會不會擋那條邊：和 edgeBlocked 同三項，讀圖的屬性
+-- 要放的圖會不會擋那條邊：牆、窗（collideN／W、windowN／W）。門不算：門開著走得過，先放坡道再裝門可以（使用者裁定，
+-- builder-dev placement.md「門開著也擋（刻意）」）；放坡道時的 edgeBlocked 照 isSomethingTo 連門一起擋，門隨時可能被關上
 local function blocksEdge(p, north)
-    if north then return p:has(F.collideN) or p:has(F.windowN) or p:has(F.doorN) end
-    return p:has(F.collideW) or p:has(F.windowW) or p:has(F.doorW)
+    if north then return p:has(F.collideN) or p:has(F.windowN) end
+    return p:has(F.collideW) or p:has(F.windowW)
 end
 
 -- 坡道一片（Entry.cells；role＝platform 是坡頂上一層的平台，同樓梯的平台只要不實心）。比照樓梯：不在最高層、踩在地板上
@@ -1402,6 +1407,24 @@ function Place.keyed(obj)
     return false
 end
 
+-- 不是 IsoThumpable、有容器的本 MOD 物件（家電、原版放成一般物件的不擋路容器）：原版撿起只帶 movableData
+-- （ISMoveableSpriteProps.lua:1403-1404），放下照抄回去（:2423-2424），原版別處不讀它。記號放這裡，撿放幾次都認得出來補容量；
+-- 不放頂層（拆除照頂層記號認本 MOD 的）。表用合併，不蓋掉別的 MOD 的鍵。燈沒有容器，撿放後沒東西要補，不記
+local function markMovable(obj, id)
+    if instanceof(obj, "IsoThumpable") or obj:getContainerCount() == 0 then return end
+    local md = obj:getModData()
+    local m = type(md.movableData) == "table" and md.movableData or {}
+    if m.builderEntry ~= id then
+        m.builderEntry = id
+        md.movableData = m
+    end
+end
+-- 原版撿起再放下的本 MOD 物件的記號（頂層記號沒了的）：巢狀那份（不擋路的 IsoThumpable 第一次撿放，:2427-2436）或 movableData
+local function movedEntry(md)
+    local n, m = md.modData, md.movableData
+    return type(n) == "table" and n.builderEntry or type(m) == "table" and m.builderEntry or nil
+end
+
 -- 容器照地圖讀檔那樣在建好後補（CellLoader.java:341-342）：壁爐只在圖寫了 ContainerCapacity 時自己建（IsoFireplace.java:61-67），
 -- 壁爐、洗衣機、烘衣機的 addToWorld 不呼叫上一層，AddSpecialObject 不會替它們建（IsoClothingWasher.java:52-55）。已有容器時不重建
 local function newAppliance(c, cls)
@@ -1411,6 +1434,7 @@ local function newAppliance(c, cls)
     local p = c.spr:getProperties()
     if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = c.spr:getName()
+    markMovable(obj, c.spr:getName()) -- 原版撿起家電只帶 movableData（家電一律放成原版類別，:2246-2313）
     return obj
 end
 
@@ -1789,13 +1813,33 @@ Events.OnObjectAboutToBeRemoved.Add(function(obj) MinidoracatBuilder.Place.onAbo
 
 -- 原版撿起再放下是建新物件：容量、殭屍打不壞回到原版值，照目前沙盒值補回（同讀檔的 migrate；兩個都冪等，本 MOD 自己蓋的、
 -- 多人客戶端收到的再走一次不變）。記號：實心家具由原版寫回頂層（ISMoveableSpriteProps.lua:1335-1349）；不擋路的（牆櫃、
--- 桌上的）只剩巢狀那份（:2427-2436），只補容量、不提升成頂層（提升會讓拆除把原版放下的物件認成本 MOD 的）。
+-- 桌上的）第一次只剩巢狀那份（:2427-2436），家電與之後再撿放的只剩 movableData（:1403-1404、:2423-2424；markMovable 補上），
+-- 只補容量、不提升成頂層（提升會讓拆除把原版放下的物件認成本 MOD 的）。
 -- 伺服器的事件在 transmitCompleteItemToClients 之後才發，封包帶舊容量；客戶端靠自己的這支補（AddItemToMapPacket.java:94）
 function Place.onAdded(obj)
     if not (obj and obj:hasModData()) then return end
     local md = obj:getModData()
-    if md.builderEntry then Place.harden(obj) end
-    if md.builderEntry or (type(md.modData) == "table" and md.modData.builderEntry) then Place.fitContainers(obj) end
+    if md.builderEntry then
+        local was = instanceof(obj, "IsoThumpable") and obj:isThumpable()
+        Place.harden(obj)
+        local sq = obj:getSquare()
+        -- 原版先 setIsThumpable(true) 再 AddSpecialObject，尋路當下就讀了位元（IsoGridSquare.java:5835-5837、
+        -- PolygonalMap2.java:1687-1692）；setIsThumpable 只改欄位（IsoThumpable.java:1697-1699），要再推一次
+        if was and sq and not obj:isThumpable() then sq:setSquareChanged() end
+    end
+    local id = md.builderEntry or movedEntry(md)
+    if not id then return end
+    -- 撿放過的家電：原版照擋路與否再設 movedThumpable（ISMoveableSpriteProps.lua:2246-2313,2501-2504），在 AddSpecialObject
+    -- 之前、尋路當下就讀到（SquareUpdateTask.java:345-348），改了要再推。只有家電（Place.keyed 照類別認）有 harden 的分支；
+    -- 原版放成一般物件的擋路家具（69 張）這版不修（主代理 2026-11-21 裁定）
+    if not md.builderEntry and Place.keyed(obj) then
+        local was = obj:isMovedThumpable()
+        Place.harden(obj)
+        local sq = obj:getSquare()
+        if sq and was ~= obj:isMovedThumpable() then sq:setSquareChanged() end
+    end
+    Place.fitContainers(obj)
+    markMovable(obj, id)
 end
 Events.OnObjectAdded.Add(function(obj) MinidoracatBuilder.Place.onAdded(obj) end)
 
@@ -1903,6 +1947,11 @@ end
 
 function Place.migrate(obj)
     if not (obj:hasModData() and obj:getModData().builderEntry) then
+        -- 原版撿起再放下的（onAdded）：在特殊物件裡（原版放下用 AddSpecialObject，存檔記旗標，IsoGridSquare.java:2856,3147,3233），
+        -- 照目前的倍率補容量
+        local moved = obj:hasModData() and movedEntry(obj:getModData())
+        if moved and Place.keyed(obj) then Place.harden(obj) end -- 撿放過的家電（onAdded）；讀檔早於註冊尋路，不必重推
+        if moved then Place.fitContainers(obj) end
         -- 雙開門第 2、3 片開關過就換成沒記號、耐久照預設的新物件（IsoDoor.java:2738-2742）：照第一片認，讀檔時重套「殭屍敲不破門」
         -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）；同一場裡開關的由 Place.reharden 補
         if instanceof(obj, "IsoDoor") and Place.ourDoor(obj) then Place.harden(obj) end
@@ -1911,7 +1960,10 @@ function Place.migrate(obj)
     if Place.onLoaded then Place.onLoaded(obj) end -- 客戶端登記開關，房間重建後補切房間燈（Client.lua）
     Place.harden(obj)
     Place.fitContainers(obj)
-    if not instanceof(obj, "IsoThumpable") then return end
+    if not instanceof(obj, "IsoThumpable") then
+        markMovable(obj, obj:getModData().builderEntry) -- 舊存檔的家電（newAppliance 以前沒記）
+        return
+    end
     local md = obj:getModData()
     if obj:getName() == nil then obj:setName(md.builderEntry) end -- 0.3.0 以前蓋的沒有名稱（見 thumpable 的 setName）
     local sq = obj:getSquare()

@@ -190,6 +190,8 @@ function Cursor.pickState(entry, states, d)
     return 1
 end
 
+local cautionBroken = false -- Place.caution 丟過錯：印一次、之後不再問（同 Place.lua 的 basement）
+
 -- 各格的預覽：照順序每格 Check.item（朝向照錨點的第 4 欄，沒有用 d），可蓋的從摘要副本扣掉成本（Materials.take；替換的
 -- 格子扣要補的 info.pay 與耗材），所以前面的格子用掉的材料後面的格子拿不到，缺料的格子不扣、放開時跳過。S＝Materials.summary；
 -- 副本的 items、uses 讀穿到 S（S 是懶查表，不能用 pairs 複製），扣料只寫進副本。屋頂、地板可以靠同一排前面可蓋的撐著（伺服器
@@ -234,13 +236,18 @@ function Cursor.preview(player, name, d, anchors, S, ...)
             end
             -- 預覽提醒（Place.caution：全高窗的框不合、坡頂出口）只提醒不擋：丟錯時照樣可蓋。不放進 Check.item：
             -- 藍圖檢查與照圖蓋也帶 walk 呼叫它（PlanCheck、Runner），會每片多算一次
-            if info then
+            if info and not cautionBroken then
                 for _, c in ipairs(info.cells) do
-                    local okW, w = false, nil
-                    if c.sq then okW, w = pcall(B.Place.caution, info.entry.kind, c.spr, c.sq) end -- a and f() 只留一個回傳值
-                    if okW and w then
-                        info.warn = w
-                        break
+                    if c.sq then
+                        local okW, w = pcall(B.Place.caution, info.entry.kind, c.spr, c.sq)
+                        if not okW then
+                            cautionBroken = true
+                            print(LOG .. "caution failed, warnings off: " .. tostring(w))
+                            break
+                        elseif w then
+                            info.warn = w
+                            break
+                        end
                     end
                 end
             end

@@ -942,17 +942,23 @@ end
 
 -- 「搬」的那張放下或取消後回到原本的畫面（S.back，PM.pickUp 記）：規劃中搬的回規劃，工坊原本開著就重開；
 -- 定住時從藍圖面板搬的把面板開回來（面板一開工坊就收起，兩條互斥）。延後一個 tick：
--- dragCancel 是在 setDrag 的 deactivate 回呼裡被叫的，PM.toggle 自己也會 setDrag(nil)，當場回規劃會巢狀進 toggle
-local function resume()
-    local back, plan = S.back, S.plan
+-- dragCancel 是在 setDrag 的 deactivate 回呼裡被叫的，PM.toggle 自己也會 setDrag(nil)，當場回規劃會巢狀進 toggle。
+-- 玩家拿了別的游標（工坊的油漆、配方）也會走 dragCancel（IsoCell.setDrag 換游標先停用舊的，IsoCell.java:2558-2575）：
+-- 下一個 tick 手上有游標就不做，否則 toggle 會把它收掉或改成畫進藍圖。
+-- saved＝放下時存檔成功（取消的不存、內容同拿起前存好的那份，傳 true）：沒存成時回規劃後照樣算沒存
+local function resume(saved)
+    local back, plan, pn = S.back, S.plan, PM.playerNum or 0
     S.back = nil
     if not back then return end
     local function go()
         Events.OnTick.Remove(go)
-        if S.plan ~= plan or S.mode ~= "fixed" or S.drag then return end -- 這一 tick 之間換了張、收起、又拿起來：不做
+        -- 這一 tick 之間換了張、收起、又拿起來或拿了別的游標：不做
+        if S.plan ~= plan or S.mode ~= "fixed" or S.drag or getCell():getDrag(pn) then return end
         if back.panel then return openPanel() end
+        if not PM.toggle(pn) then return end
+        if not saved then S.savedRev = nil end -- toggle 把 savedRev 設成現在的 rev，PM.unsaved 會當成已存
         local W = B.Window
-        if PM.toggle(PM.playerNum or 0) and back.win and W and W.open then W.open(PM.playerNum or 0) end
+        if back.win and W and W.open then W.open(pn) end
     end
     Events.OnTick.Add(go)
 end
@@ -962,10 +968,10 @@ local function settle(ox, oy, oz)
     local plan = S.plan
     plan.ox, plan.oy, plan.oz = ox, oy, oz
     S.mode, S.home, S.prev = "fixed", nil, nil
-    persist()
+    local saved = persist()
     checkReset()
     fire()
-    resume()
+    resume(saved == true)
 end
 
 -- 搬、複製中按旋轉只轉預覽（另做一份片，位置照 Plan.turned），放下才照預覽改藍圖；取消時原片完全沒動
@@ -1018,7 +1024,12 @@ end
 function PM.dragRotate(o)
     if o.done or not S.plan then return end
     if o.kind == "place" then
-        if rotate(allPieces(S.plan)) then o.turns = (o.turns or 0) + 1 end
+        -- 轉是繞包圍盒的角（Plan.turned），長方形轉完中心會偏；滑鼠不動時 isValid 不會再叫 dragMoved，
+        -- 這裡照滑鼠那格（isValid 記的 kx、ky、kz）重新對齊，畫面和放下的位置才一致
+        if rotate(allPieces(S.plan)) then
+            o.turns = (o.turns or 0) + 1
+            if o.kx then PM.dragMoved(o, o.kx, o.ky, o.kz) end
+        end
     elseif (o.kind == "move" or o.kind == "copy") and #S.sel > 0 then
         o.preview = turnedCopy(o.preview or S.sel)
         o.turns = (o.turns or 0) + 1
@@ -1046,7 +1057,7 @@ function PM.dragCancel(o)
     end
     checkReset()
     fire()
-    resume()
+    resume(true)
 end
 
 local function dragClass()
@@ -1258,17 +1269,18 @@ function PM.pickUp(playerNum)
     local plan = S.plan
     if not plan or S.mode == "place" or not plan.ox then return false end
     local back
+    local W = B.Window
     if S.mode == "edit" then
         local ok, why = persist()
         if not ok then return false, why end
         -- 工坊開著，或剛被「藍圖」鈕收起（W.openPlans 開面板時關掉工坊、記 plansClosed；面板「搬」走到這裡時已看不到）
-        local W = B.Window
         back = { win = W ~= nil and W.visible ~= nil and (W.visible() or W.plansClosed == true) }
     else
         -- 定住時從藍圖面板搬：面板在 pickUp 成功後才關（PlanPanel 的 act("move")），這時還開著
         local Panel = B.PlanPanel
         if Panel and Panel.visible and Panel.visible() then back = { panel = true } end
     end
+    if W then W.plansClosed = nil end -- 記號只用這一次（面板、藍圖庫關掉時 PlanLibrary.plansGone 也清）
     local ok = beginPlace(plan, PM.playerNum, { ox = plan.ox, oy = plan.oy, oz = plan.oz })
     S.back = ok and back or nil
     return ok

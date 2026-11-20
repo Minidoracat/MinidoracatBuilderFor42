@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "Bu, açık, kırık veya camsız hâliyle bir pencere. Bunun yerine kapalı pencereyi ara.",
   "IGUI_MBLD_Why_PREFIX": "Ekinler, ağaçlar, çalılar, kar katmanları ve yanan lambaların ışık katmanları listelenmez. Ekinleri oyunun kendi tarımıyla yetiştir.",
   "IGUI_MBLD_Why_ENTITY": "%1 inşa tarifine ait ama şu an tarif listende yok: henüz öğrenilmedi, beceri seviyen bu aşamada değil (örneğin ahşap duvarlar Marangozluk seviyesine göre değişir) ya da bir yönetici türünü kapattı.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "%1 inşa tarifine ait. %2 bu tarifi kendi inşa menüsünde tutar, bu yüzden ne vanilla inşa penceresi ne de Build Anything onu listeler. %2 menüsünden inşa et.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "%1 inşa tarifine ait. %2 bu tarifi inşa menüsünden gizliyor, bu yüzden ne vanilla inşa penceresi ne de Build Anything onu listeler. %2 modunun kendi inşa menüsü varsa oradan inşa et.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Özel işlevi olan ve inşa tarifi bulunmayan nesneler listelenmez (örneğin kahve makineleri).",
   "IGUI_MBLD_Why_TREE": "Ağaçlar inşa edilemez.",
   "IGUI_MBLD_Why_PLANT": "Ağaçlar, çalılar ve özel işlevli nesneler (yakıt pompaları, jeneratörler, ev aletleri) listelenmez.",

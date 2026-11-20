@@ -321,11 +321,30 @@ function Recipes.size(r)
     return w, h, math.max(1, faces)
 end
 
--- 蓋好後的耐久：同原版建好時寫的 maxHealth（ISBuildIsoEntity.lua:666-677）。nil＝殭屍不打：腳本寫 isThumpable=false
--- （:904 → ISBuildUtil.lua:379 setIsThumpable），或 isProp 的照家具放、不走這段（:606-611）
+-- 成品沿用施工那件 IsoThumpable、也不改它耐久的 OnCreate（buildRecipeCode.lua 逐支讀過：只排物件順序、設可上灰泥、
+-- 清格上雜物或補樓梯頂的地板）。其他的（windowGlass 換成 IsoWindow :542-551、composter、campfire、barrelOven、
+-- butcheringHook、feedingTrough、barricade 這類，和別的 MOD 的回呼）成品不一定是它，不推算
+local KEEPS_THUMPABLE = {
+    ["BuildRecipeCode.fenceOrWall.OnCreate"] = true, -- :625-639
+    ["BuildRecipeCode.fenceOrWallCanBePlastered.OnCreate"] = true, -- :641-644
+    ["BuildRecipeCode.door.OnCreate"] = true, -- :646-658
+    ["BuildRecipeCode.doorFrame.OnCreate"] = true, -- :660-662
+    ["BuildRecipeCode.doorFrameCanBePlastered.OnCreate"] = true, -- :664-666
+    ["BuildRecipeCode.windowFrame.OnCreate"] = true, -- :668-670
+    ["BuildRecipeCode.windowFrameCanBePlastered.OnCreate"] = true, -- :672-674
+    ["BuildRecipeCode.canBePlastered.OnCreate"] = true, -- :220-223
+    ["BuildRecipeCode.floor.OnCreate"] = true, -- :372-437
+    ["BuildRecipeCode.stairs.OnCreate"] = true, -- :225-342
+}
+
+-- 蓋好後的耐久：同原版建好時寫的 maxHealth（ISBuildIsoEntity.lua:666-677）。nil＝不顯示：腳本寫 isThumpable=false
+-- （:904 → ISBuildUtil.lua:379 setIsThumpable）、isProp 的照家具放不走這段（:606-611），或 OnCreate（:749-752，
+-- SpriteConfigScript.getOnCreate 是腳本寫的函式全名）不在上表
 function Recipes.health(playerNum, r)
     local sc = r.info and r.info:getScript()
     if not sc or sc:isProp() or not sc:getIsThumpable() then return nil end
+    local onCreate = sc:getOnCreate()
+    if onCreate and not KEEPS_THUMPABLE[onCreate] then return nil end
     local m = getSandboxOptions():getOptionByName("ConstructionBonusPoints"):getValue()
     return math.max(sc:getHealth(), 0) + sc:getBonusHealth() * (({ 0.5, 0.7, 1, 1.3, 1.5 })[m] or 1)
         + r.recipe:getHighestRelevantSkillLevel(getSpecificPlayer(playerNum)) * sc:getSkillBaseHealth()
@@ -461,15 +480,17 @@ end
 
 -- ===== 取代前一排的提示（使用者 2026-10-29：配方拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格；ui.md 裁定。
 -- 2026-11-16 起圖塊項目再拖一排改成接在後面蓋（queue=append，Queue.lua），配方拖一排與拆除照舊清佇列、取消排著的）=====
--- 原版游標沒有本工具的標籤框，配方游標另外在滑鼠右下（手把：游標那格）畫一行同一句（IGUI_MBLD_Replace）。框只顯示、
--- 不收滑鼠（同 Cursor 的標籤框），放在滑鼠右下 (32, 10)，不會蓋在滑鼠底下（Cursor.mouseOverUI 才不會把它當成介面）
+-- 原版游標沒有本工具的標籤框，配方游標另外在滑鼠右下（手把：游標那格）畫同一句（IGUI_MBLD_Replace），上面先列預覽提醒
+-- （mbldWarn：坡頂出口、全高窗配不上框，同圖塊游標的 Cursor:texts）。框只顯示、不收滑鼠（同 Cursor 的標籤框），放在滑鼠右下
+-- (32, 10)，不會蓋在滑鼠底下（Cursor.mouseOverUI 才不會把它當成介面）
 local hints, HintPanel, hintColors = {}, nil, nil
 local function noClick() return false end
 
 local function hintRender(self)
     local o = getCell():getDrag(self.pn)
+    local warn = o and o.mbldRecipe and o.mbldWarn
     local text = o and o.mbldRecipe and o.mbldHint
-    if not text then return self:setVisible(false) end
+    if not (text or warn) then return self:setVisible(false) end
     local mx, my
     if JoypadState.players[self.pn + 1] then
         if not (o.xJoypad and o.zJoypad) then return end
@@ -478,7 +499,10 @@ local function hintRender(self)
         mx, my = getMouseX(), getMouseY()
     end
     local tm, font = getTextManager(), UIFont.Small
-    local w, h = tm:MeasureStringX(font, text) + 12, tm:getFontHeight(font) + 8
+    local fh, w = tm:getFontHeight(font), text and tm:MeasureStringX(font, text) or 0
+    if warn then for _, s in ipairs(warn) do w = math.max(w, tm:MeasureStringX(font, s)) end end
+    w = w + 12
+    local h = ((warn and #warn or 0) + (text and 1 or 0)) * fh + 8
     -- 同 Cursor 的標籤框：超出這位玩家的畫面（分割畫面時是自己那一塊；isoToScreenX 已加上那塊的左上角，
     -- LuaManager.isoToScreenX）右、下緣就翻到滑鼠另一邊，再夾在左、上緣內。最長的譯文約 62 個字，
     -- 小字型比四人分割的一塊（960 寬）窄，不換行
@@ -493,7 +517,14 @@ local function hintRender(self)
     local UI, c = MinidoracatUI.v1, hintColors
     UI.Skin.fill(self, 0, 0, w, h, c.surface, nil, 1)
     UI.Skin.border(self, 0, 0, w, h, c.border, nil, 1)
-    self:drawText(text, 6, 4, c.warning.r, c.warning.g, c.warning.b, 1, font)
+    local ty = 4
+    if warn then
+        for _, s in ipairs(warn) do
+            self:drawText(s, 6, ty, c.warning.r, c.warning.g, c.warning.b, 1, font)
+            ty = ty + fh
+        end
+    end
+    if text then self:drawText(text, 6, ty, c.warning.r, c.warning.g, c.warning.b, 1, font) end
 end
 
 local function hintPanel(pn)
@@ -519,12 +550,56 @@ local function hideHint(pn)
 end
 Recipes.hideHint = hideHint -- 游標的 deactivate 用（它寫在這段前面）
 
+-- 預覽提醒（Place.caution）：只提醒、不擋，伺服器不算。o 現在那一面放在 (x, y, z) 時，面上每一格有圖的都問；碼照出現順序
+-- 加進 list（同一種只加一次，list[碼]＝true 記著），回 list（沒有碼、list 又是 nil 時回 nil）。Place.caution 丟錯時印一次，
+-- 之後這場遊戲不再叫（照樣能放）
+local cautionOff = false
+local function cautions(o, x, y, z, list)
+    if cautionOff or not Entry.EDGE[o.mbldKind] then return list end
+    local face = o:getFace()
+    for yy = 0, face and face:getHeight() - 1 or -1 do
+        for xx = 0, face:getWidth() - 1 do
+            local t = face:getTileInfo(xx, yy, 0)
+            local name = t and t:getSpriteName()
+            local spr = name and Entry.sprite(name)
+            local sq = spr and getCell():getGridSquare(x + xx, y + yy, z)
+            if sq then
+                local ok, w = pcall(MinidoracatBuilder.Place.caution, o.mbldKind, spr, sq)
+                if not ok then
+                    cautionOff = true
+                    print(LOG .. "caution failed: " .. tostring(w))
+                    return list
+                end
+                if w then
+                    list = list or {}
+                    if not list[w] then list[w], list[#list + 1] = true, w end
+                end
+            end
+        end
+    end
+    return list
+end
+
+-- 單格游標的提醒：換格、換面或過半秒才重算（同 preview 的半秒；別人蓋了牆、坡道）。playerNum → { cursor, x, y, z, d, at, list }
+local warned = {}
+local function warnsAt(o, x, y, z)
+    if cautionOff or not Entry.EDGE[o.mbldKind] then return nil end
+    local c, t = warned[o.player], getTimestampMs()
+    if c and c.cursor == o and c.x == x and c.y == y and c.z == z and c.d == o.nSprite and t >= c.at and t - c.at < 500 then
+        return c.list
+    end
+    local list = cautions(o, x, y, z, nil)
+    warned[o.player] = { cursor = o, x = x, y = y, z = z, d = o.nSprite, at = t, list = list }
+    return list
+end
+
 -- 每幀（游標的 render 之後）：放下去會取消幾格。能拖的游標放下會清佇列（startRow）：拖的一排還沒蓋的、圖塊項目排隊中的
--- 都算；不能拖的照原版排在後面，只取消拖的一排還沒送的。字只在格數變了才換
-local function updateHint(o)
+-- 都算；不能拖的照原版排在後面，只取消拖的一排還沒送的。warn＝這次可放的格子的提醒碼（cautions；nil＝沒有）。
+-- 字只在格數或提醒變了才換（warn 在重算之間是同一張表）
+local function updateHint(o, warn)
     local pn = o.player
     local plan = planning()
-    -- 規劃開關換了：重算擋不擋（規劃不看材料）；規劃時放下不蓋、不取消什麼，不提示
+    -- 規劃開關換了：重算擋不擋（規劃不看材料）；規劃時放下不蓋、不取消什麼，不提示取消（提醒照樣寫：規劃的牆照圖蓋時一樣擋路）
     if plan ~= o.mbldPlan then gate(o, o.buildPanelLogic, o.character) end
     local n = 0
     if o.canBeBuild and not o.blockBuild and not plan then
@@ -535,7 +610,14 @@ local function updateHint(o)
         o.mbldHintN = n
         o.mbldHint = n > 0 and getText(n == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(n)) or nil
     end
-    if o.mbldHint then
+    if warn ~= o.mbldWarnOf then
+        o.mbldWarnOf, o.mbldWarn = warn, nil
+        if warn then
+            o.mbldWarn = {}
+            for i, w in ipairs(warn) do o.mbldWarn[i] = getText("IGUI_MBLD_Warn_" .. w) end
+        end
+    end
+    if o.mbldHint or o.mbldWarn then
         local h = hintPanel(pn)
         if not h:getIsVisible() then h:setVisible(true) end
     else
@@ -543,10 +625,10 @@ local function updateHint(o)
     end
 end
 
--- 不能拖的配方游標：原版的畫法，再更新提示
+-- 不能拖的配方游標：原版的畫法，再更新提示（canBeBuild 是 DoTileBuilding 在 render 前剛照這格算的，ISBuildingObject.lua:148）
 local function singleRender(self, x, y, z, square)
     ISBuildIsoEntity.render(self, x, y, z, square)
-    updateHint(self)
+    updateHint(self, self.canBeBuild and warnsAt(self, x, y, z) or nil)
 end
 
 -- ===== 拖一排（使用者 2026-11-12：配方項目也能拖一排；先在 9950X3D 實測，單機與專用伺服器都可行）=====
@@ -630,7 +712,7 @@ local function preview(o, ax, ay, az, ex, ey)
         d = d, max = o.mbldMax }, ax, ay, az, ex, ey)
     -- 規劃開著時不照材料扣（只照地形，gate）
     local left = (o.character:isBuildCheat() or o.mbldPlan) and math.huge or o.buildPanelLogic:getPossibleCraftCount(false)
-    local ok = 0
+    local ok, warn = 0, nil
     for _, a in ipairs(list) do
         if a[4] then
             face(o, a[4])
@@ -639,12 +721,13 @@ local function preview(o, ax, ay, az, ex, ey)
                 o:ensureSquaresExist(a[1], a[2], a[3])
                 local sq = getCell():getGridSquare(a[1], a[2], a[3])
                 a.ok = sq ~= nil and o:isValid(sq)
-                if a.ok then ok, left = ok + 1, left - 1 end
+                -- 可放的格子問預覽提醒（這時游標換在這格的面上，cautions 照它讀）
+                if a.ok then ok, left, warn = ok + 1, left - 1, cautions(o, a[1], a[2], a[3], warn) end
             end
         end
     end
     face(o, d)
-    v = { cursor = o, ax = ax, ay = ay, az = az, ex = ex, ey = ey, d = d, at = t, list = list, ok = ok }
+    v = { cursor = o, ax = ax, ay = ay, az = az, ex = ex, ey = ey, d = d, at = t, list = list, ok = ok, warn = warn }
     views[o.player] = v
     return v
 end
@@ -661,7 +744,7 @@ local function rowRender(self, x, y, z, square)
     if not held then self.lineX, self.lineY = nil, nil end
     if not (held and self.lineX and (self.lineX ~= x or self.lineY ~= y)) then
         ISBuildIsoEntity.render(self, x, y, z, square)
-        return updateHint(self)
+        return updateHint(self, self.canBeBuild and warnsAt(self, x, y, z) or nil)
     end
     local v = preview(self, x, y, z, self.lineX, self.lineY)
     local good, bad, floor = getCore():getGoodHighlitedColor(), getCore():getBadHighlitedColor(), self.tileSprite
@@ -675,7 +758,7 @@ local function rowRender(self, x, y, z, square)
         floor:RenderGhostTileColor(a[1], a[2], a[3], c:getR(), c:getG(), c:getB(), 0.8)
     end
     self.canBeBuild = v.ok > 0
-    updateHint(self)
+    updateHint(self, v.warn)
 end
 
 -- 那個 Java 動作是不是做完了（單機時間到 perform、多人伺服器回報完成）；還沒開始、拿不到都算沒有
@@ -914,6 +997,16 @@ function Recipes.tile(id, d)
     return tileOf(r.info, d)
 end
 
+-- 這個配方第 d 面佔幾格：寬, 深（從錨點那格往 +x、+y 數，同 tileOf 的 dx、dy）。PlanGhost 算擺放外框用；
+-- 沒有這個配方、沒有那一面回 nil
+function Recipes.span(id, d)
+    local r = Recipes.get(id)
+    local f = r and r.info and FACE_OF[d]
+    local face = f and r.info:getFace(f)
+    if not face then return nil end
+    return face:getWidth(), face:getHeight()
+end
+
 -- 這張圖是這個配方的哪一面（Capture）：回 面, 這張圖離錨點幾格 dx, dy。只認每一面第一格有圖的，多格的其他格回 nil，
 -- 一件只擷取一次
 function Recipes.faceOf(id, name)
@@ -940,11 +1033,27 @@ function Recipes.faces(id)
     return out
 end
 
+-- 原版配方門只查門框與有沒有門（ISBuildIsoEntity.lua:265-311）。這版起形狀 11、12 的全高窗能裝進雙開門框牆（Place.check
+-- 窗分支），門再放進去會和窗疊在同一條邊；圖塊門已照 Place.check 門分支擋。本 MOD 開的門配方游標實例另查那條邊有沒有窗：
+-- 原版 isValid 每格都叫 self:isValidPerSquare（:476），預覽與拖一排都經過它。只掛在實例上，不改原版類別；原版建造選單開的
+-- 游標不歸本 MOD 管，照舊放得進
+local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDirection.EAST_WEST
+local function doorPerSquare(self, square, tileInfo, ...)
+    if not ISBuildIsoEntity.isValidPerSquare(self, square, tileInfo, ...) then return false end
+    local name = tileInfo:getSpriteName()
+    local spr = name and Entry.sprite(name)
+    local t = spr and spr:getType()
+    if t ~= IsoObjectType.doorN and t ~= IsoObjectType.doorW then return true end
+    return square:getWindow(self.north and NS or EW) == nil
+end
+
 -- 原版的建造游標物件，同原版建造視窗（ISBuildPanel.lua:310-356）：帶自己的 BuildLogic，動作開始前要拿在手上的工具。
--- 放下後不清游標：原版 tryBuild 照 dragNilAfterPlace 會 setDrag(nil)（ISBuildingObject.lua:212-214）
+-- 放下後不清游標：原版 tryBuild 照 dragNilAfterPlace 會 setDrag(nil)（ISBuildingObject.lua:212-214）。
+-- mbldKind＝這個配方在目錄的種類（預覽提醒、拖一排用）
 local function isoCursor(player, r, L, containers)
     local o = ISBuildIsoEntity:new(player, r.info, 1, containers, L)
-    o.dragNilAfterPlace, o.blockAfterPlace, o.mbldR = false, false, r.id
+    o.dragNilAfterPlace, o.blockAfterPlace, o.mbldR, o.mbldKind = false, false, r.id, r.kind
+    if r.kind == "door" then o.isValidPerSquare = doorPerSquare end
     local inv, cr = player:getInventory(), r.recipe
     o.equipBothHandItem = toolOf(cr:getToolBoth(), inv)
     o.firstItem = toolOf(cr:getToolRight(), inv)
@@ -1019,7 +1128,7 @@ function Recipes.build(pn, id)
         local mode = not JoypadState.players[pn + 1] and Recipes.dragMode(r)
         o.blockAfterPlace = not mode
         if mode then
-            o.mbldRow, o.mbldKind = true, r.kind
+            o.mbldRow = true
             o.mbldMax = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
             -- 圍一圈：北、南兩邊用北面（nSprite 2），西、東兩邊用西面（1）；沒有那一面的邊照圖塊項目標 NO_FACE
             o.mbldSides = { n = r.info:getFace(0) and 2 or nil, w = r.info:getFace(1) and 1 or nil }

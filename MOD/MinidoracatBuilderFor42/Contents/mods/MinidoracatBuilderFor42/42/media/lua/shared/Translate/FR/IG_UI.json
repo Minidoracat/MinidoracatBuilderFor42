@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "C'est une fenêtre ouverte, cassée ou sans vitre. Cherchez plutôt la fenêtre fermée.",
   "IGUI_MBLD_Why_PREFIX": "Les cultures, les arbres, les buissons, les calques de neige et les calques de lueur des lampes allumées ne sont pas listés. Faites pousser les cultures avec l'agriculture vanilla.",
   "IGUI_MBLD_Why_ENTITY": "Elle fait partie de la recette de construction %1, absente de votre liste de recettes pour l'instant : pas encore apprise, pas votre palier de compétence (par exemple, les murs en bois changent avec le niveau de Menuiserie), ou un administrateur a désactivé son type.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Elle fait partie de la recette de construction %1. %2 range cette recette dans son propre menu de construction : ni la fenêtre de construction vanilla ni Build Anything ne la listent. Construisez-la depuis le menu de %2.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Elle fait partie de la recette de construction %1. %2 masque cette recette du menu de construction : ni la fenêtre de construction vanilla ni Build Anything ne la listent. Si %2 a son propre menu de construction, construisez-la depuis celui-ci.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Les objets à fonction spéciale sans recette de construction ne sont pas listés (par exemple, les cafetières).",
   "IGUI_MBLD_Why_TREE": "Les arbres ne peuvent pas être construits.",
   "IGUI_MBLD_Why_PLANT": "Les arbres, les buissons et les objets à fonction spéciale (pompes à essence, générateurs, électroménager) ne sont pas listés.",

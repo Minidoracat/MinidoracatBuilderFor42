@@ -360,7 +360,10 @@ function Panel.new(UI, pn)
     local plan = planOf()
     local win = UI.Window.new({ x = sx + math.floor((sw - w) / 2), y = sy + math.floor((sh - h) / 2), width = w, height = h,
         title = getText("IGUI_MBLD_Plan_Title", plan and plan.name or ""), icon = "folder", theme = theme, opaque = true,
-        onClose = function(wnd) UI.Dropdown.close(wnd) end })
+        onClose = function(wnd)
+            UI.Dropdown.close(wnd)
+            L.plansGone()
+        end })
     win.onEscape = function()
         win:close()
         return true
@@ -643,8 +646,10 @@ function Panel:act(what)
         return
     end
     if what == "library" then
+        -- 藍圖庫先開再關面板：關面板時兩個都不在才清工坊的記號（L.plansGone）
+        local opened = L.open(pn)
         P.close()
-        return L.open(pn)
+        return opened
     end
     if not PM then return L.tell(getText("IGUI_MBLD_Lib_NoPlanMode")) end
     if what == "move" and PM.pickUp then

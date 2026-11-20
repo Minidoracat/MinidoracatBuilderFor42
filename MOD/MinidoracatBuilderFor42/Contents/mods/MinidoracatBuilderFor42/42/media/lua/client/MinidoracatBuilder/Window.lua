@@ -1615,8 +1615,9 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     if e.kind == "window" and e.spr:getProperties():has("WindowLocked") then
         y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowLocked"), y, dw)
     end
-    -- 原版沒有窗框牆可配的全高窗：指出它的框是哪一種（Rules.TALL_WINDOW）
-    local frame = e.kind == "window" and B.Rules.TALL_WINDOW[p:get("WindowShape") or ""]
+    -- 原版沒有窗框牆可配的全高窗：指出它的框是哪一種（Rules.TALL_WINDOW）。牆型窗自己帶框，不寫（同 Place.caution）
+    local frame = e.kind == "window" and not B.Rules.framedWindow(e.spr:getType())
+        and B.Rules.TALL_WINDOW[p:get("WindowShape") or ""]
     if frame then y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowFrame_" .. frame), y, dw) end
     -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
@@ -3545,7 +3546,9 @@ end
 function W.onKeyPressed(key)
     if key == nil or key == 0 then return end
     local core = getCore()
-    if core:isKey(W.BIND, key) then W.toggle(0) end -- isKey 連修飾鍵、替代鍵一起比；沒綁時回 false（Core.java:2405-2408）
+    -- isKey 連修飾鍵、替代鍵一起比；沒綁時回 false（Core.java:2405-2408）。主選單、載入中也收得到按鍵（1.0.0 回報），那時
+    -- 沒有玩家：不開視窗（材料、技能、佇列都照 getSpecificPlayer(W.playerNum) 算）
+    if core:isKey(W.BIND, key) and getSpecificPlayer(0) then W.toggle(0) end
     -- 放置中的鍵只給玩家 0（鍵盤滑鼠；分割畫面的其他玩家用手把）。吸管鍵是按住的，由 Cursor:isValid 讀
     if not placing(0) then return end
     if core:isKey("MinidoracatBuilder_Overlap", key) then
@@ -3563,10 +3566,13 @@ if first then
     if PZAPI and PZAPI.ModOptions then
         local o = PZAPI.ModOptions:create("MinidoracatBuilderFor42", "UI_MinidoracatBuilder_Options")
         o:addTickBox("ShowDock", "UI_MinidoracatBuilder_ShowDock", true, "UI_MinidoracatBuilder_ShowDock_tooltip")
-        local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity", "UI_MinidoracatBuilder_Opacity_tooltip")
+        local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity")
         op:addItem("100%", true)
         op:addItem("75%", false)
         op:addItem("50%", false)
+        -- 原版選項頁的下拉不設 tooltip（只有勾選框設，MainOptions.lua:2809-2812,2910-2933），說明改寫在下拉下面。
+        -- 說明沒有 id、getValue，存檔與備份都跳過（PZAPI/ModOptions.lua:263；MinidoracatUI ModOptionsBackup.lua:133,180）
+        o:addDescription("UI_MinidoracatBuilder_Opacity_tooltip")
         o.apply = function() MinidoracatBuilder.Window.applyOptions() end
         W.options = o
         -- 框架 rev 23 備份：載入時、原版讀設定之前呼叫（UI AGENTS 契約 7；QU/Entry.lua:59-66）

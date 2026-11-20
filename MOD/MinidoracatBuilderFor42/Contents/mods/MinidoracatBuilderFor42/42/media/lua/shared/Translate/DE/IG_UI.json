@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "Das ist ein Fenster in offenem, zerbrochenem oder glaslosem Zustand. Such stattdessen das geschlossene Fenster.",
   "IGUI_MBLD_Why_PREFIX": "Feldfrüchte, Bäume, Büsche, Schnee-Overlays und die Leucht-Overlays eingeschalteter Lampen werden nicht gelistet. Feldfrüchte baust du mit dem Vanilla-Ackerbau an.",
   "IGUI_MBLD_Why_ENTITY": "Gehört zum Baurezept %1, das gerade nicht in deiner Rezeptliste steht: noch nicht gelernt, nicht deine Fähigkeitsstufe (Holzwände wechseln zum Beispiel mit der Tischlerei-Stufe) oder ein Admin hat seine Art abgeschaltet.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Gehört zum Baurezept %1. %2 führt dieses Rezept in seinem eigenen Baumenü, daher listen es weder das Vanilla-Baufenster noch Build Anything. Bau es über das Menü von %2.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Gehört zum Baurezept %1. %2 blendet dieses Rezept im Baumenü aus, daher listen es weder das Vanilla-Baufenster noch Build Anything. Falls %2 ein eigenes Baumenü hat, bau es dort.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Objekte mit Sonderfunktion und ohne Baurezept werden nicht gelistet (zum Beispiel Kaffeemaschinen).",
   "IGUI_MBLD_Why_TREE": "Bäume können nicht gebaut werden.",
   "IGUI_MBLD_Why_PLANT": "Bäume, Büsche und Objekte mit Sonderfunktionen (Zapfsäulen, Generatoren, Haushaltsgeräte) werden nicht gelistet.",

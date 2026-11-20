@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "Esta é uma janela aberta, quebrada ou sem vidro. Procure a janela fechada.",
   "IGUI_MBLD_Why_PREFIX": "Plantações, árvores, arbustos, camadas de neve e as camadas de brilho das luzes acesas não são listadas. Cultive as plantações com a agricultura do vanilla.",
   "IGUI_MBLD_Why_ENTITY": "Pertence à receita de construção %1, que agora não está na sua lista de receitas: ainda não foi aprendida, não é o seu nível de habilidade (por exemplo, as paredes de madeira mudam com o nível de Carpintaria) ou um administrador desativou o tipo dela.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Pertence à receita de construção %1. %2 mantém esta receita no próprio menu de construção, então nem a janela de construção vanilla nem o Build Anything a listam. Construa pelo menu de %2.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Pertence à receita de construção %1. %2 oculta esta receita do menu de construção, então nem a janela de construção vanilla nem o Build Anything a listam. Se %2 tiver o próprio menu de construção, construa por lá.",
   "IGUI_MBLD_Why_ENTITY_NONE": "Objetos com funções especiais e sem receita de construção não são listados (por exemplo, cafeteiras).",
   "IGUI_MBLD_Why_TREE": "Árvores não podem ser construídas.",
   "IGUI_MBLD_Why_PLANT": "Árvores, arbustos e objetos com funções especiais (bombas de combustível, geradores, eletrodomésticos) não são listados.",

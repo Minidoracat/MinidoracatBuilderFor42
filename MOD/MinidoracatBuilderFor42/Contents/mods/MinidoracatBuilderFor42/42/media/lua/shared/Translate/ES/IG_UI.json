@@ -764,7 +764,7 @@
   "IGUI_MBLD_Why_WINDOW_STATE": "Es una ventana abierta, rota o sin vidrio. Busca la ventana cerrada.",
   "IGUI_MBLD_Why_PREFIX": "No se muestran cultivos, árboles, arbustos, capas de nieve ni las capas de brillo de las luces encendidas. Para tener cultivos, usa la agricultura del juego original.",
   "IGUI_MBLD_Why_ENTITY": "Pertenece a la receta de construcción %1, que ahora no está en tu lista de recetas: todavía no se ha aprendido, no corresponde a tu nivel de habilidad (por ejemplo, las paredes de madera cambian con el nivel de Carpintería) o un administrador desactivó su tipo.",
-  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Pertenece a la receta de construcción %1. %2 guarda esta receta en su propio menú de construcción, así que no aparece ni en la ventana de construcción del juego original ni en Build Anything. Constrúyela desde el menú de %2.",
+  "IGUI_MBLD_Why_ENTITY_HIDDEN": "Pertenece a la receta de construcción %1. %2 oculta esta receta del menú de construcción, así que no aparece ni en la ventana de construcción del juego original ni en Build Anything. Si %2 tiene su propio menú de construcción, constrúyela desde allí.",
   "IGUI_MBLD_Why_ENTITY_NONE": "No se muestran objetos con funciones especiales que no tienen receta de construcción (por ejemplo, cafeteras).",
   "IGUI_MBLD_Why_TREE": "Los árboles no se pueden construir.",
   "IGUI_MBLD_Why_PLANT": "No se muestran árboles, arbustos ni objetos con funciones especiales (surtidores de combustible, generadores, electrodomésticos).",
