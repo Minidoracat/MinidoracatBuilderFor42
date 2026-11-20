@@ -1411,7 +1411,9 @@ end
 
 -- 不是 IsoThumpable、有容器的本 MOD 物件（家電、原版放成一般物件的不擋路容器）：原版撿起只帶 movableData
 -- （ISMoveableSpriteProps.lua:1403-1404），放下照抄回去（:2423-2424），原版別處不讀它。記號放這裡，撿放幾次都認得出來補容量；
--- 不放頂層（拆除照頂層記號認本 MOD 的）。表用合併，不蓋掉別的 MOD 的鍵。燈沒有容器，撿放後沒東西要補，不記
+-- 不放頂層（拆除照頂層記號認本 MOD 的）。表用合併，不蓋掉別的 MOD 的鍵。燈沒有容器，撿放後沒東西要補，不記。
+-- 回傳 true＝剛發了序號：物件已經送給客戶端的話，伺服器要 transmitModData。客戶端替容器改名時送回它那份完整的 modData，
+-- 伺服器整份換掉（ReceiveContainerModDataPacket.java:47-50）；客戶端那份沒有序號，伺服器的就被洗掉，下次撿放不記名字
 local function markMovable(obj, id)
     if instanceof(obj, "IsoThumpable") or obj:getContainerCount() == 0 then return end
     local md = obj:getModData()
@@ -1419,10 +1421,10 @@ local function markMovable(obj, id)
     if m.builderEntry == id and (m.builderUid or isClient()) then return end
     m.builderEntry = id
     -- 序號：撿走時照它記下容器的名字（carried）。客戶端不發，等伺服器的
-    if not isClient() then
-        m.builderUid = m.builderUid or string.format("%d-%d", ZombRand(1000000000), ZombRand(1000000000))
-    end
+    local fresh = not isClient() and not m.builderUid
+    if fresh then m.builderUid = string.format("%d-%d", ZombRand(1000000000), ZombRand(1000000000)) end
     md.movableData = m
+    return fresh
 end
 -- 原版放下時，物品帶 movableData 就不抄它的其他鍵；容器的自訂名稱（<種類>_customContainerName，ItemContainer.java:3832-3840）
 -- 只在物件已有容器時補抄，而容器晚一步才建（ISMoveableSpriteProps.lua:2423-2447,2486）：帶記號的容器撿放會掉名字。
@@ -1865,14 +1867,15 @@ function Place.onAdded(obj)
         if sq and was ~= obj:isMovedThumpable() then sq:setSquareChanged() end
     end
     Place.fitContainers(obj)
+    local send = markMovable(obj, id)
     local m = md.movableData
     local names = type(m) == "table" and m.builderUid and carried[m.builderUid]
     if names then -- 撿走時記下的容器名字（carried）
         carried[m.builderUid] = nil
         for k, v in pairs(names) do md[k] = v end
-        if isServer() then obj:transmitModData() end
+        send = true
     end
-    markMovable(obj, id)
+    if send and isServer() then obj:transmitModData() end -- 物件封包已經送出（上面），序號與名字另外送
 end
 Events.OnObjectAdded.Add(function(obj) MinidoracatBuilder.Place.onAdded(obj) end)
 
@@ -1986,7 +1989,8 @@ function Place.migrate(obj)
         if moved and Place.keyed(obj) then Place.harden(obj) end -- 撿放過的家電（onAdded）；讀檔早於註冊尋路，不必重推
         if moved then
             Place.fitContainers(obj)
-            markMovable(obj, moved) -- 舊版撿放過的只有巢狀記號：補上，再撿放才認得
+            -- 舊版撿放過的只有巢狀記號：補上，再撿放才認得。客戶端可能已經拿到沒有序號的這一格，所以送一次
+            if markMovable(obj, moved) and isServer() then obj:transmitModData() end
         end
         -- 雙開門第 2、3 片開關過就換成沒記號、耐久照預設的新物件（IsoDoor.java:2738-2742）：照第一片認，讀檔時重套「殭屍敲不破門」
         -- （第一片那格還沒載入時這次漏掉，下次讀檔再補）；同一場裡開關的由 Place.reharden 補
@@ -1997,7 +2001,8 @@ function Place.migrate(obj)
     Place.harden(obj)
     Place.fitContainers(obj)
     if not instanceof(obj, "IsoThumpable") then
-        markMovable(obj, obj:getModData().builderEntry) -- 舊存檔的家電（newAppliance 以前沒記）
+        -- 舊存檔的家電（newAppliance 以前沒記）
+        if markMovable(obj, obj:getModData().builderEntry) and isServer() then obj:transmitModData() end
         return
     end
     local md = obj:getModData()

@@ -5597,6 +5597,17 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         function x:isCorner() return false end
         function x:getName() return self.name end
         function x:setName(v) self.name = v end
+        -- 伺服器送 modData（IsoObject.transmitModData）：記次數，客戶端那份換成當下的深複製（clientMd；物件封包那份由情境自己設）
+        x.sent = 0
+        function x:transmitModData()
+            local function dup(t)
+                local r = {}
+                for k, v in pairs(t) do r[k] = type(v) == "table" and dup(v) or v end
+                return r
+            end
+            self.sent = self.sent + 1
+            self.clientMd = dup(self.md)
+        end
         return x
     end
     local function load(list) for _, o in ipairs(list) do Place.migrate(o) end end
@@ -5924,7 +5935,6 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         -- 容器名稱照引擎存在物件的 modData 頂層（ItemContainer.getCustomName 讀它，ItemContainer.java:3832-3840）
         local function withNames(g)
             g.sent = 0
-            function g:transmitModData() self.sent = self.sent + 1 end
             for _, b in ipairs(g.boxes) do
                 function b:getCustomName() return g.md[self.t .. "_customContainerName"] end
             end
@@ -5989,6 +5999,66 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         check(o1.md.movableData.builderUid ~= nil and o2.md.movableData.builderUid ~= nil
             and o1.md.movableData.builderUid ~= o2.md.movableData.builderUid,
             "上一版撿放過的（movableData 只有記號、沒有序號）：放下或讀檔時補上序號，之後撿放名字才帶得走")
+
+        -- 2026-11-21 實機 E2E（多人）：伺服器在 onAdded／migrate 才發序號時物件封包已經送出，要另外 transmitModData；
+        -- 客戶端改名時送回它那份完整的 modData，伺服器整份換掉（ReceiveContainerModDataPacket.java:47-50）
+        ;(function()
+            local function dup(t)
+                local r = {}
+                for k, v in pairs(t) do r[k] = type(v) == "table" and dup(v) or v end
+                return r
+            end
+            local function added(g) -- 伺服器放下：物件封包（客戶端那份）先送，之後才發 OnObjectAdded（AddItemToMapPacket.java:94）
+                g.clientMd = dup(g.md)
+                fire("OnObjectAdded", g)
+                return g
+            end
+            mode(false, true)
+            local s = added(withNames(gen({ modData = { builderEntry = "zp_crate_01_0" } })))
+            local s1 = s.sent
+            fire("OnObjectAdded", s)
+            local fridge = loaded("IsoStove", fridgeS, { boxes = { box("fridge", 40) } }) -- newAppliance 建的：送出前已有序號
+            fridge.md.movableData = { builderEntry = "zp_fridge_01_0", builderUid = "7-7" }
+            added(fridge)
+            check(s.md.movableData.builderUid ~= nil and s1 == 1 and s.sent == 1 and fridge.sent == 0,
+                "伺服器放下只有巢狀記號的牆櫃：發序號、送 modData 一次，再走一次不再送；本工具新蓋的家電（送出前已有序號）不送")
+
+            -- 實機那條路：蓋的牆櫃原版搬一次 → 客戶端改名 → 再搬一次，名字要在
+            local g = added(withNames(gen({ modData = { builderEntry = "zp_crate_01_0" } })))
+            local renamed = dup(g.clientMd)
+            renamed.crate_customContainerName = "廚房"
+            g.md = renamed -- 伺服器收到改名：modData 整份換成客戶端那份
+            Place.onAboutToBeRemoved(g)
+            local n = withNames(carry(g))
+            added(n)
+            local again = withNames(carry(g))
+            added(again)
+            check(n.md.crate_customContainerName == "廚房" and n.sent == 1 and n.clientMd.crate_customContainerName == "廚房"
+                and again.md.crate_customContainerName == nil,
+                "多人：牆櫃搬一次、客戶端改名、再搬一次：名字還在、送給客戶端一次（不是兩次）；同一筆名字只還原一次")
+
+            -- 讀檔補序號（migrate）：伺服器新發的送一次、第二次不送；客戶端不發序號不送；單機發了也不送
+            local function both(client, server)
+                mode(client, server)
+                local shelf = withNames(gen({ modData = { builderEntry = "zp_crate_01_0" } }))
+                local old = loaded("IsoStove", fridgeS, { boxes = { box("fridge", 40) } })
+                local r = {}
+                for i = 1, 2 do
+                    Place.migrate(shelf)
+                    Place.migrate(old)
+                    r[i] = { shelf.sent, old.sent }
+                end
+                return r, shelf.md.movableData and shelf.md.movableData.builderUid, old.md.movableData and old.md.movableData.builderUid
+            end
+            local sv, svA, svB = both(false, true)
+            local cl, clA, clB = both(true, false)
+            local sp, spA, spB = both(false, false)
+            check(svA and svB and sv[1][1] == 1 and sv[1][2] == 1 and sv[2][1] == 1 and sv[2][2] == 1,
+                "伺服器讀檔：只有巢狀記號的牆櫃、舊存檔的家電補上序號各送一次，再讀一次不再送")
+            check(clA == nil and clB == nil and cl[2][1] == 0 and cl[2][2] == 0 and spA and spB and sp[2][1] == 0 and sp[2][2] == 0,
+                "讀檔補序號：客戶端不發序號、不送；單機發序號但不送")
+            mode(false, false)
+        end)()
         ZombRand, isClient, isServer = realRand, realClient, realServer
     end
     sb.ZombieProof, sb.ContainerCapacityMultiplier = nil, nil
