@@ -33,9 +33,10 @@ function getTimestampMs()
 end
 function isClient() return false end
 function isServer() return true end
--- 引擎 Translator.getText 回傳前一律 text.formatted(args)（Translator.java:509-531）；開發模式（Core.IS_DEV）遇到不合法的 %
--- 丟 IllegalFormatException（例 "100%"），一般模式才吞掉。查不到翻譯時 text 就是傳進來的字串（:497），翻譯檔的 %1 讀檔時已
--- 換成 %1$s（formatFixer）。假翻譯回 key，所以照 Java 格式規則查傳進來的字串，模擬開發模式。
+-- 引擎 Translator.getText 回傳前一律 text.formatted(args)（Translator.java:509-531）。格式不合法（例 "100%"）時先印錯誤，
+-- 訊息帶著傳進來的字串、又被拿去套格式（DebugType.java:318-320、DebugLogStream.java:409-413），所以傳進來的字串有不成對
+-- 的 % 就丟例外，不分開發模式。查不到翻譯時 text 就是傳進來的字串（:497），翻譯檔的 %1 讀檔時已換成 %1$s（formatFixer）。
+-- 假翻譯回 key，所以照 Java 格式規則查傳進來的字串。
 -- 情境換掉 getText 時也要查：getText 不放進 _G，指派與讀取都經過 _G 的 metatable，讀到的是外面包一層檢查的版本
 do
     local function javaFormatOk(s)

@@ -3567,8 +3567,9 @@ if first then
         local o = PZAPI.ModOptions:create("MinidoracatBuilderFor42", "UI_MinidoracatBuilder_Options")
         o:addTickBox("ShowDock", "UI_MinidoracatBuilder_ShowDock", true, "UI_MinidoracatBuilder_ShowDock_tooltip")
         local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity")
-        -- addItem 會 getText，getText 對回傳的字做 formatted：字面的 "100%" 在開發模式丟錯、整個檔停在這裡
-        -- （PZAPI/ModOptions.lua:132；Translator.java:509-531）。所以選項用自己的翻譯 key，值寫成兩個百分號（"100%%"）
+        -- addItem 會 getText，getText 對回傳的字做 formatted；字面的 "100%" 格式不合法，引擎印錯誤時又把帶著這個字的訊息
+        -- 拿去套格式，例外直接丟出來、整個檔停在這裡，不分開發模式（PZAPI/ModOptions.lua:132；Translator.java:509-531；
+        -- DebugType.java:318-320）。所以選項用自己的翻譯 key，值寫成兩個百分號（"100%%"）
         op:addItem("UI_MinidoracatBuilder_Opacity_100", true)
         op:addItem("UI_MinidoracatBuilder_Opacity_75", false)
         op:addItem("UI_MinidoracatBuilder_Opacity_50", false)
