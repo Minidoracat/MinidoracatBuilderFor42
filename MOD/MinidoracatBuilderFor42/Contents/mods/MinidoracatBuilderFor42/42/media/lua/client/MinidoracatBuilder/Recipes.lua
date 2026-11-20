@@ -425,9 +425,11 @@ local function deactivate(self)
     if not ok then print(LOG .. "onEnd failed: " .. tostring(err)) end
 end
 
--- 這位玩家目前的配方游標（本 MOD 開的；別的 MOD 或原版視窗開的回 nil）
+-- 這位玩家目前的配方游標（本 MOD 開的；別的 MOD 或原版視窗開的回 nil）。主選單、載入中沒有世界（getCell() 是 nil），
+-- 按鍵與放開右鍵的事件照樣進來
 function Recipes.cursor(pn)
-    local d = getCell():getDrag(pn)
+    local cell = getCell()
+    local d = cell and cell:getDrag(pn)
     if d and d.mbldRecipe then return d end
     return nil
 end

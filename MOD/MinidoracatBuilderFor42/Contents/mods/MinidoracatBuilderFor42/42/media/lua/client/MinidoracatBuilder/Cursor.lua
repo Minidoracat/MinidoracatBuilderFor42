@@ -1257,7 +1257,8 @@ function Cursor.onRightMouseUp()
     local R, PM = B.Recipes, B.PlanMode
     if not (Cursor.get(0) or (R and R.cursor(0)) or (PM and PM.drag and PM.drag(0))) then return end
     if ISObjectClickHandler then ISObjectClickHandler.rdownObject = nil end
-    getCell():setDrag(nil, 0)
+    local cell = getCell() -- 沒有世界時（主選單）不取值
+    if cell then cell:setDrag(nil, 0) end
 end
 if not Cursor.rightHooked then
     Cursor.rightHooked = true

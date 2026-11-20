@@ -17268,6 +17268,16 @@ end)()
         R.manual(K)
         check(other ~= "paused" and (R.reason()) == "MANUAL", "另一位玩家動手不算；同一位玩家動手才暫停")
 
+        -- 主選單、載入中沒有世界（getCell() 是 nil）：按鍵與放開右鍵的事件照樣進來，不丟錯
+        -- （1.0.0 回報：主選單每按一鍵跳一次 getDrag of non-table）
+        local cellNow, coreNow = getCell, getCore
+        getCell = function() return nil end
+        getCore = function() return { isKey = function() return false end } end
+        local okCur, noCur = pcall(RC.cursor, 0)
+        local okKey, okRight = pcall(B.Window.onKeyPressed, 15), pcall(B.Cursor.onRightMouseUp)
+        check(okCur and noCur == nil and okKey and okRight, "沒有世界時：查配方游標回 nil，按鍵、放開右鍵不丟錯")
+        getCell, getCore = cellNow, coreNow
+
         -- 收尾：游標放掉、讓 Recipes 的追蹤（OnTick）自己收掉
         drag = {}
         for i = #handlers.OnTick, nTick0 + 1, -1 do pcall(handlers.OnTick[i]) end
