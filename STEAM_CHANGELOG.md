@@ -9,6 +9,12 @@
 [*] Garage doors (drag for the width) and double doors, built and dismantled as one set.
 [*] Walls, fences, frames, doors and windows rotate to all four edges of a tile, and long drags build in batches.
 [*] A collapsible quick pick bar while placing, new placing keys and Undo last build.
+[*] Fixed: pressing a key or releasing the right mouse button at the main menu or loading screen no longer throws errors (since 1.0.0).
+[*] Fixed: containers you pick up and put down keep the "Container capacity multiplier", and boxes and appliances stay protected by "Zombies can't break builds". Ones you moved before are restored when you load in.
+[*] Full-height windows can be installed: place the "full opening" wall overlay from the same set on that edge first; the two extra-wide ones go into a double-door frame wall. No curtains on them yet.
+[*] Blueprints: placing one draws an outline around the whole plan, ghosts keep their tile colours (the floor frame shows the status), and moving a plan brings you back to planning and the Build Anything window.
+[*] New "Window opacity" setting under Options > Mods > Build Anything (100%, 75%, 50%), and a Durability line in the details panel.
+[*] New cursor warnings: a window that doesn't match its frame, and a wall or window that would block the top of a ramp. Server and players need to update together.
 [/list]
 
 [h3]✨ 新增[/h3]
@@ -39,3 +45,5 @@
 [*] [b]搜完整圖塊名稱[/b]：以前頁籤、分類、來源停在原本的；現在都顯示「全部」，清掉搜尋字就換回。
 [*] [b]圍好的房子偶爾不算室內[/b]：以前蓋好的牆或地板偶爾沒被遊戲記全，房子不算室內、外牆畫成黑色；現在蓋好、拆掉後會再通知遊戲一次，遇到的機會低很多。
 [/list]
+
+[b]伺服器管理員[/b]：這版伺服器與玩家要一起更新，版本不同時伺服器會拒絕放置並提示更新。
