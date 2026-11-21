@@ -1,14 +1,8 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-1.0.0[/h1]
-[i]2026-11-19[/i]
+[h1]Minidoracat Build Anything for B42 42.22.2-1.1.0[/h1]
+[i]2026-11-21[/i]
 
 [b]English summary[/b]
 [list]
-[*] Blueprints: plan a build as a ghost (Cancel drops changes you don't want), keep it in your library under its own name, share it by code or capture an existing building, then let your character build it piece by piece, fetching materials from supply boxes you pick.
-[*] Roof helper: pick a sloped roof, drag over the house, and the whole roof (gable, hip or shed; 45-degree sets also flat) is added to the blueprint at once.
-[*] Ramps: a 20-tile ramp that rises one level, placed as one set; people and vehicles can use it.
-[*] Garage doors (drag for the width) and double doors, built and dismantled as one set.
-[*] Walls, fences, frames, doors and windows rotate to all four edges of a tile, and long drags build in batches.
-[*] A collapsible quick pick bar while placing, new placing keys and Undo last build.
 [*] Fixed: pressing a key or releasing the right mouse button at the main menu or loading screen no longer throws errors (since 1.0.0).
 [*] Fixed: containers you pick up and put down keep the "Container capacity multiplier", and boxes and appliances stay protected by "Zombies can't break builds". Ones you moved before are restored when you load in.
 [*] Full-height windows can be installed: place the "full opening" wall overlay from the same set on that edge first; the two extra-wide ones go into a double-door frame wall. No curtains on them yet.
@@ -19,31 +13,26 @@
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]藍圖[/b]：按「規劃」先在地上畫好虛影，不扣料，改壞了按「取消」回到上次存的樣子；能存進藍圖庫（檔名就是藍圖名稱）、用分享碼傳給朋友，也能框選現成房子存成藍圖。
-[*] [b]照圖蓋[/b]：角色照著藍圖一片片自己蓋，缺料時去你點名的材料箱拿。
-[*] [b]屋頂助手[/b]：選一款斜屋頂，拖出房子的範圍，整片屋頂連底下的天花板一次排進藍圖。
-[*] [b]坡道[/b]：一整組 20 格長、升一層，人和車都上得去。
-[*] [b]車庫門與雙開門[/b]：車庫門拖多寬就多寬，整組一起蓋、一起拆。
-[*] [b]快選列[/b]：放置時畫面下方列出最近用的與同一套，點一下就換；點標題列可以收起。
-[*] [b]放置中的新按鍵[/b]：吸管、切換疊放、換成最近用的下一項、拆掉剛蓋的（Ctrl＋Z）。
-[*] [b]子種類[/b]：牆、地板、門、窗、屋頂、門框、窗框在左邊多分一層。
+[*] [b]能裝全高窗（落地窗）[/b]：以前放不上去。現在先把同一套裡「整片開口」的那張牆面疊圖放在那條邊，就能裝窗；比門還寬的兩款裝進雙開門的門框牆。詳情會寫要先放哪一種。全高窗還掛不上窗簾。
+[*] [b]放置時的兩種提醒[/b]（只提醒、照樣能蓋）：窗的形狀和框不合時，提醒「蓋好會露出後面的牆」；在坡道頂端出口那條邊蓋牆或窗時，提醒「會讓人走不上去」。
+[*] [b]詳情多一行耐久[/b]：選牆、柵欄、家具、門、窗或建造配方時，寫出蓋好後的耐久；伺服器設成殭屍打不壞時會註明。
+[*] [b]視窗可以調不透明度[/b]：「選項 > 模組 > 自由建造」多了「視窗不透明度」，有 100%、75%、50% 三檔。只有背景變淡，文字和圖示不變。
+[*] [b]擺放藍圖時畫出整張的外框[/b]：片數多的藍圖以前只看得到滑鼠附近的片；現在多一圈外框標出整張的範圍，按旋轉會跟著轉。
 [/list]
 
 [h3]🔄 變更[/h3]
 [list]
-[*] [b]轉到四條邊[/b]：以前牆、柵欄只能在兩面之間換，門窗不能轉；現在按 R 依序轉到格子的四條邊。
-[*] [b]拖太長會分批[/b]：以前超過「一次最多幾項」的格子不蓋；現在自動分批接著蓋。
-[*] [b]二樓以上的牆[/b]：以前一定要先鋪地板；現在疊在下面的牆上、或立在屋頂片旁邊（山牆）也能蓋。
-[*] [b]往上一層接的屋頂[/b]：以前靠斜下方屋頂撐著的片蓋不起來；現在照順序蓋得起來。
-[*] [b]門的鉸鏈與門把[/b]：以前有些門少收；現在每扇至少收 2 個鉸鏈、1 個門把，和打壞時掉的一樣多。
-[*] [b]右鍵取消[/b]：以前放置中按右鍵取消會跳出原版選單；現在不會。
+[*] [b]藍圖的虛影改用圖塊原本的顏色[/b]：以前整片染成淡紫、黃或紅，看不出是哪一款；現在圖塊照原色畫，能蓋、缺料、蓋不了改看腳下那一格的框。
+[*] [b]搬藍圖後回到原本的畫面[/b]：規劃中搬藍圖，放下或按右鍵取消後自動回到規劃，建造工坊視窗也會重新打開。
+[*] [b]被其他 MOD 收起來的建造配方[/b]：搜尋完整圖塊名稱時，說明會寫出是哪個配方、被哪個 MOD 隱藏（例如 Neat Building 的牆面變體），請到那個 MOD 自己的建造介面蓋。
 [/list]
 
 [h3]🔧 修正[/h3]
 [list]
-[*] [b]建造配方的來源[/b]：以前裝了其他 MOD 時全部顯示成同一個 MOD；現在照定義那個配方的 MOD 顯示。
-[*] [b]搜完整圖塊名稱[/b]：以前頁籤、分類、來源停在原本的；現在都顯示「全部」，清掉搜尋字就換回。
-[*] [b]圍好的房子偶爾不算室內[/b]：以前蓋好的牆或地板偶爾沒被遊戲記全，房子不算室內、外牆畫成黑色；現在蓋好、拆掉後會再通知遊戲一次，遇到的機會低很多。
+[*] [b]主選單或載入畫面按鍵會跳出錯誤[/b]（1.0.0 起）：還沒進遊戲時按到快捷鍵或放開右鍵，右下角會跳紅色的錯誤數字；現在不會。
+[*] [b]容器搬過後容量倍率失效[/b]（0.3.0 起）：用原版的「拿起」把容器搬走再放下，容量會回到原版值；現在放下當下就照伺服器的倍率，以前搬過的更新後進遊戲會補回來。整組當成一件物品搬的多格容器（少數幾款）還沒修。
+[*] [b]搬過的箱子和家電，殭屍打不壞失效[/b]（0.3.0 起）：現在放下後照舊打不壞。燈，以及掛在牆上或擺在桌上卻會擋路的少數家具還沒修。
+[*] [b]擺放藍圖時按旋轉，位置和放下的不一樣[/b]（1.0.0 起）：長方形的藍圖轉完會偏到旁邊；現在轉完就留在滑鼠的位置。
 [/list]
 
 [b]伺服器管理員[/b]：這版伺服器與玩家要一起更新，版本不同時伺服器會拒絕放置並提示更新。
