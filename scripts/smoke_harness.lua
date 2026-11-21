@@ -10893,6 +10893,34 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     local ub = MinidoracatBuilder.Client.pendingUnbuild
     check(#q == 3 and q[1].i == 3 and q[2].walk == at(491, 492) and q[3].i == 2 and ub and ub.skipped.NO_ROOM == 1,
         "一次填平好幾格：近的先排；沒有站位的走到緊鄰、前面排過的那格再填；旁邊沒有排過的才跳過（NO_ROOM 1 格）")
+    -- 舊版照地板蓋的坡道片（斜面格上的地板）：站位挑緊鄰、不是斜面的空格；四周都是斜面的走到緊鄰、前面排過的那一格
+    -- （輪到時已經拆成平地）；都沒有才照原版站隔壁的坡道格。佈局：平地 (1480,1481)，舊片 (1481..1483,1481)，上下兩排是
+    -- 沒選的坡道格；玩家站在西邊
+    local keepPos = P.pos
+    P.pos = { x = 1470.5, y = 1481.5, z = 0 }
+    wsq(1480, 1481, 0, { mk(natS) })
+    for x = 1481, 1483 do for y = 1480, 1482 do wsq(x, y, 0, { mk(natS) }, { slope = true }) end end
+    local function oldRamp(x) return { x = x, y = 1481, z = 0, name = "ramps_01_17", kind = "floor", route = "builder" } end
+    local vanillaWalks = {}
+    luautils.walkAdj = function(_, sq) vanillaWalks[#vanillaWalks + 1] = sq return true end
+    AdjacentFreeTileFinder.Find = function(sq, _, skip)
+        for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+            local n, skipped = at(sq:getX() + d[1], sq:getY() + d[2]), false
+            for _, s in ipairs(skip) do if s == n then skipped = true end end
+            if n and not skipped then return n end
+        end
+        return nil
+    end
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.dismantleMany(P, { oldRamp(1483), oldRamp(1482), oldRamp(1481) }, nil)
+    check(#q == 6 and q[1].walk == at(1480, 1481) and q[2].i == 3 and q[3].walk == at(1481, 1481) and q[4].i == 2
+        and q[5].walk == at(1482, 1481) and q[6].i == 1 and #vanillaWalks == 0,
+        "拆舊坡道片（斜面格上的地板）：近的先排、站緊鄰的平地；四周都是斜面的站前面排過的那一格，不站隔壁的坡道格")
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.dismantleMany(P, { oldRamp(1482) }, nil)
+    check(#q == 1 and q[1].i == 1 and #vanillaWalks == 1 and vanillaWalks[1] == at(1482, 1481),
+        "拆舊坡道片：只拆一片、四周都是斜面時照原版走到旁邊（不跳過）")
+    P.pos = keepPos
     isServer, isClient, luautils, ISTimedActionQueue = realServer, keepClient, keepLu, keepQ
     AdjacentFreeTileFinder, ISWalkToTimedAction = nil, nil
 
@@ -18708,6 +18736,17 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     function old:isFloor() return true end
     function old:isDismantable() return true end
     check(Dismantle.kindOf(old) == "floor" and not Place.ramp(old), "坡道（Ramp）✗ 舊版當地板蓋的坡道片（IsoThumpable）照地板拆")
+    if Names then -- 假的 getText 不帶參數，換成帶參數的才比得出編號；名稱有快取，前後各清一次
+        local realText = getText
+        getText = function(k, ...) return k .. "(" .. table.concat({ ... }, ",") .. ")" end
+        Names.reset()
+        local f5, f6 = Names.of("rp_01_5", "floor"), Names.of("rp_01_6", "floor")
+        local r5, r0 = Names.of("rp_01_5", "ramp"), Names.of("rp_01_0", "ramp")
+        getText = realText
+        Names.reset()
+        check(f5 ~= f6 and f5 ~= r5 and r5 == r0,
+            "坡道（Ramp）名稱：舊版當地板蓋的坡道片照自己的編號叫（各片不同名）；坡道那一組照舊照頭片叫")
+    end
 
     -- 拆除的反面：混了不是本 MOD 的片、少一片、缺片那格沒載入（殘組照拆剩下本 MOD 的片、不退料；沒載入照舊拒絕）
     esq(442, 410, 1)

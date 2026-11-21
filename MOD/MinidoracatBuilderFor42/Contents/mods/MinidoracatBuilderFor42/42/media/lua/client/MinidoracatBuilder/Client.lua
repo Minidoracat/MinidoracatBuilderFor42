@@ -305,9 +305,26 @@ local function finish(b, ...)
     if b.onDone then b.onDone(s) else tell(b, s) end
 end
 
--- 一次填平好幾格水面：近的先填。排隊當下裡面那幾格四周都是水、沒有地方站；前面排過的格子輪到時已經填成地面，
--- 找不到站位的就走到緊鄰（上下左右）、前面排過的那一格。都沒有才跳過（NO_ROOM）。逐筆插入，不用 table.sort（家族規則）
-local function queueFill(b, ponds)
+-- 斜面格上的地板（舊版照地板一片一片蓋的坡道片）要站哪：原版找站位不分斜面（AdjacentFreeTileFinder），挑到隔壁的坡道格時
+-- 角色得繞到坡底爬上去，路斷了走路當場停、整串佇列清空（玩家 2026-11-21 回報舊片拆不了；E2E ramp-legacy-mp）。
+-- 先找緊鄰、不是斜面的空格：排除清單放 own 與緊鄰的斜面格。回站位的格子；nil＝緊鄰的都是斜面
+local function flatStand(player, sq, own)
+    local skip, cell = {}, getCell()
+    for i, o in ipairs(own) do skip[i] = o end
+    local x, y, z = sq:getX(), sq:getY(), sq:getZ()
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local n = cell:getGridSquare(x + dx, y + dy, z)
+            if n and n:hasSlopedSurface() then skip[#skip + 1] = n end
+        end
+    end
+    return AdjacentFreeTileFinder.Find(sq, player, skip)
+end
+
+-- 一次填平好幾格水面、拆斜面格上的地板（slope[it]）：近的先排。排隊當下裡面那幾格四周都是水（或斜面）、沒有地方站；
+-- 前面排過的格子輪到時已經填成（拆成）平地，找不到站位的就走到緊鄰（上下左右）、前面排過的那一格。都沒有：水面跳過
+-- （NO_ROOM），斜面格照原版站隔壁的坡道格（可能要繞到坡底）。逐筆插入，不用 table.sort（家族規則）
+local function queueFill(b, ponds, slope)
     local px, py = b.player:getX(), b.player:getY()
     local order, key = {}, {}
     for _, it in ipairs(ponds) do
@@ -321,7 +338,15 @@ local function queueFill(b, ponds)
     end
     local cell, filled = getCell(), {}
     for _, it in ipairs(order) do
-        local stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+        local sq = slope[it] and cell:getGridSquare(it.x, it.y, it.z)
+        local stand
+        if sq then
+            local flat = flatStand(b.player, sq, it.own or {})
+            if flat then ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, flat)) end
+            stand = flat ~= nil
+        else
+            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+        end
         if stand == false then
             for _, f in ipairs(filled) do
                 local sq = math.abs(f.x - it.x) + math.abs(f.y - it.y) == 1 and cell:getGridSquare(f.x, f.y, f.z)
@@ -331,6 +356,9 @@ local function queueFill(b, ponds)
                     break
                 end
             end
+        end
+        if stand == false and sq then
+            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
         end
         if stand == false then
             resolve(b, b.index[it], "NO_ROOM", { code = "NO_ROOM" })
@@ -344,20 +372,22 @@ end
 
 -- 伺服器收下才走過去、照 items 的順序排動作（同 Client.build）。旁邊沒空位、原版拆解現在不能拆的那一件跳過，照排下一件。
 -- 建造作弊時本工具拆的不走過去（同 queue；原版 ISDestroyCursor.lua:24），原版拆解的照原版走（它看搬運作弊，不看建造作弊）。
--- 水面超過一格時留到最後一起排（queueFill）
+-- 水面超過一格、斜面格上的地板（舊版照地板蓋的坡道片，一片也算）留到最後一起排（queueFill）
 local function queueUnbuild(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
-    local ponds = {}
+    local late, slope, cell = {}, {}, getCell()
     if walk then
         for _, it in ipairs(b.items) do
-            if it.kind == "water" and it.route ~= "scrap" then ponds[#ponds + 1] = it end
+            local sq = it.route ~= "scrap" and it.kind == "floor" and cell:getGridSquare(it.x, it.y, it.z)
+            if sq and sq:hasSlopedSurface() then slope[it] = true end
+            if slope[it] or (it.kind == "water" and it.route ~= "scrap") then late[#late + 1] = it end
         end
     end
-    local batch = #ponds > 1
+    local batch = #late > 1 or (#late == 1 and slope[late[1]] == true)
     for _, it in ipairs(b.items) do
         local code
-        if batch and it.kind == "water" and it.route ~= "scrap" then
+        if batch and (slope[it] or (it.kind == "water" and it.route ~= "scrap")) then
             code = nil -- 留給 queueFill
         elseif it.route == "scrap" then
             code = queueScrap(b.player, it.obj)
@@ -375,7 +405,7 @@ local function queueUnbuild(b)
         end
         if code then print(LOG .. "dismantle not queued at " .. it.x .. "," .. it.y .. "," .. it.z .. ": " .. code) end
     end
-    if batch then queueFill(b, ponds) end
+    if batch then queueFill(b, late, slope) end
     if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
 end
 

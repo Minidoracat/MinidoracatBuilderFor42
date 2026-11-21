@@ -52,9 +52,10 @@ local function compose(name, kind, short)
     if r then return r.name end
     local spr = Entry.sprite(name)
     if not spr then return name end
-    -- 坡道的其他片（拆除選單、一區拆除列的是被點的那片）照那一組的頭片叫，和目錄同一個名稱
+    -- 坡道的其他片（拆除選單、一區拆除列的是被點的那片）照那一組的頭片叫，和目錄同一個名稱。舊版照地板一片一片蓋的
+    -- （kind＝"floor"）照自己的編號叫：每片各拆各的，同名的話選單上分不出是哪一片
     local head = Entry.rampHead(name)
-    if head and head ~= name then return compose(head, "ramp", short) end
+    if head and head ~= name and kind ~= "floor" then return compose(head, "ramp", short) end
     local p = spr:getProperties()
     local custom, shown = p:get("CustomName"), nil
     if custom then
@@ -89,15 +90,16 @@ end
 
 local function lookup(short, name, ...)
     local kind = ...
+    local key = kind == "floor" and Entry.rampHead(name) and name .. "|floor" or name -- 舊坡道片另記一筆（compose）
     local t = short and shortCache or cache
-    local s = t[name]
+    local s = t[key]
     if s then return s end
     s = compose(name, kind, short)
     if count >= MAX then
         cache, shortCache, count = {}, {}, 0
         t = short and shortCache or cache
     end
-    t[name] = s
+    t[key] = s
     count = count + 1
     return s
 end
