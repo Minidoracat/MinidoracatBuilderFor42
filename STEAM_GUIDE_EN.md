@@ -36,6 +36,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Hotkey[/b]: none by default, so set Open or close the build window under Minidoracat Build Anything in OPTIONS > KEY BINDINGS.
 [*] [b]Placing keys[/b]: the eyedropper, toggle overlap, next recent item and undo last build are on the same page, see Quick pick bar and placing keys.
 [*] [b]Hide the toolbar button[/b]: untick Show toolbar button in OPTIONS > MODS > Build Anything, then use the hotkey.
+[*] [b]Window opacity[/b]: Window opacity in OPTIONS > MODS > Build Anything has three steps, 100%, 75% and 50%. Only the background of the Build Anything window fades; text and icons stay the same, and a change applies right away while the window is open.
 [*] [b]First time[/b]: after you enter the game the tiles are cataloged and the window shows Cataloging tiles N%, but you can already search what is done so far.
 [/list]
 === 🧰 The build window
@@ -108,6 +109,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Source[/b]: Source: mod name (tileset), and a long tileset name wraps instead of being cut off.
 [*] [b]Tile name[/b]: Tile: shows the full tile name, ready to copy when you report a problem or search.
 [*] [b]Footprint[/b]: how many squares it covers and how many facings it has.
+[*] [b]Durability[/b]: walls, fences, furniture, doors, windows and build recipes show their durability once built, noting when the server's sandbox stops zombies from breaking it. Things zombies don't attack (floors, door frames, roofs and the like) don't show it, and neither do recipes that turn into something else once built (the vanilla glass window, for example).
 [*] [b]Flagged first[/b]: permanently locked windows and things that can only be smashed for no materials are listed before the materials, with a warning.
 [*] [b]Removal[/b]: how it is removed later and what you get back, see Dismantling.
 [*] [b]Materials (have / need)[/b]: how many of each material you have and need.
@@ -144,6 +146,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Too dark[/b]: as in vanilla, recipes can't be built in the dark; the cell is marked missing and the details say it's too dark. A lit flashlight or lamp held in your hands or attached to you is enough.
 [*] [b]Recipes that change with skill[/b]: wooden walls and others that change with your skill level show only your tier, as in vanilla.
 [*] [b]Admin switches[/b]: kinds the admin turned off hide their recipes too; source and tileset switches don't apply to recipes.
+[*] [b]Recipes other mods hide[/b]: recipes another mod hides from the build menu (Neat Building's wall variants, for example) aren't listed; searching the full tile name tells you which recipe it is and which mod hides it. If that mod has its own build menu, build it from there.
 [*] [b]Recipe floors[/b]: still listed as tiles and built by this mod's rules, with no separate recipe item.
 [*] [b]Removing what a recipe built[/b]: dismantle it the vanilla way; Dismantle (Build Anything) doesn't remove it.
 [*] [b]Eyedropper and search[/b]: clicking with the eyedropper, Pick tile from the right-click menu, or searching a full tile name selects the recipe when the tile belongs to one.
@@ -156,6 +159,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ghost colours[/b]: white can be built; red can't, with a warning on that square; yellow with a swap mark replaces what is there.
 [*] [b]Multi-tile objects[/b]: when blocked, the square causing the problem gets a red frame and the others a grey one.
 [*] [b]The box by the mouse[/b]: shows the name, facing, tile count while dragging, why it can't be built and the key hints; also the level when stacking crates, the piece number when overlapping, and the skill and level you lack.
+[*] [b]Warnings that don't block[/b]: when a window's shape doesn't match the frame on that edge (the wall will show behind it), or a wall or window goes on the exit edge at the top of a ramp (people can't walk up), the box adds a warning line and you can still build. Building walls from build recipes warns too.
 [*] [b]Rotate[/b]: press the Rotate Building key (R by default), which only cycles through the facings that object has; tiles with the same name and one tile per facing rotate too (see Finding things). Stairs switch between the west-going and north-going sets; sloped roofs switch to the mirrored piece. Items you can rotate show a rotate icon at the top left of their tile in the window.
 [*] [b]Turning to all four edges[/b]: walls, fences, door frames, window frames, doors and windows step through the North, East, South and West edge of the tile as you press the rotate key, and the box by the mouse shows the name and which edge. The game only draws walls on the north and west edges of a tile, so East and South really go on the west or north edge of the next tile over, and the ghost is drawn there; a dragged row moves as a whole. When there is no art for the other side, it only switches between this edge and the opposite one.
 [*] [b]Rebound keys[/b]: go by the key hints in the box by the mouse.
@@ -326,6 +330,12 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Their cost[/b]: a window frame plus a window, see Materials.
 [*] [b]Removing and replacing[/b]: like windows, they can only be smashed, and they can't be replaced in place.
 [*] [b]Ordinary windows[/b]: still go into a window frame.
+[*] [b]Full-height windows[/b]: vanilla has no window frame wall for them. Place the wall overlay with a full-height opening from the same set on that edge first (the full set of some house exterior and interior walls has one), then install the window.
+[*] [b]The two wider than a door[/b]: go into a double-door frame wall, which the full set of some house walls includes.
+[*] [b]Which one to place first[/b]: the details say so when you pick one of these windows.
+[*] [b]On a frame that doesn't match[/b]: it still builds, but the wall shows behind it, and the cursor warns you.
+[*] [b]Removing the piece that frames it[/b]: take the window out first; when two pieces are stacked on that edge, only the last one is held back.
+[*] [b]A door frame wall with a window in it[/b]: a door can't go in.
 [/list]
 [h3]Curtains[/h3]
 [list]
@@ -379,7 +389,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ordinary furniture durability[/b]: the same as when moved and placed in vanilla, tougher the heavier it is and the harder its material.
 [*] [b]Small blocking things[/b]: wall-mounted objects, rugs and tabletop items have 100 durability, and break more slowly when fewer than 8 zombies are attacking.
 [*] [b]Things that don't block[/b]: zombies leave them alone.
-[*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla.
+[*] [b]Movable things[/b]: once placed, pick them up and move them as in vanilla. After moving, Container capacity multiplier and Zombies can't break builds still apply (exceptions in Known limitations).
 [*] [b]Cots and gurneys[/b]: listed under Furniture by their vanilla tile names, Cot and Single Bed with Green Metal Frame; once built they are ordinary beds.
 [*] [b]Things that turn into a special item when picked up[/b]: tents, sleeping bags, radios, propane tanks and the like are still not listed.
 [*] [b]Stacking crates[/b]: military crates, cardboard boxes, wooden crates and the other crates vanilla lets you stack go on top of other crates as in vanilla, the same crate included, up to the vanilla height limit; pick them up from the top as in vanilla. The details show the stacking limit in layers (3 for the military crate); if the piece below can't hold anything on top, the cursor says so.
@@ -756,10 +766,12 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [h3]Placing on the ground[/h3]
 [list]
 [*] [b]From the library[/b]: pick one and press Place; the build window closes and the whole blueprint follows the mouse; R (LB/RB on a gamepad) rotates 90°, a click places it, right-click (B) cancels.
+[*] [b]Outline of the whole blueprint[/b]: while placing, a line around the whole blueprint shows its extent, counting multi-tile furniture, garage doors and build recipes, and it turns when you rotate. A large blueprint only draws the pieces near the mouse, so the outline shows how much ground it takes.
 [*] [b]Back to original spot[/b]: when the saved position is within 100 tiles, the toolbar has Back to original spot (X on a gamepad).
 [*] [b]Another one already on the ground[/b]: you're asked first; the old one is saved and put away, and what's built stays. If the old one has unsaved changes from planning, after you confirm you're asked Overwrite or Save as new, and it swaps once that's saved.
 [*] [b]Move[/b]: Move in the blueprint panel picks the blueprint up to place it again; right-click puts it back where it was. While planning, a blueprint that was never saved is saved first and stays in planning if it can't save; a saved blueprint with unsaved changes asks Overwrite or Save as new first, and moves once that's saved.
-[*] [b]Ghost colours[/b]: built pieces aren't drawn; buildable ones are pale purple, short on materials yellow, and ones that can't be built red with a warning mark. Pieces waiting for nearby pieces to be built first (a roof for its walls, a door for its frame) are drawn as buildable.
+[*] [b]After moving[/b]: placing it or right-clicking to cancel takes you back to where you were. Moved while planning (Move in the blueprint panel, or Place in the library on the one already on the ground) goes back to planning, and the build window reopens if pressing Blueprints closed it; Move in the blueprint panel when not planning reopens the panel. Picking up another tool halfway doesn't pull you back.
+[*] [b]Ghost colours[/b]: built pieces aren't drawn; the others keep their own tile colours, and the frame on the square under each piece shows its state: pale purple can be built, yellow is short on materials, red can't be built and gets a warning mark. Selected pieces are still tinted whole. Pieces waiting for nearby pieces to be built first (a roof for its walls, a door for its frame) are drawn as buildable.
 [*] [b]Coming back[/b]: the blueprint is still there when you return. Every save and every server keeps its own, stored on your computer. If the blueprint file can't be opened this time, it's hidden but its spot is kept and it's read again next time you load; it's only removed when the file was deleted or damaged.
 [/list]
 [h3]Blueprint panel[/h3]
@@ -1077,6 +1089,9 @@ end)
 [*] [b]The server's address changed[/b]: place the blueprint on the ground again from the library; blueprint files aren't affected.
 [*] [b]No area selection with a gamepad[/b]: Capture a building needs a mouse.
 [*] [b]Roof Helper[/b]: roof styles that can't be recognized as a full set don't get the button; 45-degree roofs only draw the south and east slopes; dragging an area needs a mouse; the first time you pick a given roof or gable wall set, the game pauses briefly, once per set; tiles under the gable with no house wall to copy need walls built by hand.
+[*] [b]Full-height windows can't take curtains[/b]: curtains can't be hung on full-height windows.
+[*] [b]Multi-tile containers moved as one item[/b]: a few multi-tile containers (mostly other mods' tiles) become a single item when picked up the vanilla way, and after moving they're back to vanilla capacity, without the multiplier.
+[*] [b]Moved lights and a few blocking pieces of furniture[/b]: with Zombies can't break builds on, lights and a few wall-mounted or tabletop pieces that block movement (69 tiles) can be broken by zombies after being picked up and moved the vanilla way.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
