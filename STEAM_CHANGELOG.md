@@ -4,8 +4,8 @@
 [b]English summary[/b]
 [list]
 [*] Fixed: pressing a key or releasing the right mouse button at the main menu or loading screen no longer throws errors (since 1.0.0).
-[*] Fixed: containers you pick up and put down keep the "Container capacity multiplier", and boxes and appliances stay protected by "Zombies can't break builds". Ones you moved before are restored when you load in.
-[*] Full-height windows can be installed: place the "full opening" wall overlay from the same set on that edge first; the two extra-wide ones go into a double-door frame wall. No curtains on them yet.
+[*] Fixed: containers you pick up and put down keep the "Container capacity multiplier" (ones you moved before are restored when you load in), and moved boxes and appliances stay protected by "Zombies can't break builds".
+[*] Full-height windows can be installed: place the wall overlay with a full-height opening from the same set on that edge first; the two wider than a door go into a double-door frame wall. Curtains can't be hung on them yet.
 [*] Blueprints: placing one draws an outline around the whole plan, ghosts keep their tile colours (the floor frame shows the status), and moving a plan brings you back to planning and the Build Anything window.
 [*] New "Window opacity" setting under Options > Mods > Build Anything (100%, 75%, 50%), and a Durability line in the details panel.
 [*] New cursor warnings: a window that doesn't match its frame, and a wall or window that would block the top of a ramp. Server and players need to update together.
