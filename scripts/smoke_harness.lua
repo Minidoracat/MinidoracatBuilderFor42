@@ -5910,48 +5910,76 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         tick()
         check(nearNow and farWaits and #sent == 4 and sent[3] == far and sent[4] == far and count("OnTick") == ticks,
             "兩個 chunk：先讀到的那格區域資料還沒好，後面已經好的那格照樣當下就推；先讀到的等資料好了再推")
-        -- 樓梯頂片：上一層的平台是一般地板物件，讀檔時列不到，跟著頂片一起對（W 型頂片在平台東邊、N 型在南邊）
+        -- 樓梯頂片：上一層的平台是一般地板物件，讀檔時列不到，跟著頂片一起對（W 型頂片在平台東邊、N 型在南邊）。
+        -- 兩座樓梯共用一格平台、隔著別格再讀到同一格：都只排一次（審查 1122 Codex 第 2 輪）
+        sent, asked = {}, 0
+        local topW = cellAt(110, 98, 0, { solidfloor = true, stairsTW = true }, 48, { stairs = true })
+        local topN = cellAt(109, 99, 0, { solidfloor = true, stairsTN = true }, 48, { stairs = true })
+        local deck = cellAt(109, 98, 1, { solidfloor = true }, 0)
+        load(topW, topN, topW)
+        tick()
+        local once = #sent == 1 and sent[1] == deck and asked == 3
+        tick()
+        check(once and #sent == 2 and sent[2] == deck and count("OnTick") == ticks,
+            "樓梯頂片：往上爬那一側、上一層的平台漏了地板也補推；兩座樓梯共用的平台只排一次（一個 tick 推一次）；頂片那格（48）對得上不推")
+        -- 平台那格比頂片晚讀進來（另一個 chunk）：留著等，讀進來再對
         sent = {}
-        local topW = cellAt(110, 98, 0, { solidfloor = true, stairsTW = true }, 16)
-        local deckW = cellAt(109, 98, 1, { solidfloor = true }, 0)
-        local topN = cellAt(112, 98, 0, { solidfloor = true, stairsTN = true }, 16)
-        local deckN = cellAt(112, 97, 1, { solidfloor = true }, 0)
-        load(topW, topN)
+        squares["109,98,1"] = nil
+        load(topW)
+        tick()
+        local pending = #sent == 0 and count("OnTick") == ticks + 1
+        squares["109,98,1"] = deck
         tick()
         tick()
-        check(#sent == 4 and sent[1] == deckW and sent[2] == deckN and sent[3] == deckW and sent[4] == deckN,
-            "樓梯頂片：往上爬那一側、上一層的平台漏了地板也補推；頂片那格對得上不推")
+        check(pending and #sent == 2 and sent[1] == deck and count("OnTick") == ticks,
+            "平台那格還沒讀進來：不推、留著等；讀進來的那個 tick 才對、才推")
+        -- 門：車庫門、柵欄門自己帶牆屬性，那格可能沒有本工具別的東西（審查 1122 Codex 第 2 輪）
+        sent, asked = {}, 0
+        local function door(sq, entry)
+            local x = loaded("IsoDoor", doorS, { hp = 500, entry = entry })
+            function x:getSquare() return sq end
+            if Place.recheck then Place.migrate(x) end
+        end
+        local gate = cellAt(114, 98, 0, { solidfloor = true, cutN = true }, 16) -- 該是 17
+        door(gate, nil)
+        door(cellAt(115, 98, 0, { solidfloor = true, cutN = true }, 16), false)
+        tick()
+        tick()
+        check(#sent == 2 and sent[1] == gate and sent[2] == gate and asked == 1 and count("OnTick") == ticks,
+            "本工具蓋的門那格也對、漏了牆就補推；✗ 沒有本工具記號的門那格不對")
         -- 那一層沒有資料（-1）當成 0：上層什麼都沒有的格子不推（審查 1122 Claude）
         sent = {}
         load(cellAt(103, 98, 1, {}, nil))
-        tick()
-        check(Place.recheck ~= nil and #sent == 0 and count("OnTick") == ticks, "✗ 上層沒有地板也沒有牆、引擎那一層沒有資料：不推")
-        -- 一個 tick 最多新推 4 格：推一格引擎就存檔、廣播一個 chunk，舊基地一次漏上百格時攤到後面的 tick
-        for i = 1, 6 do load(cellAt(95 + i, 96, 0, { solidfloor = true }, 0)) end
-        tick()
-        local t1 = #sent
-        tick()
-        local t2 = #sent
-        tick()
-        check(t1 == 4 and t2 == 10 and #sent == 12 and count("OnTick") == ticks,
-            "一次讀到 6 格漏記：第一個 tick 推 4 格，第二個 tick 那 4 格再推一次、剩下 2 格推第一次，第三個 tick 收尾（共 12 次）")
-        sent = {}
-        load(miss)
-        squares["101,98,0"] = nil -- 對之前那一格卸載了
         tick()
         isClient = function() return true end
         load(same)
         isClient = realClient
         check(Place.recheck ~= nil and #sent == 0 and count("OnTick") == ticks,
-            "✗ 讀檔後格子卸載了：不推、不出錯；多人的客戶端不對（區域資料是伺服器送的）")
-        notReady["12,12"] = true
+            "✗ 上層沒有地板也沒有牆、引擎那一層沒有資料：不推；多人的客戶端不對（區域資料是伺服器送的）")
+        -- 一個 tick 最多新推 4 格：推一格引擎就存檔、廣播一個 chunk，舊基地一次漏上百格時攤到後面的 tick；推滿之後的不問
         asked = 0
-        load(nwin) -- 位元對不上的那格：沒資料時連問都不問
-        for _ = 1, 600 do tick() end
-        local holding = count("OnTick") == ticks + 1
+        for i = 1, 6 do load(cellAt(95 + i, 96, 0, { solidfloor = true }, 0)) end
         tick()
-        check(Place.recheck ~= nil and holding and #sent == 0 and asked == 0 and count("OnTick") == ticks,
-            "區域資料一直沒有（引擎沒算過那個 chunk）：等 600 個 tick 後放棄，不問、不推、摘掉 tick 事件")
+        local t1 = #sent == 4 and asked == 4
+        tick()
+        local t2 = #sent == 10 and asked == 6
+        tick()
+        check(t1 and t2 and #sent == 12 and asked == 6 and count("OnTick") == ticks,
+            "一次讀到 6 格漏記：第一個 tick 推 4 格（後 2 格不問），第二個 tick 那 4 格再推一次、剩下 2 格推第一次，第三個 tick 收尾（共 12 次、每格只問一次）")
+        -- 區域資料一直沒有（引擎沒算過那個 chunk）：等 600 個 tick 放棄。各等各的：晚到的另一個 chunk 不跟著一起放棄
+        sent, asked = {}, 0
+        notReady["12,12"], notReady["15,12"] = true, true
+        load(nwin) -- 位元對不上的那格：沒資料時連問都不問
+        for _ = 1, 598 do tick() end
+        load(far)
+        tick()
+        local holding = #sent == 0 and asked == 0 and count("OnTick") == ticks + 1
+        notReady["15,12"] = nil
+        tick() -- 第 600 個 tick：先到的放棄；晚到的資料好了，推
+        local late = #sent == 1 and sent[1] == far and asked == 1
+        tick()
+        check(holding and late and #sent == 2 and asked == 1 and count("OnTick") == ticks,
+            "區域資料一直沒有：等 600 個 tick 後放棄，不問、不推；晚到的格子自己算 600 個 tick，資料好了照樣推；都結束才摘掉 tick 事件")
         IsoRegions = realRegions
     end)()
 
