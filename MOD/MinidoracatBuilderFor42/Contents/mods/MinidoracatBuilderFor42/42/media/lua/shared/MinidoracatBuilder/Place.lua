@@ -1567,10 +1567,24 @@ end
 do
     local REGIONAL = { floor = true, stairs = true, ramp = true }
     local pending, n = {}, 0
-    -- 這格的區域位元是不是 0：照 IsoRegions.calculateSquareFlags 的條件（IsoRegions.java:322-349；protected，Lua 叫不到）
-    local function bare(sq)
-        return not (sq:has(F.solidfloor) or sq:has(F.cutN) or sq:has(T.doorFrN) or sq:HasStairs()
-            or (not sq:has(F.WallSE) and (sq:has(F.cutW) or sq:has(T.doorFrW))))
+    -- 這格照現在的物件該有的區域位元：照 IsoRegions.calculateSquareFlags（IsoRegions.java:322-349；protected，Lua 叫不到）
+    local function flagsOf(sq)
+        local f = sq:has(F.solidfloor) and 16 or 0
+        if sq:has(F.cutN) or sq:has(T.doorFrN) then
+            f = f + ((sq:has(F.WindowN) or sq:has(F.windowN) or sq:has(F.DoorWallN)) and 5 or 1)
+        end
+        if not sq:has(F.WallSE) and (sq:has(F.cutW) or sq:has(T.doorFrW)) then
+            f = f + ((sq:has(F.WindowW) or sq:has(F.windowW) or sq:has(F.DoorWallW)) and 10 or 2)
+        end
+        return sq:HasStairs() and f + 32 or f
+    end
+    -- 引擎只在位元和「之前」不同時才送：一般拿 0 當「之前」；位元本身是 0 的（上層沒地板的格子拆掉牆，或
+    -- 柱子讓引擎不算同格的西牆）改拿正下方地面那格（有地板，不是 0）。送完把「之前」設回 0
+    local function push(cell, sq, x, y, z)
+        local ref = z > 0 and flagsOf(sq) == 0 and cell:getGridSquare(x, y, 0) or nil
+        IsoRegions.setPreviousFlags(ref)
+        IsoRegions.squareChanged(sq)
+        IsoRegions.setPreviousFlags(nil)
     end
     local function flush()
         Events.OnTick.Remove(flush)
@@ -1579,14 +1593,7 @@ do
         for i = 1, m, 3 do
             local x, y, z = list[i], list[i + 1], list[i + 2]
             local sq = cell:getGridSquare(x, y, z)
-            if sq then
-                -- 引擎只在位元和「之前」不同時才送：一般拿 0 當「之前」；位元本身是 0 的（上層沒地板的格子拆掉牆，或
-                -- 柱子讓引擎不算同格的西牆）改拿正下方地面那格（有地板，不是 0）。送完把「之前」設回 0
-                local ref = z > 0 and bare(sq) and cell:getGridSquare(x, y, 0) or nil
-                IsoRegions.setPreviousFlags(ref)
-                IsoRegions.squareChanged(sq)
-                IsoRegions.setPreviousFlags(nil)
-            end
+            if sq then push(cell, sq, x, y, z) end
         end
     end
     function Place.repush(sq, kind)
@@ -1594,6 +1601,41 @@ do
         if n == 0 then Events.OnTick.Add(flush) end
         pending[n + 1], pending[n + 2], pending[n + 3] = sq:getX(), sq:getY(), sq:getZ()
         n = n + 3
+    end
+    -- 讀檔時對一次（Place.migrate；伺服器與單機）：1.0.0 以前蓋的沒有補推，漏記的格子留在存檔的區域資料裡，引擎讀檔不重算。
+    -- 本工具蓋的東西所在的格子，引擎記的位元和照現在的物件算的不一樣才推（當場一次、下一個 tick 再一次，同放置）；
+    -- 推一格引擎就存檔、把那個 chunk 送給每位玩家，所以一樣的不推。讀檔當下區域資料可能還在背景載入（IsoRegions.init
+    -- 只排工作，IsoRegionWorker.java:450-520，前台那份要等主迴圈換緩衝）：第一格的 chunk 還沒有資料就整批等，
+    -- 等不到（引擎沒算過那個 chunk）WAIT 個 tick 後照樣對，沒資料的跳過。地下不記（IsoRegionWorker.java:381）
+    local WAIT = 600
+    local loaded, ln, waited = {}, 0, 0
+    local function recheck()
+        waited = waited + 1
+        if waited < WAIT and not IsoRegions.getDataChunk(math.floor(loaded[1] / 8), math.floor(loaded[2] / 8)) then return end
+        Events.OnTick.Remove(recheck)
+        local list, m, cell = loaded, ln, getCell()
+        loaded, ln, waited = {}, 0, 0
+        for i = 1, m, 3 do
+            local x, y, z = list[i], list[i + 1], list[i + 2]
+            local sq = cell:getGridSquare(x, y, z)
+            if sq and IsoRegions.getDataChunk(math.floor(x / 8), math.floor(y / 8)) then
+                local have, want = IsoRegions.getSquareFlags(x, y, z), flagsOf(sq)
+                if math.max(have, 0) ~= want then -- -1＝那一層還沒有資料
+                    print(LOG .. "REGION resync at=" .. x .. "," .. y .. "," .. z .. " have=" .. have .. " want=" .. want)
+                    push(cell, sq, x, y, z)
+                    Place.repush(sq, nil)
+                end
+            end
+        end
+    end
+    function Place.recheck(sq)
+        if isClient() then return end
+        local x, y, z = sq:getX(), sq:getY(), sq:getZ()
+        -- 同一格的幾件東西連著讀到：只排一次
+        if z < 0 or (ln > 0 and loaded[ln - 2] == x and loaded[ln - 1] == y and loaded[ln] == z) then return end
+        if ln == 0 then Events.OnTick.Add(recheck) end
+        loaded[ln + 1], loaded[ln + 2], loaded[ln + 3] = x, y, z
+        ln = ln + 3
     end
 end
 
@@ -2009,6 +2051,7 @@ function Place.migrate(obj)
     if obj:getName() == nil then obj:setName(md.builderEntry) end -- 0.3.0 以前蓋的沒有名稱（見 thumpable 的 setName）
     local sq = obj:getSquare()
     if not sq then return end
+    Place.recheck(sq)
     local spr = obj:getSprite()
     if groundFloor(obj, sq) then
         if obj:isDismantable() then obj:setIsDismantable(false) end

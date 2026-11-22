@@ -611,7 +611,23 @@ local function inventory()
     return inv
 end
 local regionPokes = 0
-IsoRegions = { setPreviousFlags = function() end, squareChanged = function() regionPokes = regionPokes + 1 end }
+-- 假的區域資料預設和世界一樣（讀檔時對一次不會推，Place.recheck）；要漏記的情境自己換掉 IsoRegions。
+-- 寫在表裡：主函式的 local 已到 200 個上限
+IsoRegions = { setPreviousFlags = function() end, squareChanged = function() regionPokes = regionPokes + 1 end,
+    getDataChunk = function() return true end,
+    getSquareFlags = function(x, y, z)
+        local sq = getCell():getGridSquare(x, y, z)
+        if not sq then return -1 end
+        local F, T = IsoFlagType, IsoObjectType
+        local f = sq:has(F.solidfloor) and 16 or 0
+        if sq:has(F.cutN) or sq:has(T.doorFrN) then
+            f = f + ((sq:has(F.WindowN) or sq:has(F.windowN) or sq:has(F.DoorWallN)) and 5 or 1)
+        end
+        if not sq:has(F.WallSE) and (sq:has(F.cutW) or sq:has(T.doorFrW)) then
+            f = f + ((sq:has(F.WindowW) or sq:has(F.windowW) or sq:has(F.DoorWallW)) and 10 or 2)
+        end
+        return sq:HasStairs() and f + 32 or f
+    end }
 Capability = { UseBuildCheat = "UseBuildCheat", CanGoInsideSafehouses = "CanGoInsideSafehouses" }
 function checkPermissions(player, cap) return player.admin == true end
 local sent = {}
@@ -5806,6 +5822,62 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         fire("OnTick")
         check(once and #sent == 0 and count("OnTick") == ticks,
             "一樓拆掉牆：送一次剩下的位元（地板）；下一個 tick 前格子卸載了：不推、不出錯，tick 事件照樣摘掉")
+        IsoRegions = realRegions
+    end)()
+    -- 讀檔時對一次區域位元（Place.recheck，2026-11-22）：1.0.0 以前蓋的沒有補推，漏記的留在存檔的區域資料裡、引擎讀檔不重算
+    -- （正式服一樓地板約 4%）。伺服器與單機讀到本工具蓋的東西時，引擎記的位元和照現在的物件算的不一樣才推：當場一次、
+    -- 下一個 tick 再一次（同放置）。推一格引擎就存檔、廣播那個 chunk，所以對得上的不推
+    ;(function()
+        fire("OnTick") -- 前面留下的先跑掉
+        local realRegions, realClient = IsoRegions, isClient
+        local have, ready, sent, asked = {}, true, {}, 0
+        IsoRegions = { setPreviousFlags = function() end, squareChanged = function(sq) sent[#sent + 1] = sq end,
+            getDataChunk = function() return ready or nil end,
+            getSquareFlags = function(x, y, z)
+                asked = asked + 1
+                return have[x .. "," .. y .. "," .. z] or -1
+            end }
+        local ticks = count("OnTick")
+        local function at(sq) -- 本工具蓋的、在這一格的東西
+            local x = loaded("IsoThumpable", wallS)
+            function x:getSquare() return sq end
+            return x
+        end
+        local miss = square(101, 98, 0, { flags = { solidfloor = true, cutN = true, WindowN = true } }) -- 照物件算是 21
+        local same = square(102, 98, 0, { flags = { solidfloor = true, cutW = true } })                  -- 18
+        local upper = square(101, 98, 1, { flags = { solidfloor = true } })                             -- 16，那一層引擎還沒有資料
+        local cellar = square(101, 98, -1, { flags = { solidfloor = true } })
+        have["101,98,0"], have["102,98,0"] = 5, 18 -- 引擎記的：前一格漏了地板，後一格對得上
+        if Place.recheck then
+            for _, sq in ipairs({ miss, miss, same, upper, cellar }) do Place.migrate(at(sq)) end
+        end
+        local queued = #sent == 0 and count("OnTick") == ticks + 1
+        ready = false
+        fire("OnTick")
+        local waits = #sent == 0 and asked == 0 and count("OnTick") == ticks + 1
+        ready = true
+        fire("OnTick")
+        local first = #sent == 2 and sent[1] == miss and sent[2] == upper and asked == 3
+        fire("OnTick")
+        check(queued and waits and first and #sent == 4 and sent[3] == miss and sent[4] == upper and count("OnTick") == ticks,
+            "讀檔對區域位元：讀檔當下不推；區域資料還沒載好就等；載好後漏記的那格、那一層沒資料的那格各推一次，下一個 tick 再各一次；"
+                .. "✗ 對得上的不推、地下不問、同一格兩件東西只問一次")
+        sent = {}
+        if Place.recheck then Place.migrate(at(miss)) end
+        squares["101,98,0"] = nil -- 對之前那一格卸載了
+        fire("OnTick")
+        isClient = function() return true end
+        if Place.recheck then Place.migrate(at(same)) end
+        isClient = realClient
+        check(Place.recheck ~= nil and #sent == 0 and count("OnTick") == ticks,
+            "✗ 讀檔後格子卸載了：不推、不出錯；多人的客戶端不對（區域資料是伺服器送的）")
+        ready = false
+        if Place.recheck then Place.migrate(at(same)) end
+        for _ = 1, 599 do fire("OnTick") end
+        local holding = count("OnTick") == ticks + 1
+        fire("OnTick")
+        check(holding and #sent == 0 and count("OnTick") == ticks,
+            "區域資料一直沒有（引擎沒算過那個 chunk）：等 600 個 tick 後放棄，不推、摘掉 tick 事件")
         IsoRegions = realRegions
     end)()
 
