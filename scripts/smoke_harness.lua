@@ -5841,8 +5841,12 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         end
         local realRegions, realClient = IsoRegions, isClient
         local have, notReady, sent, asked = {}, {}, {}, 0 -- have＝引擎記的位元（沒寫＝那一層沒資料）；notReady＝還沒資料的 chunk
+        local probes = 0                                  -- 問了幾次「這個 chunk 有資料了沒」
         IsoRegions = { setPreviousFlags = function() end, squareChanged = function(sq) sent[#sent + 1] = sq end,
-            getDataChunk = function(cx, cy) return not notReady[cx .. "," .. cy] and {} or nil end,
+            getDataChunk = function(cx, cy)
+                probes = probes + 1
+                return not notReady[cx .. "," .. cy] and {} or nil
+            end,
             getSquareFlags = function(x, y, z)
                 asked = asked + 1
                 return have[x .. "," .. y .. "," .. z] or -1
@@ -5974,13 +5978,31 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         tick()
         check(t1 and t2 and #sent == 12 and asked == 6 and count("OnTick") == ticks,
             "一次讀到 6 格漏記：第一個 tick 推 4 格（後 2 格不問），第二個 tick 那 4 格再推一次、剩下 2 格推第一次，第三個 tick 收尾（共 12 次、每格只問一次）")
+        -- 一個 tick 最多對 512 格；等資料的格子一個 chunk 收成一組、一個 tick 只問一次（2026-11-23 量測：5,328 格一次
+        -- 對完 20 ms；每個 tick 把還沒對的格子整份重抄，266 格漏記拖 67 個 tick、每個 tick 3.8～24.9 ms）
+        sent, asked = {}, 0
+        for i = 1, 600 do load(cellAt(199 + i, 200, 0, { solidfloor = true }, 16)) end
+        tick()
+        local scan1 = asked == 512 and count("OnTick") == ticks + 1
+        tick()
+        local scan2 = asked == 600 and #sent == 0 and count("OnTick") == ticks
+        notReady["30,30"] = true
+        for i = 1, 8 do load(cellAt(239 + i, 240, 0, { solidfloor = true }, 0)) end
+        tick()
+        probes = 0
+        for _ = 1, 5 do tick() end
+        local cheap = probes == 5 and asked == 600
+        notReady = {}
+        for _ = 1, 3 do tick() end
+        check(scan1 and scan2 and cheap and #sent == 16 and asked == 608 and count("OnTick") == ticks,
+            "一次讀到 600 格對得上的：第一個 tick 對 512 格、第二個 tick 對完；同一個 chunk 8 格等資料：一個 tick 只問那個 chunk 一次、不問格子，資料好了 8 格都補推")
         -- 區域資料一直沒有（引擎沒算過那個 chunk）：等 600 個 tick 放棄。各等各的：晚到的另一個 chunk 不跟著一起放棄
         sent, asked = {}, 0
         notReady["12,12"], notReady["15,12"] = true, true
         load(nwin) -- 位元對不上的那格：沒資料時連問都不問
         for _ = 1, 598 do tick() end
         load(far)
-        for _ = 1, 3 do tick() end -- 第 600 個 tick 先到的放棄；晚到的才等了 3 個 tick
+        for _ = 1, 3 do tick() end -- 先到的等滿 600 個 tick 放棄；晚到的才等了 3 個 tick
         local holding = #sent == 0 and asked == 0 and count("OnTick") == ticks + 1
         notReady = {}
         tick() -- 兩個 chunk 的資料都好了：只剩晚到的那格，推

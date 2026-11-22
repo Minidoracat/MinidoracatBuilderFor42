@@ -1606,55 +1606,73 @@ do
     -- 排進來的格子，引擎記的位元和照現在的物件算的不一樣才推：那個 tick 一次、下一個 tick 再一次（同放置）。第二次由
     -- 這個回呼自己在下一次被叫到時推，不交給 Place.repush：OnTick 處理中新掛的回呼同一輪就會被叫到（Event.java:53-65）。
     -- 推一格引擎就存檔、把那個 chunk 送給每位玩家（一個 chunk 最多約 2 KB；IsoRegionWorker.java:241-262,317-333、
-    -- JobChunkUpdate.java:153），所以一樣的不推，不一樣的一個 tick 最多新推 BATCH 格、其餘留到下一個 tick 再對（一座舊基地
-    -- 可能漏上百格）。讀檔當下區域資料可能還在背景載入（IsoRegions.init 只排工作，IsoRegionWorker.java:450-520，前台那份
-    -- 要等主迴圈換緩衝），樓梯平台那格也可能還沒讀進來：留到之後的 tick，各自等 WAIT 個 tick 還沒有（引擎沒算過那個
-    -- chunk、格子卸載了）就不對了。地下不記（IsoRegionWorker.java:381）
-    local WAIT, BATCH = 600, 4
-    local loaded, ln = {}, 0 -- 每格四個數：x、y、z、等到第幾次 tick 為止
-    local again, an = {}, 0  -- 上一個 tick 推過、這個 tick 再推一次的
-    local queued = {}        -- 排著還沒對完的格子（slot）：同一格只排一次
+    -- JobChunkUpdate.java:153），所以一樣的不推，不一樣的一個 tick 最多新推 BATCH 格（一座舊基地可能漏上百格）。
+    -- 一個 tick 最多對 SCAN 格（實機一格約 3.8 µs，5,328 格一次對完 20 ms）。佇列用 head 記讀到哪裡、不搬：推滿之後
+    -- 每個 tick 把剩下的抄進新表時，266 格漏記拖 67 個 tick、每個 tick 3.8～24.9 ms（2026-11-23 量測）。
+    -- 讀檔當下區域資料可能還在背景載入（IsoRegions.init 只排工作，IsoRegionWorker.java:450-520，前台那份要等主迴圈
+    -- 換緩衝；實機單機第 1 個 tick 才有），樓梯平台那格也可能還沒讀進來：這些格子一個 chunk 收成一組，一組一個 tick
+    -- 只問「有資料了沒、第一格讀進來了沒」，等 WAIT 個 tick 還沒有（引擎沒算過那個 chunk、格子卸載了）就不對了。
+    -- 地下不記（IsoRegionWorker.java:381）
+    local WAIT, BATCH, SCAN = 600, 4, 512
+    local q, head, tail = {}, 1, 0        -- 待對的格子，每格三個數
+    local groups, gn, byChunk = {}, 0, {} -- 等資料的組：{ cx, cy, due, n, x, y, z, … }；byChunk[slot(cx, cy, 0)]
+    local again, an = {}, 0               -- 上一個 tick 推過、這個 tick 再推一次的
+    local queued = {}                     -- 排著還沒對完的格子（slot）：同一格只排一次
     local now, ticking = 0, false
     local function slot(x, y, z) return (z * 2097152 + y) * 2097152 + x end -- x、y 小於 2^21（伺服器收的座標上限 1,000,000）
     local function recheck()
         local cell = getCell()
-        local second, sn, list, m = again, an, loaded, ln
-        again, an, loaded, ln, now = {}, 0, {}, 0, now + 1
+        local second, sn, waiting, m = again, an, groups, gn
+        again, an, groups, gn, byChunk, now = {}, 0, {}, 0, {}, now + 1
         for i = 1, sn, 3 do
             local x, y, z = second[i], second[i + 1], second[i + 2]
             local sq = cell:getGridSquare(x, y, z)
             if sq then push(cell, sq, x, y, z) end
             queued[slot(x, y, z)] = nil
         end
-        local cx, cy, ready
-        for i = 1, m, 4 do
-            local x, y, z, due = list[i], list[i + 1], list[i + 2], list[i + 3]
-            local keep, pushed = an >= BATCH * 3, false -- 這個 tick 推滿了：不對，留到下一個 tick
-            if not keep then
-                local ax, ay = math.floor(x / 8), math.floor(y / 8)
-                if ax ~= cx or ay ~= cy then cx, cy, ready = ax, ay, IsoRegions.getDataChunk(ax, ay) ~= nil end
-                local sq = ready and cell:getGridSquare(x, y, z)
-                if not sq then
-                    keep = now < due
-                else
-                    local have, want = IsoRegions.getSquareFlags(x, y, z), flagsOf(sq)
-                    if math.max(have, 0) ~= want then -- -1＝那一層還沒有資料
-                        print(LOG .. "REGION resync at=" .. x .. "," .. y .. "," .. z .. " have=" .. have .. " want=" .. want)
-                        push(cell, sq, x, y, z)
-                        again[an + 1], again[an + 2], again[an + 3] = x, y, z
-                        an = an + 3
-                        pushed = true
-                    end
-                end
-            end
-            if keep then
-                loaded[ln + 1], loaded[ln + 2], loaded[ln + 3], loaded[ln + 4] = x, y, z, due
-                ln = ln + 4
-            elseif not pushed then
-                queued[slot(x, y, z)] = nil
+        for i = 1, m do
+            local g = waiting[i]
+            if IsoRegions.getDataChunk(g.cx, g.cy) and cell:getGridSquare(g[1], g[2], g[3]) then
+                for j = 1, g.n do q[tail + j] = g[j] end
+                tail = tail + g.n
+            elseif now < g.due then
+                gn = gn + 1
+                groups[gn], byChunk[slot(g.cx, g.cy, 0)] = g, g
+            else
+                for j = 1, g.n, 3 do queued[slot(g[j], g[j + 1], g[j + 2])] = nil end
             end
         end
-        if ln == 0 and an == 0 then
+        local stop, cx, cy, ready = math.min(tail, head + SCAN * 3 - 1)
+        while head <= stop and an < BATCH * 3 do -- 這個 tick 推滿了就停，剩下的下一個 tick 接著對
+            local x, y, z = q[head], q[head + 1], q[head + 2]
+            head = head + 3
+            local ax, ay = math.floor(x / 8), math.floor(y / 8)
+            if ax ~= cx or ay ~= cy then cx, cy, ready = ax, ay, IsoRegions.getDataChunk(ax, ay) ~= nil end
+            local sq = ready and cell:getGridSquare(x, y, z)
+            if not sq then
+                local key = slot(ax, ay, 0)
+                local g = byChunk[key]
+                if not g then
+                    g = { cx = ax, cy = ay, due = now + WAIT, n = 0 }
+                    gn = gn + 1
+                    groups[gn], byChunk[key] = g, g
+                end
+                g[g.n + 1], g[g.n + 2], g[g.n + 3] = x, y, z
+                g.n = g.n + 3
+            else
+                local have, want = IsoRegions.getSquareFlags(x, y, z), flagsOf(sq)
+                if math.max(have, 0) ~= want then -- -1＝那一層還沒有資料
+                    print(LOG .. "REGION resync at=" .. x .. "," .. y .. "," .. z .. " have=" .. have .. " want=" .. want)
+                    push(cell, sq, x, y, z)
+                    again[an + 1], again[an + 2], again[an + 3] = x, y, z
+                    an = an + 3
+                else
+                    queued[slot(x, y, z)] = nil
+                end
+            end
+        end
+        if head > tail then q, head, tail = {}, 1, 0 end
+        if tail == 0 and an == 0 and gn == 0 then
             ticking = false
             Events.OnTick.Remove(recheck)
         end
@@ -1667,8 +1685,8 @@ do
             ticking = true
             Events.OnTick.Add(recheck)
         end
-        loaded[ln + 1], loaded[ln + 2], loaded[ln + 3], loaded[ln + 4] = x, y, z, now + WAIT
-        ln = ln + 4
+        q[tail + 1], q[tail + 2], q[tail + 3] = x, y, z
+        tail = tail + 3
     end
 end
 
