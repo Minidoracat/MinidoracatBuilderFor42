@@ -1607,12 +1607,13 @@ do
     -- 這個回呼自己在下一次被叫到時推，不交給 Place.repush：OnTick 處理中新掛的回呼同一輪就會被叫到（Event.java:53-65）。
     -- 推一格引擎就存檔、把那個 chunk 送給每位玩家（一個 chunk 最多約 2 KB；IsoRegionWorker.java:241-262,317-333、
     -- JobChunkUpdate.java:153），所以一樣的不推，不一樣的一個 tick 最多新推 BATCH 格（一座舊基地可能漏上百格）。
-    -- 一個 tick 最多看 SCAN 格（實機一格約 3.8 µs，5,328 格一次對完 20 ms）。佇列用 head 記讀到哪裡、不搬：推滿之後
-    -- 每個 tick 把剩下的抄進新表時，266 格漏記拖 67 個 tick、每個 tick 3.8～24.9 ms（2026-11-23 量測）。
+    -- 一個 tick 最多看 SCAN 格。2026-11-23 單機量測（5,328 格的基地）：一格平常 4～5.5 µs，讀檔後第 3～9 個 tick 那段
+    -- 約 20 µs（原因沒查到，不是 GC），512 格一個 tick 就是 9～11 ms，所以取 128。佇列用 head 記讀到哪裡、不搬：推滿
+    -- 之後每個 tick 把剩下的抄進新表時，266 格漏記拖 67 個 tick、每個 tick 3.8～24.9 ms。
     -- 讀檔當下區域資料可能還在背景載入（IsoRegions.init 只排工作，IsoRegionWorker.java:450-520，前台那份要等主迴圈
     -- 換緩衝；實機單機第 1 個 tick 才有），樓梯平台那格也可能還沒讀進來：這種格子排回佇列尾端、之後再看（算在 SCAN
     -- 裡），每格各自等 WAIT 個 tick 還沒有（引擎沒算過那個 chunk、格子卸載了）就不對了。地下不記（IsoRegionWorker.java:381）
-    local WAIT, BATCH, SCAN = 600, 4, 512
+    local WAIT, BATCH, SCAN = 600, 4, 128
     local q, head, tail = {}, 1, 0 -- 待對的格子，每格四個數：x、y、z、等到第幾個 tick 為止
     local again, an = {}, 0        -- 上一個 tick 推過、這個 tick 再推一次的
     local queued = {}              -- 排著還沒對完的格子（slot）：同一格只排一次
