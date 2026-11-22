@@ -1615,7 +1615,7 @@ do
     local again, an = {}, 0  -- 上一個 tick 推過、這個 tick 再推一次的
     local queued = {}        -- 排著還沒對完的格子（slot）：同一格只排一次
     local now, ticking = 0, false
-    local function slot(x, y, z) return (z * 32768 + y) * 32768 + x end
+    local function slot(x, y, z) return (z * 2097152 + y) * 2097152 + x end -- x、y 小於 2^21（伺服器收的座標上限 1,000,000）
     local function recheck()
         local cell = getCell()
         local second, sn, list, m = again, an, loaded, ln

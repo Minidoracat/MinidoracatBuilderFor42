@@ -5956,6 +5956,14 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         isClient = realClient
         check(Place.recheck ~= nil and #sent == 0 and count("OnTick") == ticks,
             "✗ 上層沒有地板也沒有牆、引擎那一層沒有資料：不推；多人的客戶端不對（區域資料是伺服器送的）")
+        -- 排著的格子用座標算鍵：大地圖上不同的兩格不能撞成同一格（審查 1122 Codex 確認輪；基數 32768 時這兩格相等）
+        local bigA, bigB = cellAt(32776, 100, 0, { solidfloor = true }, 0), cellAt(8, 101, 0, { solidfloor = true }, 0)
+        load(bigA, bigB)
+        tick()
+        tick()
+        check(#sent == 4 and sent[1] == bigA and sent[2] == bigB and count("OnTick") == ticks,
+            "座標很大的地圖：(32776,100) 和 (8,101) 是兩格，各自對、各自推")
+        sent = {}
         -- 一個 tick 最多新推 4 格：推一格引擎就存檔、廣播一個 chunk，舊基地一次漏上百格時攤到後面的 tick；推滿之後的不問
         asked = 0
         for i = 1, 6 do load(cellAt(95 + i, 96, 0, { solidfloor = true }, 0)) end
@@ -5972,14 +5980,14 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         load(nwin) -- 位元對不上的那格：沒資料時連問都不問
         for _ = 1, 598 do tick() end
         load(far)
-        tick()
+        for _ = 1, 3 do tick() end -- 第 600 個 tick 先到的放棄；晚到的才等了 3 個 tick
         local holding = #sent == 0 and asked == 0 and count("OnTick") == ticks + 1
-        notReady["15,12"] = nil
-        tick() -- 第 600 個 tick：先到的放棄；晚到的資料好了，推
+        notReady = {}
+        tick() -- 兩個 chunk 的資料都好了：只剩晚到的那格，推
         local late = #sent == 1 and sent[1] == far and asked == 1
         tick()
         check(holding and late and #sent == 2 and asked == 1 and count("OnTick") == ticks,
-            "區域資料一直沒有：等 600 個 tick 後放棄，不問、不推；晚到的格子自己算 600 個 tick，資料好了照樣推；都結束才摘掉 tick 事件")
+            "區域資料一直沒有：等 600 個 tick 後放棄，之後資料好了也不問、不推；晚到的格子自己算 600 個 tick，資料好了照樣推；都結束才摘掉 tick 事件")
         IsoRegions = realRegions
     end)()
 
