@@ -5978,7 +5978,7 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         tick()
         check(t1 and t2 and #sent == 12 and asked == 6 and count("OnTick") == ticks,
             "一次讀到 6 格漏記：第一個 tick 推 4 格（後 2 格不問），第二個 tick 那 4 格再推一次、剩下 2 格推第一次，第三個 tick 收尾（共 12 次、每格只問一次）")
-        -- 一個 tick 最多對 512 格；等資料的格子一個 chunk 收成一組、一個 tick 只問一次（2026-11-23 量測：5,328 格一次
+        -- 一個 tick 最多看 512 格；等資料的格子排回尾端，同一個 chunk 連著的只問一次（2026-11-23 量測：5,328 格一次
         -- 對完 20 ms；每個 tick 把還沒對的格子整份重抄，266 格漏記拖 67 個 tick、每個 tick 3.8～24.9 ms）
         sent, asked = {}, 0
         for i = 1, 600 do load(cellAt(199 + i, 200, 0, { solidfloor = true }, 16)) end
@@ -6010,6 +6010,29 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         tick()
         check(holding and late and #sent == 2 and asked == 1 and count("OnTick") == ticks,
             "區域資料一直沒有：等 600 個 tick 後放棄，之後資料好了也不問、不推；晚到的格子自己算 600 個 tick，資料好了照樣推；都結束才摘掉 tick 事件")
+        -- 同一個 chunk：資料還沒有時先排到的那格一直不存在（平台拆掉了），不擋後面排的；晚排的自己算 600 個 tick
+        -- （審查 1123 Codex：按 chunk 收成一組、看第一格、共用期限的寫法兩個都錯）
+        sent, asked = {}, 0
+        notReady["41,40"] = true
+        if Place.recheck then Place.recheck(328, 320, 1) end -- 沒有這一格
+        local behind = cellAt(329, 320, 0, { solidfloor = true }, 0)
+        load(behind)
+        tick()
+        notReady = {}
+        tick()
+        tick()
+        local alive = #sent == 2 and sent[1] == behind and sent[2] == behind and count("OnTick") == ticks + 1
+        notReady["41,40"] = true
+        for _ = 1, 595 do tick() end
+        local tardy = cellAt(330, 320, 0, { solidfloor = true }, 0)
+        load(tardy)
+        for _ = 1, 3 do tick() end -- 不存在的那格等滿 600 個 tick 放掉；晚排的還在
+        local kept = #sent == 2 and count("OnTick") == ticks + 1
+        notReady = {}
+        tick()
+        tick()
+        check(alive and kept and #sent == 4 and sent[3] == tardy and asked == 2 and count("OnTick") == ticks,
+            "同一個 chunk 先排到的那格一直不存在：後面那格資料好了照樣補推；先排的等滿 600 個 tick 放掉時，晚排的還留著、資料好了照樣推")
         IsoRegions = realRegions
     end)()
 
