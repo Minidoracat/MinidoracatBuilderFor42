@@ -6031,8 +6031,14 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         notReady = {}
         tick()
         tick()
-        check(alive and kept and #sent == 4 and sent[3] == tardy and asked == 2 and count("OnTick") == ticks,
-            "同一個 chunk 先排到的那格一直不存在：後面那格資料好了照樣補推；先排的等滿 600 個 tick 放掉時，晚排的還留著、資料好了照樣推")
+        local freed = false
+        if Place.recheck then
+            Place.recheck(328, 320, 1) -- 放掉之後同一格還能再排（審查 1123 Claude）
+            freed = count("OnTick") == ticks + 1
+            for _ = 1, 600 do tick() end
+        end
+        check(alive and kept and freed and #sent == 4 and sent[3] == tardy and asked == 2 and count("OnTick") == ticks,
+            "同一個 chunk 先排到的那格一直不存在：後面那格資料好了照樣補推；先排的等滿 600 個 tick 放掉（之後還能再排）時，晚排的還留著、資料好了照樣推")
         IsoRegions = realRegions
     end)()
 
