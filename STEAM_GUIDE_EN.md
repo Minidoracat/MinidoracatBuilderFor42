@@ -1171,6 +1171,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] Once a rain-proof roof is built, the square below is no longer outdoors.
 [*] For the room to count as indoors (temperature), the level above also needs a floor.
 [*] Sloped roofs from the Roof Helper, 30-degree and 45-degree, get a ceiling tile under every tile (except tiles that already have a floor on the roof's level). Once built from blueprint, an enclosed room counts as indoors and you stay dry inside when it rains; this holds for Gable, Hip and Shed alike.
+[*] Houses built in older versions sometimes didn't count as indoors even when enclosed and roofed. After updating, they fix themselves when you load the game and return to the house; no need to rebuild.
 [/list]
 [h3]Why do I get little or no XP?[/h3]
 [list]

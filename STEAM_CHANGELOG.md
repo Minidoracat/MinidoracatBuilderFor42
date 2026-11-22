@@ -1,20 +1,18 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-1.1.1[/h1]
-[i]2026-11-21[/i]
+[h1]Minidoracat Build Anything for B42 42.22.2-1.1.2[/h1]
+[i]2026-11-23[/i]
 
 [b]English summary[/b]
 [list]
-[*] Fixed: ramp pieces built one at a time before 1.0.0 could not be dismantled when other ramp pieces surrounded them. The character tried to stand on the next ramp tile, and "Dismantle an area" stopped without removing anything (since 1.0.0). You now stand on flat ground next to them, and surrounded pieces wait until the one beside them is gone.
-[*] To extend an old ramp: dismantle the old pieces in the way with "Dismantle an area" (each refunds its plank and nail), then place a full set.
-[*] Fixed: the dismantle menu listed every old ramp piece under the same name (since 1.0.0). Each row now shows its own number.
-[*] Still open: right-clicking a single old piece that is surrounded by ramp pieces still walks around to the bottom of the ramp (about 20 seconds). "Dismantle an area" avoids that.
+[*] Fixed: houses that were enclosed and roofed sometimes still didn't count as indoors (mostly ones built before 1.0.0), so things like body temperature treated them as outside. A missing upper floor did the same to the room right below it.
+[*] Old builds now fix themselves: after updating, floors and walls built with this tool are checked as the game loads them, and the ones the game missed are recorded again. No need to dismantle and rebuild.
+[*] If a room still doesn't count as indoors after updating (for example around ramps, or the tile left behind after dismantling stairs), dismantle and rebuild that one floor or wall piece, and let us know.
+[*] Server admins: no new sandbox options. The server log gets a few extra lines the first time old bases are loaded; that is expected.
 [/list]
 
 [h3]🔧 修正[/h3]
 [list]
-[*] [b]舊版一片一片蓋的坡道片拆不掉[/b]（1.0.0 起）：1.0.0 以前的坡道是一片一片蓋的，之後舊的那些片照地板拆。被其他坡道片圍在中間的舊片，角色會想站到隔壁的坡道格上去拆，得繞到坡底再爬上去；走不到時，「拆除一區」會一件都沒拆就停下來。現在改成站在旁邊的平地；四周都是坡道片的那幾片，等旁邊那片先拆平，再站過去拆。
-[*] [b]舊坡道旁邊要接新的坡道[/b]：先用「拆除一區」把擋路的舊片框起來拆掉（每片照舊退木板與釘子），再放一整組。
-[*] [b]拆除選單裡，舊的坡道片每一列都是同一個名字[/b]（1.0.0 起）：在斜面上按右鍵一次點到好幾片時，分不出哪一列是哪一片；現在各列寫各自的編號。
-[*] [b]還沒修的[/b]：按右鍵只拆一片、而那一片四周都是坡道片時，角色仍會繞到坡底再爬上去（約 20 秒）；用「拆除一區」框起來拆就不會繞。
+[*] [b]圍好了、有屋頂的房子有時還是不算室內[/b]（多半是 1.0.0 以前蓋的）：以前蓋地板、牆的時候，遊戲偶爾沒把那一格記進它算室內用的資料，圍好、有屋頂的房子就照室外算（例如體溫）；二樓地板漏掉時，正下方那間也一樣。1.0.0 起新蓋的遇到的機會低很多，但以前漏掉的還留在存檔裡。現在不管哪一版蓋的，更新後重新進遊戲、回到那棟房子時會檢查本工具蓋的地板、牆，漏掉的重新補記，不用拆掉重蓋。
+[*] [b]更新後還是不算室內的房子[/b]：少數情況這版檢查不到（例如坡道，或樓梯拆掉後留下的那一格）。把那一格的地板或牆拆掉重蓋一次就會記上，也歡迎回報。
 [/list]
 
-[b]伺服器管理員[/b]：這版只改玩家端拆除時的走路與選單名稱，沒有新的沙盒選項。
+[b]伺服器管理員[/b]：沒有新的沙盒選項。更新後伺服器第一次讀到舊基地時會自動補記，紀錄檔會多幾行補記的紀錄，屬正常。
