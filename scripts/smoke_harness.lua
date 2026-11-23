@@ -12252,6 +12252,31 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
     IsoDoor = realDoor
     check(okSlide and bq.objects[3] and bq.objects[3].name == "fg_slide_01_0" and bq.objects[3].north == false
         and bq.objects[4] == chairO, "蓋滑門：橫條那條邊建出 IsoDoor，排在橫條後面、家具前面")
+    -- 找可用的框（使用者 2026-11-23 選）：Rules.frameOf 回這張圖能當哪個形狀的框，條件和 Place 的 tallFrame／shapedFrame 同一組
+    local dw11 = trim("fg_dframe_01_11", 9543, { "DoorWallW", "cutW" }, "11")
+    local wf8 = trim("fg_wframe_01_8", 9544, { "WindowW", "cutW", "collideW" }, "8")
+    local flat8 = trim("fg_flat_01_8", 9545, {}, "8")
+    local win11 = sprite("fg_tall_01_11", 9546, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" }, keys = { WindowShape = "11" } })
+    local function fo(s) return Rules.frameOf(s:getProperties()) end
+    check(fo(t8) == "8" and fo(tN8) == "8" and fo(t3) == "3" and fo(dw11) == "11",
+        "Rules.frameOf：帶 cutW 或 cutN 又寫了形狀的牆飾、雙開門框牆（引擎只補 cut、不補 collide）回它的形狀")
+    check(fo(post8) == nil and fo(wf8) == nil and fo(t0) == nil and fo(flat8) == nil,
+        "Rules.frameOf 反面：牆角柱、自己擋那條邊的窗框牆、沒寫形狀、沒有 cut 都不是框")
+    -- 對拍：每一張單獨放在空格子上（格子的旗標＝那張圖自己帶的，真的格子會匯總），放置端認不認它和 frameOf 同一個答案
+    local function own(s, flags)
+        local f = {}
+        for _, k in ipairs(flags) do f[k] = true end
+        return on({ s }, { flags = f })
+    end
+    local same = true
+    for _, c in ipairs({ { t8, { "cutW" } }, { tN8, { "cutN" } }, { t3, { "cutW" } }, { t0, { "cutW" } },
+        { post8, { "WallSE", "cutW" } }, { wf8, { "WindowW", "cutW", "collideW" } }, { flat8, {} } }) do
+        local fits = Place.check("door", slide, own(c[1], c[2])) == true or Place.check("door", slideN, own(c[1], c[2])) == true
+        same = same and fits == (fo(c[1]) == "8")
+    end
+    check(same and Place.check("window", win11, own(dw11, { "DoorWallW", "cutW" })) == true
+        and not Place.check("window", win11, own(t8, { "cutW" })),
+        "框清單和 Place.check 對拍：滑門放不放得進＝frameOf 回 8；11 號全高窗放得進形狀 11 的門框牆、放不進形狀 8 的橫條")
     instanceof = realInst
     world(old)
 end)()
@@ -22585,6 +22610,7 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
     function M.setVisible(s, on) s.visible = on end
     function M.getIsVisible(s) return s.visible end
     function M.setTitle(s, t) s.title = t end
+    function M.setTooltip(s, t) s.tooltip = t end
     function M.setEnabled(s, on) s.enabled = on end
     function M.fitWidth(s) s.width = #(s.title or "") * 7 + 20 + (s.icon and 22 or 0) end
     function M.addChild(s, c)
@@ -22774,6 +22800,145 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         W.turnHint = realTurn
         check(okAll and has(slideT, "IGUI_MBLD_Detail_SlidingDoorFrame") and doorT ~= ""
             and not doorT:find("SlidingDoorFrame", 1, true), "詳情：滑門寫出也能裝在牆頂橫條底下；一般的門不寫")
+        -- 找可用的框（使用者 2026-11-23 選；Workshop fairytale：橫條在牆面疊圖裡難找）：選著滑門或全高窗時整套鈕換成
+        -- 「找可用的框」，清單只列牆面疊圖、門框兩個種類裡形狀合的框；條件鈕 ✕ 回原本的清單並選回那扇門
+        do
+            local FI, Names = B.Index, B.Names
+            local realFB, realFK, realSprite, realF, realS = FI.bucket, FI.kindSets, Entry.sprite, W.filter, v.S
+            local realOff, realOnly = sb.DisabledTilesets, W.st.only
+            local SLIDE, PLAIN = "fixtures_dt_01_20", "fixtures_dt_01_24"
+            for _, s in ipairs({ sprite("trims_dt_01_0", 9920, { flags = { "cutW" }, keys = { WindowShape = "8" } }),
+                sprite("trims_dt_01_1", 9921, { flags = { "cutN" }, keys = { WindowShape = "8" } }),
+                sprite("trims_dt_01_2", 9922, { flags = { "cutW" }, keys = { WindowShape = "3" } }),
+                sprite("trims_dt_01_3", 9923, { flags = { "cutW" } }),
+                sprite("dframes_dt_01_0", 9924, { flags = { "DoorWallW", "cutW" }, keys = { WindowShape = "11" } }),
+                sprite("dframes_dt_01_1", 9925, { flags = { "DoorWallW", "cutW" } }),
+                sprite("posts_dt_01_0", 9926, { flags = { "WallSE", "cutW" }, keys = { WindowShape = "8" } }),
+                sprite("fixtures_dt_01_1", 9927, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" }, keys = { WindowShape = "1" } }),
+                sprite("fixtures_dt_01_30", 9928, { flags = { "doorW" }, keys = { DoorSound = "SlidingGlassDoor", DoubleDoor = "1" } }) }) do
+                wl[#wl + 1] = s
+            end
+            world(wl)
+            FI.bucket = { wallOverlay = { trims_dt_01 = { n = 4, "trims_dt_01_0", "trims_dt_01_1", "trims_dt_01_2", "trims_dt_01_3" } },
+                doorFrame = { dframes_dt_01 = { n = 2, "dframes_dt_01_0", "dframes_dt_01_1" } },
+                post = { posts_dt_01 = { n = 1, "posts_dt_01_0" } } }
+            FI.kindSets = { wallOverlay = { n = 1, "trims_dt_01" }, doorFrame = { n = 1, "dframes_dt_01" }, post = { n = 1, "posts_dt_01" } }
+            W.turnHint = function() return nil end
+            local function two(set)
+                return set ~= nil and set.list.n == 2 and set.list[1] == "trims_dt_01_0" and set.list[2] == "trims_dt_01_1"
+            end
+            local okF, errF = pcall(function()
+                v.frames = nil
+                local sf = W.framesOf(SLIDE)
+                check(two(sf) and sf.name == SLIDE and sf.button == "IGUI_MBLD_Frames" and sf.at == nil and sf.reselect == true
+                    and sf.chip == getText("IGUI_MBLD_Frames_Chip", Names.of(SLIDE, "door")),
+                    "找可用的框：滑門的清單是形狀 8、帶 cut 的牆飾（兩個朝向都列），形狀 3、沒寫形狀的、門框、牆角柱不列")
+                local w8, w11 = W.framesOf("fixtures_dt_01_8"), W.framesOf("fixtures_dt_01_11")
+                check(two(w8) and w11 ~= nil and w11.list.n == 1 and w11.list[1] == "dframes_dt_01_0",
+                    "找可用的框：8 號全高窗列同形狀的牆飾；11 號列形狀 11 的雙開門框牆（沒寫形狀的一般門框不列）")
+                check(W.framesOf(PLAIN) == nil and W.framesOf("walls_dt_01_11") == nil and W.framesOf("walls_dt_01_0") == nil
+                    and W.framesOf("fixtures_dt_01_1") == nil and W.framesOf("fixtures_dt_01_30") == nil
+                    and W.framesOf("recipe:Base.Nope") == nil and W.setOf(SLIDE) == nil,
+                    "✗ 一般的門、牆型窗、牆、形狀 1 的一般窗、雙開的滑門、配方項目沒有「找可用的框」；W.setOf 對滑門照舊回 nil（快選列不跟著列框）")
+                -- 快取：第一次掃兩個種類的桶（6 張），之後查表；目錄、沙盒變了（W.refreshCatalog）清掉
+                local looked = 0
+                Entry.sprite = function(name)
+                    looked = looked + 1
+                    return realSprite(name)
+                end
+                v.frames = nil
+                W.framesOf(SLIDE)
+                local first = looked
+                W.framesOf(SLIDE)
+                local second = looked - first
+                Entry.sprite = realSprite
+                local cached = v.frames ~= nil
+                W.refreshCatalog(v)
+                check(first - second == 6 and cached and v.frames == nil,
+                    "找可用的框：第一次掃牆面疊圖與門框兩桶各一遍，第二次不再查圖；W.refreshCatalog 清掉快取")
+                sb.KindWallOverlay = false
+                v.frames = nil
+                local offS, off8, off11 = W.framesOf(SLIDE), W.framesOf("fixtures_dt_01_8"), W.framesOf("fixtures_dt_01_11")
+                sb.KindWallOverlay = nil
+                sb.DisabledTilesets = "trims_dt_01"
+                v.frames = nil
+                local blocked = W.framesOf(SLIDE)
+                sb.DisabledTilesets = realOff
+                v.frames = nil
+                check(offS == nil and off8 == nil and off11 ~= nil and blocked == nil,
+                    "✗ 管理員關掉牆面疊圖：滑門與 8 號窗沒有框可找（11 號窗的門框牆照舊）；關掉那個 tileset 也不列")
+                -- 按鈕：標題、提示照 set.button；一般的門按不了、標題回「整套」；窄版只有圖示、照樣可按
+                local function sel(name)
+                    v.setKey = nil
+                    pick(name)
+                end
+                sel(SLIDE)
+                local onS = v.setBtn.enabled == true and v.setBtn.title == getText("IGUI_MBLD_Frames")
+                    and v.setBtn.tooltip == getText("IGUI_MBLD_Frames_Tip") and two(v.setInfo)
+                sel(PLAIN)
+                local offD = v.setBtn.enabled == false and v.setBtn.title == getText("IGUI_MBLD_Set") and v.setInfo == nil
+                place(380, 400)
+                sel(SLIDE)
+                local narrow = v.mode == "narrow" and v.setBtn.title == "" and v.setBtn.enabled == true
+                    and v.setBtn.tooltip == getText("IGUI_MBLD_Frames_Tip")
+                place(1100, 700)
+                check(okAll and onS and offD and narrow,
+                    "找可用的框鈕：選著滑門可按、標題與提示換成找可用的框；一般的門停用、標題回整套；窄版只有圖示")
+                -- 按下：清單換成框、條件鈕出現；✕ 回原本的頁籤並選回那扇門（下一步就是裝它）
+                local ALL = { n = 3, "walls_dt_01_0", SLIDE, PLAIN }
+                W.filter = function(st)
+                    if st.set then return st.set.list, nil end
+                    return ALL, nil
+                end
+                local function open()
+                    W.st.tab, W.st.cat, W.st.source, W.st.query = "stairs", "all", "all", ""
+                    W.refilter(false)
+                    v.selName = SLIDE
+                    sel(SLIDE)
+                    W.openSet()
+                end
+                open()
+                local set = W.st.set
+                local opened = set ~= nil and two(set) and W.st.tab == "all" and v.grid.items == set.list and v.chip.visible == true
+                    and v.chip.title == set.chip and v.selName == nil
+                    and W.tileLabel("trims_dt_01_0") == Names.short("trims_dt_01_0")
+                W.clearChip()
+                check(opened and W.st.set == nil and W.st.tab == "stairs" and v.grid.items == ALL and v.chip.visible == false
+                    and v.selName == SLIDE and v.reselect == nil,
+                    "找可用的框：按下清單換成框、條件鈕寫門名、格子照一般短名；✕ 回開之前的頁籤，選回那扇門")
+                -- 「只看能蓋的」開著時清單分批、跨幀才套用，中間 W.pump 會把選取寫回方格目前那格：選回不靠 v.selName
+                open()
+                W.st.only, v.S = true, v.S or {}
+                W.clearChip()
+                local pending = v.aff ~= nil and v.reselect == SLIDE
+                v.selName = "trims_dt_01_0"
+                W.st.only, v.S, v.aff = realOnly, realS, nil
+                W.refilter(false)
+                check(pending and v.selName == SLIDE and v.reselect == nil,
+                    "找可用的框：分批篩選還沒套用時要選回的那一項留著，套用時照樣選回（中間選取被改過也一樣）")
+                -- 玩家自己換頁籤離開條件：不選回
+                open()
+                W.onTab(v, "stairs")
+                W.refilter(false)
+                check(W.st.set == nil and v.reselect == nil and v.selName ~= SLIDE, "✗ 自己換頁籤離開找可用的框：不選回那扇門")
+                -- 條件開著時管理員關掉牆面疊圖：清單沒了，照 ✕ 回原本的清單
+                W.syncSettings(v)
+                open()
+                sb.KindWallOverlay = false
+                W.syncSettings(v)
+                local closed = W.st.set == nil and v.grid.items == ALL
+                sb.KindWallOverlay = nil
+                W.syncSettings(v)
+                check(closed, "找可用的框開著時管理員關掉牆面疊圖：條件自動關掉、回原本的清單")
+            end)
+            if not okF then check(false, "找可用的框：" .. tostring(errF)) end
+            Entry.sprite, W.filter, v.S, W.st.only, v.aff, v.reselect = realSprite, realF, realS, realOnly, nil, nil
+            sb.KindWallOverlay, sb.DisabledTilesets = nil, realOff
+            W.st.set, v.frames = nil, nil
+            FI.bucket, FI.kindSets = realFB, realFK
+            W.turnHint = realTurn
+            W.layout()
+        end
         getTexture, getScriptManager = realTex, realSM
 
         -- 搜完整圖塊名（listFor 不看頁籤、分類、來源）：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格一致；

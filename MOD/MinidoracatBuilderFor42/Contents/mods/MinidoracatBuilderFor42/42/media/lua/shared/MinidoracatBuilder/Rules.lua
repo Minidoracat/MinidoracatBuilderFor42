@@ -580,6 +580,17 @@ function Rules.slidingDoor(p)
     return p:get("DoorSound") == "SlidingGlassDoor"
 end
 
+-- 這張圖能當哪個形狀的框（Place.lua 的 tallFrame／shapedFrame 認的那種：全高窗、滑門的牆頂橫條）：回 WindowShape，
+-- 不能回 nil。和放置同一組條件：帶 cutN／cutW、不是牆角柱，自己不擋那條邊（tallFrame 不認有 collide 的邊）。建成窗的圖
+-- 呼叫端不要傳（shapedFrame 跳過 IsoWindow）。建造視窗「找可用的框」用（W.framesOf）；改放置規則時這裡一起改，
+-- harness「框清單和 Place.check 對拍」會擋。p＝getProperties()
+function Rules.frameOf(p)
+    local s = p:get("WindowShape")
+    if s == nil or p:has(WallSE) then return nil end
+    if (p:has(cutN) and not p:has(collideN)) or (p:has(cutW) and not p:has(collideW)) then return s end
+    return nil
+end
+
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
 -- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。

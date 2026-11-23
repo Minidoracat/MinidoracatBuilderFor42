@@ -312,7 +312,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
-[*] [b]Sliding glass doors[/b]: besides a door frame, they also fit under a wall-top trim piece (the wall overlay that is only a strip along the top; search for walls_exterior_house_06_15, for example). Place the trim on that edge first, then the door: no frame wall shows behind the glass, and an enclosed room still counts as indoors. While the door is there, Build Anything won't dismantle that trim, and it can't dismantle the door either: smash the door first (Build Anything gives no materials back), then take the trim down. The door won't fit when a west-facing trim shares its square with a corner post, or when the door would cut through multi-tile furniture.
+[*] [b]Sliding glass doors[/b]: besides a door frame, they also fit under a wall-top trim piece. With a sliding glass door selected, press Find frames in the details and the list shows only the trims that fit (you can also search for walls_exterior_house_06_15). Place the trim on that edge first, click the chip above the search box to go back to your list (the door is selected again), then install the door: no frame wall shows behind the glass, and an enclosed room still counts as indoors. While the door is there, Build Anything won't dismantle that trim, and it can't dismantle the door either: smash the door first (Build Anything gives no materials back), then take the trim down. The door won't fit when a west-facing trim shares its square with a corner post, or when the door would cut through multi-tile furniture.
 [*] [b]Fence gates[/b]: need no door frame and go on any empty edge; they can't go where there is already a wall, fence, door or window, so leave a gap first.
 [*] [b]Garage doors[/b]: in the Door kind. While placing, hold the left button and drag along the edge where it goes; the length you drag is the door's width, from 2 tiles up to the admin's Most items at once (2 when that is set lower). A single click places the shortest, 2 tiles. The box by the mouse shows the width and the price.
 [*] [b]Double doors[/b]: one click places the whole set of 4 pieces.
@@ -332,7 +332,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Their cost[/b]: a window frame plus a window, see Materials.
 [*] [b]Removing and replacing[/b]: like windows, they can only be smashed, and they can't be replaced in place.
 [*] [b]Ordinary windows[/b]: still go into a window frame.
-[*] [b]Full-height windows[/b]: vanilla has no window frame wall for them. Place the wall overlay with a full-height opening from the same set on that edge first (the full set of some house exterior and interior walls has one), then install the window.
+[*] [b]Full-height windows[/b]: vanilla has no window frame wall for them. With a full-height window selected, press Find frames in the details and the list shows only the frames with the right shape (wall overlays with a full-height opening, or double-door frame walls). Place the frame on that edge first, then come back and install the window.
 [*] [b]The two wider than a door[/b]: go into a double-door frame wall, which the full set of some house walls includes.
 [*] [b]Which one to place first[/b]: the details say so when you pick one of these windows.
 [*] [b]On a frame that doesn't match[/b]: it still builds, but the wall shows behind it, and the cursor warns you.

@@ -1340,7 +1340,10 @@ local function applyItems(v, list, jump, keep)
     local grid = v.grid
     grid:setItems(list)
     -- 重算（keep：整理進度、材料、最愛）留住玩家選的那格；換了條件，或還沒選時，才選完整圖塊名那一張（jump）
-    local want = keep and v.selName or jump or v.selName
+    -- v.reselect：關掉「找可用的框」回原本的清單時選回那扇門或窗（W.clearSet 設的，只用一次）。不直接設 v.selName：
+    -- 清單分批篩選時跨幀才到這裡，中間 W.pump 會把 v.selName 寫回方格目前選的那格
+    local want = v.reselect or (keep and v.selName or jump or v.selName)
+    v.reselect = nil
     local idx
     if want then
         for i = 1, #list do
@@ -1928,13 +1931,14 @@ local function prepareDetail(v)
     v.favBtn:setTitle(getText(name and Favorites.has(name) and "IGUI_MBLD_Fav_Remove" or "IGUI_MBLD_Fav_Add"))
     v.favBtn:setWidth(fw)
     v.buildBtn:setEnabled(e ~= nil or r ~= nil)
-    -- 「整套」：選著的是牆類而且湊得到兩項才能按，表的排法不同時寫「同一組」（W.setOf）。窄版只有圖示，字在提示框。
+    -- 「整套」：選著的是牆類而且湊得到兩項才能按，表的排法不同時寫「同一組」（W.setOf）；選著滑門、全高窗時是
+    -- 「找可用的框」（W.framesOf）。窄版只有圖示，字在提示框。
     -- 換了項目、設定、目錄（catAt：整理狀態變了、進度重整）或看得到的配方（recipeSig）才重算：同一組那條要排整個
     -- tileset，這裡每秒跑
     local setKey = (e or r) and (name .. "|" .. tostring(v.digest) .. "|" .. tostring(v.catAt) .. "|" .. tostring(v.recipeSig))
         or nil
     if setKey ~= v.setKey then
-        v.setKey, v.setInfo = setKey, setKey and W.setOf(name) or nil
+        v.setKey, v.setInfo = setKey, setKey and (W.setOf(name) or W.framesOf(name)) or nil
         v.roofLate = true
     end
     -- 「屋頂助手」：選著屋頂、而且屋頂助手認得出這一項的整套才有（晚綁定：沒載入就沒有這顆）。認整套要掃一整組圖，
@@ -2369,9 +2373,65 @@ function W.setOf(name)
         chip = getText("IGUI_MBLD_SetTileset_Chip", Names.tileset(ts)) }
 end
 
--- 「整套」：清單換成選著那一項的那一套（prepareDetail 算好的 v.setInfo）；頁籤、分類、來源回「全部」、清搜尋（同
--- openReplace），按條件鈕的 ✕ 回到開之前的（W.clearSet）。換頁籤、分類、來源或搜尋就離開整套、不回去（leaveSet）。
--- 一次只開一個條件：換成條件關掉
+-- ===== 找可用的框（使用者 2026-11-23 選；Workshop fairytale：橫條在牆面疊圖裡難找）=====
+
+-- 滑門、沒有窗框牆可配的全高窗另外認的框（Place.check 的 tallFrame）在目錄裡照形狀分好：{ [WindowShape] = { n, 名稱… } }。
+-- 只掃牆面疊圖與門框兩個種類（放下去是獨立物件、不是窗），每張查一次屬性（Rules.frameOf）；記在 v.frames，目錄、沙盒
+-- 變了（W.refreshCatalog）才重掃。兩個朝向都列：門窗按旋轉鍵換邊。清單是放置端接受的一部分：滑門也放得進一般門框、
+-- 全高窗也放得進形狀不合的窗框牆（會露牆），那兩種各有自己的分類，不列
+-- shortcut: 兩桶一次掃完（原版約 1,300 張），圖塊包讓這兩個種類上萬張時改成像子種類那樣在 W.pump 分批
+local FRAME_KINDS = { "wallOverlay", "doorFrame" }
+local function frameIndex()
+    local v = W.v
+    if v and v.frames then return v.frames end
+    local idx, s, frameOf = {}, Entry.settings(), B.Rules.frameOf
+    local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
+    for _, k in ipairs(FRAME_KINDS) do
+        local sets, byTs = kindSets[k], bucket[k]
+        for j = 1, sets and byTs and Entry.kindOn(k, s) and sets.n or 0 do
+            local ts = sets[j]
+            local arr = not W.blocked(ts) and byTs[ts]
+            for i = 1, arr and arr.n or 0 do
+                local spr = Entry.sprite(arr[i])
+                local shape = spr and frameOf(spr:getProperties())
+                if shape then
+                    local list = idx[shape]
+                    if not list then
+                        list = { n = 0 }
+                        idx[shape] = list
+                    end
+                    list.n = list.n + 1
+                    list[list.n] = arr[i]
+                end
+            end
+        end
+    end
+    if v then v.frames = idx end
+    return idx
+end
+
+-- 選著的這一項的「可用的框」，形狀同 W.setOf 回的（沒有 at：格子照一般短名；list 是 v.frames 裡共用的表，不能改）。
+-- reselect：條件鈕 ✕ 回去時選回這一項（下一步就是裝它）。不是滑門或全高窗（條件同詳情那兩句）、配方項目、目錄裡
+-- 沒有同形狀的框回 nil。不併進 W.setOf：快選列第二排也用它（Hotbar.lua），放滑門時不該列出兩百多張橫條
+function W.framesOf(name)
+    local e = not Recipes.get(name) and Entry.resolve(name) or nil
+    if not e then return nil end
+    local R, p, shape = B.Rules, e.spr:getProperties(), nil
+    if e.kind == "window" and not R.framedWindow(e.spr:getType()) then
+        shape = p:get("WindowShape")
+        if not R.TALL_WINDOW[shape or ""] then shape = nil end
+    elseif e.kind == "door" and R.slidingDoor(p) and not R.grouped(p) then
+        shape = R.SLIDING_FRAME
+    end
+    local list = shape and frameIndex()[shape]
+    if not list then return nil end
+    return { name = name, list = list, reselect = true, button = "IGUI_MBLD_Frames",
+        chip = getText("IGUI_MBLD_Frames_Chip", Names.of(name, e.kind)) }
+end
+
+-- 「整套」：清單換成選著那一項的那一套（prepareDetail 算好的 v.setInfo；滑門、全高窗時是「找可用的框」那份清單）；
+-- 頁籤、分類、來源回「全部」、清搜尋（同 openReplace），按條件鈕的 ✕ 回到開之前的（W.clearSet）。換頁籤、分類、
+-- 來源或搜尋就離開整套、不回去（leaveSet）。一次只開一個條件：換成條件關掉
 function W.openSet()
     local v, st = W.v, W.st
     local set = v and v.setInfo
@@ -2390,14 +2450,16 @@ function W.openSet()
 end
 
 -- 條件鈕的 ✕（整套）：回到開整套之前的頁籤、來源、分類與搜尋字（那個頁籤的種類全被關掉了回「全部」，refreshTabs；
--- 那個分類這個來源沒有了也回「全部」，refreshCats）
+-- 那個分類這個來源沒有了也回「全部」，refreshCats）。找可用的框（set.reselect）另外選回那扇門或窗（applyItems）
 function W.clearSet()
     local v, st = W.v, W.st
-    local prev = st.set and st.set.prev
+    local cur = st.set
+    local prev = cur and cur.prev
     st.set = nil
     if not v then return end
     v.text, v.textN = {}, 0
     if prev then
+        if cur.reselect then v.reselect = cur.name end
         st.tab, st.source, st.cat, st.query = prev.tab, prev.source, prev.cat, prev.query
         v.tabs:setSelected(st.tab, true)
         W.refreshTabs(v) -- 沙盒變了自動退出時（refreshSet），原本的頁籤可能已經被關掉
@@ -2439,7 +2501,7 @@ end
 local function refreshSet(v)
     local cur = W.st.set
     if not cur then return end
-    local set = W.setOf(cur.name)
+    local set = W.setOf(cur.name) or W.framesOf(cur.name)
     if not set then return W.clearSet() end
     set.prev = cur.prev
     W.st.set = set
@@ -2499,7 +2561,7 @@ function W.refreshSources(v)
 end
 
 function W.refreshCatalog(v)
-    v.subs, v.subJob = {}, nil -- 目錄、沙盒或看得到的配方變了：子種類重算
+    v.subs, v.subJob, v.frames = {}, nil, nil -- 目錄、沙盒或看得到的配方變了：子種類、能當框的圖（frameIndex）重算
     v.recipeSig = Recipes.shown(W.playerNum).sig -- W.pump 每秒比它：看得到的配方變了才重整
     refreshSet(v)
     W.refreshSources(v)
