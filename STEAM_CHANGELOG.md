@@ -9,6 +9,10 @@
 [*] Fixed (1.1.2): with a Knox Pass door set to "count as indoors" standing on a floor built with this tool, the room stopped counting as indoors for about a second every time the area loaded.
 [*] Fixed (1.1.2): a door left open while the area reloaded could stop counting as a wall after you closed it.
 [*] Server and players must update together (placement rule version 20). No new sandbox options.
+[*] New: with a sliding glass door or a full-height window selected, the Full set button in the details becomes Find frames. Press it and the list shows only the pieces that work as its frame (wall-top trims, wall overlays with a full-height opening, or double-door frame walls), in both facings.
+[*] Place the frame on the edge, then click the tag above the search bar to go back to the list you had before. The door or window is selected again, ready to install.
+[*] Regular doors and regular windows are unchanged: find their frames under Door frame and Window frame.
+[*] Placement rules did not change, so server and players do not need to update at the same time. No new sandbox options.
 [/list]
 
 [h3]✨ 新增[/h3]
@@ -25,3 +29,4 @@
 [/list]
 
 [b]伺服器管理員[/b]：伺服器與玩家要一起更新，版本不同時伺服器會拒絕放置並提示更新。沒有新的沙盒選項。
+[b]伺服器管理員[/b]：放置規則沒有變，伺服器和玩家不用同時更新。沒有新的沙盒選項。
