@@ -54,8 +54,11 @@ local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", water = "fi
     post = "edge" }
 Cursor.DRAG = DRAG
 -- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
--- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）
+-- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）；這一項只有屋頂、地板
 local LAYERED = { roof = true, floor = true }
+-- 格邊種類（牆、窗框、門框、柵欄、門、窗、柱子）也能換層，預設這一層（使用者 2026-11-23 選）：站在樓下蓋二樓的牆。
+-- 能不能蓋照舊由 Place.check 決定（樓上的牆要有地板、正下方同一條邊的牆或同層屋頂片）
+local function layerable(kind) return LAYERED[kind] or Entry.EDGE[kind] or false end
 local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxCellsPerDrag 上限 64）
 local DRAW_MAX = 512  -- ponytail：一次拖曳最多排 512 格（超過 MaxCellsPerDrag 的分批送，Queue.push），量到卡頓再縮
 local AREA_SIDE = 40  -- 一區拆除每邊最多幾格（Area 每次預覽掃整區）
@@ -315,7 +318,7 @@ function Cursor.new(player, entry, d, overlap)
     -- 欄位不能叫 mirror：實例查不到欄位時會拿到 Cursor.mirror 這個函式，判斷永遠成立（roof1 實踩）
     o.mirrorName = o.states.n == 1 and Cursor.mirror(entry) or nil
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
-    -- 屋頂預設蓋在上一層：站在下面那層往上蓋。屋頂與地板都能用 PgUp／PgDn、手把 X 切換（LAYERED；isValid 照它換算）
+    -- 屋頂預設蓋在上一層：站在下面那層往上蓋。能換層的種類（layerable）都能用 PgUp／PgDn、手把 X 切換（isValid 照它換算）
     o.up = entry.kind == "roof"
     -- 一次送幾格（MaxCellsPerDrag）：拖得更多的放開後分批接著送（Queue.push 照同一個沙盒值切）
     o.perBatch = math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
@@ -456,7 +459,7 @@ end
 function Cursor:rotateKey(key)
     if self.area then return end
     if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then return self:turn(1) end
-    if not LAYERED[self.entry.kind] or hook("layer", self) ~= nil then return end -- 規劃的樓層由 PlanMode 自己接換層鍵
+    if not layerable(self.entry.kind) or hook("layer", self) ~= nil then return end -- 規劃的樓層由 PlanMode 自己接換層鍵
     -- isKey 連修飾鍵、替代鍵一起比（Core.java:2405-2408），同 R 那一行
     if getCore():isKey("MinidoracatBuilder_LayerUp", key) then
         self.up = true
@@ -505,12 +508,12 @@ function Cursor.padBuild(c)
     c.build = c.canBeBuild
 end
 
--- 手把：A 蓋；LB／RB 在有的朝向之間轉；X 換層（屋頂）；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:627-653）
+-- 手把：A 蓋；LB／RB 在有的朝向之間轉；X 換層（layerable）；B 取消、Y 回角色位置照原版（ISBuildingObject.lua:627-653）
 function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
     if button == Joypad.AButton then return Cursor.padBuild(self) end
     if button == Joypad.RBumper then return self:turn(1) end
     if button == Joypad.LBumper then return self:turn(-1) end
-    if button == Joypad.XButton and LAYERED[self.entry.kind] then
+    if button == Joypad.XButton and layerable(self.entry.kind) then
         self.up = not self.up
         return
     end
@@ -522,7 +525,7 @@ end
 
 -- 原版按鈕提示列照拖曳物件的 getXPrompt 顯示 X（ISButtonPrompt.lua:1012-1013）
 function Cursor:getXPrompt()
-    if not (self.entry and LAYERED[self.entry.kind]) then return nil end
+    if not (self.entry and layerable(self.entry.kind)) then return nil end
     return getText(self.up and "IGUI_MBLD_PadLayerHere" or "IGUI_MBLD_PadLayerUp")
 end
 
@@ -895,7 +898,7 @@ function Cursor:texts()
         if (self.states.n > 1 or self.mirrorName) and self.rotateName then
             parts[#parts + 1] = getText("IGUI_MBLD_HintRotate", self.rotateName)
         end
-        if LAYERED[self.entry.kind] then
+        if layerable(self.entry.kind) then
             parts[#parts + 1] = Cursor.keyText(getText(self.up and "IGUI_MBLD_HintLayerHere" or "IGUI_MBLD_HintLayerUp"))
         end
         parts[#parts + 1] = getText("IGUI_MBLD_HintCancel")

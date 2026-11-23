@@ -53,13 +53,16 @@ function Client.sent()
     sends[#sends + 1] = t
 end
 
--- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；其他不站在 own（同一件的其他格）上，
+-- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；在上一層的先走到正下方同一條邊旁邊
+-- （樓上那格沒有地板時 walkAdjWall 找不到站位），走不到才照上一層找。其他不站在 own（同一件的其他格）上，
 -- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
 -- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
 local function walkNear(player, kind, north, x, y, z, ...)
     local own = ...
     local cell = getCell()
     if Entry.EDGE[kind] then
+        local below = z > math.floor(player:getZ()) and cell:getGridSquare(x, y, z - 1)
+        if below and luautils.walkAdjWall(player, below, north, true) then return true end
         local sq = cell:getGridSquare(x, y, z)
         if not sq then return nil end
         return luautils.walkAdjWall(player, sq, north, true)

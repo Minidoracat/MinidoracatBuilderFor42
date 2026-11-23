@@ -259,6 +259,18 @@ function Place.framesWindow(o, sq)
     return (p:has(F.cutN) and framesOn(o, sq, true, s)) or (p:has(F.cutW) and framesOn(o, sq, false, s)) or false
 end
 
+-- o 是不是那條邊上滑門唯一的框（Place.check 門分支：沒有門框時滑門認形狀 Rules.SLIDING_FRAME 的 cut 牆飾）。不看門的
+-- 種類：開著的門圖讀不到 DoorSound，一般門也只會在有門框時出現在這條邊
+local function framesDoorOn(o, sq, north)
+    return sq:getDoor(north and NS or EW) ~= nil and not doorFrameAt(sq, north)
+        and not shapedFrame(sq, north, Rules.SLIDING_FRAME, o)
+end
+function Place.framesDoor(o, sq)
+    local p = not instanceof(o, "IsoWindow") and o:getProperties()
+    if not p or p:has(F.WallSE) or p:get("WindowShape") ~= Rules.SLIDING_FRAME then return false end
+    return (p:has(F.cutN) and framesDoorOn(o, sq, true)) or (p:has(F.cutW) and framesDoorOn(o, sq, false)) or false
+end
+
 -- 牆不能把既有的多格家具切開（ISBuildIsoEntity.lua:397-408）：北邊的牆擋 grid y > 0 的片，西邊擋 x > 0
 local function splitsGrid(sq, n, w, skip)
     local objects = sq:getObjects()
@@ -853,13 +865,17 @@ function Place.check(kind, spr, sq, ...)
         local refused, dirtN, dirtW = basement(sq, spr, n, w)
         if refused then return false end
         if kind == "door" and not Rules.grouped(p) then
-            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。柵欄門（Rules.gate）
+            -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。滑門沒有門框時
+            -- 也認牆頂橫條（Rules.slidingDoor；tallFrame 另查那條邊沒有擋路的牆）。柵欄門（Rules.gate）
             -- 沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，ISBuildIsoEntity.lua:302-310）。
             -- 車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身帶牆屬性，雙開門原版配方也不要門框
             -- （entity_wood_doubledoor.txt 的 dontNeedFrame）
             if not doorPairExists(spr) then return false end
-            if (n and doorFrameAt(sq, true) and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil)
-                or (w and doorFrameAt(sq, false) and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil) then
+            local slide = Rules.slidingDoor(p) and Rules.SLIDING_FRAME or nil -- nil：tallFrame 不認
+            if (n and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil
+                    and (doorFrameAt(sq, true) or tallFrame(sq, true, slide)))
+                or (w and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil
+                    and (doorFrameAt(sq, false) or tallFrame(sq, false, slide))) then
                 return true
             end
             if not Rules.gate(p) then return false end

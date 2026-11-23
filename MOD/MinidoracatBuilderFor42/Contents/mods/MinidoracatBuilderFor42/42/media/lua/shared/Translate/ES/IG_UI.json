@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Bloqueada para siempre: esta ventana no se puede abrir, pero sí romper.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Ventana de altura completa: los marcos de ventana normales no le sirven y se vería la pared detrás. Su marco es una de las capas de pared con abertura de altura completa, incluidas en el conjunto de algunas paredes exteriores de casa e interiores. Primero pon esa capa en el mismo borde y luego instala esta ventana.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "Esta ventana va en una pared con bastidor de puerta doble, no en un marco de ventana; el conjunto de algunas paredes de casa incluye una. Primero construye ese bastidor de puerta y luego instala esta ventana.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Puerta corredera: además de un bastidor de puerta, también se instala bajo una franja superior de pared (la capa de pared que es solo una franja arriba, p. ej. walls_exterior_house_06_15). No se ve la pared del bastidor detrás del cristal y la habitación sigue contando como interior. Primero pon la franja en el mismo borde y luego instala esta puerta.",
   "IGUI_MBLD_Detail_Stackable": "Pila máxima: %1",
   "IGUI_MBLD_Detail_Health": "Durabilidad: %1",
   "IGUI_MBLD_Detail_HealthProof": "Durabilidad: %1 (las opciones de sandbox impiden que los zombis lo rompan)",

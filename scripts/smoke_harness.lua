@@ -7410,6 +7410,24 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         MinidoracatBuilder.Client.dismantle(P, w2, "wall", {})
         check(walks == 2 and #queued == 1, "作弊關：本工具拆的照舊先走過去")
     end
+    -- 2026-11-23 回饋（換層蓋牆）：上一層的格邊先走到正下方同一條邊旁邊（樓上那格沒有地板時找不到站位），走不到才照
+    -- 上一層找；同一層照舊；上一層那格還沒有、正下方也走不到時照樣送（每筆＝walkAdjWall 看過的樓層／排了幾個動作）
+    local seen, reach = {}, {}
+    luautils = { walkAdj = walked, walkAdjWall = function(_, sq)
+        seen[#seen + 1] = sq:getZ()
+        return reach[sq:getZ()] == true
+    end }
+    square(131, 130, 1)
+    square(134, 130, 0)
+    local function upper(x, z, r0, r1)
+        seen, reach = {}, { [0] = r0, [1] = r1 }
+        nowMs = nowMs + 6000
+        MinidoracatBuilder.Client.build(P, "cs_wall_01_1", { { x, 130, z, 0 } })
+        return table.concat(seen, ",") .. "/" .. #queued
+    end
+    local ups = table.concat({ upper(131, 1, true, true), upper(131, 1, false, true), upper(131, 1, false, false),
+        upper(131, 0, true, true), upper(134, 1, false, true) }, " ")
+    check(ups == "0/1 0,1/1 0,1/0 0/1 0/1", "上一層的格邊：先走到正下方，走不到才照上一層找，都走不到不排；同一層照舊（" .. ups .. "）")
     MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
     isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
 end)()
@@ -8194,7 +8212,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r19:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r20:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -8434,6 +8452,29 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
     alts.MinidoracatBuilder_LayerDown = 33
     lc:rotateKey(33)
     check(lc.up == false, "替代鍵也換層（照 isKey 比，不是只比 getKey 的主鍵）")
+    -- 2026-11-23 回饋：格邊種類（牆、窗框、門框、柵欄、門、窗、柱子）也能換層：換層鍵、手把 X、X 的提示都有；
+    -- 家具、窗簾、牆面疊圖照舊不能
+    local function layers(kind)
+        local c = setmetatable({ entry = { kind = kind }, up = false }, { __index = Cursor })
+        c:rotateKey(19)
+        local byKey, prompt = c.up, c:getXPrompt()
+        if not byKey then return false, prompt end
+        c:onJoypadPressButton(0, nil, Joypad.XButton)
+        return c.up == false, prompt
+    end
+    local realPad = Joypad
+    Joypad = { XButton = 3 }
+    local edgeOk, others = true, true
+    for _, k in ipairs({ "wall", "windowFrame", "doorFrame", "fence", "door", "window", "post" }) do
+        local ok, prompt = layers(k)
+        edgeOk = edgeOk and ok and prompt == "IGUI_MBLD_PadLayerHere"
+    end
+    for _, k in ipairs({ "furniture", "curtain", "wallOverlay", "container" }) do
+        local ok, prompt = layers(k)
+        others = others and not ok and prompt == nil
+    end
+    Joypad = realPad
+    check(edgeOk and others, "格邊種類能換層（換層鍵換到上一層、手把 X 換回來、X 提示有字）；家具、窗簾、牆面疊圖、容器不能")
     getCore, getKeyName, Keyboard, KeybindId = realCore2, realKeyName, realKb, realKid
     sb.MaxCellsPerDrag = realMax
 end)()
@@ -12063,6 +12104,7 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
     local orderSq = square(239, 230, 0)
     orderSq.objects = { FL, CH }
     local okBuild = pcall(Place.build, "door", { { sq = orderSq, spr = gate, cost = {} } }, {})
+    local fakeDoor = IsoDoor
     IsoDoor = realDoor
     check(okBuild and orderSq.objects[1] == FL and orderSq.objects[2] and orderSq.objects[2].name == "fg_gate_01_0"
         and orderSq.objects[2].north == false and orderSq.objects[3] == CH, "蓋沒有門框的柵欄門：建 IsoDoor，插在地板後、家具前")
@@ -12076,6 +12118,80 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
     check(both("fg_gate_01_0", 230) == "ok" and both("fg_gate_01_0", 232) == "BLOCKED"
         and both("fg_door_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 231) == "ok",
         "Check.item：預覽與伺服器同一個結果（柵欄門空邊可蓋、有柵欄擋；一般的門要門框）")
+
+    -- 2026-11-23 Workshop 回饋：滑門（DoorSound＝SlidingGlassDoor）沒有門框時也認牆頂橫條（形狀 8 的 cut 牆飾，牆角柱不算）；
+    -- 門還在時那片橫條拆不掉（ATTACHED）
+    local NS = GridSquareEdgeFacingDirection.NORTH_SOUTH
+    local Dismantle = MinidoracatBuilder.Dismantle
+    local SG = { DoorSound = "SlidingGlassDoor" }
+    local slide, slideN = door("fg_slide_01_0", 9531, { "doorW" }, SG), door("fg_slide_01_1", 9532, { "doorN" }, SG)
+    local slideOpen = door("fg_slide_01_2", 9533, { "doorW", "open" }, {})
+    local slideLone = door("fg_slone_01_0", 9535, { "doorW" }, SG) -- 沒有 +2 的開門圖
+    local function trim(name, id, flags, shape) return sprite(name, id, { flags = flags, keys = { WindowShape = shape } }) end
+    local t8, tN8, t3, t0 = trim("fg_trim_01_8", 9536, { "cutW" }, "8"), trim("fg_trimn_01_8", 9537, { "cutN" }, "8"),
+        trim("fg_trim_01_3", 9538, { "cutW" }, "3"), trim("fg_trim_01_0", 9539, { "cutW" }, nil)
+    local post8 = trim("fg_post_01_8", 9540, { "WallSE", "cutW" }, "8")
+    for _, s in ipairs({ slide, slideN, slideOpen, door("fg_slide_01_3", 9534, { "doorN", "open" }, {}), slideLone, t8, tN8, t3,
+        t0, post8 }) do
+        list[#list + 1] = s
+    end
+    world(list)
+    local realInst = instanceof
+    instanceof = function(o, cls) return type(o) == "table" and o.class == cls end
+    local function put(sq, sprs)
+        for i, s in ipairs(sprs) do
+            sq.objects[i] = { getProperties = function() return s:getProperties() end, getSprite = function() return s end,
+                getType = function() return s:getType() end, getSquare = function() return sq end,
+                isObjectNoContainerOrEmpty = function() return true end, hasModData = function() return false end }
+        end
+        return sq
+    end
+    local nx = 240
+    local function on(sprs, o) -- 新的一格（x 往後排），sprs＝格上的圖，o＝square 的選項
+        nx = nx + 1
+        return put(square(nx, 232, 0, o or { flags = {} }), sprs)
+    end
+    check(Rules.slidingDoor(slide:getProperties()) and not Rules.slidingDoor(plain:getProperties())
+        and not Rules.slidingDoor(slideOpen:getProperties()), "Rules.slidingDoor：照 DoorSound 認；一般的門、開著的那張不算")
+    check(Place.check("door", slide, on({ t8 })) == true and Place.check("door", slideN, on({ tN8 })) == true
+        and Place.check("door", slide, framed) == true, "滑門：那條邊有牆頂橫條就能裝（朝西、朝北），放進門框也照舊可以")
+    check(not Place.check("door", slide, empty) and not Place.check("door", plain, on({ t8 }))
+        and not Place.check("door", slide, on({ t3 })) and not Place.check("door", slide, on({ t0 }))
+        and not Place.check("door", slide, on({ tN8 })) and not Place.check("door", slide, on({ post8 }))
+        and not Place.check("door", slideLone, on({ t8 })),
+        "滑門反面：空邊、一般的門配橫條、橫條形狀不是 8 或沒寫形狀、橫條在另一條邊、只有牆角柱、沒有開門圖都不能放")
+    check(not Place.check("door", slide, on({ t8 }, { doors = { [EW] = {} } }))
+        and not Place.check("door", slide, on({ t8 }, { windows = { [EW] = {} } }))
+        and not Place.check("door", slide, on({ t8 }, { flags = { collideW = true } }))
+        and Place.edgeHeldAt("door", slide, 241, 232, 1) == false,
+        "滑門反面：那條邊已有門、已有窗、有擋路的牆都不能放；上一層的格子還沒有時預覽不當成撐得住")
+    put(square(229, 230, 0, { flags = {} }), { t8 })
+    check(both("fg_slide_01_0", 229) == "ok" and both("fg_slide_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 229) == "BLOCKED",
+        "Check.item：滑門配橫條預覽與伺服器同一個結果（空邊擋、一般的門配橫條擋）")
+    -- 拆橫條：那條邊裝著門時擋（不看門的種類：開著的門圖讀不到 DoorSound）；門拿掉、另有門框或另一片橫條時不擋
+    local dh = { flags = {} }
+    local dq = on({ t8 }, dh)
+    local piece = dq.objects[1]
+    local free = not Place.framesDoor(piece, dq) and Dismantle.blocked("wallOverlay", { remove = { piece } }) == nil
+    dh.doors = { [EW] = {} }
+    check(free and Place.framesDoor(piece, dq) == true and Dismantle.blocked("wallOverlay", { remove = { piece } }) == "ATTACHED",
+        "拆橫條：正在當滑門的框擋下（ATTACHED）；那條邊沒有門時照常拆")
+    local fq = on({ t8 }, { flags = { DoorWallW = true }, doors = { [EW] = {} } })
+    local tq = on({ t8, t8 }, { flags = {}, doors = { [EW] = {} } })
+    local q3 = on({ t3 }, { flags = {}, doors = { [EW] = {} } })
+    local qn = on({ t8 }, { flags = {}, doors = { [NS] = {} } })
+    local qp = on({ post8 }, { flags = {}, doors = { [EW] = {} } })
+    check(not Place.framesDoor(fq.objects[1], fq) and not Place.framesDoor(tq.objects[1], tq)
+        and not Place.framesDoor(tq.objects[2], tq) and not Place.framesDoor(q3.objects[1], q3)
+        and not Place.framesDoor(qn.objects[1], qn) and not Place.framesDoor(qp.objects[1], qp),
+        "拆橫條不擋：同一條邊另有門框、兩片橫條疊著、形狀不是 8、門在另一條邊、牆角柱")
+    IsoDoor = fakeDoor
+    local bq = on({ t8 })
+    local okSlide = pcall(Place.build, "door", { { sq = bq, spr = slide, cost = {} } }, {})
+    IsoDoor = realDoor
+    check(okSlide and bq.objects[2] and bq.objects[2].name == "fg_slide_01_0" and bq.objects[2].north == false,
+        "蓋滑門：橫條那條邊建出 IsoDoor")
+    instanceof = realInst
     world(old)
 end)()
 
@@ -22559,6 +22675,10 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         local wallWin = sprite("walls_dt_01_11", 9909, { type = T.wall, flags = { "windowW", "cutW", "WindowW" },
             keys = { WindowShape = "11" } })
         wl[#wl + 1] = wallWin
+        wl[#wl + 1] = sprite("fixtures_dt_01_20", 9914, { flags = { "doorW" }, keys = { DoorSound = "SlidingGlassDoor" } })
+        wl[#wl + 1] = sprite("fixtures_dt_01_22", 9915, { flags = { "doorW", "open" } })
+        wl[#wl + 1] = sprite("fixtures_dt_01_24", 9916, { flags = { "doorW" } })
+        wl[#wl + 1] = sprite("fixtures_dt_01_26", 9917, { flags = { "doorW", "open" } })
         world(wl)
         local function detail(name)
             v.setKey = nil
@@ -22587,6 +22707,12 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         check(okAll and has(win11T, "IGUI_MBLD_Detail_WindowFrame_doorFrame") and B.Rules.classify(wallWin) == "window"
             and wallWinT ~= "" and not wallWinT:find("Detail_WindowFrame", 1, true),
             "詳情：11 號全高窗指出它要配雙開門框牆；牆型窗（窗框畫在同一張）形狀寫 11 也不指路（審查 #16）")
+        -- 2026-11-23 回饋：滑門（DoorSound＝SlidingGlassDoor）詳情多一句「也能裝在牆頂橫條底下」
+        W.turnHint = function() return nil end
+        local slideT, doorT = detail("fixtures_dt_01_20"), detail("fixtures_dt_01_24")
+        W.turnHint = realTurn
+        check(okAll and has(slideT, "IGUI_MBLD_Detail_SlidingDoorFrame") and doorT ~= ""
+            and not doorT:find("SlidingDoorFrame", 1, true), "詳情：滑門寫出也能裝在牆頂橫條底下；一般的門不寫")
         getTexture, getScriptManager = realTex, realSM
 
         -- 搜完整圖塊名（listFor 不看頁籤、分類、來源）：頁籤、左欄、分類下拉、來源都顯示「全部」，和方格一致；

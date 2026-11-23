@@ -571,6 +571,14 @@ function Rules.gate(p)
     return name ~= nil and name:lower():find("gate", 1, true) ~= nil
 end
 
+-- 滑動玻璃門：除了門框，也能裝在牆頂橫條（形狀 SLIDING_FRAME 的 cut 牆飾）底下，不露出門框牆（Workshop 2026-11-23
+-- 回報；每款門框牆都開一般門洞，會疊在玻璃後面）。照 DoorSound 認：引擎自己拿這個字串分支（IsoDoor.java:3398-3411），
+-- 原版兩組（fixtures_doors_01_108/109、_116/117）與圖塊包都寫。p＝關著那張的屬性（開門圖不帶）
+Rules.SLIDING_FRAME = "8"
+function Rules.slidingDoor(p)
+    return p:get("DoorSound") == "SlidingGlassDoor"
+end
+
 -- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
 -- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。

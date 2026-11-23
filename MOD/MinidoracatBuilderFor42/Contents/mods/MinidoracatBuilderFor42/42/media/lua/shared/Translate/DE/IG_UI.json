@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Dauerhaft verschlossen: Dieses Fenster lässt sich nicht öffnen, du kannst es aber einschlagen.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Raumhohes Fenster: Normale Fensterrahmen passen nicht, dahinter wäre die Wand zu sehen. Sein Rahmen ist eines der Wand-Overlays mit raumhoher Öffnung, enthalten im ganzen Set mancher Hausaußen- und Innenwände. Setz zuerst dieses Overlay an dieselbe Kante, dann bau dieses Fenster ein.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "Dieses Fenster passt in eine Doppeltür-Rahmenwand, nicht in einen Fensterrahmen; das ganze Set mancher Hauswände enthält eine. Bau zuerst diesen Türrahmen, dann bau dieses Fenster ein.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Schiebetür: Außer in einen Türrahmen passt sie auch unter eine Leiste am oberen Wandrand (das Wand-Overlay, das nur aus einem Streifen oben besteht, z. B. walls_exterior_house_06_15). Hinter dem Glas ist dann keine Rahmenwand zu sehen, und der Raum zählt weiter als Innenraum. Setz zuerst die Leiste an dieselbe Kante, dann bau diese Tür ein.",
   "IGUI_MBLD_Detail_Stackable": "Max. Stapelhöhe: %1",
   "IGUI_MBLD_Detail_Health": "Haltbarkeit: %1",
   "IGUI_MBLD_Detail_HealthProof": "Haltbarkeit: %1 (die Sandbox-Optionen verhindern, dass Zombies es zerstören)",

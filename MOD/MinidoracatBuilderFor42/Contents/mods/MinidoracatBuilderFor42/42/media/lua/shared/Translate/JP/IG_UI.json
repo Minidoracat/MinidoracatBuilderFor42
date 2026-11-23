@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "鍵が掛かったまま：この窓は開けられませんが、割ることはできます。",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "全高窓：普通の窓枠には合わず、後ろの壁が見えてしまいます。枠は「壁オーバーレイ」のうち全面が開いたもので、一部の住宅の外壁・内壁の「セット」に含まれます。先にそれを同じ辺に置いてから、この窓を取り付けてください。",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "この窓に合うのは窓枠ではなく両開きドアのドア枠の壁で、一部の住宅の壁の「セット」に含まれます。先にそのドア枠を建ててから、この窓を取り付けてください。",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "引き戸：ドア枠のほか、壁上部の細い帯の下にも取り付けられます（「壁オーバーレイ」のうち上端の帯だけのもの。例：walls_exterior_house_06_15）。ドア枠の壁が見えず、部屋は屋内として扱われます。先に帯を同じ辺に置いてから、このドアを取り付けてください。",
   "IGUI_MBLD_Detail_Stackable": "積み重ね上限：%1 段",
   "IGUI_MBLD_Detail_Health": "耐久値：%1",
   "IGUI_MBLD_Detail_HealthProof": "耐久値：%1（サンドボックス設定によりゾンビは壊せません）",

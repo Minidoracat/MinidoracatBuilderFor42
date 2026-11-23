@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Kalıcı olarak kilitli: bu pencere açılamaz ama kırılabilir.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Tam boy pencere: normal pencere çerçeveleri ona uymaz, arkadaki duvar görünür. Çerçevesi, tam boy açıklığı olan duvar katmanlarından biridir; bazı ev dış duvarlarının ve iç duvarların tam setinde bulunur. Önce o katmanı aynı kenara koy, sonra bu pencereyi tak.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "Bu pencere, pencere çerçevesine değil çift kanatlı kapının kapı çerçevesi duvarına uyar; bazı ev duvarlarının tam setinde bulunur. Önce o kapı çerçevesini inşa et, sonra bu pencereyi tak.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Sürgülü kapı: kapı çerçevesinin yanı sıra duvarın üstündeki şeridin altına da takılır (yalnızca üstte bir şeritten oluşan duvar katmanı, örn. walls_exterior_house_06_15). Camın arkasında çerçeve duvarı görünmez ve oda yine iç mekân sayılır. Önce şeridi aynı kenara koy, sonra bu kapıyı tak.",
   "IGUI_MBLD_Detail_Stackable": "En fazla üst üste: %1",
   "IGUI_MBLD_Detail_Health": "Dayanıklılık: %1",
   "IGUI_MBLD_Detail_HealthProof": "Dayanıklılık: %1 (sandbox ayarları zombilerin onu kırmasını engelliyor)",

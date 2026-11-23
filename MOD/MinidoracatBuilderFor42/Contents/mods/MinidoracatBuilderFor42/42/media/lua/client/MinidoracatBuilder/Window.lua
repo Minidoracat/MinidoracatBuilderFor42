@@ -1619,6 +1619,13 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     local frame = e.kind == "window" and not B.Rules.framedWindow(e.spr:getType())
         and B.Rules.TALL_WINDOW[p:get("WindowShape") or ""]
     if frame then y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowFrame_" .. frame), y, dw) end
+    -- 滑門：除了門框也能裝在牆頂橫條底下（Rules.slidingDoor；Place.check 門分支）
+    if e.kind == "door" and B.Rules.slidingDoor(p) then
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_SlidingDoorFrame"), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+    end
     -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
     if refund == "none" then

@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Zamknięte na stałe: tego okna nie da się otworzyć, ale możesz wybić szybę.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Okno na pełną wysokość: zwykłe ramy okien do niego nie pasują i za nim widać ścianę. Jego rama to jedna z nakładek ściany z otworem na pełną wysokość, w komplecie niektórych ścian zewnętrznych i wewnętrznych. Najpierw postaw tę nakładkę na tej samej krawędzi, potem zamontuj to okno.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "To okno pasuje do ściany z framugą drzwi dwuskrzydłowych, a nie do ramy okna; komplet niektórych ścian domów ją zawiera. Najpierw zbuduj tę framugę, potem zamontuj to okno.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Drzwi przesuwne: oprócz framugi pasują też pod listwę u góry ściany (nakładka ściany, która jest tylko paskiem u góry, np. walls_exterior_house_06_15). Za szybą nie widać ściany z framugą, a pomieszczenie nadal liczy się jako wnętrze. Najpierw postaw listwę na tej samej krawędzi, potem zamontuj te drzwi.",
   "IGUI_MBLD_Detail_Stackable": "Maks. stos: %1",
   "IGUI_MBLD_Detail_Health": "Wytrzymałość: %1",
   "IGUI_MBLD_Detail_HealthProof": "Wytrzymałość: %1 (opcje piaskownicy nie pozwalają zombie tego zniszczyć)",

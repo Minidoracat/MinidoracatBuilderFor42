@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Verrouillée définitivement : cette fenêtre ne peut pas être ouverte, mais vous pouvez la casser.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Fenêtre pleine hauteur : les cadres de fenêtre ordinaires ne lui conviennent pas, le mur resterait visible derrière. Son cadre est l'un des calques de mur à ouverture pleine hauteur, présents dans l'ensemble de certains murs extérieurs et intérieurs. Placez d'abord ce calque sur le même bord, puis posez cette fenêtre.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "Cette fenêtre va dans un mur-cadre de double porte, pas dans un cadre de fenêtre ; l'ensemble de certains murs de maison en contient un. Construisez d'abord ce cadre de porte, puis posez cette fenêtre.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Porte coulissante : en plus d'un cadre de porte, elle se pose aussi sous une bande de haut de mur (le calque de mur qui n'est qu'une bande en haut, par ex. walls_exterior_house_06_15). Aucun mur de cadre n'apparaît derrière la vitre et la pièce compte toujours comme intérieur. Placez d'abord la bande sur le même bord, puis posez cette porte.",
   "IGUI_MBLD_Detail_Stackable": "Pile max. : %1",
   "IGUI_MBLD_Detail_Health": "Durabilité : %1",
   "IGUI_MBLD_Detail_HealthProof": "Durabilité : %1 (les options sandbox empêchent les zombies de le casser)",

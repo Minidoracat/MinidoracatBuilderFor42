@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "永久鎖住：這扇窗戶打不開，但可以打破",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "全高窗：一般窗框配不上，會露出後面的牆。它的框是「牆面疊圖」裡整片開口的那幾張，部分住家外牆、室內牆的「整套」裡有。先把那張放在同一條邊，再裝這扇窗。",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "這扇窗配的是雙開門的門框牆，不是窗框，部分住家牆的「整套」裡有。先蓋那面門框，再裝這扇窗。",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "滑門：除了門框，也能裝在牆頂橫條底下（「牆面疊圖」裡只有頂上一條的那款，例：walls_exterior_house_06_15）。不會露出門框牆，房間照樣算室內。先把橫條放在同一條邊，再裝這扇門。",
   "IGUI_MBLD_Detail_Stackable": "疊箱子上限：%1 層",
   "IGUI_MBLD_Detail_Health": "耐久：%1",
   "IGUI_MBLD_Detail_HealthProof": "耐久：%1（沙盒設定成殭屍打不壞）",

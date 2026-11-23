@@ -256,7 +256,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [tr][td]Build cursor: toggle overlap[/td][td]Shift+O[/td][td]Turns Overlap on or off; while on, the box says "Overlap: on"[/td][/tr]
 [tr][td]Build cursor: next recent item[/td][td]Shift+N[/td][td]Steps through Recently used, back to the start after the last[/td][/tr]
 [tr][td]Build cursor: undo last build[/td][td]Ctrl+Z[/td][td]See below[/td][/tr]
-[tr][td]Build cursor: one level up / this level[/td][td]PgUp/PgDn[/td][td]Builds floors and roofs one level up or on this level[/td][/tr]
+[tr][td]Build cursor: one level up / this level[/td][td]PgUp/PgDn[/td][td]Builds floors, roofs, and walls, fences, posts, door frames, window frames, doors and windows one level up or on this level[/td][/tr]
 [/table]
 [list]
 [*] [b]Rebinding[/b]: Minidoracat Build Anything in OPTIONS > KEY BINDINGS.
@@ -281,6 +281,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
 [*] [b]Walls from the second floor up[/b]: a floor underneath is enough; without one, a wall can still go up when the square right below has a wall on the same edge (stacked on the wall below), or when the squares on both sides of that edge have roof pieces on the same level (gable walls, for example). Otherwise it still needs a floor first.
+[*] [b]Walls one level up[/b]: walls, fences, posts, door frames, window frames, doors and windows can also switch between one level up and this level with PgUp/PgDn; they start on this level. You can build second-floor walls while standing downstairs: your character walks to that edge on the level below. What holds them up is the same as the line above. Walls from building recipes work as in vanilla and can't change level.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
 [*] [b]Posts and zombies[/b]: like the corner posts vanilla adds when you build walls, zombies don't attack a post as if it were a wall, and it blocks moving diagonally past that corner.
 [*] [b]Corner posts built earlier[/b]: those built in 0.1.0 and 0.1.1 become the same as new posts when the save loads, and zombies still attack the walls on that square.
@@ -311,6 +312,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
+[*] [b]Sliding glass doors[/b]: besides a door frame, they also fit under a wall-top trim piece (the wall overlay that is only a strip along the top; search for walls_exterior_house_06_15, for example). Place the trim on that edge first, then the door: no frame wall shows behind the glass, and an enclosed room still counts as indoors. The trim can't be dismantled while the door is there; take the door down first.
 [*] [b]Fence gates[/b]: need no door frame and go on any empty edge; they can't go where there is already a wall, fence, door or window, so leave a gap first.
 [*] [b]Garage doors[/b]: in the Door kind. While placing, hold the left button and drag along the edge where it goes; the length you drag is the door's width, from 2 tiles up to the admin's Most items at once (2 when that is set lower). A single click places the shortest, 2 tiles. The box by the mouse shows the width and the price.
 [*] [b]Double doors[/b]: one click places the whole set of 4 pieces.
@@ -899,7 +901,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [*] [b]Rotate[/b]: LB/RB.
 [*] [b]Build[/b]: A.
 [*] [b]Cancel[/b]: B.
-[*] [b]Roof and floor level[/b]: X switches between one level up and this level.
+[*] [b]Changing level[/b]: for roofs, floors, and walls, fences, posts, door frames, window frames, doors and windows, X switches between one level up and this level.
 [*] [b]Rows, areas and Dismantle an area[/b]: mouse only; with a gamepad you build one tile and dismantle one piece at a time, and garage doors are 2 tiles wide. The build window hides the Remove area button when you use a gamepad.
 [*] [b]Quick pick bar[/b]: press the right stick (R3) to move into the bar (it opens first if folded), A to switch to that item, B to go back to the cursor; press R3 again in the bar to fold it and go back to the cursor.
 [/list]

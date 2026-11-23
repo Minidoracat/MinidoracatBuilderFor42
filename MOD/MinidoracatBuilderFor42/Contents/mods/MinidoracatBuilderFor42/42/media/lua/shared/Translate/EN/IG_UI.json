@@ -467,6 +467,7 @@
   "IGUI_MBLD_Detail_WindowLocked": "Permanently locked: this window can't be opened, but it can be smashed.",
   "IGUI_MBLD_Detail_WindowFrame_wallOverlay": "Full-height window: regular window frames don't fit it, and the wall behind would show. Its frame is one of the wall overlays with a full-height opening, found in the full set of some house exterior and interior walls. Place that overlay on the same edge first, then install this window.",
   "IGUI_MBLD_Detail_WindowFrame_doorFrame": "This window fits a double-door frame wall, not a window frame; the full set of some house walls includes one. Build that door frame first, then install this window.",
+  "IGUI_MBLD_Detail_SlidingDoorFrame": "Sliding door: besides a door frame, it also fits under a wall-top trim piece (the wall overlay that is only a strip along the top, e.g. walls_exterior_house_06_15). No frame wall shows behind the glass, and the room still counts as indoors. Place the trim on the same edge first, then install this door.",
   "IGUI_MBLD_Detail_Stackable": "Max stack: %1",
   "IGUI_MBLD_Detail_Health": "Durability: %1",
   "IGUI_MBLD_Detail_HealthProof": "Durability: %1 (the sandbox settings stop zombies from breaking it)",
