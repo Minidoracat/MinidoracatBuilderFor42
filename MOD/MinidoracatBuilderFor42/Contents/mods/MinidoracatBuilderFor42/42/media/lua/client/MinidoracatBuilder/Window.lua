@@ -1620,7 +1620,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         and B.Rules.TALL_WINDOW[p:get("WindowShape") or ""]
     if frame then y = warnLines(v, ops, getText("IGUI_MBLD_Detail_WindowFrame_" .. frame), y, dw) end
     -- 滑門：除了門框也能裝在牆頂橫條底下（Rules.slidingDoor；Place.check 門分支）
-    if e.kind == "door" and B.Rules.slidingDoor(p) then
+    if e.kind == "door" and B.Rules.slidingDoor(p) and not B.Rules.grouped(p) then
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_SlidingDoorFrame"), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
             y = y + lh
@@ -3595,7 +3595,7 @@ if first then
     if news and news.WhatsNew then
         news.WhatsNew.register({
             modId = "MinidoracatBuilderFor42",
-            since = "1.1.2",
+            since = "1.2.0",
             name = "UI_MinidoracatBuilder_Options",
             text = "IGUI_MBLD_WhatsNew",
         })
