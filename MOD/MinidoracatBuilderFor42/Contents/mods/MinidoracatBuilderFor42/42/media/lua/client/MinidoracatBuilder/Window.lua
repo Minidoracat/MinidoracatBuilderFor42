@@ -1336,22 +1336,27 @@ function W.setStatus(v)
     end
 end
 
+local function indexOf(list, name)
+    for i = 1, #list do
+        if list[i] == name then return i end
+    end
+    return nil
+end
+
 local function applyItems(v, list, jump, keep)
     local grid = v.grid
     grid:setItems(list)
     -- 重算（keep：整理進度、材料、最愛）留住玩家選的那格；換了條件，或還沒選時，才選完整圖塊名那一張（jump）
     -- v.reselect：關掉「找可用的框」回原本的清單時選回那扇門或窗（W.clearSet 設的，只用一次）。不直接設 v.selName：
-    -- 清單分批篩選時跨幀才到這裡，中間 W.pump 會把 v.selName 寫回方格目前選的那格
-    local want = v.reselect or (keep and v.selName or jump or v.selName)
+    -- 清單分批篩選時跨幀才到這裡，中間 W.pump 會把 v.selName 寫回方格目前選的那格。那一項不在這份清單裡
+    -- （分批還沒套用時玩家又用吸管挑了別的）就照平常的規則選
+    local re, want = v.reselect, keep and v.selName or jump or v.selName
     v.reselect = nil
-    local idx
-    if want then
-        for i = 1, #list do
-            if list[i] == want then
-                idx = i
-                break
-            end
-        end
+    local idx = re and indexOf(list, re) or nil
+    if idx then
+        want = re
+    elseif want then
+        idx = indexOf(list, want)
     end
     grid:setSelectedIndex(idx)
     if idx and (not keep or want ~= v.selName) then
@@ -2411,10 +2416,11 @@ local function frameIndex()
 end
 
 -- 選著的這一項的「可用的框」，形狀同 W.setOf 回的（沒有 at：格子照一般短名；list 是 v.frames 裡共用的表，不能改）。
--- reselect：條件鈕 ✕ 回去時選回這一項（下一步就是裝它）。不是滑門或全高窗（條件同詳情那兩句）、配方項目、目錄裡
--- 沒有同形狀的框回 nil。不併進 W.setOf：快選列第二排也用它（Hotbar.lua），放滑門時不該列出兩百多張橫條
+-- reselect：條件鈕 ✕ 回去時選回這一項（下一步就是裝它）。不是滑門或全高窗（條件同詳情那兩句）、目錄裡沒有
+-- 同形狀的框回 nil（配方項目解析不到圖，一樣是 nil）。不併進 W.setOf：快選列第二排也用它（Hotbar.lua），
+-- 放滑門時不該列出兩百多張橫條
 function W.framesOf(name)
-    local e = not Recipes.get(name) and Entry.resolve(name) or nil
+    local e = Entry.resolve(name)
     if not e then return nil end
     local R, p, shape = B.Rules, e.spr:getProperties(), nil
     if e.kind == "window" and not R.framedWindow(e.spr:getType()) then

@@ -22815,11 +22815,13 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
                 sprite("dframes_dt_01_1", 9925, { flags = { "DoorWallW", "cutW" } }),
                 sprite("posts_dt_01_0", 9926, { flags = { "WallSE", "cutW" }, keys = { WindowShape = "8" } }),
                 sprite("fixtures_dt_01_1", 9927, { type = T.MAX, flags = { "windowW", "cutW", "WindowW" }, keys = { WindowShape = "1" } }),
-                sprite("fixtures_dt_01_30", 9928, { flags = { "doorW" }, keys = { DoorSound = "SlidingGlassDoor", DoubleDoor = "1" } }) }) do
+                sprite("fixtures_dt_01_30", 9928, { flags = { "doorW" }, keys = { DoorSound = "SlidingGlassDoor", DoubleDoor = "1" } }),
+                sprite("trims_dt_01_4", 9929, { flags = { "cutW" }, keys = { WindowShape = "1" } }) }) do
                 wl[#wl + 1] = s
             end
             world(wl)
-            FI.bucket = { wallOverlay = { trims_dt_01 = { n = 4, "trims_dt_01_0", "trims_dt_01_1", "trims_dt_01_2", "trims_dt_01_3" } },
+            FI.bucket = { wallOverlay = { trims_dt_01 = { n = 5, "trims_dt_01_0", "trims_dt_01_1", "trims_dt_01_2", "trims_dt_01_3",
+                "trims_dt_01_4" } },
                 doorFrame = { dframes_dt_01 = { n = 2, "dframes_dt_01_0", "dframes_dt_01_1" } },
                 post = { posts_dt_01 = { n = 1, "posts_dt_01_0" } } }
             FI.kindSets = { wallOverlay = { n = 1, "trims_dt_01" }, doorFrame = { n = 1, "dframes_dt_01" }, post = { n = 1, "posts_dt_01" } }
@@ -22836,11 +22838,16 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
                 local w8, w11 = W.framesOf("fixtures_dt_01_8"), W.framesOf("fixtures_dt_01_11")
                 check(two(w8) and w11 ~= nil and w11.list.n == 1 and w11.list[1] == "dframes_dt_01_0",
                     "找可用的框：8 號全高窗列同形狀的牆飾；11 號列形狀 11 的雙開門框牆（沒寫形狀的一般門框不列）")
+                -- 雙開的滑門：要先讓它解析得到（夾具湊不成整組，Entry.resolve 會先回 nil），才測得到 not Rules.grouped
+                local realDS = Entry.doorSet
+                Entry.doorSet = function() return { n = 4 } end
+                local dbl = Entry.resolve("fixtures_dt_01_30") ~= nil and W.framesOf("fixtures_dt_01_30") == nil
+                Entry.doorSet = realDS
                 check(W.framesOf(PLAIN) == nil and W.framesOf("walls_dt_01_11") == nil and W.framesOf("walls_dt_01_0") == nil
-                    and W.framesOf("fixtures_dt_01_1") == nil and W.framesOf("fixtures_dt_01_30") == nil
+                    and v.frames["1"] ~= nil and W.framesOf("fixtures_dt_01_1") == nil and dbl
                     and W.framesOf("recipe:Base.Nope") == nil and W.setOf(SLIDE) == nil,
-                    "✗ 一般的門、牆型窗、牆、形狀 1 的一般窗、雙開的滑門、配方項目沒有「找可用的框」；W.setOf 對滑門照舊回 nil（快選列不跟著列框）")
-                -- 快取：第一次掃兩個種類的桶（6 張），之後查表；目錄、沙盒變了（W.refreshCatalog）清掉
+                    "✗ 一般的門、牆型窗、牆、形狀 1 的一般窗（目錄有形狀 1 的框也一樣）、雙開的滑門、配方項目沒有「找可用的框」；W.setOf 對滑門照舊回 nil（快選列不跟著列框）")
+                -- 快取：第一次掃兩個種類的桶（7 張），之後查表；目錄、沙盒變了（W.refreshCatalog）清掉
                 local looked = 0
                 Entry.sprite = function(name)
                     looked = looked + 1
@@ -22854,7 +22861,7 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
                 Entry.sprite = realSprite
                 local cached = v.frames ~= nil
                 W.refreshCatalog(v)
-                check(first - second == 6 and cached and v.frames == nil,
+                check(first - second == 7 and cached and v.frames == nil,
                     "找可用的框：第一次掃牆面疊圖與門框兩桶各一遍，第二次不再查圖；W.refreshCatalog 清掉快取")
                 sb.KindWallOverlay = false
                 v.frames = nil
@@ -22921,9 +22928,23 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
                 W.onTab(v, "stairs")
                 W.refilter(false)
                 check(W.st.set == nil and v.reselect == nil and v.selName ~= SLIDE, "✗ 自己換頁籤離開找可用的框：不選回那扇門")
-                -- 條件開著時管理員關掉牆面疊圖：清單沒了，照 ✕ 回原本的清單
+                -- 要選回的那一項不在新清單（分批還沒套用時玩家用吸管挑了別的）：照平常選完整圖塊名那一張
+                local openFilter = W.filter
+                v.reselect = SLIDE
+                W.filter = function() return { n = 2, "walls_dt_01_0", PLAIN }, PLAIN end
+                W.refilter(false)
+                W.filter = openFilter
+                check(v.selName == PLAIN and v.reselect == nil, "✗ 要選回的那一項不在新清單：照舊選完整圖塊名那一張，不把選取清掉")
+                -- 條件開著時別的設定變了（目錄重整）：條件留著；管理員關掉牆面疊圖：清單沒了，照 ✕ 回原本的清單
                 W.syncSettings(v)
                 open()
+                local realCM = sb.CostMultiplier
+                sb.CostMultiplier = 3
+                W.syncSettings(v)
+                local stays = W.st.set ~= nil and two(W.st.set) and v.grid.items == W.st.set.list and v.chip.visible == true
+                sb.CostMultiplier = realCM
+                W.syncSettings(v)
+                check(stays, "找可用的框開著時別的設定變了：條件留著、清單照舊是框")
                 sb.KindWallOverlay = false
                 W.syncSettings(v)
                 local closed = W.st.set == nil and v.grid.items == ALL

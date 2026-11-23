@@ -333,7 +333,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Removing and replacing[/b]: like windows, they can only be smashed, and they can't be replaced in place.
 [*] [b]Ordinary windows[/b]: still go into a window frame.
 [*] [b]Full-height windows[/b]: vanilla has no window frame wall for them. With a full-height window selected, press Find frames in the details and the list shows only the frames with the right shape (wall overlays with a full-height opening, or double-door frame walls). Place the frame on that edge first, then come back and install the window.
-[*] [b]The two wider than a door[/b]: go into a double-door frame wall, which the full set of some house walls includes.
+[*] [b]The two wider than a door[/b]: go into a double-door frame wall; Find frames lists the ones that fit.
 [*] [b]Which one to place first[/b]: the details say so when you pick one of these windows.
 [*] [b]On a frame that doesn't match[/b]: it still builds, but the wall shows behind it, and the cursor warns you.
 [*] [b]Removing the piece that frames it[/b]: take the window out first; when two pieces are stacked on that edge, only the last one is held back.
