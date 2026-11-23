@@ -573,7 +573,8 @@ end
 
 -- 滑動玻璃門：除了門框，也能裝在牆頂橫條（形狀 SLIDING_FRAME 的 cut 牆飾）底下，不露出門框牆（Workshop 2026-11-23
 -- 回報；每款門框牆都開一般門洞，會疊在玻璃後面）。照 DoorSound 認：引擎自己拿這個字串分支（IsoDoor.java:3398-3411），
--- 原版兩組（fixtures_doors_01_108/109、_116/117）與圖塊包都寫。p＝關著那張的屬性（開門圖不帶）
+-- 原版兩組（fixtures_doors_01_108/109、_116/117）與少數圖塊包（例 pert_doors_01_28/29）有寫；沒寫 DoorSound 的滑門認不到。
+-- p＝關著那張的屬性（開門圖不帶）
 Rules.SLIDING_FRAME = "8"
 function Rules.slidingDoor(p)
     return p:get("DoorSound") == "SlidingGlassDoor"

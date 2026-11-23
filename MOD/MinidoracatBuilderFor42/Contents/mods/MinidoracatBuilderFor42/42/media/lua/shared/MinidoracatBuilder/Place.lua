@@ -866,7 +866,8 @@ function Place.check(kind, spr, sq, ...)
         if refused then return false end
         if kind == "door" and not Rules.grouped(p) then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。滑門沒有門框時
-            -- 也認牆頂橫條（Rules.slidingDoor；tallFrame 另查那條邊沒有擋路的牆；橫條放的時候不查樓梯出入口，這裡查）。
+            -- 也認牆頂橫條（Rules.slidingDoor；tallFrame 另查那條邊沒有擋路的牆）。橫條放的時候不查樓梯出入口、多格家具，
+            -- 這裡查；西邊同格有牆角柱時引擎不記西牆（IsoRegions.java:336），裝了也不算室內，不認。
             -- 柵欄門（Rules.gate）沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，
             -- ISBuildIsoEntity.lua:302-310）。車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身
             -- 帶牆屬性，雙開門原版配方也不要門框（entity_wood_doubledoor.txt 的 dontNeedFrame）
@@ -874,7 +875,8 @@ function Place.check(kind, spr, sq, ...)
             local slide = Rules.slidingDoor(p) and Rules.SLIDING_FRAME or nil -- nil：tallFrame 不認
             local function framed(north)
                 return doorFrameAt(sq, north)
-                    or (tallFrame(sq, north, slide) and not buildUtil.stairIsBlockingPlacement(sq, true, north))
+                    or (tallFrame(sq, north, slide) and not buildUtil.stairIsBlockingPlacement(sq, true, north)
+                        and not splitsGrid(sq, north, not north, nil) and (north or not sq:has(F.WallSE)))
             end
             if (n and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil and framed(true))
                 or (w and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil and framed(false)) then
@@ -1630,9 +1632,10 @@ do
         n = n + 3
     end
     -- 讀檔時對一次（Place.migrate；伺服器與單機）：1.0.0 以前蓋的沒有補推，漏記的格子留在存檔的區域資料裡，引擎讀檔不重算。
-    -- 排進來的格子，照現在的物件該有、引擎卻沒記的位元才推（lacks）：那個 tick 一次、下一個 tick 再一次（同放置）。引擎多記的
-    -- 不動：門片那條邊引擎記的本來就不跟著現在的物件走（原版開關門不更新區域資料，IsoDoor.java:1396-1404,3167-3189；Knox Pass 勾
-    -- 「算室內」的門故意記成牆、每 5 秒推回）。1.1.2 連多記的也推，正式服一扇算室內的門每次載入互推一輪。第二次由
+    -- 排進來的格子，照現在的物件該有、引擎卻沒記的位元才推（lacks）：那個 tick 一次、下一個 tick 再一次（同放置）。只有多記、
+    -- 沒有少記的不推：門片那條邊引擎記的本來就不跟著現在的物件走（原版開關門不更新區域資料，IsoDoor.java:1396-1404,3167-3189；
+    -- Knox Pass 勾「算室內」的門故意記成牆、每 5 秒推回）。1.1.2 連多記的也推，正式服一扇算室內的門每次載入互推一輪。
+    -- 真的推時引擎照現在的物件把整格重記（IsoRegions.java:309-349），同一格多記的位元會一起清掉。第二次由
     -- 這個回呼自己在下一次被叫到時推，不交給 Place.repush：OnTick 處理中新掛的回呼同一輪就會被叫到（Event.java:53-65）。
     -- 推一格引擎就存檔、把那個 chunk 送給每位玩家（一個 chunk 最多約 2 KB；IsoRegionWorker.java:241-262,317-333、
     -- JobChunkUpdate.java:153），所以一樣的不推，不一樣的一個 tick 最多新推 BATCH 格（一座舊基地可能漏上百格）。

@@ -5834,8 +5834,8 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         IsoRegions = realRegions
     end)()
     -- 讀檔時對一次區域位元（Place.recheck，2026-11-22）：1.0.0 以前蓋的沒有補推，漏記的留在存檔的區域資料裡、引擎讀檔不重算
-    -- （正式服一樓地板約 4%）。伺服器與單機讀到本工具蓋的東西時，引擎記的位元和照現在的物件算的不一樣才推：那個 tick 一次、
-    -- 下一個 tick 再一次。推一格引擎就存檔、廣播那個 chunk，所以對得上的不推
+    -- （正式服一樓地板約 4%）。伺服器與單機讀到本工具蓋的東西時，照現在的物件該有、引擎卻沒記的位元才推（lacks；只多記的
+    -- 不推）：那個 tick 一次、下一個 tick 再一次。推一格引擎就存檔、廣播那個 chunk，所以對得上的不推
     ;(function()
         fire("OnTick") -- 前面留下的先跑掉
         -- 照引擎走即時的回呼清單：處理中新掛的回呼同一輪就叫到（Event.java:53-65）。fire 先複製清單，分不出
@@ -8505,6 +8505,16 @@ print("情境四十：2026-11-07 Workshop 回饋：拖一排原版兩張一組�
         local ok, prompt = layers(k)
         others = others and not ok and prompt == nil
     end
+    -- 審查 1123 Codex：規劃模式接管樓層時（hook.layer 回數字）X 不能改一般游標的層，否則退出規劃後才生效
+    local realLayer = Cursor.hook.layer
+    local planned = setmetatable({ entry = { kind = "wall" }, up = false }, { __index = Cursor })
+    Cursor.hook.layer = function() return 0 end
+    planned:onJoypadPressButton(0, nil, Joypad.XButton)
+    local held = planned.up == false and planned:getXPrompt() == nil
+    Cursor.hook.layer = nil
+    check(held and planned:getXPrompt() == "IGUI_MBLD_PadLayerUp",
+        "規劃模式接管樓層時：手把 X 不換一般游標的層、不顯示換層提示；退出規劃後提示回來")
+    Cursor.hook.layer = realLayer
     Joypad = realPad
     check(edgeOk and others, "格邊種類能換層（換層鍵換到上一層、手把 X 換回來、X 提示有字）；家具、窗簾、牆面疊圖、容器不能")
     getCore, getKeyName, Keyboard, KeybindId = realCore2, realKeyName, realKb, realKid
@@ -12201,6 +12211,18 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
     local stairSlide = Place.check("door", slide, on({ t8 }))
     buildUtil.stairIsBlockingPlacement = realStair
     check(not stairSlide, "滑門配橫條：那條邊是樓梯出入口時擋（橫條放的時候不查，這裡查）")
+    -- 審查 1123 Codex：橫條可穿過、放的時候不查多格家具；西邊同格有牆角柱時引擎不記西牆（IsoRegions.java:336）
+    local function sofa(px, py)
+        local piece = sprite("fg_sofa_01_1", 9521, {})
+        piece.grid = { getSpriteGridPosX = function() return px end, getSpriteGridPosY = function() return py end }
+        return piece
+    end
+    check(not Place.check("door", slide, on({ t8, sofa(1, 0) })) and Place.check("door", slide, on({ t8, sofa(0, 1) })) == true
+        and not Place.check("door", slideN, on({ tN8, sofa(0, 1) })) and Place.check("door", slideN, on({ tN8, sofa(1, 0) })) == true,
+        "滑門配橫條不切開多格家具：朝西的擋 x > 0 的片、朝北的擋 y > 0 的片")
+    check(not Place.check("door", slide, on({ t8, post8 }, { flags = { WallSE = true } }))
+        and Place.check("door", slideN, on({ tN8, post8 }, { flags = { WallSE = true } })) == true,
+        "滑門配橫條：西邊同格有牆角柱時不認（引擎不記西牆，裝了不算室內）；北邊不受影響")
     put(square(229, 230, 0, { flags = {} }), { t8 })
     check(both("fg_slide_01_0", 229) == "ok" and both("fg_slide_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 229) == "BLOCKED",
         "Check.item：滑門配橫條預覽與伺服器同一個結果（空邊擋、一般的門配橫條擋）")

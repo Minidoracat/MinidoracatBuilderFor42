@@ -514,7 +514,7 @@ function Cursor:onJoypadPressButton(joypadIndex, joypadData, button)
     if button == Joypad.RBumper then return self:turn(1) end
     if button == Joypad.LBumper then return self:turn(-1) end
     if button == Joypad.XButton and layerable(self.entry.kind) then
-        self.up = not self.up
+        if hook("layer", self) == nil then self.up = not self.up end -- 規劃的樓層由 PlanMode 管（同 rotateKey）
         return
     end
     -- 右搖桿按下：手把焦點交給快選列（Hotbar.focus；A 換項目、B 回游標）。游標用掉了 A、B、X、Y、LB、RB，十字鍵移游標
@@ -525,7 +525,7 @@ end
 
 -- 原版按鈕提示列照拖曳物件的 getXPrompt 顯示 X（ISButtonPrompt.lua:1012-1013）
 function Cursor:getXPrompt()
-    if not (self.entry and layerable(self.entry.kind)) then return nil end
+    if not (self.entry and layerable(self.entry.kind)) or hook("layer", self) ~= nil then return nil end
     return getText(self.up and "IGUI_MBLD_PadLayerHere" or "IGUI_MBLD_PadLayerUp")
 end
 
