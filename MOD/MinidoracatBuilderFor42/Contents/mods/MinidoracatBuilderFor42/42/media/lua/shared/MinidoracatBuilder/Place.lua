@@ -1630,7 +1630,9 @@ do
         n = n + 3
     end
     -- 讀檔時對一次（Place.migrate；伺服器與單機）：1.0.0 以前蓋的沒有補推，漏記的格子留在存檔的區域資料裡，引擎讀檔不重算。
-    -- 排進來的格子，引擎記的位元和照現在的物件算的不一樣才推：那個 tick 一次、下一個 tick 再一次（同放置）。第二次由
+    -- 排進來的格子，照現在的物件該有、引擎卻沒記的位元才推（lacks）：那個 tick 一次、下一個 tick 再一次（同放置）。引擎多記的
+    -- 不動：門片那條邊引擎記的本來就不跟著現在的物件走（原版開關門不更新區域資料，IsoDoor.java:3167-3189；Knox Pass 勾
+    -- 「算室內」的門故意記成牆、每 5 秒推回）。1.1.2 連多記的也推，正式服一扇算室內的門每次載入互推一輪。第二次由
     -- 這個回呼自己在下一次被叫到時推，不交給 Place.repush：OnTick 處理中新掛的回呼同一輪就會被叫到（Event.java:53-65）。
     -- 推一格引擎就存檔、把那個 chunk 送給每位玩家（一個 chunk 最多約 2 KB；IsoRegionWorker.java:241-262,317-333、
     -- JobChunkUpdate.java:153），所以一樣的不推，不一樣的一個 tick 最多新推 BATCH 格（一座舊基地可能漏上百格）。
@@ -1646,6 +1648,14 @@ do
     local queued = {}              -- 排著還沒對完的格子（slot）：同一格只排一次
     local now, ticking = 0, false
     local function slot(x, y, z) return (z * 2097152 + y) * 2097152 + x end -- x、y 小於 2^21（伺服器收的座標上限 1,000,000）
+    local function lacks(have, want) -- Kahlua 沒有位元運算
+        local b = 1
+        while b <= want do
+            if want % (b + b) >= b and have % (b + b) < b then return true end
+            b = b + b
+        end
+        return false
+    end
     local function recheck()
         local cell = getCell()
         local second, sn = again, an
@@ -1673,7 +1683,7 @@ do
                 end
             else
                 local have, want = IsoRegions.getSquareFlags(x, y, z), flagsOf(sq)
-                if math.max(have, 0) ~= want then -- -1＝那一層還沒有資料
+                if lacks(math.max(have, 0), want) then -- -1＝那一層還沒有資料
                     print(LOG .. "REGION resync at=" .. x .. "," .. y .. "," .. z .. " have=" .. have .. " want=" .. want)
                     push(cell, sq, x, y, z)
                     again[an + 1], again[an + 2], again[an + 3] = x, y, z
