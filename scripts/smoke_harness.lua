@@ -5783,6 +5783,15 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         if Place.repush then Place.repush(ground, "container") end
         check(#sent == 0 and count("OnTick") == ticks and Place.repush ~= nil,
             "✗ 家具、容器不改區域位元：放好、拆掉都不推，也不掛 tick 事件")
+        local function overlayObj(cut)
+            return { getProperties = function() return { has = function(_, f) return cut and f == IsoFlagType.cutW end } end }
+        end
+        Place.repush(ground, "wallOverlay", overlayObj(false))
+        local quiet = #sent == 0 and count("OnTick") == ticks
+        Place.repush(ground, "wallOverlay", overlayObj(true))
+        fire("OnTick")
+        check(quiet and #sent == 1 and sent[1][1] == ground, "牆面疊圖：圖帶 cut 的（牆頂橫條，區域位元算一面牆）放好、拆掉也推；不帶的不推")
+        sent = {}
         Place.build("wall", { { sq = up, spr = wallS, cost = { items = {} } } }, upPlaced)
         uf.cutN = true
         fire("OnTick")
@@ -7417,7 +7426,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         seen[#seen + 1] = sq:getZ()
         return reach[sq:getZ()] == true
     end }
-    square(131, 130, 1)
+    local upSq = square(131, 130, 1)
     square(134, 130, 0)
     local function upper(x, z, r0, r1)
         seen, reach = {}, { [0] = r0, [1] = r1 }
@@ -7428,6 +7437,15 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     local ups = table.concat({ upper(131, 1, true, true), upper(131, 1, false, true), upper(131, 1, false, false),
         upper(131, 0, true, true), upper(134, 1, false, true) }, " ")
     check(ups == "0/1 0,1/1 0,1/0 0/1 0/1", "上一層的格邊：先走到正下方，走不到才照上一層找，都走不到不排；同一層照舊（" .. ups .. "）")
+    if w2 then -- 拆除共用同一段走位：人在樓下復原剛蓋的上層牆，也先走到正下方
+        local realSq = w2.getSquare
+        w2.getSquare = function() return upSq end
+        seen, reach = {}, { [0] = true }
+        nowMs = nowMs + 6000
+        MinidoracatBuilder.Client.dismantle(P, w2, "wall", {})
+        w2.getSquare = realSq
+        check(table.concat(seen, ",") == "0" and #queued == 1, "拆上一層的牆：也先走到正下方那條邊旁邊（" .. table.concat(seen, ",") .. "）")
+    end
     MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
     isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
 end)()
@@ -12165,6 +12183,10 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         and not Place.check("door", slide, on({ t8 }, { flags = { collideW = true } }))
         and Place.edgeHeldAt("door", slide, 241, 232, 1) == false,
         "滑門反面：那條邊已有門、已有窗、有擋路的牆都不能放；上一層的格子還沒有時預覽不當成撐得住")
+    buildUtil.stairIsBlockingPlacement = function(_, _, north) return north == false end
+    local stairSlide = Place.check("door", slide, on({ t8 }))
+    buildUtil.stairIsBlockingPlacement = realStair
+    check(not stairSlide, "滑門配橫條：那條邊是樓梯出入口時擋（橫條放的時候不查，這裡查）")
     put(square(229, 230, 0, { flags = {} }), { t8 })
     check(both("fg_slide_01_0", 229) == "ok" and both("fg_slide_01_0", 230) == "BLOCKED" and both("fg_door_01_0", 229) == "BLOCKED",
         "Check.item：滑門配橫條預覽與伺服器同一個結果（空邊擋、一般的門配橫條擋）")
@@ -12185,12 +12207,15 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         and not Place.framesDoor(tq.objects[2], tq) and not Place.framesDoor(q3.objects[1], q3)
         and not Place.framesDoor(qn.objects[1], qn) and not Place.framesDoor(qp.objects[1], qp),
         "拆橫條不擋：同一條邊另有門框、兩片橫條疊著、形狀不是 8、門在另一條邊、牆角柱")
+    -- 門排在橫條後面：橫條緊接在地板後面時引擎不會把門往後移，edgeIndex 自己找（格上：地板、橫條、家具）
+    local floorS, chairS = sprite("fg_floor_01_0", 9541, { flags = { "solidfloor" } }), sprite("fg_chair_01_0", 9542, {})
     IsoDoor = fakeDoor
-    local bq = on({ t8 })
+    local bq = on({ floorS, t8, chairS })
+    local chairO = bq.objects[3]
     local okSlide = pcall(Place.build, "door", { { sq = bq, spr = slide, cost = {} } }, {})
     IsoDoor = realDoor
-    check(okSlide and bq.objects[2] and bq.objects[2].name == "fg_slide_01_0" and bq.objects[2].north == false,
-        "蓋滑門：橫條那條邊建出 IsoDoor")
+    check(okSlide and bq.objects[3] and bq.objects[3].name == "fg_slide_01_0" and bq.objects[3].north == false
+        and bq.objects[4] == chairO, "蓋滑門：橫條那條邊建出 IsoDoor，排在橫條後面、家具前面")
     instanceof = realInst
     world(old)
 end)()

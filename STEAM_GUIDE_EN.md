@@ -312,7 +312,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Doors and windows[/h3]
 [list]
 [*] [b]Doors[/b]: only the closed tile is listed, and once placed it opens and closes as in vanilla.
-[*] [b]Sliding glass doors[/b]: besides a door frame, they also fit under a wall-top trim piece (the wall overlay that is only a strip along the top; search for walls_exterior_house_06_15, for example). Place the trim on that edge first, then the door: no frame wall shows behind the glass, and an enclosed room still counts as indoors. The trim can't be dismantled while the door is there; take the door down first.
+[*] [b]Sliding glass doors[/b]: besides a door frame, they also fit under a wall-top trim piece (the wall overlay that is only a strip along the top; search for walls_exterior_house_06_15, for example). Place the trim on that edge first, then the door: no frame wall shows behind the glass, and an enclosed room still counts as indoors. The trim can't be dismantled while the door is there: a sliding glass door can only be smashed with a sledgehammer (no materials back), and then the trim can come down.
 [*] [b]Fence gates[/b]: need no door frame and go on any empty edge; they can't go where there is already a wall, fence, door or window, so leave a gap first.
 [*] [b]Garage doors[/b]: in the Door kind. While placing, hold the left button and drag along the edge where it goes; the length you drag is the door's width, from 2 tiles up to the admin's Most items at once (2 when that is set lower). A single click places the shortest, 2 tiles. The box by the mouse shows the width and the price.
 [*] [b]Double doors[/b]: one click places the whole set of 4 pieces.

@@ -866,16 +866,18 @@ function Place.check(kind, spr, sq, ...)
         if refused then return false end
         if kind == "door" and not Rules.grouped(p) then
             -- 門要放進同方向、還沒有門的門框（原版 isValidPerSquare：有門框、沒有門），開門的圖也要在。滑門沒有門框時
-            -- 也認牆頂橫條（Rules.slidingDoor；tallFrame 另查那條邊沒有擋路的牆）。柵欄門（Rules.gate）
-            -- 沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，ISBuildIsoEntity.lua:302-310）。
-            -- 車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身帶牆屬性，雙開門原版配方也不要門框
-            -- （entity_wood_doubledoor.txt 的 dontNeedFrame）
+            -- 也認牆頂橫條（Rules.slidingDoor；tallFrame 另查那條邊沒有擋路的牆；橫條放的時候不查樓梯出入口，這裡查）。
+            -- 柵欄門（Rules.gate）沒有門框時照下面一般格邊判斷：那條邊空著就能蓋（原版配方的 dontNeedFrame，
+            -- ISBuildIsoEntity.lua:302-310）。車庫門、雙開門（開門的圖由 Entry.doorSet 驗）照下面一般格邊判斷：車庫門本身
+            -- 帶牆屬性，雙開門原版配方也不要門框（entity_wood_doubledoor.txt 的 dontNeedFrame）
             if not doorPairExists(spr) then return false end
             local slide = Rules.slidingDoor(p) and Rules.SLIDING_FRAME or nil -- nil：tallFrame 不認
-            if (n and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil
-                    and (doorFrameAt(sq, true) or tallFrame(sq, true, slide)))
-                or (w and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil
-                    and (doorFrameAt(sq, false) or tallFrame(sq, false, slide))) then
+            local function framed(north)
+                return doorFrameAt(sq, north)
+                    or (tallFrame(sq, north, slide) and not buildUtil.stairIsBlockingPlacement(sq, true, north))
+            end
+            if (n and sq:getDoor(NS) == nil and sq:getWindow(NS) == nil and framed(true))
+                or (w and sq:getDoor(EW) == nil and sq:getWindow(EW) == nil and framed(false)) then
                 return true
             end
             if not Rules.gate(p) then return false end
@@ -1246,7 +1248,9 @@ local function placeFloor(sq, obj)
     redraw(obj) -- 單機蓋在水面旁或水面上：周圍的水面幾何照新地板重畫（多人由客戶端的 Pond 處理）
 end
 
--- 牆、柵欄、門框、窗框插在最後一個 solidfloor 物件後面；門插在同方向的門框後面，沒有門框照牆。照 42.22 原版建好後重插
+-- 牆、柵欄、門框、窗框插在最後一個 solidfloor 物件後面；門插在同方向的門框、或同方向帶 cut 的物件（滑門的牆頂橫條；
+-- 牆角柱不算）後面，都沒有照牆。引擎只在牆的位置比傳入的大時才把門往後移（IsoGridSquare.java:5907-5908），橫條緊接在
+-- 地板後面時不移，所以自己找。照 42.22 原版建好後重插
 -- （buildRecipeCode.lua:625-674 的 fenceOrWall／door／doorFrame／windowFrame OnCreate；42.22 更新說明「Fixed certain walls
 -- visually overlapping objects when built behind them」），格上物件的順序和原版蓋的一樣。實機同一格先放櫃子再蓋北牆，
 -- 牆排在櫃子前後畫面沒有差別（E2E pz42222-sp 的 wallOrder，42.22.2），所以這只是和原版一致，不是看得到的修正。
@@ -1257,9 +1261,11 @@ local REINSERT = { wall = true, fence = true, doorFrame = true, windowFrame = tr
 local function edgeIndex(sq, kind, north)
     local objects = sq:getObjects()
     if kind == "door" then
-        local frame = north and T.doorFrN or T.doorFrW
+        local frame, cut = north and T.doorFrN or T.doorFrW, north and F.cutN or F.cutW
         for i = objects:size() - 1, 0, -1 do
-            if objects:get(i):getType() == frame then return i + 1 end
+            local o = objects:get(i)
+            local p = o:getProperties()
+            if o:getType() == frame or (p and p:has(cut) and not p:has(F.WallSE)) then return i + 1 end
         end
     end
     for i = objects:size() - 1, 0, -1 do
@@ -1579,7 +1585,8 @@ end
 -- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
 -- 放好或拆掉後，下一個 tick 照那一格當時的樣子再推一次：兩份已經一致時引擎不改資料。這是降低機率、不是保證：補推
 -- 自己也可能只寫進一份，兩次都遇上才會留下。存座標不存格子（格子物件會回收重用）。kind 給 nil＝不看種類
--- （Place.undo、挖水、填平）。多人的客戶端呼叫到也沒事（squareChanged 在客戶端直接返回）
+-- （Place.undo、挖水、填平）。o＝剛放好或剛拆掉的物件：牆面疊圖的圖帶 cut 時（牆頂橫條）在區域位元裡算一面牆（flagsOf），
+-- 也推。多人的客戶端呼叫到也沒事（squareChanged 在客戶端直接返回）
 do
     local REGIONAL = { floor = true, stairs = true, ramp = true }
     local pending, n = {}, 0
@@ -1612,8 +1619,12 @@ do
             if sq then push(cell, sq, x, y, z) end
         end
     end
-    function Place.repush(sq, kind)
-        if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then return end
+    function Place.repush(sq, kind, ...)
+        if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then
+            local o = ...
+            local p = kind == "wallOverlay" and o and o:getProperties()
+            if not (p and (p:has(F.cutN) or p:has(F.cutW))) then return end
+        end
         if n == 0 then Events.OnTick.Add(flush) end
         pending[n + 1], pending[n + 2], pending[n + 3] = sq:getX(), sq:getY(), sq:getZ()
         n = n + 3
@@ -1696,7 +1707,7 @@ local function repushPlaced(kind, placed, first)
     for i = first, #placed do
         local o = placed[i]
         local sq = not (type(o) == "table" and (o.attached == true or o.water)) and o:getSquare()
-        if sq then Place.repush(sq, kind) end
+        if sq then Place.repush(sq, kind, o) end
     end
 end
 
