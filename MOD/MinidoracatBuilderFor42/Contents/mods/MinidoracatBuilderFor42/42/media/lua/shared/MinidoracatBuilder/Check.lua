@@ -205,10 +205,20 @@ function Check.item(player, name, d, anchor, ...)
         if why == "TOO_FAR" then extra = { x = anchor[1], y = anchor[2], z = anchor[3] } end
         if why then return why, extra, info end
     end
-    -- 地下室（Basement.pre 只讀座標與已有的格子）：加開入口（skip）時兩旁已挖的格子不再挖，從這次的格子拿掉
+    -- 地下室（Basement.pre 只讀座標與已有的格子）：加開入口（skip）時兩旁已挖的格子不再挖，從這次的格子拿掉。
+    -- 「挖這一格」是從已挖的那一側往外挖：角色要站在地下一層、這格東南西北的鄰格上，那一格已經挖開（Check.near 對 dig
+    -- 不查走得到，審查 round1 F7）。游標預覽（walk：Client.build 會先走過去）與建造作弊（同 Check.near）不查
     if entry.kind == "dig" then
-        local code, extra, skip = MinidoracatBuilder.Basement.pre(player, entry, cells, anchor, planned, preview)
+        local B = MinidoracatBuilder.Basement
+        local code, extra, skip = B.pre(player, entry, cells, anchor, planned, preview)
         if code then return code, extra, info end
+        if name == Entry.DIG_CELL and not walk and not Materials.cheat(player) then
+            local c = cells[1]
+            local px, py, pz = math.floor(player:getX()), math.floor(player:getY()), math.floor(player:getZ())
+            if pz ~= c.z or math.abs(px - c.x) + math.abs(py - c.y) ~= 1 or not B.has(px, py, pz) then
+                return "UNREACHABLE", { x = c.x, y = c.y, z = c.z }, info
+            end
+        end
         if skip then
             local kc, ks = {}, {}
             for j, c in ipairs(cells) do

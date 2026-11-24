@@ -20,6 +20,8 @@ Basement.MAX = 400                   -- 一塊最多幾格（＝Circuits.ROOM_MA
 -- media/mdcbuilder_basement.patch.tiles（scripts/gen_basement_tiles.py 寫出，和 Basement Building 的那三格相同）
 Basement.DIRT = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10" }
 Basement.AREA = 256                  -- 同步用的大區邊長
+-- 地下室的 x、y 只收 0 ≤ 值 < LIMIT：格子鍵（Place.key）每軸 5 位數，再大就和別格撞鍵（審查 round1 F12）
+Basement.LIMIT = 100000
 local Z = -1
 local BIG = 1e15
 local DIRS = { { 0, -1 }, { -1, 0 }, { 1, 0 }, { 0, 1 } }
@@ -27,8 +29,14 @@ local EDGE = { N = { 0, -1 }, W = { -1, 0 } }
 local OTHER = { N = "W", W = "N" }
 
 -- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } } }
--- main[編號]＝這一場登錄過的主建物 { cx, cy＝metaID 的角, tiles＝{ [鍵]＝{ x, y } } }；regd[鍵]＝這一格已登錄進某一棟
+-- main[編號]＝這一場登錄過的主建物 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
+-- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }；regd[鍵]＝這一格已登錄進某一棟
 local cells, blocks, main, regd, lastId = {}, {}, {}, {}, 0
+
+local function inRange(x, y)
+    return x >= 0 and y >= 0 and x < Basement.LIMIT and y < Basement.LIMIT
+end
+Basement.inRange = inRange
 
 local function key(x, y) return Place.key(x, y, Z) end
 local function has(x, y, z) return z == Z and cells[key(x, y)] ~= nil end
@@ -59,13 +67,13 @@ local function merge(a, b)
     return a
 end
 
--- tiles＝{ { x, y }, ... }（z 固定 -1）：加進集合、併連通塊；回真的新增的那幾格
+-- tiles＝{ { x, y }, ... }（z 固定 -1）：加進集合、併連通塊；回真的新增的那幾格。範圍外的（inRange）不收
 function Basement.add(tiles)
     local added = {}
     for _, t in ipairs(tiles) do
         local x, y = t[1], t[2]
-        local k = key(x, y)
-        if not cells[k] then
+        local k = inRange(x, y) and key(x, y)
+        if k and not cells[k] then
             local id
             for _, d in ipairs(DIRS) do
                 local o = cells[key(x + d[1], y + d[2])]
@@ -91,7 +99,8 @@ local function range(ax, ay)
 end
 
 -- 客戶端收到 basements：大區 (ax, ay) 周圍 3×3 範圍內的格子整份換成 tiles（範圍外的不動、tiles 裡範圍外的不收）。
--- 有格子被拿掉時連通塊整份重算（主建物照它的角那一格接回去；拿掉的格子在引擎裡的建物留到下一次進場）。回真的新增的那幾格
+-- 有格子被拿掉時連通塊整份重算（主建物照它的角那一格接回去；拿掉的格子在引擎裡的建物留到下一次進場），拿掉的格子不再算
+-- 登錄過（regd）：之後又挖回來要重新登錄（審查 round1 F18）。回真的新增的那幾格
 function Basement.reset(tiles, ax, ay)
     local x0, y0, x1, y1 = range(ax, ay)
     local keep, inside = {}, {}
@@ -107,7 +116,7 @@ function Basement.reset(tiles, ax, ay)
         if keep[k] or t[1] < x0 or t[1] >= x1 or t[2] < y0 or t[2] >= y1 then
             rest[#rest + 1] = t
         else
-            gone = true
+            gone, regd[k] = true, nil
         end
     end
     if gone then
@@ -141,13 +150,17 @@ function Basement.area(ax, ay)
     return out
 end
 
--- 啟用的 MOD 清單裡有 Basement Building（同 Rules.unlistModSprites 的讀法）
+-- 啟用的 MOD 清單裡有 Basement Building（同 Rules.unlistModSprites 的讀法）。清單換了引擎會重載 Lua，第一次查完就記在
+-- Basement.bdOn（每次檢查都掃一遍 MOD 清單太浪費，審查 round1 F16；測試改清單時清成 nil）
 function Basement.bd()
-    local mods = getActivatedMods()
-    for i = 0, mods:size() - 1 do
-        if mods:get(i) == "aparosa_BasementDig" then return true end
+    if Basement.bdOn == nil then
+        local on, mods = false, getActivatedMods()
+        for i = 0, mods:size() - 1 do
+            if mods:get(i) == "aparosa_BasementDig" then on = true end
+        end
+        Basement.bdOn = on
     end
-    return false
+    return Basement.bdOn
 end
 
 -- 圖塊補丁檔生效了：三張土牆圖都帶它那條邊的牆旗標。沒生效（mod.info 的檔號和別的 MOD 重複時引擎跳過後載入的那個，
@@ -393,41 +406,45 @@ end
 -- ---------------------------------------------------------------- 向引擎登錄
 -- 一批建物一次 applyChanges。plans＝{ rects, ... }，每棟一組矩形（rects[1] 是 metaID 的角）。步驟與順序照 BD
 -- aparosa_BD_Rooms.lua 的 registerRecordsBatch、applyEditor、noRefill、refreshServerSquares（各步原因見它的註解）。
--- 回這次登錄了幾棟
+-- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格查得到本 MOD 名稱的房間；引擎沒建出來、角上是別的房間都不算，
+-- 審查 round1 F10）
 local function apply(plans)
+    local ok = {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
         print(LOG .. "BuildingRoomsEditor is missing; the game update may have changed it")
-        return 0
+        return ok
     end
     BuildingRoomsEditor.Reset()
     local editor = BuildingRoomsEditor.getInstance()
     editor:setCurrentBuilding(nil)
     -- 不呼叫 canAddRoomRectangle：它對相鄰的別棟回 false（BuildingRoomsEditor.java:107-161），annex 一定貼著主建物
     local done = {}
-    for _, rects in ipairs(plans) do
+    for i, rects in ipairs(plans) do
         local building = editor:createBuilding()
         local room = building:createRoom(Z)
         room:setName(Basement.ROOM)
         for _, r in ipairs(rects) do room:addRectangle(r[1], r[2], r[3], r[4]) end
         if building:isValid() then
-            done[#done + 1] = rects
+            done[#done + 1] = i
         else
             editor:removeBuilding(building)
             print(LOG .. "invalid building skipped at " .. tostring(rects[1] and rects[1][1]) .. ","
                 .. tostring(rects[1] and rects[1][2]))
         end
     end
-    if #done == 0 then return 0 end
+    if #done == 0 then return ok end
     -- 先清掉見到的房間的待辦：applyChanges 拆舊建物後它會在引擎裡 NPE（BD applyEditor 的註解）
     local cell = getCell()
     pcall(function() cell:ProcessSpottedRooms() end)
     editor:applyChanges(false)
     local grid, server = getWorld():getMetaGrid(), isServer()
     local vzm = not isClient() and VirtualZombieManager and VirtualZombieManager.instance or nil
-    for _, rects in ipairs(done) do
+    for _, i in ipairs(done) do
+        local rects = plans[i]
         local def = grid:getRoomAt(rects[1][1], rects[1][2], Z)
-        local b = def and def:getBuilding()
+        local b = def and def:getName() == Basement.ROOM and def:getBuilding()
         if b then
+            ok[i] = true
             b:setUserDefined(false) -- 漏了客戶端會退回主選單（bdprobe-1124a）
             b:setAllExplored(true)
             if vzm then
@@ -463,7 +480,7 @@ local function apply(plans)
             print(LOG .. "no RoomDef after register at " .. rects[1][1] .. "," .. rects[1][2])
         end
     end
-    return #done
+    return ok
 end
 
 -- 主建物的矩形：角那一格單獨放第一個，metaID 不變（BD liveRects）
@@ -477,8 +494,14 @@ local function mainRects(m)
     return out
 end
 
--- 集合裡還沒登錄的格子 list 照塊登錄：塊還沒有主建物 → 這些格子登錄成主建物；有 → 角的西北方（x ≤ cx 而且 y < cy，
--- calculateMetaID 會換角）的登錄成 1 格的 annex，其他併進主建物重登錄（同 metaID，引擎換掉舊的）。成功才記下
+-- 引擎找「同一棟」只在新建物外框左上角所在的地圖格裡照 metaID 找（BREBuilding.getLotHeader：BuildingDef.x／256、y／256，
+-- BuildingRoomsEditor.java:233-248）：併進主建物的格子讓外框左上角換到西邊或北邊那一格時，舊的那棟找不到、留在引擎裡和新的疊在一起
+local LOT = 256
+local function lotOf(v) return math.floor(v / LOT) end
+
+-- 集合裡還沒登錄的格子 list 照塊登錄：塊還沒有主建物 → 這些格子登錄成主建物；有 → 會換掉主建物 metaID 或地圖格的
+-- （角的西北方：x ≤ cx 而且 y < cy，calculateMetaID 會換角；在主建物地圖格的西邊或北邊，審查 round1 F3）登錄成 1 格的 annex，
+-- 其他併進主建物重登錄（同地圖格、同 metaID，引擎換掉舊的）。每一棟登錄好了才記下它的格子（apply 的 ok）
 local function register(list)
     local by, order, seen = {}, {}, {}
     for _, t in ipairs(list) do
@@ -494,41 +517,55 @@ local function register(list)
             ts[#ts + 1] = t
         end
     end
-    local plans, after = {}, {}
+    -- plans[i]＝第 i 棟的矩形；keys[i]＝它登錄的新格子；after[i]＝{ 塊編號, 新的主建物 }（annex 沒有）
+    local plans, keys, after = {}, {}, {}
+    local function plan(rects, ks, a)
+        local i = #plans + 1
+        plans[i], keys[i], after[i] = rects, ks, a
+    end
     for _, id in ipairs(order) do
         local ts, m = by[id], main[id]
         if not m then
             local rects = Basement.rects(ts)
-            local tiles = {}
-            for _, t in ipairs(ts) do tiles[key(t[1], t[2])] = t end
-            plans[#plans + 1] = rects
-            after[#after + 1] = { id, { cx = rects[1][1], cy = rects[1][2], tiles = tiles } }
-        else
-            local tiles
+            local tiles, ks, x0, y0 = {}, {}, BIG, BIG
             for _, t in ipairs(ts) do
-                if t[1] <= m.cx and t[2] < m.cy then
+                local k = key(t[1], t[2])
+                tiles[k], ks[#ks + 1] = t, k
+                x0, y0 = math.min(x0, t[1]), math.min(y0, t[2])
+            end
+            plan(rects, ks, { id, { cx = rects[1][1], cy = rects[1][2], lx = lotOf(x0), ly = lotOf(y0), tiles = tiles } })
+        else
+            local tiles, ks
+            for _, t in ipairs(ts) do
+                local k = key(t[1], t[2])
+                if (t[1] <= m.cx and t[2] < m.cy) or lotOf(t[1]) < m.lx or lotOf(t[2]) < m.ly then
                     print(LOG .. "annex building at " .. t[1] .. "," .. t[2])
-                    plans[#plans + 1] = { { t[1], t[2], 1, 1 } }
+                    plan({ { t[1], t[2], 1, 1 } }, { k }, nil)
                 else
                     if not tiles then
-                        tiles = {}
-                        for k, v in pairs(m.tiles) do tiles[k] = v end
+                        tiles, ks = {}, {}
+                        for k2, v in pairs(m.tiles) do tiles[k2] = v end
                     end
-                    tiles[key(t[1], t[2])] = t
+                    tiles[k], ks[#ks + 1] = t, k
                 end
             end
             if tiles then
-                local m2 = { cx = m.cx, cy = m.cy, tiles = tiles }
-                plans[#plans + 1] = mainRects(m2)
-                after[#after + 1] = { id, m2 }
+                local m2 = { cx = m.cx, cy = m.cy, lx = m.lx, ly = m.ly, tiles = tiles }
+                plan(mainRects(m2), ks, { id, m2 })
             end
         end
     end
     if #plans == 0 then return true end
-    if apply(plans) < #plans then return false end
-    for _, a in ipairs(after) do main[a[1]] = a[2] end
-    for k in pairs(seen) do regd[k] = true end
-    return true
+    local ok, all = apply(plans), true
+    for i = 1, #plans do
+        if ok[i] then
+            if after[i] then main[after[i][1]] = after[i][2] end
+            for _, k in ipairs(keys[i]) do regd[k] = true end
+        else
+            all = false
+        end
+    end
+    return all
 end
 
 -- 集合裡還沒登錄的格子全部登錄（開服 60 tick 後、客戶端收到 basements 後），一次 applyChanges。回成不成功
@@ -543,6 +580,37 @@ end
 -- 新增的格子（Basement.add 回的）登錄進引擎
 function Basement.grow(tiles)
     return register(tiles)
+end
+
+-- 挖好的新格子延後一起登錄（伺服器 BasementLedger.commit、客戶端收到 dug）：每次登錄整塊重建一次房間，一次拖曳每挖好一格
+-- 就登錄一次會越挖越慢（實機拖 32 格每次最多 177 ms）。集合、帳本、土牆照舊當下就做（呼叫端），這裡只排登錄：最後一批
+-- 加進來之後 GROW_QUIET 毫秒內沒有新的（挖一格 5 秒，Entry.duration），或第一批已經排了 GROW_MAX 毫秒（長的拖曳中途也
+-- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄。出錯只記 log，沒登錄的格子下一次 registerAll（開服 60 tick、
+-- 客戶端收到 basements）補上
+Basement.GROW_QUIET, Basement.GROW_MAX = 10000, 60000
+local due, dueFirst, dueLast, dueHooked = {}, 0, 0, false
+local function flushGrow()
+    local t = getTimestampMs()
+    if t - dueLast < Basement.GROW_QUIET and t - dueFirst < Basement.GROW_MAX then return end
+    Events.OnTick.Remove(flushGrow)
+    dueHooked = false
+    local list = {}
+    for k, v in pairs(due) do
+        if cells[k] and not regd[k] then list[#list + 1] = v end
+    end
+    due = {}
+    if #list == 0 then return end
+    local ok, done = pcall(register, list)
+    if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
+end
+function Basement.growLater(tiles)
+    if #tiles == 0 then return end
+    for _, t in ipairs(tiles) do due[key(t[1], t[2])] = t end
+    dueLast = getTimestampMs()
+    if not dueHooked then
+        dueHooked, dueFirst = true, dueLast
+        Events.OnTick.Add(flushGrow)
+    end
 end
 
 -- 本機每位玩家的畫面高度範圍重算：遊戲中途多出地下一層時引擎不重算，樓梯與開關畫不出來（BD aparosa_BD_ZExtent.lua）
@@ -573,20 +641,49 @@ local function foreignRoomNear(grid, x, y)
     return false
 end
 
+-- 「挖這一格」c 挖下去之後那一塊有幾格：c、它四鄰已挖的塊，加上預覽時排在它前面、連得上的格子（planned：一路相連，
+-- 或接在同一塊已挖的上，審查 round1 F15）。near＝c 的四鄰有已挖的或排在前面的。超過上限就不再往下數
+local function digSize(c, planned)
+    local size, near, seenB, seenP = 1, false, {}, { [key(c.x, c.y)] = true }
+    local queue, i = { { c.x, c.y } }, 1
+    while queue[i] and size <= Basement.MAX do
+        local q = queue[i]
+        for _, d in ipairs(DIRS) do
+            local x, y = q[1] + d[1], q[2] + d[2]
+            local id = cells[key(x, y)]
+            if id then
+                near = near or i == 1
+                if not seenB[id] then
+                    seenB[id], size = true, size + blocks[id].n
+                    for _, t in pairs(blocks[id].tiles) do queue[#queue + 1] = t end -- 接在這一塊上的也算
+                end
+            elseif planned and planned[Place.key(x, y, Z)] and not seenP[key(x, y)] then
+                near = near or i == 1
+                seenP[key(x, y)], size = true, size + 1
+                queue[#queue + 1] = { x, y }
+            end
+        end
+        i = i + 1
+    end
+    return size, near
+end
+
 -- Check.item 補格子之前跑（只讀座標與已經存在的格子）：回 code, extra, skip（skip＝加開入口，Check.item 把角色 dig 的
 -- 6 格拿掉）。順序就是回報的優先序（plan.md §2.1）
 function Basement.pre(player, entry, cells, anchor, planned, preview)
     if Basement.bd() then return "DIG_BD" end
     local entrance = false
     for _, c in ipairs(cells) do
+        if not inRange(c.x, c.y) then return "BLOCKED", at(c) end
         if STAIR[c.role] then entrance = true end
     end
     if anchor[3] ~= (entrance and 0 or Z) then return "DIG_LEVEL", { x = anchor[1], y = anchor[2], z = anchor[3] } end
     -- 入口：樓梯三格已經在集合裡幾格（3 而且同一塊＝加開）
-    local stairs, inSet, blk, same = 0, 0, nil, true
+    local stairs, inSet, blk, same, top, bottom = 0, 0, nil, true, nil, nil
     for _, c in ipairs(cells) do
         if STAIR[c.role] then
             stairs = stairs + 1
+            if c.role == "top" then top = c elseif c.role == "bottom" then bottom = c end
             local id = Basement.blockOf(c.x, c.y, c.z)
             if id then
                 inSet = inSet + 1
@@ -596,6 +693,11 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
         end
     end
     local skip = entrance and inSet == stairs and same
+    -- 加開入口：樓梯底端前面那格也要已經挖開（同一塊），不然下了樓梯面對土牆（審查 round1 F6）
+    if skip and top and bottom then
+        local fx, fy = bottom.x + (bottom.x - top.x) / 2, bottom.y + (bottom.y - top.y) / 2
+        if Basement.blockOf(fx, fy, Z) ~= blk then return "BLOCKED", { x = fx, y = fy, z = Z } end
+    end
     local grid = getWorld():getMetaGrid()
     for _, c in ipairs(cells) do
         if UNDER[c.role] and not (skip and c.role == "dig") and foreignRoomNear(grid, c.x, c.y) then
@@ -606,16 +708,7 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
     if not entrance then
         local c = cells[1]
         if has(c.x, c.y, c.z) then return "BLOCKED", at(c) end
-        local near, size, counted = false, 1, {}
-        for _, d in ipairs(DIRS) do
-            local nx, ny = c.x + d[1], c.y + d[2]
-            local id, n = Basement.blockOf(nx, ny, c.z)
-            if id or (planned and planned[Place.key(nx, ny, c.z)]) then near = true end
-            if id and not counted[id] then
-                counted[id] = true
-                size = size + n
-            end
-        end
+        local size, near = digSize(c, planned)
         if not near then return "DIG_EDGE", at(c) end
         if size > Basement.MAX then return "DIG_FULL", { max = Basement.MAX, x = c.x, y = c.y, z = c.z } end
         dig[1] = c
@@ -656,16 +749,28 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
     return nil, nil, skip
 end
 
--- 洞那格上可以跟著拆或留著的：地板（不是水面）、草與可移除的植物、格邊的牆與牆上的掛件
+-- 洞那格上可以跟著拆或留著的：地板（不是水面）、草與可移除的植物、格邊的牆與牆上的掛件。開洞會拆的那幾種（openHole）
+-- 另外不收：多格的一組（引擎整組拆，連沒驗過的格子，IsoGridSquare.java:5929-5960、IsoObjectUtils.isObjectMultiSquare）、
+-- 掛著本工具地面覆蓋的地板（拆了覆蓋和它的退料跟著不見，同水面 waterOk）；地毯是能搬的家具，也不收（審查 round1 F2、F5）
 local function holeOk(o)
     local p = o:getProperties()
     if not p then return false end
-    if p:has(F.solidfloor) then return not (p:has(F.water) or p:has(F.taintedWater)) end
-    if p:has(F.canBeRemoved) or (p:has(F.vegitation) and o:getType() ~= T.tree) then return true end
     local tex = o:getTextureName()
-    if tex and tex:find("blends_grassoverlays", 1, true) then return true end
-    return p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW) or p:has(F.WallSE) or p:has(F.attachedN)
-        or p:has(F.attachedW)
+    if Place.isRug(tex, p) then return false end
+    if p:has(F.solidfloor) then
+        if p:has(F.water) or p:has(F.taintedWater) then return false end
+    elseif not (p:has(F.canBeRemoved) or (p:has(F.vegitation) and o:getType() ~= T.tree)
+        or (tex and tex:find("blends_grassoverlays", 1, true))) then
+        return p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW) or p:has(F.WallSE) or p:has(F.attachedN)
+            or p:has(F.attachedW)
+    end
+    local spr = o:getSprite()
+    if spr and spr:getSpriteGrid() then return false end
+    local hung = o:hasModData() and o:getModData().builderOverlays
+    if type(hung) == "table" then
+        for _ in pairs(hung) do return false end
+    end
+    return true
 end
 
 -- Place.check 的 dig 分支：回 true，或 false 與原因碼

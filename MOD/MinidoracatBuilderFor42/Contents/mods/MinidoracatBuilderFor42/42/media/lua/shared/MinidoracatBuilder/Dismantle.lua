@@ -52,7 +52,7 @@ end
 
 -- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
--- memo 見 Dismantle.classOf。
+-- 挖地下室入口的樓梯片照樓梯拆：圖帶 EntityScript，Rules.classify 不列（Entry.digStair）。memo 見 Dismantle.classOf。
 function Dismantle.kindOf(obj, ...)
     local memo = ...
     local ours, floor = mine(obj)
@@ -64,6 +64,9 @@ function Dismantle.kindOf(obj, ...)
     local spr = obj:getSprite()
     if not spr then return nil end
     local kind, refund = Dismantle.classOf(spr, memo)
+    if not kind and Entry.digStair(spr:getName()) and obj:isStairsObject() then
+        kind, refund = "stairs", Cost.refund("stairs", spr)
+    end
     -- 蓋成地板的照地板拆：0.5.0 以前帶 solidfloor 的圖塊包地毯被當地板蓋，現在歸家具或地面覆蓋（Rules.kindOf）；
     -- 照現在的種類拆，地面覆蓋那條路找的是地板上掛的圖，地板帳本也退不到
     if floor and kind ~= "floor" then kind, refund = "floor", Cost.refund("floor", spr) end

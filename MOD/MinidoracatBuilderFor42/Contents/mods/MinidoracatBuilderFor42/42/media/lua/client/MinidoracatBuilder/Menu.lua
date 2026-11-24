@@ -201,6 +201,13 @@ function Menu.pickTile(playerNum, name)
     if W and W.open(playerNum) then W.setQuery(name) end
 end
 
+-- 挖地下室的三個項目 ID 借用原版的圖名（Rules.DIG）：世界上本來就有同名的物件（引擎補的隱形地板、地圖的地下土塊），
+-- 點到的是它們，不是本 MOD 能蓋的東西：照有挖掘之前一樣當不能蓋的原版圖（同 Rules.kindOf 的 UNLISTED：LUA）
+local function why(name)
+    if MinidoracatBuilder.Rules.DIG[name] then return "LUA" end
+    return Entry.why(name)
+end
+
 -- 子選單一列：能蓋的「種類：名稱」；同一件東西有能蓋的那一項時（開著的門、多格的其他格…）照樣能選，寫那一項的種類；
 -- 建造配方的圖寫「配方：配方名」；其他不能蓋的變紅、標籤後面加「（不能蓋）」、停上去寫原因（紅字是原版「不能選」的顏色，
 -- ISContextMenu.lua:441-443）
@@ -210,12 +217,8 @@ local function addPick(sub, playerNum, name)
         sub:addOption(getText("IGUI_MBLD_Menu_Named", getText("IGUI_MBLD_Recipe_Badge"), r.name), playerNum, Menu.pickTile, name)
         return
     end
-    local e = Entry.resolve(name)
-    local code, arg, alt
-    if not e then
-        code, arg, alt = Entry.why(name)
-        e = alt and Entry.resolve(alt)
-    end
+    local code, arg, alt = why(name)
+    local e = not code and Entry.resolve(name) or (alt and Entry.resolve(alt))
     local label = e and getText("IGUI_MBLD_Menu_Named", Names.kind(e.kind), name) or name
     local bad = code and not alt
     local opt = sub:addOption(bad and getText("IGUI_MBLD_Menu_NoBuild", label) or label, playerNum, Menu.pickTile, name)
@@ -255,7 +258,7 @@ function Menu.pickAt(playerNum, sq, ...)
     end
     local only, n = nil, 0
     for _, name in ipairs(tiles) do
-        local code, _, alt = Entry.why(name) -- 能蓋的回 nil
+        local code, _, alt = why(name) -- 能蓋的回 nil
         if not code or alt or Recipes.forSprite(playerNum, name) then only, n = name, n + 1 end
     end
     if n == 1 then return Menu.pickTile(playerNum, only) end

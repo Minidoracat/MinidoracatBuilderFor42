@@ -206,15 +206,21 @@ local function parse(nextLine, headOnly)
         if not row() then return stop() end
     end
 
+    local DIG = B.Rules.DIG
     if headOnly then
         if f[1] ~= "p" and f[1] ~= "END" then return nil, "FORMAT", ln end
-        return { name = name, w = w, h = h, levels = lv, n = count, items = items, pos = pos }
+        -- 挖地下室的項目讀檔時丟掉（下面 map），檔頭的片數與項目表也不算它們，藍圖庫列的和讀進來的一樣
+        local kept = {}
+        for _, item in ipairs(items) do
+            if DIG[item.id] then count = math.max(0, count - item.n) else kept[#kept + 1] = item end
+        end
+        return { name = name, w = w, h = h, levels = lv, n = count, items = kept, pos = pos }
     end
 
     local plan = Plan.new(name)
     Plan.begin(plan)
     -- 檔案的項目序號 → 藍圖裡的序號。挖地下室的項目不讀（藍圖不認挖掘，地下室方案 §1.4）：那幾片丟掉，片數照檔案驗
-    local map, DIG = {}, B.Rules.DIG
+    local map = {}
     for idx, item in ipairs(items) do map[idx] = not DIG[item.id] and Plan.item(plan, item.id, item) or nil end
     local seen, pc = {}, 0
     while f[1] == "p" do

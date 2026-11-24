@@ -72,7 +72,8 @@ SGlobalObjectSystem.RegisterSystemClass(BasementLedger)
 local function areaOf(x, y) return math.floor(x / Basement.AREA), math.floor(y / Basement.AREA) end
 
 -- 洞那格：照 BD openHole（aparosa_BD_Build.lua:383-393）拿掉地板與草、可移除的植物，格邊的牆與掛件留著
--- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），回退料表或 nil
+-- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），真的拆掉了才算
+-- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960；審查 round1 F2）。回退料表或 nil
 local function openHole(sq)
     local had, objects = nil, sq:getObjects()
     for i = objects:size() - 1, 0, -1 do
@@ -83,16 +84,25 @@ local function openHole(sq)
         if floor or (p and (p:has(IsoFlagType.canBeRemoved)
             or (p:has(IsoFlagType.vegitation) and o:getType() ~= IsoObjectType.tree)))
             or (tex and tex:find("blends_grassoverlays", 1, true)) then
-            if floor then had = Place.refundOf(o) or had end
-            sq:transmitRemoveItemFromSquare(o)
+            local refund = floor and Place.refundOf(o)
+            if sq:transmitRemoveItemFromSquare(o) >= 0 and refund then had = refund end
         end
     end
     sq:RecalcAllWithNeighbours(true)
     return had
 end
 
+-- 帳本寫好之後的一步：出錯只記 log、不丟錯。回 pcall 的結果
+local function step(what, fn, ...)
+    local ok, res = pcall(fn, ...)
+    if not ok then print(LOG .. "basement " .. what .. " failed: " .. tostring(res)) end
+    return ok, res
+end
+
 -- Server.complete 在 Place.build 成功後呼叫（cells＝Check.item 的格子，帶 role）；回 holes＝洞格地板的退料表清單。
--- 帳本寫成功之前不做拿不回來的事（開洞在後）；有一格寫不進去就把這次寫的拿掉並丟錯（Server.complete 撤回、不扣料）
+-- 帳本寫成功之前不做拿不回來的事（開洞在後）；有一格寫不進去就把這次寫的拿掉並丟錯（Server.complete 撤回、不扣料）。
+-- 帳本寫好了就算蓋成（Server.complete 照常扣料、磨鏟子）：之後每一步（加進集合、補牆、開洞、登錄、同步）出錯只記 log、
+-- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上（審查 round1 F1）
 function BasementLedger.commit(player, cells, anchor)
     local new = {}
     for _, c in ipairs(cells) do
@@ -109,25 +119,28 @@ function BasementLedger.commit(player, cells, anchor)
     end
     local tiles = {}
     for i, c in ipairs(new) do tiles[i] = { c.x, c.y } end
-    local added = Basement.add(tiles)
+    local ok, added = step("add", Basement.add, tiles)
+    if not ok then added = {} end
     for _, t in ipairs(added) do
-        Basement.fixEdges(t[1], t[2], Z)
-        Basement.fixEdges(t[1] + 1, t[2], Z)
-        Basement.fixEdges(t[1], t[2] + 1, Z)
+        step("edges", function()
+            Basement.fixEdges(t[1], t[2], Z)
+            Basement.fixEdges(t[1] + 1, t[2], Z)
+            Basement.fixEdges(t[1], t[2] + 1, Z)
+        end)
     end
     local holes, cell = {}, getCell()
     for _, c in ipairs(cells) do
         local sq = c.role == "hole" and (c.sq or cell:getGridSquare(c.x, c.y, c.z))
-        if sq then holes[#holes + 1] = openHole(sq) end
+        if sq then
+            local opened, h = step("hole", openHole, sq)
+            if opened then holes[#holes + 1] = h end
+        end
     end
-    if #added > 0 then
-        local ok, err = pcall(Basement.grow, added)
-        -- 格子已經在帳本，下一次開服會登錄
-        if not (ok and err) then print(LOG .. "basement grow failed: " .. tostring(err)) end
-    end
-    if not isServer() then
-        Basement.recalcZ()
-    elseif #added > 0 then
+    -- 登錄延後一起做（Basement.growLater）：一次拖曳挖很多格只登錄一次
+    if #added > 0 then step("grow", Basement.growLater, added) end
+    step("sync", function()
+        if not isServer() then return Basement.recalcZ() end
+        if #added == 0 then return end
         local flat, areas = {}, {}
         for _, t in ipairs(added) do
             flat[#flat + 1], flat[#flat + 2] = t[1], t[2]
@@ -145,23 +158,34 @@ function BasementLedger.commit(player, cells, anchor)
                 end
             end
         end
-    end
+    end)
     return holes
 end
 
--- 這位玩家所在大區與周圍一圈（3×3）的地下室，一塊一個 { x, y, w, h, x, y, w, h, ... }（指令 basements）。
--- 位置只用連線玩家自己的座標
+-- 一個 basements 封包最多帶幾個矩形：同一塊不拆開，塞不下就換下一段（審查 round1 F11）
+local SEGMENT = 500
+
+-- 這位玩家所在大區與周圍一圈（3×3）的地下室，一塊一個 { x, y, w, h, x, y, w, h, ... }，分段送（指令 basements：
+-- { ax, ay, i＝第幾段, n＝共幾段, b＝這一段的塊 }；沒有地下室也送一段空的 i＝1、n＝1、b＝{}）。位置只用連線玩家自己的座標
 function BasementLedger.send(player)
     local ax, ay = areaOf(player:getX(), player:getY())
-    local b = {}
+    local segs, cur, count = {}, {}, 0
     for _, list in ipairs(Basement.area(ax, ay)) do
         local flat = {}
         for _, r in ipairs(Basement.rects(list)) do
             for j = 1, 4 do flat[#flat + 1] = r[j] end
         end
-        b[#b + 1] = flat
+        local n = #flat / 4
+        if count > 0 and count + n > SEGMENT then
+            segs[#segs + 1], cur, count = cur, {}, 0
+        end
+        cur[#cur + 1], count = flat, count + n
     end
-    MinidoracatBuilder.Server.send(player, "basements", { ax = ax, ay = ay, b = b })
+    segs[#segs + 1] = cur
+    local Server = MinidoracatBuilder.Server
+    for i, b in ipairs(segs) do
+        Server.send(player, "basements", { ax = ax, ay = ay, i = i, n = #segs, b = b })
+    end
 end
 
 -- 帳本現在的樣子（離線測試與管理面板）：筆數、每一片的筆數與估計 bytes

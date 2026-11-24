@@ -1075,7 +1075,7 @@ end
 -- 還沒搬的舊地板照 buildMaterials（Place.migrate）。本工具挖的水面也照地板帳本認（Place.dig 記的那筆，圖要一樣），
 -- 不收料所以退空表。車庫門、雙開門照伺服器帳本那一組的一筆（Place.build；obj 是哪一片都行），坡道照頭片那格那一筆
 -- （Place.rampOrigin 照圖與位置推頭片格，不看記號；某片被別的方式移走後那一筆是空表，見 Place.onAboutToBeRemoved）。
--- 都沒有回 nil。
+-- 都沒有回 nil。buildMaterials 只有 IsoThumpable 有（IsoThumpable.java:179,187；原版地板是一般 IsoObject，沒有這兩個方法）
 function Place.refundOf(obj)
     local door = Place.doorAnchor(obj)
     if door then
@@ -1099,14 +1099,15 @@ function Place.refundOf(obj)
         return e and e.s == obj:getSprite():getName() and e.i or nil
     end
     local sq = obj:getSquare()
-    if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return obj:getBuildMaterials() end
+    local thump = instanceof(obj, "IsoThumpable")
+    if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return thump and obj:getBuildMaterials() or nil end
     local Floors = MinidoracatBuilder.Floors
     local e = Floors and Floors.get(obj)
     if e then
         local spr = obj:getSprite()
         return spr and e.s == spr:getName() and not otherFloor(sq, obj) and e.i or nil
     end
-    if isServer() or not obj:hasBuildMaterials() then return nil end -- 專用伺服器讀格子前就建好帳本，都搬過了
+    if isServer() or not thump or not obj:hasBuildMaterials() then return nil end -- 專用伺服器讀格子前就建好帳本，都搬過了
     return obj:getBuildMaterials()
 end
 
@@ -1369,7 +1370,11 @@ local function placeStairs(cells, placed)
         -- 拆樓梯時只拆本 MOD 補的平台（Server.dismantle）：一般 IsoObject、和原版補的同一張圖，只能記在伺服器帳本
         if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
     end
-    sq:getModData()["ConnectedToStairs" .. tostring(not west)] = true
+    -- 記號先記進 placed（{ flag＝格子, key, old＝原本的值 }）：之後出錯 Place.undo 照原本的值寫回，不留一個擋住
+    -- 之後同向樓梯的假記號（審查 round1 F4）
+    local md, flagKey = sq:getModData(), "ConnectedToStairs" .. tostring(not west)
+    placed[#placed + 1] = { flag = sq, key = flagKey, old = md[flagKey] }
+    md[flagKey] = true
     sq:RecalcAllWithNeighbours(true)
     local above = Place.square(top.x, top.y, top.z + 1)
     if above then above:RecalcAllWithNeighbours(true) end
@@ -1753,7 +1758,7 @@ end
 local function repushPlaced(kind, placed, first)
     for i = first, #placed do
         local o = placed[i]
-        local sq = not (type(o) == "table" and (o.attached == true or o.water)) and o:getSquare()
+        local sq = not (type(o) == "table" and (o.attached == true or o.water or o.flag)) and o:getSquare()
         if sq then Place.repush(sq, kind, o) end
     end
 end
@@ -1855,6 +1860,7 @@ function Place.build(kind, cells, placed)
 end
 
 -- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
+-- 樓梯平台的記號（{ flag }，placeStairs）寫回原本的值。
 -- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。掛上去的（Place.attach 的紀錄）拿掉那張、清帳本。
 -- 挖好的水面（{ water }）換回原本的地面，不留一格沒有地板；出錯只記 log（呼叫端已經在收拾，不再往上丟）。
 -- 蓋地板時原本的地面已經拆掉（placeFloor 的 Place.clearFloor）：z ≤ 0 拆回後補泥土（同拆地板，Server.lua 的 removeAll）
@@ -1865,6 +1871,8 @@ function Place.undo(placed)
             Place.detach(obj.host, obj.name)
             local Overlays, sq = MinidoracatBuilder.Overlays, obj.host:getSquare()
             if Overlays and sq then Overlays.forget(sq, obj.name, obj.edge) end
+        elseif type(obj) == "table" and obj.flag then
+            obj.flag:getModData()[obj.key] = obj.old
         elseif type(obj) == "table" and obj.water then
             if obj.water:getSquare() then
                 local ok, err = pcall(Place.fill, obj.water)

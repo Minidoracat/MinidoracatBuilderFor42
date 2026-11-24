@@ -51,10 +51,8 @@ local function add(res, id, x, y, z, d, w)
     res.pieces[res.n] = { id = id, x = x, y = y, z = z, d = d, w = w }
 end
 
--- 圖塊項目：錨點＝這一張在佔地裡的位置倒推回原點（樓梯的底片在第 3 格，原點是頂片那格；多格物件的原點是自己）。
--- 挖地下室的項目不收：挖掉的地不是能照圖蓋的東西（藍圖不認挖掘，地下室方案 §1.4）
+-- 圖塊項目：錨點＝這一張在佔地裡的位置倒推回原點（樓梯的底片在第 3 格，原點是頂片那格；多格物件的原點是自己）
 local function addTile(res, entry, name, x, y, z)
-    if entry.kind == "dig" then return end
     for _, o in ipairs(Entry.cells(entry.spr)) do
         if o[5] ~= "platform" and o[4]:getName() == name then
             return add(res, entry.name, x - o[1], y - o[2], z - o[3], 0, nil)
@@ -80,9 +78,12 @@ local function recipeTile(res, name, x, y, z)
     return true
 end
 
--- 一張圖。z0＝框選的最低層（那一層的天然地面不收，連它邊緣附著的漸層圖一起：那些是地形，不是蓋出來的）
+-- 一張圖。z0＝框選的最低層（那一層的天然地面不收，連它邊緣附著的漸層圖一起：那些是地形，不是蓋出來的）。
+-- 挖地下室的三個項目 ID 借用原版圖名（Rules.DIG）：世界上同名的是引擎的隱形地板、地圖的地下土塊，不是挖出來的，
+-- 照有挖掘之前當引擎內部圖不收（LUA）；挖掉的地也不是能照圖蓋的東西（藍圖不認挖掘，地下室方案 §1.4）
 function Capture.tile(res, name, x, y, z, z0)
     if not name:find("_%d+$") then return end
+    if B.Rules.DIG[name] then return skip(res, "LUA", z) end
     local entry = Entry.resolve(name)
     if entry then
         local k = entry.kind

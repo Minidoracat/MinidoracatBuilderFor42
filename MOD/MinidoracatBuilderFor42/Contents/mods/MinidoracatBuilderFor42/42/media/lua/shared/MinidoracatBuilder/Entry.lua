@@ -36,6 +36,13 @@ Rules.DIG[Entry.DIG_S], Rules.DIG[Entry.DIG_E], Rules.DIG[Entry.DIG_CELL] = true
 -- 入口的木樓梯（頂、中、底片；同 BD aparosa_BD_Build.lua:47-48）：往南下是 N 型、往東下是 W 型
 local DIG_STAIRS = { [Entry.DIG_S] = { "carpentry_02_98", "carpentry_02_97", "carpentry_02_96" },
     [Entry.DIG_E] = { "carpentry_02_90", "carpentry_02_89", "carpentry_02_88" } }
+-- 入口樓梯的片（拆除認種類，Dismantle.kindOf）。這六張是原版木樓梯建造配方的圖（entity_carpentry_stairs.txt），引擎替它們
+-- 加 EntityScript（SpriteConfigManager.java:134-140），Rules.classify 回 ENTITY、不列進目錄
+local DIG_STAIR_PART = {}
+for _, list in pairs(DIG_STAIRS) do
+    for _, n in ipairs(list) do DIG_STAIR_PART[n] = true end
+end
+function Entry.digStair(name) return DIG_STAIR_PART[name] == true end
 
 -- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著。柱子不佔邊（NORTH／WEST 是空的；擋邊的圖 Rules 不列），
 -- 走 Place.check 的柱子分支

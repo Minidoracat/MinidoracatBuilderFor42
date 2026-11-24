@@ -535,7 +535,10 @@ function Server.complete(player, n, i)
     if rep then
         print(head .. " pay=" .. (plan and costLine(pay) or "free") .. used .. " back=" .. costLine(refund) .. " xp=" .. xp)
     else
-        print(head .. " cost=" .. (plan and costLine(total.items) or "free") .. used .. " xp=" .. xp)
+        -- 挖入口拆掉的洞上地板退料（drop 掉在玩家腳下）也記一筆，事後查得到
+        local back = costLine(refund)
+        back = back ~= "" and " back=" .. back or ""
+        print(head .. " cost=" .. (plan and costLine(total.items) or "free") .. used .. back .. " xp=" .. xp)
     end
     it.done[i] = true
     it.left = it.left - 1
