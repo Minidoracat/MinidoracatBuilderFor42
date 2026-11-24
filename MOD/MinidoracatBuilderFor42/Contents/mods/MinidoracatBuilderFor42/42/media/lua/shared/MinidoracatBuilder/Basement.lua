@@ -1206,9 +1206,9 @@ function Basement.growNow(x, y, z)
     return ok and done == true
 end
 
--- 伺服器與單機，每遊戲分鐘（BasementLedger 掛 EveryOneMinute）：每位玩家 PATROL 格內的塊重算分房。原版木工、別的 MOD 蓋牆
--- 在伺服器沒有事件（OnObjectAdded 只在 AddItemToMapPacket.processClient 觸發，AddItemToMapPacket.java:59,94）。
--- 沒有地下室時不做事
+-- 伺服器與單機，每 10 遊戲分鐘（BasementLedger 掛 EveryTenMinutes，GameTime.java:617-631；一天 90 分鐘的預設下每 37.5 秒）：
+-- 每位玩家 PATROL 格內的塊重算分房。原版木工、別的 MOD 蓋牆在伺服器沒有事件（OnObjectAdded 只在
+-- AddItemToMapPacket.processClient 觸發，AddItemToMapPacket.java:59,94），要等到下一次巡查才分。沒有地下室時不做事
 Basement.PATROL = 16
 function Basement.patrol()
     if isClient() then return end

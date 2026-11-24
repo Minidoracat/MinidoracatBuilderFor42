@@ -327,7 +327,7 @@ function BasementLedger.sendBlock(rooms)
     sendNear("block", { v = rev, r = (roomRects(rooms)) }, all)
 end
 
-Events.EveryOneMinute.Add(function() Basement.patrol() end)
+Events.EveryTenMinutes.Add(function() Basement.patrol() end)
 
 -- 帳本現在的樣子（離線測試與管理面板）：筆數、每一片的筆數與估計 bytes
 function BasementLedger.stats()
