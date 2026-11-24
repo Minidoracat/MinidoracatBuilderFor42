@@ -8512,7 +8512,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r21:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r22:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -8973,7 +8973,10 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     local dirtN, dirtW = sp("underground_01_9", 3905, { "WallN" }), sp("underground_01_8", 3906, { "WallW" })
     local woodN = sp("bd_wood_01_25", 3907, { "WallN" }) -- 它挖的地下室外邊的木牆（不是土牆）
     local tdoorN = sp("bd_tdoor_01_1", 3908, { "DoorWallNTrans" }) -- 透明門框（只有字串鍵，它的 edgesOf 不認）
-    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN, tdoorN })
+    local woodNW, woodSE = sp("bd_wood_01_26", 3909, { "WallNW" }), sp("bd_wood_01_27", 3911, { "WallSE" }) -- 它的西北角牆、牆角柱
+    local wood1N = sp("bd_wood_01_45", 3912, { "WallN" }) -- 它另一級的木牆圖（玩家用本工具蓋的是 IsoThumpable）
+    local doorN = sp("bd_door_01_1", 3913, { "DoorWallN" }) -- 門框（開口）
+    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN, tdoorN, woodNW, woodSE, wood1N, doorN })
     -- 假的它（aparosa_BD_DirtLayer 1.6.9 的 6 支，照原檔的判斷縮寫）：outer＝外邊（"x,y,z,N|W"）
     local outer, calls, cleared = {}, 0, {}
     local DIRT = { underground_01_9 = "N", underground_01_8 = "W" }
@@ -9061,7 +9064,7 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     check(not fits("windowFrame", frameN, sqN) and not fits("wall", transN, sqN) and not fits("wall", dirtN, sqE)
         and fits("wall", wallN, sqE), "有它：外邊不准蓋窗框（開口）、牆框、和土牆同一張圖的牆；同一條邊的實牆照樣蓋")
     check(not fits("wall", wallN, cell(393, 390, dirtN)), "有它：不是外邊的土牆照舊擋")
-    check(not fits("wall", wallN, cell(394, 390, woodN, "N")), "有它：外邊上它的木牆（不是土牆）照舊擋")
+    check(not fits("wall", wallN, cell(394, 390, woodN, "N")), "有它、沒有它的牆表（aparosa_BD_Build 不在）：外邊上它的木牆照舊擋")
     check(not fits("doorFrame", tdoorN, cell(399, 390, dirtN, "N")),
         "有它：外邊的透明門框（它的 edgesOf 不認、蓋了它不補回土牆）：土牆照舊擋（審查 1107 Claude）")
     local before = calls
@@ -9094,6 +9097,66 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     check(fits("wall", wallW, sqW2),
         "clearDirt 丟錯不停用它：只有伺服器跑得到那裡，停用了兩端就判斷不一樣（審查 1107 Claude 第 2 輪）")
 
+    -- 片 A（使用者 2026-11-25）：它放在外邊的牆（一般 IsoObject、圖在它的 SPRITE.variant／tier.*.wall）可以直接換、不退料
+    local realInst = instanceof
+    instanceof = function(o, c) return c == "IsoThumpable" and o.mats ~= nil end -- 本工具蓋的（假 IsoThumpable 帶 mats）
+    local dirtWalls = { wall = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10", SE = "underground_01_11" } }
+    aparosa_BD_Build = { SPRITE = {
+        variant = { wood = { wall = { W = "bd_wood_01_24", N = "bd_wood_01_25", NW = "bd_wood_01_26", SE = "bd_wood_01_27" } } },
+        tier = { wood1 = { wall = { W = "bd_wood_01_44", N = "bd_wood_01_45", NW = "bd_wood_01_46", SE = "bd_wood_01_47" } },
+            dirt = dirtWalls },
+        dirt = dirtWalls,
+    } }
+    local sqA1 = cell(391, 389, woodN, "N")
+    check(fits("wall", wallN, sqA1), "a1 外邊上它放的木牆（一般物件、圖在它的牆表）：可以換成別的牆")
+    local sqA2 = cell(390, 389, woodN, "N")
+    sqA2.objects[1].mats = {}
+    check(not fits("wall", wallN, sqA2), "a2 同一個位置換成同圖的 IsoThumpable（玩家蓋的）：不當成它的牆，照舊擋")
+    check(not fits("wall", wallN, cell(392, 389, woodN)), "a3 不在外邊上的同圖一般物件：照舊擋")
+    local _, same = Place.check("wall", woodN, sqA1, P)
+    check(same == "SAME_TILE", "a4 在它的木牆上蓋同一張圖：SAME_TILE")
+    check(not fits("windowFrame", frameN, sqA1) and not fits("wall", transN, sqA1) and not fits("doorFrame", doorN, sqA1)
+        and not fits("doorFrame", tdoorN, sqA1), "a7 外邊有它的牆時蓋窗框、牆框、門框、透明門框：照舊擋")
+
+    local sqA5 = cell(395, 389, woodN, "N")
+    local bdWall = sqA5.objects[1]
+    piece(sqA5, woodSE)
+    local removed, realRm = {}, sqA5.transmitRemoveItemFromSquare
+    function sqA5:transmitRemoveItemFromSquare(obj, safely)
+        removed[#removed + 1] = obj
+        return realRm(self, obj, safely)
+    end
+    BD.clearDirt = function(sq, k) cleared[#cleared + 1] = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. "," .. k end
+    local n0, planks, nails = #cleared, P2.inv:count("Base.Plank"), P2.inv:count("Base.Nails")
+    ok, cmd, a = build(P2, 3906, "bd_wood_01_45", { 395, 389, -1 })
+    check(ok and cmd == "placed" and #removed == 1 and removed[1] == bdWall and has(sqA5, "bd_wood_01_45")
+        and has(sqA5, "bd_wood_01_27") and #cleared == n0 + 1 and cleared[n0 + 1] == "395,389,-1,N",
+        "a5 蓋好後它的木牆由本工具 transmitRemoveItemFromSquare 拆掉（它的 clearDirt 照樣叫、不拿來拆木牆）；牆角柱留著；"
+            .. "新牆的圖也在它的牆表但是 IsoThumpable，留著")
+    check(P2.inv:count("Base.Plank") < planks and P2.inv:count("Base.Nails") <= nails and #sqA5.world == 0,
+        "a5 換掉它的牆不退料：只扣新牆的料，背包、地上都沒多東西")
+
+    local sqNW = square(393, 389, -1, { floor = {}, flags = { WallNW = true } })
+    piece(sqNW, woodNW)
+    outer["393,389,-1,N"], outer["393,389,-1,W"] = true, true
+    check(fits("wall", wallN, sqNW) and fits("wall", wallW, sqNW), "它的西北角牆：北邊、西邊都可以換")
+    ok, cmd, a = build(P, 3907, "bd_wall_01_1", { 393, 389, -1 })
+    check(ok and cmd == "placed" and not has(sqNW, "bd_wood_01_26") and has(sqNW, "bd_wall_01_1"),
+        "只蓋北邊：它的西北角牆整件拆掉（照它 clearDirt 拆西北角土牆的認法；西邊交給它下一個 tick 補土牆）")
+
+    local sqD6 = cell(398, 389, dirtN, "N")
+    local function onlyDirt(B, label)
+        aparosa_BD_Build = B
+        local fine, noErr = fits("wall", wallN, sqA1)
+        check(not fine and noErr and fits("wall", wallN, sqD6), "a6 " .. label .. "：只認土牆（它的木牆照舊擋），不丟錯")
+    end
+    onlyDirt(nil, "aparosa_BD_Build 不在")
+    onlyDirt({ SPRITE = "x" }, "SPRITE 不是表")
+    onlyDirt({ SPRITE = { variant = 1, tier = { wood = { wall = 3 } } } }, "牆表的形狀不對")
+    aparosa_BD_Build = nil
+    instanceof = realInst
+    BD.clearDirt = function() end
+
     local sqN2 = cell(397, 390, dirtN, "N")
     aparosa_BD_DirtLayer = nil
     local fine, noErr = fits("wall", wallN, sqN2)
@@ -9111,6 +9174,18 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     local again = fits("wall", wallW, sqW2)
     check(not fine and noErr and not again and boom == 1 and calls == before2,
         "它的判斷丟錯：照沒裝它，照舊擋、不丟出去；同一份之後別格也不再呼叫它（只丟一次，審查 1107 Grok）")
+    -- a6 讀它的牆表丟錯：和它的判斷丟錯一樣照沒裝它（同一個 pcall、設 broken），不丟出去
+    local BD2 = {}
+    for k, v in pairs(BD) do BD2[k] = v end
+    BD2.isOuterEdge = isOuter
+    aparosa_BD_DirtLayer = BD2
+    local fresh = fits("wall", wallN, sqD6)
+    aparosa_BD_Build = setmetatable({}, { __index = function() error("SPRITE boom") end })
+    local fine3, noErr3 = fits("wall", wallN, sqA1)
+    local after = fits("wall", wallN, sqD6)
+    aparosa_BD_Build = nil
+    check(fresh and not fine3 and noErr3 and not after,
+        "a6 讀它的牆表丟錯：照沒裝它（土牆、它的牆都照舊擋），不丟出去；同一份之後不再問它")
     aparosa_BD_DirtLayer = nil
     isServer, isClient = realS, realC
 end)()

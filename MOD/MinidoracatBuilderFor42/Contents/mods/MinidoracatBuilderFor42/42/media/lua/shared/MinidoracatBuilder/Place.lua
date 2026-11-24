@@ -166,13 +166,43 @@ local function dirtLayer(sq)
     return D
 end
 
--- 這條邊（k＝"N"／"W"）是它的外邊時，這格上它的外邊土牆；不是外邊或沒有回 nil
+-- 它挖地下室時放在外邊的牆（木牆、原木牆）：圖名 → 格邊（"W"／"N"／"NW"），從它的 SPRITE.variant／tier 的 wall 收，
+-- 不收牆角柱 SE、跳過土牆那張表（tier.dirt 就是 SPRITE.dirt）。它沒載入或表的形狀不對回空表（只認土牆）。
+-- 照 SPRITE 那張表快取：它重載換了表就重收。讀的時候丟錯由 basement() 的 pcall 接住、設 broken
+local bdKey, bdNames = nil, {}
+local function bdWalls()
+    local S = type(aparosa_BD_Build) == "table" and aparosa_BD_Build.SPRITE or nil
+    if S == bdKey then return bdNames end
+    local names = {}
+    local dirt = type(S) == "table" and type(S.dirt) == "table" and S.dirt.wall or nil
+    for _, group in ipairs(type(S) == "table" and { S.variant, S.tier } or {}) do
+        for _, look in pairs(type(group) == "table" and group or {}) do
+            local wall = type(look) == "table" and look.wall or nil
+            if type(wall) == "table" and wall ~= dirt then
+                for _, k in ipairs({ "W", "N", "NW" }) do
+                    if type(wall[k]) == "string" then names[wall[k]] = k end
+                end
+            end
+        end
+    end
+    bdKey, bdNames = S, names
+    return names
+end
+
+-- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls；西北角兩邊都算，照它
+-- clearDirt 拆土牆的認法）。它放的牆是一般 IsoObject（aparosa_BD_Build.lua:446-450）；同一張圖的 IsoThumpable 是玩家用
+-- 本工具或原版蓋的，不算（它的 aparosa_BD_Upgrade.lua:47-57 也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。
+-- 不是外邊或沒有回 nil
 local function outerDirt(D, sq, k)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return nil end
-    local list, objects = {}, sq:getObjects()
+    local list, objects, walls = {}, sq:getObjects(), bdWalls()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
-        if D.isDirtOnOuterEdge(o) then list[#list + 1] = o end
+        local spr = o:getSprite()
+        local edge = spr and walls[spr:getName()]
+        if D.isDirtOnOuterEdge(o) or ((edge == k or edge == "NW") and not instanceof(o, "IsoThumpable")) then
+            list[#list + 1] = o
+        end
     end
     return list[1] and list or nil
 end
@@ -1843,14 +1873,24 @@ function Place.settle(cells)
     end
 end
 
+-- 它的 clearDirt 只拆土牆；它放的牆（outerDirt 收到、不是土牆的）本工具自己拆，它在移除事件記下、下一個 tick 看到那條邊
+-- 有本工具的牆就不補土牆（aparosa_BD_DirtLayer.lua:196-221）。先拆土牆：clearDirt 丟錯撤回時它的牆還在
+local function clearEdge(D, sq, k)
+    if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return end
+    D.clearDirt(sq, k)
+    local list = outerDirt(D, sq, k)
+    for i = 1, list and #list or 0 do
+        if not D.isDirtOnOuterEdge(list[i]) then sq:transmitRemoveItemFromSquare(list[i]) end
+    end
+end
+
 local function clearDirtAt(D, c, n, w)
-    local x, y, z = c.sq:getX(), c.sq:getY(), c.sq:getZ()
-    if n and D.isOuterEdge(x, y, z, "N") then D.clearDirt(c.sq, "N") end
-    if w and D.isOuterEdge(x, y, z, "W") then D.clearDirt(c.sq, "W") end
+    if n then clearEdge(D, c.sq, "N") end
+    if w then clearEdge(D, c.sq, "W") end
 end
 
 -- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
--- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
+-- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆和它放的牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
 -- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
 -- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）。
 -- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣（審查 1107 Claude 第 2 輪）；INTERNAL 會清掉
