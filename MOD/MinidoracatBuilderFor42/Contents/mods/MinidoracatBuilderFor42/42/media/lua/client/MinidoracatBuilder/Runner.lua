@@ -115,6 +115,28 @@ local function segmentOf(id)
     return s
 end
 
+-- 地板實際會換掉的格（照朝向的 Entry.cells：多格地板伺服器逐格換；配方只有錨點那格），照項目、朝向記著（換藍圖時清掉）
+local footCache, ANCHOR_ONLY, NONE = {}, { { 0, 0, 0 } }, {}
+local function footOf(id, d)
+    local byD = footCache[id]
+    if not byD then
+        byD = {}
+        footCache[id] = byD
+    end
+    local k = d or 0
+    local f = byD[k]
+    if not f then
+        local entry = id:sub(1, #RECIPE) ~= RECIPE and Entry.resolve(id)
+        local spr = entry and Entry.face(entry, d)
+        f = spr and Entry.cells(spr) or ANCHOR_ONLY
+        byD[k] = f
+    end
+    return f
+end
+local function cellKey(x, y, z)
+    return (z + 64) * 1e10 + y * 1e5 + x
+end
+
 local function itemName(id)
     if not id then return nil end
     if id:sub(1, #RECIPE) == RECIPE then
@@ -167,22 +189,8 @@ local function buildSummary()
         boxes = {} }
     for i, why in pairs(st.badIndex or {}) do out.boxes[i] = why end
     if not (plan and PC and PC.state) then return out end
-    local P = B.Plan
-    P.each(plan, function(p)
-        local state, detail = PC.state(p)
-        out.n = out.n + 1
-        if state == "done" or st.placed[p] then
-            out.done = out.done + 1
-            return
-        end
-        out.left = out.left + 1
-        local code, sk = leftCode(p, state, detail)
-        -- 在等同格地板的地面覆蓋（狀態是 ok）：照那片地板沒蓋的原因說
-        local f = not code and st.held and st.held[p]
-        if f then
-            local fs, fd = PC.state(f)
-            code, sk = leftCode(f, fs, fd)
-        end
+    local P, waits = B.Plan, nil
+    local function tally(code, sk)
         if code == "NO_MATERIAL" or code == "NO_TOOL" then
             out.short.n = out.short.n + 1
         elseif code == "SKILL" then
@@ -192,7 +200,54 @@ local function buildSummary()
         elseif code then
             out.blocked[code] = (out.blocked[code] or 0) + 1
         end
+    end
+    P.each(plan, function(p)
+        local state, detail = PC.state(p)
+        out.n = out.n + 1
+        if state == "done" or st.placed[p] then
+            out.done = out.done + 1
+            return
+        end
+        out.left = out.left + 1
+        local code, sk = leftCode(p, state, detail)
+        -- 在等同格地板的地面覆蓋（狀態 ok）：照那片地板沒蓋的原因說
+        local f = not code and st.held and st.held[p]
+        if f then
+            local fs, fd = PC.state(f)
+            code, sk = leftCode(f, fs, fd)
+        end
+        -- 樓上還沒有格子時是 WAIT（PlanCheck：等同格的地板）：同格的地板看完整張才知道，先記著
+        if code == "WAIT" then
+            local id = resolve(p)
+            if id and cachedKind(id) == "floorOverlay" then
+                waits = waits or {}
+                waits[#waits + 1] = p
+                return
+            end
+        end
+        tally(code, sk)
     end)
+    if waits then
+        local floors = {}
+        P.each(plan, function(p)
+            if st.placed[p] or PC.state(p) == "done" then return end
+            local id, x, y, z, d = resolve(p)
+            if id and x and cachedKind(id) == "floor" then
+                for _, c in ipairs(footOf(id, d)) do floors[cellKey(x + c[1], y + c[2], z + c[3])] = p end
+            end
+        end)
+        for _, p in ipairs(waits) do
+            local code, sk = "WAIT", nil
+            local _, x, y, z = resolve(p)
+            local f = x and floors[cellKey(x, y, z)]
+            if f then
+                local fs, fd = PC.state(f)
+                local fc, fsk = leftCode(f, fs, fd)
+                if fc then code, sk = fc, fsk end
+            end
+            tally(code, sk)
+        end
+    end
     -- 缺多少照整張的合計（PlanCheck.materials，和面板同一套）
     local m = PC.materials and st.player and PC.materials(st.player)
     if m then
@@ -642,28 +697,6 @@ local function snakeKey(x, y)
     return r * s.w + k
 end
 
--- 地板實際會換掉的格（照朝向的 Entry.cells：多格地板伺服器逐格換；配方只有錨點那格），照項目、朝向記著（換藍圖時清掉）
-local footCache, ANCHOR_ONLY, NONE = {}, { { 0, 0, 0 } }, {}
-local function footOf(id, d)
-    local byD = footCache[id]
-    if not byD then
-        byD = {}
-        footCache[id] = byD
-    end
-    local k = d or 0
-    local f = byD[k]
-    if not f then
-        local entry = id:sub(1, #RECIPE) ~= RECIPE and Entry.resolve(id)
-        local spr = entry and Entry.face(entry, d)
-        f = spr and Entry.cells(spr) or ANCHOR_ONLY
-        byD[k] = f
-    end
-    return f
-end
-local function cellKey(x, y, z)
-    return (z + 64) * 1e10 + y * 1e5 + x
-end
-
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、順序最前（key：地板那一段是蛇形序號，其他段是離玩家的
 -- 距離）的那片，再收同項目、同層、同疊放值順序最前的幾片。
 -- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
@@ -698,7 +731,8 @@ local function pickBatch(player, plan, settled)
             end
             if id and not st.later[p] and (state == nil or state == "ok" or (state == "short" and boxes)) then
                 local seg = segmentOf(id)
-                local early = settled and not settled(x, y, z)
+                -- 掃描看完、佇列還沒算完時 settled 回 true，還沒算的片 state 是 nil：也算還不能挑（fbF-w-new 第一批 #167）
+                local early = settled and (state == nil or not settled(x, y, z))
                 if early and seg == 1 then
                     local key = snakeKey(x, y)
                     if not hz or z < hz or (z == hz and key < hk) then hz, hk = z, key end

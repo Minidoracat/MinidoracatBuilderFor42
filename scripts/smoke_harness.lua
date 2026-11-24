@@ -22548,7 +22548,7 @@ end)()
     local S, BUSY = {}, true
     B.PlanCheck = {
         resolve = function(p) local x = pl.items[p.it]; return x and x.id, p.x + OX, p.y + OY, p.z, p.d, p.o, p.w end,
-        state = function(p) return S[p] end,
+        state = function(p) local v = S[p]; if type(v) == "table" then return v[1], v[2] end return v end,
         busy = function() return BUSY end,
         touch = function() end,
     }
@@ -22776,6 +22776,12 @@ end)()
         check(R.state() == "done" and seq3 == "" and sum3.left == 2 and sum3.short.n == 2,
             "照圖蓋：在等同格地板的半格，總結照那片地板沒蓋的原因說（left " .. sum3.left .. "、缺料 " .. sum3.short.n .. "，"
             .. seq3 .. "）")
+        -- 樓上那格還沒有格子：半格是 blocked／WAIT（等同格地板），地板缺料時總結一樣算進缺料（✗ fbF-w-new up2Go：WAIT=1、缺料 1）
+        local seq3w = build("overlayShortWait", { { "pp_a", 0, "short" }, { "pp_o", 0, { "blocked", "WAIT" } } }, 499.5)
+        local sum3w = R.summary()
+        check(R.state() == "done" and seq3w == "" and sum3w.left == 2 and sum3w.short.n == 2 and not sum3w.blocked.WAIT,
+            "照圖蓋：在等同格地板的半格（WAIT），總結照那片地板沒蓋的原因說（left " .. sum3w.left .. "、缺料 " .. sum3w.short.n
+            .. "、WAIT " .. tostring(sum3w.blocked.WAIT) .. "，" .. seq3w .. "）")
         -- 同格地板的種類在沙盒關掉（off）：之後不會蓋，半格照蓋（✗ 一直等）
         local seq4 = build("overlayOff", { { "pp_a", 0, "off" }, { "pp_o", 0 } }, 499.5)
         check(seq4 == "pp_o@500,500" and hung["500,500"] == "pp_o",
@@ -22845,11 +22851,26 @@ end)()
         run(2)
         local m = pushes[1] and pushes[1].anchors[1]
         local mid = m and m[1] == 507 and m[2] == 501
+        -- 掃描已排進佇列、還沒算完（settled 回 true，state 還是 nil）：沒算過的片排在前面也要等（✗ fbF-w-new snScan 第一批 #167）
+        begin(503.5, 501.5, function() return true end)
+        local far = {}
+        for p in pairs(S) do if not near(500 + p.x, 500 + p.y) then far[#far + 1] = p end end
+        for _, p in ipairs(far) do S[p] = nil end
+        run(20)
+        local held2 = #pushes
+        for _, p in ipairs(far) do S[p] = "ok" end
+        for _ = 1, 20 do
+            if pushes[1] then break end
+            run(1)
+        end
+        local c = pushes[1] and pushes[1].anchors[1]
+        local corner2 = c and (c[1] == 500 or c[1] == 507) and (c[2] == 500 or c[2] == 503)
         R.stop()
         local function at(v) return v and (v[1] .. "," .. v[2]) or "nil" end
-        check(held == 0 and corner and late and mid,
-            "照圖蓋在掃描中：地板先等、不挑玩家身邊的片；掃描完從蛇形起點角起；等滿上限照挑身邊的；下一片算過了就不等（held="
-            .. held .. " first=" .. at(a) .. " late=" .. at(b) .. " mid=" .. at(m) .. "）")
+        check(held == 0 and corner and late and mid and held2 == 0 and corner2,
+            "照圖蓋在掃描中：地板先等、不挑玩家身邊的片；掃描完從蛇形起點角起；等滿上限照挑身邊的；下一片算過了就不等；"
+            .. "沒算過的片排在前面也等（held=" .. held .. " first=" .. at(a) .. " late=" .. at(b) .. " mid=" .. at(m) .. " held2="
+            .. held2 .. " first2=" .. at(c) .. "）")
         B.PlanCheck.settled, sb.MaxCellsPerDrag, pushes = nil, 8, {}
         K.pos.x, K.pos.y = 532.5, 532.5
     end
