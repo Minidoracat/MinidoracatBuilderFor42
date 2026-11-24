@@ -13,6 +13,7 @@ require "MinidoracatBuilder/Ledger"
 require "MinidoracatBuilder/Floors"
 require "MinidoracatBuilder/Overlays"
 require "MinidoracatBuilder/Circuits"
+require "MinidoracatBuilder/BasementLedger"
 
 local Sources, Entry, Cost = MinidoracatBuilder.Sources, MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
 local Place, Materials, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Materials, MinidoracatBuilder.Check
@@ -30,7 +31,7 @@ local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，�
 local OVERLAP = { overlap = true }    -- 疊放的請求交給 Check.item 的 opts（只讀；沒有 preview，照伺服器的路走）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
 Server.intents = {}
-local rate, woken, quietUntil, ledgerUntil = {}, {}, {}, {}
+local rate, woken, quietUntil, ledgerUntil, basementUntil = {}, {}, {}, {}, {}
 
 local function now() return getTimestampMs() end
 local function keyOf(player)
@@ -176,7 +177,8 @@ function Server.intent(player, args)
         local w = int(args.w, 2, math.max(2, maxItems)) -- 沙盒 MaxCellsPerDrag 最小可設 1，車庫門至少 2 格
         if not w or #anchors ~= 1 then return Server.refuse(player, n, 0, "BAD_REQUEST") end
         anchors[1][5] = w
-    elseif args.w ~= nil or (entry.kind == "ramp" and #anchors ~= 1) then -- 坡道一組 20 多格，一個請求只放一組
+    elseif args.w ~= nil or ((entry.kind == "ramp" or entry.kind == "dig" and entry.name ~= Entry.DIG_CELL) and #anchors ~= 1) then
+        -- 坡道一組 20 多格、地下室入口一組 13 格：一個請求只放一組
         return Server.refuse(player, n, 0, "BAD_REQUEST")
     end
     for _, a in ipairs(anchors) do
@@ -210,7 +212,7 @@ function Server.duration(player, n, i)
     local ticks = 1
     if not player:isTimedActionInstant() then
         local entry = Entry.resolve(it.e)
-        ticks = Entry.duration(entry and entry.kind, player)
+        ticks = Entry.duration(entry and entry.kind, player, it.e)
     end
     local waitMs = i == 1 and it.wake + WAKE_MS - now() or 0
     if waitMs > 0 then ticks = math.max(ticks, math.ceil(waitMs / 20)) end -- 伺服器每 tick 20 ms（NetTimedAction.java:77）
@@ -467,6 +469,16 @@ function Server.complete(player, n, i)
     if ok and rep then ok, err = pcall(removeOld, rep) end
     -- 地下室 MOD 外邊的土牆（Place.check 放行了才蓋得到這裡）：拆不掉就和蓋到一半出錯一樣撤回、不扣料
     if ok then ok, err = pcall(Place.clearDirt, entry.kind, cells) end
+    -- 挖地下室：新挖的格數（磨鏟子用）要在記進集合之前數；帳本記不進去照蓋到一半出錯撤回（commit 自己拿掉寫了一半的）
+    local dug, holes = 0, nil
+    if ok and entry.kind == "dig" then
+        local Basement = MinidoracatBuilder.Basement
+        for _, c in ipairs(cells) do
+            if c.role ~= "hole" and c.role ~= "platform" and not Basement.has(c.x, c.y, c.z) then dug = dug + 1 end
+        end
+        ok, holes = pcall(MinidoracatBuilder.BasementLedger.commit, player, cells, a)
+        if not ok then err = holes end
+    end
     if not ok then
         Place.undo(placed)
         if rep and not restoreOld(rep, oldSq, oldSpr, had) then
@@ -483,11 +495,13 @@ function Server.complete(player, n, i)
     for j, c in ipairs(cells) do rehang(player, c.sq, saved[j]) end
     local refund = {}
     if rep and plan then rollInto(refund, back) end
+    -- 開洞拆掉的本工具地板：照拆除退 1..v（作弊挖的也退，同拆除）
+    for _, h in ipairs(entry.kind == "dig" and holes or {}) do rollInto(refund, h) end
     local xp = ""
     if plan then
         Materials.consume(player, plan)
         xp = giveXp(player, rep and { paidCost(costs[1], pay) } or costs)
-        drop(player, cells[1].sq, refund)
+        if entry.kind == "dig" then Materials.wear(player, "DIG_GRAVE", math.max(1, dug)) end
         -- Quests & Achievements（選用，不寫 require）：付料的新建算 1 個建造；沒扣到任何東西（倍率 0）、原地替換不算，
         -- 建造作弊沒有 plan 進不來（服主 2026-11-15）。出錯不影響這一項已經蓋好。built 回 true，或 false＋錯誤碼
         -- （印一行），或單獨的 false（超過每分鐘上限、玩家還沒有 Quest 帳號：預期內，不印）
@@ -502,6 +516,7 @@ function Server.complete(player, n, i)
             end
         end
     end
+    drop(player, cells[1].sq, refund)
     Place.settle(cells)
     if entry.kind == "light" then -- 開關自動接線、燈接進房間裡的線路（第六階段）；出錯不影響這一項已經蓋好
         local cok, cerr = pcall(MinidoracatBuilder.Circuits.placed, player, placed)
@@ -606,7 +621,7 @@ function Server.dismantleDuration(player, n, i)
         kind = t and t.kind or nil
     end
     if not kind then return 1 end
-    return Entry.duration(kind, player)
+    return Entry.duration(kind, player, a[4])
 end
 
 -- 樓梯、坡道平台留著的情況：不是本 MOD 補的（帳本沒記：蓋的時候那格原本就有地板）、上面還有別的東西（同一格別的物件，或掛在
@@ -729,6 +744,18 @@ function Server.ledgers(player)
     Server.send(player, "ledgers", { list = list })
 end
 
+-- 地下室範圍（客戶端進場、走到別的大區時要）：不收任何參數，只回連線玩家自己所在大區周圍的（BasementLedger.send）。
+-- 和 ledgers 一樣只限速、不查建造權限：沒權限的人也要看得到地下室的房間與土牆
+local BASEMENTS_MS = 5000
+function Server.basements(player)
+    local k, t = keyOf(player), now()
+    local u = basementUntil[k]
+    if u and t < u and t >= u - BASEMENTS_MS then return end -- 時鐘往回調不算在限速內
+    basementUntil[k] = t + BASEMENTS_MS
+    local ok, err = pcall(MinidoracatBuilder.BasementLedger.send, player)
+    if not ok then print(LOG .. "basements send failed: " .. tostring(err)) end
+end
+
 Events.OnClientCommand.Add(function(module, command, player, args)
     if module ~= MODULE or not player then return end
     if command == "intent" then
@@ -739,6 +766,8 @@ Events.OnClientCommand.Add(function(module, command, player, args)
         MinidoracatBuilder.Circuits.command(player, command, args)
     elseif command == "ledgers" then
         Server.ledgers(player)
+    elseif command == "basements" then
+        Server.basements(player)
     end
 end)
 

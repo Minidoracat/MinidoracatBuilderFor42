@@ -158,6 +158,9 @@ local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "is
 local broken
 local function dirtLayer(sq)
     if sq:getZ() >= 0 then return nil end
+    -- 本 MOD 挖的地下室：同一份 6 支判斷（Basement）
+    local B = MinidoracatBuilder.Basement
+    if B and B ~= broken and B.near(sq) then return B end
     local D = aparosa_BD_DirtLayer
     if type(D) ~= "table" or D == broken then return nil end
     for i = 1, #BD_FNS do
@@ -870,6 +873,7 @@ end
 function Place.check(kind, spr, sq, ...)
     local player, role, planned, replacing, overlap = ...
     if sq:hasSlopedSurface() and not slopeOk(kind, spr) then return false end
+    if kind == "dig" then return MinidoracatBuilder.Basement.checkCell(sq, role, spr) end
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if kind == "ramp" then return rampOk(spr, sq, role) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
@@ -1762,6 +1766,21 @@ function Place.build(kind, cells, placed)
         placeStairs(cells, placed)
         return repushPlaced(kind, placed, first)
     end
+    -- 挖地下室：地下的格子沒有地板就鋪泥土地，樓梯三片和落腳處照樓梯放（頂片在第一個，整組的退料在它那一格）；
+    -- 洞與帳本由 BasementLedger.commit 接著做。地下沒有區域資料（IsoRegionWorker.java:379），不補推
+    if kind == "dig" then
+        local stairs = {}
+        for _, c in ipairs(cells) do
+            if c.role ~= "hole" and c.role ~= "platform" and not c.sq:getFloor() then
+                local floor = layFloor(c.sq, Place.DIRT)
+                if not floor then error("basement floor not placed at " .. c.x .. "," .. c.y .. "," .. c.z) end
+                placed[#placed + 1] = floor
+            end
+            if c.role ~= "dig" and c.role ~= "hole" then stairs[#stairs + 1] = c end
+        end
+        if stairs[1] then placeStairs(stairs, placed) end
+        return
+    end
     if kind == "ramp" then
         placeRamp(cells, placed)
         return repushPlaced(kind, placed, first)
@@ -1965,6 +1984,15 @@ end
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
+    -- 地下室外邊的牆被移除（拆、砸、蓋到一半撤回）：下一個 tick 那條邊沒有牆就補回土牆（Basement.touch 排程）
+    local wsq = not isClient() and obj:getSquare()
+    if wsq and wsq:getZ() < 0 then
+        local spr, B = obj:getSprite(), MinidoracatBuilder.Basement
+        local p = spr and spr:getProperties()
+        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW)) and B and B.near(wsq) then
+            B.touch(wsq:getX(), wsq:getY(), wsq:getZ())
+        end
+    end
     if not isClient() then stashNames(obj) end -- 撿走帶記號的容器：記下名字，放下時寫回
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end

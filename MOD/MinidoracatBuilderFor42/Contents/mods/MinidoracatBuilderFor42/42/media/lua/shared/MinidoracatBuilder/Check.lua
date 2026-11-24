@@ -6,6 +6,7 @@ require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Materials"
+require "MinidoracatBuilder/Basement"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Check = MinidoracatBuilder.Check or {}
@@ -200,9 +201,24 @@ function Check.item(player, name, d, anchor, ...)
             return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
         end
     else
-        local why, extra = Check.near(player, cells, Entry.EDGE[entry.kind], preview)
+        local why, extra = Check.near(player, cells, Entry.EDGE[entry.kind] or entry.kind == "dig", preview)
         if why == "TOO_FAR" then extra = { x = anchor[1], y = anchor[2], z = anchor[3] } end
         if why then return why, extra, info end
+    end
+    -- 地下室（Basement.pre 只讀座標與已有的格子）：加開入口（skip）時兩旁已挖的格子不再挖，從這次的格子拿掉
+    if entry.kind == "dig" then
+        local code, extra, skip = MinidoracatBuilder.Basement.pre(player, entry, cells, anchor, planned, preview)
+        if code then return code, extra, info end
+        if skip then
+            local kc, ks = {}, {}
+            for j, c in ipairs(cells) do
+                if c.role ~= "dig" then
+                    kc[#kc + 1], ks[#ks + 1] = c, sprites[j]
+                end
+            end
+            cells, sprites = kc, ks
+            info.cells, info.sprites = cells, sprites
+        end
     end
     local cell = getCell()
     for _, c in ipairs(cells) do
@@ -239,7 +255,7 @@ function Check.item(player, name, d, anchor, ...)
     -- （不帶 replacing 的 Place.check 放不下），放得下就照舊同格共存（不同朝向的掛件、同格的屋頂片、桌上的東西）
     local Dismantle = MinidoracatBuilder.Dismantle
     local old, oldKind
-    if not overlap and #cells == 1 and entry.kind ~= "stairs" and cells[1].sq and Dismantle then
+    if not overlap and #cells == 1 and entry.kind ~= "stairs" and entry.kind ~= "dig" and cells[1].sq and Dismantle then
         local c = cells[1]
         old, oldKind = Dismantle.replaceable(c.sq, entry.kind, c.spr)
         if old and entry.kind ~= "floor" then

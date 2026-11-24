@@ -281,10 +281,22 @@ end
 -- ---------------------------------------------------------------- 區域（自動接線、同步）
 
 -- 那一格的區域編號與區域；isEnclosed 為真才回（small＝true 時還要不超過 ROOM_MAX 格）。編號會變（IsoRegionManager.java:26），
--- 只在這一次比
+-- 只在這一次比。
+-- 地下沒有區域資料，引擎查 z < 0 會陣列越界、記一大段錯誤（引擎自己的入口也先擋，IsoGridSquare.java:9987-9989）：自動接線
+-- （small）改認房間：本 MOD 挖的地下室照連通塊（"b"..編號），地圖或別的 MOD 的地下房間照 RoomDef 物件本身（不比 getID：
+-- long 進 Lua 失準）。按開關後的補同步（small＝false）照舊不查：地下不建自建房間
 local function roomOf(x, y, z, small)
-    -- 地下沒有區域資料，引擎查 z < 0 會陣列越界、記一大段錯誤；引擎自己的入口也先擋（IsoGridSquare.java:9987-9989）
-    if z < 0 then return nil end
+    if z < 0 then
+        if not small then return nil end
+        local Basement = B.Basement
+        if Basement then
+            local id, n = Basement.blockOf(x, y, z)
+            if id then return n <= Circuits.ROOM_MAX and "b" .. id or nil end
+        end
+        local def = getWorld():getMetaGrid():getRoomAt(x, y, z)
+        if not def or def:getName() == "emptyoutside" or def:getArea() > Circuits.ROOM_MAX then return nil end
+        return def
+    end
     local r = IsoRegions.getIsoWorldRegion(x, y, z)
     if not (r and r:isEnclosed()) then return nil end
     if small and r:getSquareSize() > Circuits.ROOM_MAX then return nil end
@@ -292,6 +304,13 @@ local function roomOf(x, y, z, small)
 end
 
 local function sameRegion(rid, x, y, z)
+    if z < 0 then
+        if type(rid) == "string" then
+            local id = B.Basement and B.Basement.blockOf(x, y, z)
+            return id ~= nil and "b" .. id == rid
+        end
+        return getWorld():getMetaGrid():getRoomAt(x, y, z) == rid
+    end
     local r = IsoRegions.getIsoWorldRegion(x, y, z)
     return r ~= nil and r:getID() == rid
 end
