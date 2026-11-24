@@ -170,13 +170,14 @@ local function dirtLayer(sq)
 end
 
 -- 它挖地下室時放在外邊的牆（木牆、原木牆）：圖名 → 格邊（"W"／"N"／"NW"），從它的 SPRITE.variant／tier 的 wall 收，
--- 不收牆角柱 SE、跳過土牆那張表（tier.dirt 就是 SPRITE.dirt）。它沒載入或表的形狀不對回空表（只認土牆）。
+-- 不收牆角柱 SE、跳過土牆那張表（tier.dirt 就是 SPRITE.dirt）。第二個回傳：西北角的圖名 → { 換掉的邊 → 補回另一邊的單邊圖 }，
+-- 取同一張表（同一系列、同一級，它升級也整張表換，aparosa_BD_Upgrade.lua:36-57、106-108）。它沒載入或表的形狀不對回空表（只認土牆）。
 -- 照 SPRITE 那張表快取：它重載換了表就重收。讀的時候丟錯由 basement() 的 pcall 接住、設 broken
-local bdKey, bdNames = nil, {}
+local bdKey, bdNames, bdRest = nil, {}, {}
 local function bdWalls()
     local S = type(aparosa_BD_Build) == "table" and aparosa_BD_Build.SPRITE or nil
-    if S == bdKey then return bdNames end
-    local names = {}
+    if S == bdKey then return bdNames, bdRest end
+    local names, rest = {}, {}
     local dirt = type(S) == "table" and type(S.dirt) == "table" and S.dirt.wall or nil
     for _, group in ipairs(type(S) == "table" and { S.variant, S.tier } or {}) do
         for _, look in pairs(type(group) == "table" and group or {}) do
@@ -185,24 +186,32 @@ local function bdWalls()
                 for _, k in ipairs({ "W", "N", "NW" }) do
                     if type(wall[k]) == "string" then names[wall[k]] = k end
                 end
+                if type(wall.NW) == "string" then
+                    rest[wall.NW] = { N = type(wall.W) == "string" and wall.W or nil, W = type(wall.N) == "string" and wall.N or nil }
+                end
             end
         end
     end
-    bdKey, bdNames = S, names
-    return names
+    bdKey, bdNames, bdRest = S, names, rest
+    return names, rest
 end
 
--- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls；西北角兩邊都算，照它
--- clearDirt 拆土牆的認法）。它放的牆是一般 IsoObject（aparosa_BD_Build.lua:446-450）；同一張圖的 IsoThumpable 是玩家用
--- 本工具或原版蓋的，不算（它的 aparosa_BD_Upgrade.lua:47-57 也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。
+-- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls）。它放的牆是一般 IsoObject
+-- （aparosa_BD_Build.lua:446-450）；同一張圖的 IsoThumpable 是玩家用本工具或原版蓋的，不算（它的 aparosa_BD_Upgrade.lua:47-57
+-- 也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。西北角那件一件管兩邊：both（另一邊這次也換）時兩邊都算；只換一邊時
+-- 要補得回另一邊（bdWalls 的單邊圖在 namedMap）才算，補不回照舊擋（審查 1125 Codex：整件拆了另一邊變回土牆，升級的料沒了）。
 -- 不是外邊或沒有回 nil
-local function outerDirt(D, sq, k)
+local function outerDirt(D, sq, k, both)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return nil end
-    local list, objects, walls = {}, sq:getObjects(), bdWalls()
+    local list, objects, walls, rest = {}, sq:getObjects(), bdWalls()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         local spr = o:getSprite()
         local edge = spr and walls[spr:getName()]
+        if edge == "NW" and not both then
+            local name = rest[spr:getName()] and rest[spr:getName()][k]
+            if not (name and IsoSpriteManager.instance:getNamedMap():containsKey(name)) then edge = nil end
+        end
         if D.isDirtOnOuterEdge(o) or ((edge == k or edge == "NW") and not instanceof(o, "IsoThumpable")) then
             list[#list + 1] = o
         end
@@ -212,7 +221,7 @@ end
 
 local function basementCheck(D, sq, name, n, w)
     if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
-    return false, n and outerDirt(D, sq, "N"), w and outerDirt(D, sq, "W")
+    return false, n and outerDirt(D, sq, "N", w), w and outerDirt(D, sq, "W", n)
 end
 
 -- 它只認實牆的格邊（aparosa_BD_DirtLayer.lua:46-63 edgesOf 的 WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
@@ -1901,19 +1910,32 @@ function Place.settle(cells)
 end
 
 -- 它的 clearDirt 只拆土牆；它放的牆（outerDirt 收到、不是土牆的）本工具自己拆，它在移除事件記下、下一個 tick 看到那條邊
--- 有本工具的牆就不補土牆（aparosa_BD_DirtLayer.lua:196-221）。先拆土牆：clearDirt 丟錯撤回時它的牆還在
-local function clearEdge(D, sq, k)
+-- 有本工具的牆就不補土牆（aparosa_BD_DirtLayer.lua:196-221）。先拆土牆：clearDirt 丟錯撤回時它的牆還在。
+-- 只換西北角那件的一邊（both 不成立）：先照它放牆的寫法（aparosa_BD_Build.lua:446-450）在另一邊補回同一張表的單邊牆，
+-- 再拆西北角那件；另一邊有牆，它下一個 tick 不補土牆（restoreDirt 先看 wallOrOpeningOn，aparosa_BD_DirtLayer.lua:154-157），
+-- 補回的這件和它放的一樣（一般 IsoObject、它的牆表的圖），它的升級與本工具之後都認得。補不回的 Place.check 已經擋下
+local function clearEdge(D, sq, k, both)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return end
     D.clearDirt(sq, k)
-    local list = outerDirt(D, sq, k)
+    local list = outerDirt(D, sq, k, both)
+    local _, rest = bdWalls()
     for i = 1, list and #list or 0 do
-        if not D.isDirtOnOuterEdge(list[i]) then sq:transmitRemoveItemFromSquare(list[i]) end
+        local o = list[i]
+        if not D.isDirtOnOuterEdge(o) then
+            local keep = not both and rest[o:getSprite():getName()]
+            if keep then
+                local obj = IsoObject.new(getCell(), sq, keep[k])
+                sq:AddTileObject(obj)
+                obj:transmitCompleteItemToClients()
+            end
+            sq:transmitRemoveItemFromSquare(o)
+        end
     end
 end
 
 local function clearDirtAt(D, c, n, w)
-    if n then clearEdge(D, c.sq, "N") end
-    if w then clearEdge(D, c.sq, "W") end
+    if n then clearEdge(D, c.sq, "N", w) end
+    if w then clearEdge(D, c.sq, "W", n) end
 end
 
 -- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），

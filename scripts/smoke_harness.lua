@@ -9034,7 +9034,10 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     local woodNW, woodSE = sp("bd_wood_01_26", 3909, { "WallNW" }), sp("bd_wood_01_27", 3911, { "WallSE" }) -- 它的西北角牆、牆角柱
     local wood1N = sp("bd_wood_01_45", 3912, { "WallN" }) -- 它另一級的木牆圖（玩家用本工具蓋的是 IsoThumpable）
     local doorN = sp("bd_door_01_1", 3913, { "DoorWallN" }) -- 門框（開口）
-    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN, tdoorN, woodNW, woodSE, wood1N, doorN })
+    local woodW = sp("bd_wood_01_24", 3914, { "WallW" }) -- 它的西牆（西北角只換北邊時補回這張）
+    local wood1NW = sp("bd_wood_01_46", 3915, { "WallNW" }) -- 它另一級的西北角；同一級的西牆 bd_wood_01_44 故意不在
+    local cornerNW = sp("bd_wall_01_2", 3916, { "WallNW" }) -- 本工具的西北角牆（兩邊一起換）
+    world({ wallN, wallW, frameN, transN, dirtN, dirtW, woodN, tdoorN, woodNW, woodSE, wood1N, doorN, woodW, wood1NW, cornerNW })
     -- 假的它（aparosa_BD_DirtLayer 1.6.9 的 6 支，照原檔的判斷縮寫）：outer＝外邊（"x,y,z,N|W"）
     local outer, calls, cleared = {}, 0, {}
     local DIRT = { underground_01_9 = "N", underground_01_8 = "W" }
@@ -9084,12 +9087,17 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
             end
         end,
     }
-    local function piece(sq, spr)
+    local function bare(sq, spr)
         local o = {}
         function o:getSprite() return spr end
         function o:getProperties() return spr:getProperties() end
         function o:getSquare() return sq end
         function o:hasModData() return false end
+        function o:transmitCompleteItemToClients() self.sent = true end
+        return o
+    end
+    local function piece(sq, spr)
+        local o = bare(sq, spr)
         sq.objects[#sq.objects + 1] = o
         return o
     end
@@ -9158,6 +9166,8 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     -- 片 A（使用者 2026-11-25）：它放在外邊的牆（一般 IsoObject、圖在它的 SPRITE.variant／tier.*.wall）可以直接換、不退料
     local realInst = instanceof
     instanceof = function(o, c) return c == "IsoThumpable" and o.mats ~= nil end -- 本工具蓋的（假 IsoThumpable 帶 mats）
+    local realIso = IsoObject
+    IsoObject = { new = function(_, sq, name) return bare(sq, spriteMap[name]) end } -- 補回西北角另一邊的單邊牆
     local dirtWalls = { wall = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10", SE = "underground_01_11" } }
     aparosa_BD_Build = { SPRITE = {
         variant = { wood = { wall = { W = "bd_wood_01_24", N = "bd_wood_01_25", NW = "bd_wood_01_26", SE = "bd_wood_01_27" } } },
@@ -9197,10 +9207,33 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     local sqNW = square(393, 389, -1, { floor = {}, flags = { WallNW = true } })
     piece(sqNW, woodNW)
     outer["393,389,-1,N"], outer["393,389,-1,W"] = true, true
-    check(fits("wall", wallN, sqNW) and fits("wall", wallW, sqNW), "它的西北角牆：北邊、西邊都可以換")
+    check(fits("wall", wallN, sqNW) and fits("wall", wallW, sqNW), "它的西北角牆：北邊、西邊都可以換（另一邊的單邊圖都在）")
     ok, cmd, a = build(P, 3907, "bd_wall_01_1", { 393, 389, -1 })
-    check(ok and cmd == "placed" and not has(sqNW, "bd_wood_01_26") and has(sqNW, "bd_wall_01_1"),
-        "只蓋北邊：它的西北角牆整件拆掉（照它 clearDirt 拆西北角土牆的認法；西邊交給它下一個 tick 補土牆）")
+    local kept
+    for _, o in ipairs(sqNW.objects) do
+        if o.getSprite and o:getSprite() == woodW then kept = o end
+    end
+    check(ok and cmd == "placed" and not has(sqNW, "bd_wood_01_26") and has(sqNW, "bd_wall_01_1") and kept ~= nil
+        and kept.mats == nil and kept.sent == true,
+        "a9 只換西北角牆的北邊：西北角那件拆掉、西邊補回同一張表的單邊牆（一般物件、送給客戶端），不留給它補土牆（審查 1125 Codex）")
+    check(fits("wall", wallW, sqNW), "a9 補回的西邊單邊牆照樣是它的牆：之後也能換")
+
+    local sqNW3 = square(394, 389, -1, { floor = {}, flags = { WallNW = true } })
+    piece(sqNW3, woodNW)
+    outer["394,389,-1,N"], outer["394,389,-1,W"] = true, true
+    ok, cmd, a = build(P, 3908, "bd_wall_01_2", { 394, 389, -1 })
+    check(ok and cmd == "placed" and has(sqNW3, "bd_wall_01_2") and not has(sqNW3, "bd_wood_01_26")
+        and not has(sqNW3, "bd_wood_01_24") and not has(sqNW3, "bd_wood_01_25"),
+        "a10 蓋西北角牆（兩邊一起換）：它的西北角那件整件拆，不補單邊牆")
+
+    local sqNW2 = square(396, 389, -1, { floor = {}, flags = { WallNW = true } })
+    piece(sqNW2, wood1NW)
+    outer["396,389,-1,N"], outer["396,389,-1,W"] = true, true
+    check(not fits("wall", wallN, sqNW2) and fits("wall", wallW, sqNW2),
+        "a11 西北角補不回另一邊：只換北邊（要補的西牆 bd_wood_01_44 不在）照舊擋；只換西邊（要補的 bd_wood_01_45 在）可以")
+    ok, cmd, a = build(P, 3909, "bd_wall_01_1", { 396, 389, -1 })
+    check(not ok and a.code == "BLOCKED" and has(sqNW2, "bd_wood_01_46") and not has(sqNW2, "bd_wall_01_1"),
+        "a11 伺服器：補不回另一邊就整件不換，回 BLOCKED、它的西北角牆還在")
 
     local sqD6 = cell(398, 389, dirtN, "N")
     local function onlyDirt(B, label)
@@ -9212,7 +9245,7 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     onlyDirt({ SPRITE = "x" }, "SPRITE 不是表")
     onlyDirt({ SPRITE = { variant = 1, tier = { wood = { wall = 3 } } } }, "牆表的形狀不對")
     aparosa_BD_Build = nil
-    instanceof = realInst
+    instanceof, IsoObject = realInst, realIso
     BD.clearDirt = function() end
 
     local sqN2 = cell(397, 390, dirtN, "N")
