@@ -146,6 +146,17 @@ end
 
 -- ---------------------------------------------------------------- 總結
 
+-- 片沒蓋的原因碼（沒有就 nil）與跳過時記的那筆
+local function leftCode(p, state, detail)
+    if state == "done" or st.placed[p] then return nil, nil end
+    local sk = st.skip[p]
+    if sk and sk.code then return sk.code, sk end
+    if state == "short" then return detail or "NO_MATERIAL", nil end
+    if state == "ok" or state == nil then return nil, nil end
+    if state == "blocked" and detail then return detail, nil end
+    return string.upper(state), nil -- MISSING、OFF、CLOSED、FAR
+end
+
 -- 整張藍圖：{ n＝片數, done＝蓋好的（PlanCheck 算出蓋好的，或這一輪送出後伺服器回蓋好、PlanCheck 還沒重查的）, left＝沒蓋的,
 -- short＝{ n, need＝{ [fullType]＝還差幾個 }, tools＝{ 缺的工具標籤 } }, blocked＝{ [碼]＝片數 },
 -- skill＝{ n, perks＝{ [技能]＝要幾級 } }, boxes＝{ [第幾個材料箱]＝跳過的原因 } }
@@ -165,13 +176,12 @@ local function buildSummary()
             return
         end
         out.left = out.left + 1
-        local sk = st.skip[p]
-        local code = sk and sk.code
-        if not code then
-            if state == "short" then code = detail or "NO_MATERIAL"
-            elseif state == "ok" or state == nil then code = nil
-            elseif state == "blocked" and detail then code = detail
-            else code = string.upper(state) end -- MISSING、OFF、CLOSED、FAR
+        local code, sk = leftCode(p, state, detail)
+        -- 在等同格地板的地面覆蓋（狀態是 ok）：照那片地板沒蓋的原因說
+        local f = not code and st.held and st.held[p]
+        if f then
+            local fs, fd = PC.state(f)
+            code, sk = leftCode(f, fs, fd)
         end
         if code == "NO_MATERIAL" or code == "NO_TOOL" then
             out.short.n = out.short.n + 1
@@ -658,16 +668,17 @@ end
 -- 距離）的那片，再收同項目、同層、同疊放值順序最前的幾片。
 -- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
 -- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。還不能挑的地板（第 1 段）排在挑到的片之前時
--- 先等（最多 WAIT_MS）：剛擺好就按時先挑掃描剛看過的玩家身邊那幾片，第一批會蓋在藍圖中間；蓋到一半材料變了的重排裡，
--- 下一片多半是剛算過的身邊那片，不等
--- 地面覆蓋（地毯也算）那格還有沒蓋好、之後還會蓋的地板會換掉時先不挑：換地板（Place.clearFloor）連掛在舊地板上的覆蓋一起拆，
--- 只有地毯掛回（Server.complete 的 rugsOf），先蓋的話料和帳本都白費。那些格子在看片時記進 sc.floors，看完整張才篩覆蓋
+-- 先等（最多 WAIT_MS，掃描看完就不等）：剛擺好就按時先挑掃描剛看過的玩家身邊那幾片，第一批會蓋在藍圖中間；蓋到一半材料
+-- 變了的重排裡，下一片多半是剛算過的身邊那片，不等
+-- 地面覆蓋（地毯也算）那格還有之後還會蓋的地板（PlanCheck 的 live 加上在等旁邊的片；關掉、缺項目的不算）會換掉時先不挑：
+-- 換地板（Place.clearFloor）連掛在舊地板上的覆蓋一起拆，只有地毯掛回（Server.complete 的 rugsOf），先蓋的話料和帳本都白費。
+-- 那些格子在看片時記進 sc.floors，看完整張才篩覆蓋；等著的覆蓋記在 st.held（總結照它等的地板說原因）
 -- 回 batch，"again"（還沒看完），"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
 local function pickBatch(player, plan, settled)
     local PC = planCheck()
     local sc = st.scan
     if not sc then
-        sc = { i = 1, cand = {}, floors = {}, boxes = #Runner.boxes() > 0, px = player:getX(), py = player:getY() }
+        sc = { i = 1, cand = {}, floors = {}, held = {}, boxes = #Runner.boxes() > 0, px = player:getX(), py = player:getY() }
         st.scan = sc
     end
     local pieces, cand, floors, boxes, px, py = st.pieces, sc.cand, sc.floors, sc.boxes, sc.px, sc.py
@@ -676,13 +687,14 @@ local function pickBatch(player, plan, settled)
     local last = math.min(#pieces, sc.i + Runner.PICK_CHUNK - 1)
     for k = sc.i, last do
         local p = pieces[k]
-        -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）。蓋好的、蓋不了的不看
+        -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）。蓋好的、不會再蓋的不看
         local state, code
         if not (st.skip[p] or st.placed[p]) then state, code = PC.state(p) else state = "done" end
-        if state ~= "done" and (state ~= "blocked" or code == "WAIT" or recheck[code]) then
+        if state == nil or state == "ok" or state == "short" or state == "far"
+            or (state == "blocked" and (code == "WAIT" or recheck[code])) then
             local id, x, y, z, d, o, w = resolve(p)
             if id and x and cachedKind(id) == "floor" then
-                for _, f in ipairs(footOf(id, d)) do floors[cellKey(x + f[1], y + f[2], z + f[3])] = true end
+                for _, f in ipairs(footOf(id, d)) do floors[cellKey(x + f[1], y + f[2], z + f[3])] = p end
             end
             if id and not st.later[p] and (state == nil or state == "ok" or (state == "short" and boxes)) then
                 local seg = segmentOf(id)
@@ -713,11 +725,13 @@ local function pickBatch(player, plan, settled)
     for _, c in ipairs(cand) do
         if c.overlay then
             c.overlay = floors[cellKey(c.x, c.y, c.z)] or false
+            sc.held[c.p] = c.overlay or nil
             if not c.overlay and (not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3)))) then
                 best, bk1, bk2, bk3 = c, c.seg, c.z, c.key
             end
         end
     end
+    st.held = sc.held
     local hold = hz and (not best or bk1 > 1 or hz < bk2 or (hz == bk2 and hk < bk3))
     if hold or (pendingSeg and (not best or pendingSeg < bk1)) then
         local t = getTimestampMs()
@@ -1072,7 +1086,7 @@ function Runner.start(player)
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
-    st.later, st.scan = {}, nil
+    st.later, st.scan, st.held = {}, nil, {}
     st.reason, st.detail, st.extra, st.nextPick, st.waitFrom, st.fetchedFor, st.moved = nil, nil, nil, nil, nil, nil, 0
     st.busyFrom, st.rateFrom, st.rateUntil = nil, nil, nil
     st.padDown, st.padFree = nil, nil

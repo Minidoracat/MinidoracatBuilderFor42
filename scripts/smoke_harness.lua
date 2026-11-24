@@ -22669,11 +22669,11 @@ end)()
             return #pushes
         end
         sb.MaxCellsPerDrag = 8
-        -- 擺好藍圖（{ 項目, x } 都在 y＝0）、玩家站 (px, py)，照圖蓋到停：回各批 "項目@x,y+x,y"
+        -- 擺好藍圖（{ 項目, x, 狀態（預設 ok） } 都在 y＝0）、玩家站 (px, py)，照圖蓋到停：回各批 "項目@x,y+x,y"
         local function build(name, list, px)
             R.stop()
             pl, S, floorAt, hung = Plan.new(name), {}, {}, {}
-            for _, e in ipairs(list) do S[Plan.add(pl, e[2], 0, 0, 0, 0, Plan.item(pl, e[1]))] = "ok" end
+            for _, e in ipairs(list) do S[Plan.add(pl, e[2], 0, 0, 0, 0, Plan.item(pl, e[1]))] = e[3] or "ok" end
             K.pos.x, K.pos.y = px, 499.5
             pushes = {}
             R.start(K)
@@ -22696,6 +22696,16 @@ end)()
         local seq2 = build("overlayWide", { { "pp_a2", 1 }, { "pp_o", 2 } }, 503.5)
         check(R.state() == "done" and (R.reason()) == "DONE" and floorAt["502,500"] == "pp_a2" and hung["502,500"] == "pp_o",
             "照圖蓋：兩格地板的非錨點格上的半格等整組地板蓋好才蓋，蓋完那格的地板、半格與帳本都在（" .. seq2 .. "）")
+        -- 同格地板缺料（沒有材料箱）：半格等著，這一輪結束時總結把它算進缺料（✗ 狀態 ok 沒有原因，結束畫面少一行）
+        local seq3 = build("overlayShort", { { "pp_a", 0, "short" }, { "pp_o", 0 } }, 499.5)
+        local sum3 = R.summary()
+        check(R.state() == "done" and seq3 == "" and sum3.left == 2 and sum3.short.n == 2,
+            "照圖蓋：在等同格地板的半格，總結照那片地板沒蓋的原因說（left " .. sum3.left .. "、缺料 " .. sum3.short.n .. "，"
+            .. seq3 .. "）")
+        -- 同格地板的種類在沙盒關掉（off）：之後不會蓋，半格照蓋（✗ 一直等）
+        local seq4 = build("overlayOff", { { "pp_a", 0, "off" }, { "pp_o", 0 } }, 499.5)
+        check(seq4 == "pp_o@500,500" and hung["500,500"] == "pp_o",
+            "照圖蓋：同格地板的種類關掉了，半格不等它（" .. seq4 .. "）")
         local asks
         B.PlanCheck.resolve = function(p)
             asks = asks + 1
