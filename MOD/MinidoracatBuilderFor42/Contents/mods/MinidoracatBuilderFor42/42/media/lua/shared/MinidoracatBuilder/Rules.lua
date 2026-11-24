@@ -74,6 +74,8 @@ local BY_MOD = {
     ArcadiaRefillablePropaneTanks_B42 = { "location_shop_fossoil_01", 80, 111, "location_shop_gas2go_01", 64, 95 },
     -- ATM：2 格內就開通交易（3801482125 ECCore.lua:91-127）
     MinidoracatEconomyFor42 = { "location_business_bank_01", 64, 67 },
+    -- 電梯門與呼叫鈕：每層一片、有電就能在樓層間傳送（3780306632 ELV_Core.lua:32-46,70-79）
+    Elevators = { "fixtures_escalators_01", 48, 51, "fixtures_escalators_01", 56, 57 },
     -- 液壓機（綠、藍各兩幀）：接電就有機器面板（3780027195 Registry.lua:262-285、HydraulicPress.lua:105）
     Machinery = { "industry_03", 48, 63 },
 }
@@ -90,13 +92,6 @@ Rules.unlistModSprites()
 
 function Rules.unlistedByName(name)
     return UNLISTED[name] == true
-end
-
--- Elevators 認的電梯門（3780306632 ELV_Core.lua:31-36 的 ELV.DOORS）：Check.item 不准蓋在別人的安全屋旁邊
-local ELEVATOR_DOOR = { fixtures_escalators_01_48 = true, fixtures_escalators_01_49 = true,
-    fixtures_escalators_01_50 = true, fixtures_escalators_01_51 = true }
-function Rules.elevatorDoor(name)
-    return ELEVATOR_DOOR[name] == true
 end
 
 -- 窗開著、破了、拆了玻璃的三種狀態圖不列。引擎建 IsoWindow 時把關著那張的屬性與型別整份加到這三張

@@ -22,7 +22,6 @@ local DENY = {
         [true] = { label = "MinidoracatBuilder:dismantle", preview = true } },
     wire = { [false] = { label = "MinidoracatBuilder:wire" }, [true] = { label = "MinidoracatBuilder:wire", preview = true } },
 }
-DENY.near = DENY.build
 -- 請求的錨點離玩家最遠幾格（點畫面遠處再走過去也夠；只為限制喚醒表與亂點的位置）。Check.inReach 用
 Check.INTENT_REACH = 100
 -- 線路（第六階段，設計稿）：一條最多幾個開關、幾片燈；燈和每個開關、接線的人和目標：水平各軸幾格內、樓層差幾層內。
@@ -108,8 +107,8 @@ end
 -- 安全屋：原版（照名字，conventions 殘餘風險）＋ Safehouse 的 v1.denies（細分權限，伺服器拒絕時它自己推通知）。
 -- 預覽時格子可能不存在：要格子的原版查詢略過（交給伺服器），denies 照座標查（格子不必存在）。
 -- checkPermissions 只在伺服器回 true（LuaManager.java:3075-3078），所以客戶端預覽對能進別人安全屋的管理員會偏嚴。
--- why＝"build"（預設）、"dismantle"、"wire"（接線，Circuits）或 "near"（電梯門周圍，同建造的權限）：拆除、接線一樣要
--- BUILD 權限（原版大錘、ISDismantleAction 也是），但不看 WhereCanBuild（周圍不在安全屋裡是常態）。
+-- why＝"build"（預設）、"dismantle" 或 "wire"（接線，Circuits）：拆除、接線一樣要 BUILD 權限（原版大錘、ISDismantleAction
+-- 也是），但不看 WhereCanBuild。
 function Check.safehouse(player, c, preview, ...)
     local why = (...) or "build"
     if c.sq and not (isServer() and checkPermissions(player, Capability.CanGoInsideSafehouses) == true)
@@ -223,17 +222,6 @@ function Check.item(player, name, d, anchor, ...)
     for _, c in ipairs(cells) do
         local sh = safehouseCode(player, c, preview)
         if sh then return sh, { x = c.x, y = c.y, z = c.z }, info end
-    end
-    -- Elevators 從門四周 3 格找電梯柱、送到柱旁最多 2 格的出口（ELV_Core.lua:114-117、:178-216），所以查 5 格
-    if Rules.elevatorDoor(spr:getName()) then
-        local c = cells[1]
-        for y = c.y - 5, c.y + 5 do
-            for x = c.x - 5, c.x + 5 do
-                local nc = { x = x, y = y, z = c.z, sq = cell:getGridSquare(x, y, c.z) or cell:getGridSquare(x, y, 0) }
-                local sh = safehouseCode(player, nc, preview, "near")
-                if sh then return sh, { x = x, y = y, z = c.z }, info end
-            end
-        end
     end
     -- 面向 N／W 的窗簾掛在南邊、東邊那格的窗框上（Place 的 curtainOk）：窗框那格也要能蓋
     if entry.kind == "curtain" then

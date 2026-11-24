@@ -792,12 +792,15 @@ do -- 主程式區域變數上限 200
     check(before and kind(tank, "location_shop_fossoil_01_80") == nil and kind(tank, "location_shop_gas2go_01_95") == nil
         and kind(tank, "location_business_bank_01_64") == "solid",
         "照原版圖塊名稱給功能的 MOD：沒裝時照常列；裝了丙烷 MOD 才不列它的補充站，沒裝的 Economy 的 ATM 照常列")
-    for _, id in ipairs({ "Elevators", "MinidoracatEconomyFor42", "Machinery" }) do modInfos[#modInfos + 1] = { id = id, name = id } end
+    local elv = { "fixtures_escalators_01_48", "fixtures_escalators_01_51", "fixtures_escalators_01_56", "fixtures_escalators_01_57" }
+    local listed = true
+    for _, n in ipairs(elv) do listed = listed and kind(tank, n) == "solid" end
+    modInfos[#modInfos + 1] = { id = "Elevators", name = "Elevators" }
     Rules.unlistModSprites()
-    for _ = 1, 3 do table.remove(modInfos) end
-    check(kind(tank, "fixtures_escalators_01_48") == "solid" and kind(tank, "fixtures_escalators_01_57") == "solid"
-        and kind(tank, "location_business_bank_01_64") == nil and kind(tank, "industry_03_48") == nil,
-        "裝了 Elevators：電梯門照常列（蓋成的門圖名不變，那個 MOD 照圖名認得到）；Economy、Machinery 的照舊不列")
+    table.remove(modInfos)
+    local gone = true
+    for _, n in ipairs(elv) do gone = gone and kind(tank, n) == nil end
+    check(listed and gone, "Elevators：沒裝時電梯門與呼叫鈕照常列；裝了就不列（目錄與伺服器的 Entry.resolve 同一個 classify）")
 end
 print("情境二之一：窗的狀態圖（開、破、拆玻璃）不列，不看這次載入過哪些窗")
 do -- 主程式區域變數上限 200
@@ -2603,8 +2606,7 @@ local function newKinds()
         stM[1], stM[2], stM[3], stS[1], stS[2], stS[3], stI[1], stI[2], stI[3], fireplace, fireplace2, floorUp,
         curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
         curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
-        curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N"),
-        sprite("fixtures_escalators_01_48", 2129, { flags = { "solid" } }), sprite("fixtures_escalators_01_52", 2119, { flags = { "solid" } }) }
+        curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N") }
     for i = 1, 6 do
         list[#list + 1] = stF[i]
         list[#list + 1] = stG[i]
@@ -2885,27 +2887,6 @@ local function newKinds()
     square(54, 55, 0)
     square(54, 56, 0, { owner = "e2e_other" })
     check(cur("cur_01_6", 54, 55) == "SAFEHOUSE", "面向 N 的窗簾：南邊窗框那格是別人的安全屋，擋下（窗簾那格不是）")
-    -- 電梯門（Elevators 認的圖名）：門四周 5 格內有別人的安全屋，預覽與伺服器都擋；6 格外、自己的安全屋照常；同屬性別的圖不查周圍
-    local EP = player({ id = 2106, x = 47.5, y = 56.5 })
-    local function elv(name)
-        return (Check.item(EP, name, 0, { 46, 56, 0 }, { preview = true })), (Check.item(EP, name, 0, { 46, 56, 0 }))
-    end
-    local E, X = "fixtures_escalators_01_48", "fixtures_escalators_01_52"
-    local pFree, sFree = elv(E)
-    square(51, 56, 0, { owner = "someone" })
-    local pIn, sIn = elv(E)
-    local pOther, sOther = elv(X)
-    square(51, 56, 0, { owner = "tester" })
-    local pOwn, sOwn = elv(E)
-    square(51, 56, 0)
-    square(52, 56, 0, { owner = "someone" })
-    local pFar, sFar = elv(E)
-    square(52, 56, 0)
-    check(pFree == nil and sFree == nil and pIn == "SAFEHOUSE" and sIn == "SAFEHOUSE" and pOther == nil and sOther == nil
-        and pOwn == nil and sOwn == nil and pFar == nil and sFar == nil,
-        "電梯門：別人的安全屋在 5 格內預覽與伺服器都 SAFEHOUSE；6 格外、自己的安全屋、不是電梯門的圖照常（"
-        .. table.concat({ tostring(pFree), tostring(sFree), tostring(pIn), tostring(sIn), tostring(pOther), tostring(sOther),
-            tostring(pOwn), tostring(sOwn), tostring(pFar), tostring(sFar) }, "／") .. "）")
     IsoCurtain = { new = function(_, sq, name, north)
         local o = { name = name, north = north, md = {} }
         function o:getModData() return self.md end
