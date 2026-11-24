@@ -779,8 +779,9 @@ do -- 主程式區域變數上限 200
         and kind({ keys = { container = "crate", StackReplaceTileOffset = "0" } }) == "container"
         and kind({ flags = { "solidtrans" } }) == "solid",
         "疊放圖（StackReplaceTileOffset 不是 0，讀檔時引擎換圖）：容器、實心物件都不列；0 或沒有照常列")
-    check(kind({ flags = { "solidfloor", "attachedFloor" } }, "invisible_01_0") == nil
-        and kind({ flags = { "cutW", "solid" } }, "underground_01_1") == nil, "引擎內部用的隱形地板、地底方塊：不列")
+    check(kind({ flags = { "solidfloor", "attachedFloor" } }, "invisible_01_0") == "dig"
+        and kind({ flags = { "cutW", "solid" } }, "underground_01_1") == "dig" and Rules.unlistedByName("invisible_01_0"),
+        "引擎內部用的隱形地板、地底方塊：照名稱當挖地下室的項目（2026-11-25），不列清單照舊")
     check(kind({ keys = { IsMoveAble = "" } }, "solarmod_tileset_01_9") == nil
         and kind({ keys = { container = "SolarBox" } }, "solarmod_tileset_01_36") == nil,
         "太陽能 MOD 靠名稱給功能的圖塊（面板、電池組）：不列")
@@ -8512,7 +8513,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r22:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r23:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -13101,6 +13102,135 @@ print("情境五十一：柵欄門不用門框（2026-11-14 Workshop 回饋）�
         "框清單和 Place.check 對拍：滑門放不放得進＝frameOf 回 8；11 號全高窗放得進形狀 11 的門框牆、放不進形狀 8 的橫條")
     instanceof = realInst
     world(old)
+end)()
+
+print("情境五十一之二：挖地下室的項目與成本（Rules、Entry、Cost、Materials；plan.md §4.1 c8–c10）")
+;(function()
+    local B = MinidoracatBuilder
+    local Materials = B.Materials
+    local keepMap, keepOrder, keepSend, keepMenu = spriteMap, spriteOrder, sendItemStats, ISBuildMenu
+    local keep = { sb.KindDig, sb.CostMultiplier, sb.RecipeMaterials, sb.RequireSkill }
+    sb.CostMultiplier, sb.RecipeMaterials, sb.RequireSkill = nil, nil, nil
+    local S, E, C, D = Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL, B.Place.DIRT
+    world({ sprite(S, 5101, { flags = { "cutW", "solid" } }), sprite(E, 5102, { flags = { "cutW", "solid" } }),
+        sprite(C, 5103, { flags = { "solidfloor", "attachedFloor" } }),
+        sprite("carpentry_02_96", 5104, { type = T.stairsBN }), sprite("carpentry_02_97", 5105, { type = T.stairsMN }),
+        sprite("carpentry_02_98", 5106, { type = T.stairsTN }), sprite("carpentry_02_88", 5107, { type = T.stairsBW }),
+        sprite("carpentry_02_89", 5108, { type = T.stairsMW }), sprite("carpentry_02_90", 5109, { type = T.stairsTW }),
+        sprite(Entry.STAIR_FLOOR, 5110, { flags = { "solidfloor" } }), sprite(D, 5111, { flags = { "solidfloor" } }) })
+
+    -- c8 種類、開關、佔地、配對面
+    local ki = {}
+    for i, k in ipairs(Entry.KINDS) do ki[k] = i end
+    check(ki.dig == ki.ramp + 1 and Entry.KIND_KEY.dig == "KindDig" and Entry.KIND_OFF.dig == true
+        and Entry.kindOn("dig", {}) == false and Entry.kindOn("dig", { KindDig = 1 }) == false
+        and Entry.kindOn("dig", { KindDig = true }) == true,
+        "c8 種類表：dig 接在 ramp 後、沙盒鍵 KindDig、缺鍵或不是 true 都當關")
+    local named, off = true, {}
+    sb.KindDig = nil
+    for _, n in ipairs({ S, E, C }) do
+        named = named and kind({}, n) == "dig" and Rules.unlistedByName(n)
+        off[#off + 1] = select(2, Entry.resolve(n))
+    end
+    sb.KindDig = true
+    local eS, eE, eC = Entry.resolve(S), Entry.resolve(E), Entry.resolve(C)
+    check(named and table.concat(off, ",") == "DISABLED,DISABLED,DISABLED" and eS and eS.kind == "dig"
+        and eE and eE.kind == "dig" and eC and eC.kind == "dig",
+        "c8 三個項目照名稱分成 dig（仍在引擎內部不列清單）；KindDig 沒開回 DISABLED，開了才認得")
+    local function flat(spr)
+        local out = {}
+        for i, c in ipairs(Entry.cells(spr)) do out[i] = table.concat({ c[1], c[2], c[3], c[4]:getName(), c[5] }, ",") end
+        return table.concat(out, " ")
+    end
+    local holeS, holeE, room = {}, {}, {}
+    for i = 0, 2 do
+        holeS[#holeS + 1] = "0," .. i .. ",0," .. C .. ",hole"
+        holeE[#holeE + 1] = i .. ",0,0," .. C .. ",hole"
+    end
+    for a = 3, 4 do
+        for b = -1, 1 do
+            room.S = (room.S and room.S .. " " or "") .. b .. "," .. a .. ",-1," .. D .. ",dig"
+            room.E = (room.E and room.E .. " " or "") .. a .. "," .. b .. ",-1," .. D .. ",dig"
+        end
+    end
+    local wantS = "0,0,-1,carpentry_02_98,top 0,1,-1,carpentry_02_97,mid 0,2,-1,carpentry_02_96,bottom 0,-1,0,"
+        .. Entry.STAIR_FLOOR .. ",platform " .. table.concat(holeS, " ") .. " " .. room.S
+    local wantE = "0,0,-1,carpentry_02_90,top 1,0,-1,carpentry_02_89,mid 2,0,-1,carpentry_02_88,bottom -1,0,0,"
+        .. Entry.STAIR_FLOOR .. ",platform " .. table.concat(holeE, " ") .. " " .. room.E
+    check(flat(eS.spr) == wantS and flat(eE.spr) == wantE and flat(eC.spr) == "0,0,0," .. D .. ",dig",
+        "c8 佔地（§2.0）：入口 13 格＝地下一層樓梯三片、地面落腳處、樓梯上方三個洞、樓梯底往前 2×3 的室；往南、往東各一套；挖一格只有自己")
+    local fS, fC = B.Turn.faces(eS), B.Turn.faces(eC)
+    check(Entry.face(eS, 5) == eE.spr and Entry.face(eE, 5) == eS.spr and Entry.face(eC, 5) == nil
+        and fS.n == 2 and fS[1] == 0 and fS[2] == 5 and fC.n == 1 and fC[1] == 0,
+        "c8 按 R：兩個入口互為配對面（0、5 兩個朝向）；挖一格只有一面")
+
+    -- c9 成本、時間
+    local function sprs(e)
+        local out = {}
+        for i, c in ipairs(Entry.cells(e.spr)) do out[i] = c[4] end
+        return out
+    end
+    local function same(a, b, k)
+        for ft, n in pairs(a) do if b[ft] ~= n * k then return false end end
+        for ft in pairs(b) do if a[ft] == nil then return false end end
+        return true
+    end
+    local function onlyShovel(c) return next(c.items) == nil and #c.tools == 1 and c.tools[1] == "DIG_GRAVE" end
+    local one = Cost.forCells("dig", sprs(eC))
+    local ent, ent2 = Cost.forCells("dig", sprs(eS)), Cost.forCells("dig", sprs(eS), 2)
+    local st, st2 = Cost.of("stairs", sprs(eS)[1]), Cost.of("stairs", sprs(eS)[1], 2)
+    local rest = #ent == 13
+    for i = 2, 13 do rest = rest and next(ent[i].items) == nil end
+    for i = 4, 13 do rest = rest and onlyShovel(ent[i]) end
+    local tools = table.concat(Cost.sum(ent).tools, ",")
+    check(#one == 1 and onlyShovel(one[1]) and next(Cost.xp(one, P)) == nil and next(st.items) ~= nil
+        and same(st.items, ent[1].items, 1) and same(st2.items, ent2[1].items, 1) and same(ent[1].items, ent2[1].items, 2)
+        and rest and tools:find("DIG_GRAVE", 1, true) and tools:find(st.tools[1], 1, true)
+        and (Cost.xp(ent, P).Woodwork or 0) > 0,
+        "c9 成本：挖一格只要鏟子、不給經驗；入口第一格多一組木樓梯料（倍率 2 加倍）、工具加鏟子、樓梯料照樓梯給經驗")
+    check(Cost.refund("dig", eS.spr) == "none" and Cost.refund("dig", eC.spr) == "none"
+        and Cost.skillOf("dig", eS.spr) == nil and Cost.skillOf("dig", eC.spr) == nil,
+        "c9 挖掘不可拆（填不回去）、不要求技能")
+    local pro = player({ id = 7, woodwork = 10 })
+    check(Entry.duration("dig", P, S) == 1500 and Entry.duration("dig", pro, E) == 1500
+        and Entry.duration("dig", pro, C) == 250 and Entry.duration("dig", nil, nil) == 250,
+        "c9 時間固定、不看木工：入口 30 秒（1500 tick）、挖一格 5 秒（250 tick）")
+
+    -- c10 鏟子耐久
+    ItemTag.DIG_GRAVE = "DIG_GRAVE"
+    ISBuildMenu = nil
+    local sent = 0
+    sendItemStats = function() sent = sent + 1 end
+    local function shovel(hit)
+        local it = item("Base.Shovel", { DIG_GRAVE = true })
+        it.rolls = 0
+        function it:damageCheck(skill, mult, maint)
+            self.rolls = self.rolls + 1
+            self.args = skill .. "," .. mult .. "," .. tostring(maint)
+            return hit
+        end
+        return it
+    end
+    local digger = player({ id = 7 })
+    local broken = digger.inv:add(shovel(true))
+    function broken:isBroken() return true end
+    local sh = digger.inv:add(shovel(true))
+    Materials.wear(digger, "DIG_GRAVE", 3)
+    local sentHit = sent
+    local dull = player({ id = 7 })
+    local sh2 = dull.inv:add(shovel(false))
+    Materials.wear(dull, "DIG_GRAVE", 2)
+    local cheat = player({ id = 7, cheat = true })
+    local sh3 = cheat.inv:add(shovel(true))
+    Materials.wear(cheat, "DIG_GRAVE", 2)
+    local okNone = pcall(Materials.wear, player({ id = 7 }), "DIG_GRAVE", 2)
+    check(sh.rolls == 3 and sh.args == "0,2,false" and broken.rolls == 0 and sentHit == 1
+        and sh2.rolls == 2 and sent == 1 and sh3.rolls == 0 and okNone,
+        "c10 Materials.wear：第一把沒壞的鏟子擲 n 次 damageCheck(0, 2, false)，有掉才同步一次；建造作弊不擲；沒鏟子不丟錯")
+
+    sb.KindDig, sb.CostMultiplier, sb.RecipeMaterials, sb.RequireSkill = keep[1], keep[2], keep[3], keep[4]
+    sendItemStats, ISBuildMenu = keepSend, keepMenu
+    spriteMap, spriteOrder = keepMap, keepOrder
 end)()
 
 -- ===== 排程與轉向（Queue、Turn）=====

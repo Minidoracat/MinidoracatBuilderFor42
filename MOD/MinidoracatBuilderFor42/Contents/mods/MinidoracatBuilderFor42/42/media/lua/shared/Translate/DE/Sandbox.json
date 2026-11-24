@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "Wenn an, können Spieler Brunnen und Handpumpen bauen: unbegrenzt sauberes Wasser, das auch nach dem Abstellen des Wassers weiterläuft. Standardmäßig aus.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Pflanzen",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Zierpflanzen, Gras und Wildblumen. Nur Deko.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden.",
+    "Sandbox_MinidoracatBuilder_KindDig": "Keller",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "Wenn an, können Spieler einen Keller graben: im Erdgeschoss einen Eingang mit Holztreppe anlegen und den Keller dann Feld für Feld erweitern. Graben braucht nur eine Schaufel, die sich dabei abnutzt; keine Fähigkeit. Der Eingang braucht zusätzlich das Material für eine Holztreppe. Ist Basement Building installiert, damit graben. Standardmäßig aus.\nAus: Spieler sehen es nicht und können nicht graben. Bereits gegrabene Keller bleiben.",
     "Sandbox_MinidoracatBuilder_KindWater": "Wasser",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Wenn an, können Spieler im Erdgeschoss natürlichen Boden wie Gras oder Erde zu Wasser ausgraben. Dafür braucht es nur eine Schaufel: kein Material und keine Fähigkeit. Das Wasser versperrt Menschen und Zombies den Weg, liefert gefährliches Wasser, und man kann darin angeln. Auseinandernehmen macht daraus wieder den ursprünglichen Boden. Standardmäßig aus.\nAus: Spieler sehen es nicht und können es nicht bauen. Bereits Gebautes bleibt und kann weiterhin auseinandergenommen werden."
 }

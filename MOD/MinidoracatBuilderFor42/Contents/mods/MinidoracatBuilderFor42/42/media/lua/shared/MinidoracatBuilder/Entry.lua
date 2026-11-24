@@ -9,15 +9,15 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 22
+Entry.VERSION = 23
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
 -- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門歸門（Entry.doorSet）。
--- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）；坡道（1.0.0）
+-- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）；坡道（1.0.0）；挖地下室（使用者 2026-11-25）
 Entry.KINDS = { "floor", "floorOverlay", "water", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
-    "windowFrame", "windowObject", "curtain", "roof", "stairs", "ramp", "furniture", "container", "solid", "well", "light",
-    "wallObject", "attached", "overlay", "plant" }
+    "windowFrame", "windowObject", "curtain", "roof", "stairs", "ramp", "dig", "furniture", "container", "solid", "well",
+    "light", "wallObject", "attached", "overlay", "plant" }
 Entry.BUILDABLE = {}
 -- 種類開關（沙盒每種一個勾選框，使用者 2026-10-31 選）：鍵＝Kind＋種類 ID 字首大寫，例 KindFloorOverlay。鍵名上線後不能改
 Entry.KIND_KEY = {}
@@ -29,6 +29,14 @@ end
 -- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:258-261）
 Entry.STAIR_FLOOR = "carpentry_02_57"
 
+-- 挖地下室的三個項目 ID（使用者 2026-11-25 先照建議用原版引擎內部圖名；蓋出來的不是這張圖，佔地見 Entry.cells）。
+-- 項目 ID 只在這裡定義，別處一律用這三個常數：入口（樓梯往南下、往東下，互為配對面）、挖這一格
+Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL = "underground_01_0", "underground_01_1", "invisible_01_0"
+Rules.DIG[Entry.DIG_S], Rules.DIG[Entry.DIG_E], Rules.DIG[Entry.DIG_CELL] = true, true, true
+-- 入口的木樓梯（頂、中、底片；同 BD aparosa_BD_Build.lua:47-48）：往南下是 N 型、往東下是 W 型
+local DIG_STAIRS = { [Entry.DIG_S] = { "carpentry_02_98", "carpentry_02_97", "carpentry_02_96" },
+    [Entry.DIG_E] = { "carpentry_02_90", "carpentry_02_89", "carpentry_02_88" } }
+
 -- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著。柱子不佔邊（NORTH／WEST 是空的；擋邊的圖 Rules 不列），
 -- 走 Place.check 的柱子分支
 Entry.EDGE = { wall = true, windowFrame = true, doorFrame = true, fence = true, door = true, window = true, post = true }
@@ -39,8 +47,9 @@ function Entry.settings()
 end
 
 -- 預設關的種類：沙盒沒有這個鍵、或值不是 true 都當關（使用者 2026-11-13 選預設關：水井與手壓水泵蓋一格就有永遠用不完的
--- 乾淨水；水面會改地形、擋路）。中途加入本版、伺服器的沙盒檔還沒有這個鍵時也是關
-Entry.KIND_OFF = { well = true, water = true }
+-- 乾淨水；水面會改地形、擋路。挖地下室 2026-11-25 先照建議預設關：改地形、新的多人路徑）。中途加入本版、伺服器的沙盒檔
+-- 還沒有這個鍵時也是關
+Entry.KIND_OFF = { well = true, water = true, dig = true }
 
 -- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
 function Entry.kindOn(kind, ...)
@@ -416,6 +425,10 @@ local pairCache = {}
 local function opposite(entry)
     local kind = entry.kind
     if kind == "stairs" then return stairsOpposite(entry) end
+    if kind == "dig" then -- 兩個入口互為配對面；挖這一格沒有
+        local o = entry.name == Entry.DIG_S and Entry.DIG_E or entry.name == Entry.DIG_E and Entry.DIG_S
+        return o and Entry.sprite(o) or nil
+    end
     if kind == "door" or kind == "window" then return doorOpposite(entry) end
     if not Entry.EDGE[kind] then return nil end
     local n, w = Entry.edges(kind, entry.spr)
@@ -724,7 +737,30 @@ end
 -- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:196-206,263-289）。
 -- 車庫門頭片照最短的 2 格（Entry.groupCells；拖一排的寬度由 Check.item 照請求另算），雙開門 4 格。
 -- 坡道（項目＝頭片）：原點是頭片，沿上坡方向一片一格，最後是坡頂往前、上一層的平台（角色 platform，Entry.RAMP_DECK 格）。
+-- 挖地下室：挖這一格＝自己一格（角色 dig）。入口的原點＝頂片正上方（z＝0），d＝下樓方向（往南 0,1、往東 1,0）：
+-- 地下一層沿 d 排頂、中、底片（top／mid／bottom），原點往 −d 一格是落腳處（platform，已有地板），樓梯正上方三格開洞
+-- （hole），樓梯底再往前兩格、左右各一格挖成 2×3 的室（dig）。樓梯三格也算挖好的，所以新開的入口記 9 格
+local STAIR_ROLES = { "top", "mid", "bottom" }
 function Entry.cells(spr)
+    local name = spr:getName()
+    if Rules.DIG[name] then
+        local named = IsoSpriteManager.instance:getNamedMap()
+        local dirt = named:get(MinidoracatBuilder.Place.DIRT) or spr
+        local stairs = DIG_STAIRS[name]
+        if not stairs then return { { 0, 0, 0, dirt, "dig" } } end
+        local dx, dy = 0, 1
+        if name == Entry.DIG_E then dx, dy = 1, 0 end
+        local px, py = dy, dx
+        local hole = named:get(Entry.DIG_CELL) or spr
+        local out = {}
+        for i = 0, 2 do out[i + 1] = { i * dx, i * dy, -1, named:get(stairs[i + 1]) or spr, STAIR_ROLES[i + 1] } end
+        out[4] = { -dx, -dy, 0, named:get(Entry.STAIR_FLOOR) or spr, "platform" }
+        for i = 0, 2 do out[#out + 1] = { i * dx, i * dy, 0, hole, "hole" } end
+        for a = 3, 4 do
+            for b = -1, 1 do out[#out + 1] = { a * dx + b * px, a * dy + b * py, -1, dirt, "dig" } end
+        end
+        return out
+    end
     if Rules.grouped(spr:getProperties()) then
         local set = Entry.doorSet(spr)
         if set then return Entry.groupCells(set, 2) end
@@ -797,10 +833,13 @@ function Entry.north(kind, spr)
 end
 
 -- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
--- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍
+-- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍。挖地下室不看技能：挖一格 5 秒、入口 30 秒
+-- （第三個參數＝項目 ID，只有 dig 要傳；用 ... 接，其他種類的呼叫端不必補 nil）
 local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100,
     stairs = 200, ramp = 400, roof = 120, post = 200 }
-function Entry.duration(kind, player)
+function Entry.duration(kind, player, ...)
+    local name = ...
+    if kind == "dig" then return name and DIG_STAIRS[name] and 1500 or 250 end
     local level = player and player:getPerkLevel(Perks.Woodwork) or 0
     return math.max(20, (TIME[kind] or 100) - level * 5)
 end

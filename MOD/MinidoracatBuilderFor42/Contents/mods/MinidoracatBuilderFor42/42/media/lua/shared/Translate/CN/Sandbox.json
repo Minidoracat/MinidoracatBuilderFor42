@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "开启后玩家能建造水井与手压水泵：水用不完、是干净的，停水后照样有水。默认关闭。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
     "Sandbox_MinidoracatBuilder_KindPlant": "植物",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "观赏植物、草与野花。纯装饰。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。",
+    "Sandbox_MinidoracatBuilder_KindDig": "地下室",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "开启后玩家能挖地下室：在地面开一个带木楼梯的入口，再从挖好的地方一格一格往外挖。挖只要铲子，铲子会随着挖掘损耗耐久，不要求技能；入口另收一组木楼梯的材料。装了 Basement Building 时请改用它挖。默认关闭。\n关闭后玩家看不到也挖不了；已经挖好的地下室照常保留。",
     "Sandbox_MinidoracatBuilder_KindWater": "水面",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "开启后玩家能在一楼的草地、泥土这类天然地面挖出水面，只要铲子，不收材料、不要求技能。水面走不过去、丧尸也过不来，可以取水（脏水）和钓鱼；拆除会变回原本的地面。默认关闭。\n关闭后玩家看不到也建不了；已经建好的照常保留，也还能拆除。"
 }

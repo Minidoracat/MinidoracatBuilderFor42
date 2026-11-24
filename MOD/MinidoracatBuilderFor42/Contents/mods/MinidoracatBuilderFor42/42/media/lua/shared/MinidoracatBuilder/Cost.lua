@@ -159,10 +159,13 @@ local WELL_PRICE = { items = { ["Base.Stone2"] = 40, ["Base.FlatStone"] = 8, ["B
 local PUMP_PRICE = { items = { [PIPE] = 6, ["Base.SmallSheetMetal"] = 4, ["Base.Screws"] = 6 }, tools = TOOLS.metal,
     perk = PERK.metal, level = SKILL.metal.stairs, uses = USES.metal.stairs }
 local WATER_PRICE = { items = {}, tools = { "DIG_GRAVE" } }
+-- 挖地下室（kind dig，使用者 2026-11-25）：每格只要鏟子、不給經驗、不要技能；入口的木樓梯另照樓梯收（Cost.forCells）
+local DIG_PRICE = { items = {}, tools = { "DIG_GRAVE" } }
 local GRASS_PRICE = { items = { ["Base.GrassTuft"] = 3 }, tools = {}, floor = true }
 local function fixedPrice(kind, spr)
     if kind == "well" then return spr:getName() == "camping_01_16" and WELL_PRICE or PUMP_PRICE end
     if kind == "water" then return WATER_PRICE end
+    if kind == "dig" then return DIG_PRICE end
     if MinidoracatBuilder.Rules.isGrass(kind, spr:getProperties()) then return GRASS_PRICE end
     return nil
 end
@@ -511,7 +514,19 @@ end
 -- （Rules.classify、Rules.stairsSet），所以三片的拆除方式都和頂片一樣。
 -- 坡道同理：整組放在第一格（頭片），其他片與平台不收，退料記在伺服器帳本整組一筆（Place.build）。同一組各片只差斜面高度，
 -- 所以照頭片的單價 × 片數算一次（倍率乘在整組上再進位，不會每片各進位一次）
+-- 挖地下室：每格只要鏟子；入口（第一格是樓梯頂片）的樓梯三格照上面的樓梯收一組，工具再加鏟子
 function Cost.forCells(kind, sprites, multiplier)
+    if kind == "dig" then
+        local each = {}
+        for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
+        if sprites[1] and MinidoracatBuilder.Rules.typeCode(sprites[1]:getType()) == "stairs" then
+            local st = Cost.forCells("stairs", { sprites[1], sprites[2], sprites[3] }, multiplier)
+            local tools = st[1].tools -- 樓梯三格共用這一份（Cost.of 複製的）
+            tools[#tools + 1] = DIG_PRICE.tools[1]
+            each[1], each[2], each[3] = st[1], st[2], st[3]
+        end
+        return each
+    end
     local each = {}
     local n = 0
     if kind == "ramp" then
@@ -604,6 +619,7 @@ end
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
     if kind == "water" or kind == "ramp" then return "builder" end -- 坡道整組拆、退料記在帳本（Place.build）
+    if kind == "dig" then return "none" end -- 挖掉的地不能填回；入口的樓梯蓋好後照樓梯拆
     local p = spr:getProperties()
     local R = MinidoracatBuilder.Rules
     if kind == "door" and R.grouped(p) then return "builder" end

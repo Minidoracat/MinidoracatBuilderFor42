@@ -340,6 +340,9 @@ end
 -- （IsoObject.java:2664-2676 getInfiniteWaterType），其他無限水的圖給髒水、照舊不列（WATER）。camping_01_16 帶 EntityScript
 -- （原版 entity_well.txt，沒有建造配方）也照列：本工具蓋成 IsoThumpable，水是引擎照圖名給的（isWaterInfinite 看 waterAmount）
 local WELL = { camping_01_16 = true, camping_01_64 = true, camping_01_65 = true, camping_01_66 = true, camping_01_67 = true }
+-- 挖地下室的三個項目（種類 dig，使用者 2026-11-25）：名稱只在 Entry（Entry.DIG_S 等）定義，Entry 載入時填進來。
+-- 照名稱認，要排在 UNLISTED 前面（:69 把同三張當引擎內部圖不列）
+Rules.DIG = {}
 
 -- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定；水井與手壓水泵另列，見 WELL）：引擎只看這個值，不看停水與房間
 -- （IsoObject.java:2639-2644），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
@@ -484,6 +487,7 @@ local function solidRug(kind, p, spr) -- spr 必填：漏傳時目錄和伺服�
 end
 function Rules.kindOf(name, p, t, spr)
     if not name then return nil, "NO_KIND" end
+    if Rules.DIG[name] then return "dig" end
     if UNLISTED[name] then return nil, "LUA" end
     if WELL[name] then return "well" end
     if WINDOW_STATE[name] then return nil, "WINDOW_STATE" end

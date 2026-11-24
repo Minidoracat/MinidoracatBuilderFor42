@@ -95,6 +95,21 @@ function Materials.missingTools(player, tools)
     return out
 end
 
+-- 挖地下室磨鏟子（使用者 2026-11-25；其他工具照舊不消耗）：背包裡第一把沒壞、帶這個標籤的工具（同 hasTool 的找法）
+-- 擲 n 次 damageCheck(0, 2, false)，同原版十字鎬、大鎚（ISPickAxeGroundCoverItem.lua:150：每次以 1／(ConditionLowerChance×2)
+-- 的機率掉 1 點，InventoryItem.java:4553-4570）；有掉就同步給客戶端（同 ISShovelGround.lua:109）。建造作弊不擲
+function Materials.wear(player, name, n)
+    local tag = ItemTag[name]
+    if tag == nil or Materials.cheat(player) then return end
+    local item = player:getInventory():getFirstTagEvalRecurse(tag, notBroken)
+    if not item then return end
+    local lost = false
+    for _ = 1, n do
+        if item:damageCheck(0, 2, false) then lost = true end
+    end
+    if lost then sendItemStats(item) end
+end
+
 -- 硬核「原版材料」的耗材（Cost 的 uses）：照次數用，背包（含袋子）先、周圍 3×3 地上後（同原版 consumeMaterial 的
 -- use:，ISBuildUtil.lua:196-224）。tag:base:concrete 照標籤找（黏土漿、混凝土，鐵桶木桶都算），其他鍵是 fullType。
 local USE_TAG = { ["tag:base:concrete"] = "CONCRETE" }

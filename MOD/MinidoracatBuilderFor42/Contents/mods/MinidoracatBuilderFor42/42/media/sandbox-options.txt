@@ -140,3 +140,7 @@ option MinidoracatBuilder.KindPlant
 /* 水面：在一樓天然地面挖水面，只要鏟子（使用者 2026-11-13 選 pond=do，預設關）。缺鍵也當關（Entry.KIND_OFF） */
 option MinidoracatBuilder.KindWater
 {type = boolean, default = false, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindWater,}
+
+/* 挖地下室：從地面開入口往下挖，只要鏟子（使用者 2026-11-25 先照建議預設關：改地形、新的多人路徑）。缺鍵也當關（Entry.KIND_OFF） */
+option MinidoracatBuilder.KindDig
+{type = boolean, default = false, page = MinidoracatBuilderKinds, translation = MinidoracatBuilder_KindDig,}

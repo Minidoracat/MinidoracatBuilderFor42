@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "켜면 플레이어가 우물과 수동 펌프를 지을 수 있습니다. 물이 끝없이 나오고 깨끗하며, 단수된 뒤에도 쓸 수 있습니다. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
     "Sandbox_MinidoracatBuilder_KindPlant": "식물",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "관상용 식물, 풀, 들꽃. 장식용입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다.",
+    "Sandbox_MinidoracatBuilder_KindDig": "지하실",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "켜면 플레이어가 지하실을 팔 수 있습니다. 지면에 나무 계단이 있는 입구를 낸 뒤, 판 곳에서 한 칸씩 넓혀 갑니다. 파는 데는 삽만 있으면 되고 팔수록 삽이 닳으며, 기술은 필요 없습니다. 입구에는 나무 계단 한 세트 분량의 재료도 필요합니다. Basement Building을 설치했다면 그 모드로 파세요. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 팔 수도 없습니다. 이미 판 지하실은 그대로 남습니다.",
     "Sandbox_MinidoracatBuilder_KindWater": "물",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "켜면 플레이어가 1층의 풀밭이나 흙 같은 자연 지면을 파서 물을 만들 수 있습니다. 삽만 있으면 되고 재료와 기술은 필요 없습니다. 물은 사람도 좀비도 지나갈 수 없고, 오염된 물을 얻을 수 있으며 낚시도 할 수 있습니다. 해체하면 원래 지면으로 돌아갑니다. 기본값은 꺼짐입니다.\n끄면 플레이어가 볼 수도 지을 수도 없습니다. 이미 지은 것은 그대로 남고 해체할 수도 있습니다."
 }
