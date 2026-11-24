@@ -791,6 +791,12 @@ do -- 主程式區域變數上限 200
     check(before and kind(tank, "location_shop_fossoil_01_80") == nil and kind(tank, "location_shop_gas2go_01_95") == nil
         and kind(tank, "location_business_bank_01_64") == "solid",
         "照原版圖塊名稱給功能的 MOD：沒裝時照常列；裝了丙烷 MOD 才不列它的補充站，沒裝的 Economy 的 ATM 照常列")
+    for _, id in ipairs({ "Elevators", "MinidoracatEconomyFor42", "Machinery" }) do modInfos[#modInfos + 1] = { id = id, name = id } end
+    Rules.unlistModSprites()
+    for _ = 1, 3 do table.remove(modInfos) end
+    check(kind(tank, "fixtures_escalators_01_48") == "solid" and kind(tank, "fixtures_escalators_01_57") == "solid"
+        and kind(tank, "location_business_bank_01_64") == nil and kind(tank, "industry_03_48") == nil,
+        "裝了 Elevators：電梯門照常列（蓋成的門圖名不變，那個 MOD 照圖名認得到）；Economy、Machinery 的照舊不列")
 end
 print("情境二之一：窗的狀態圖（開、破、拆玻璃）不列，不看這次載入過哪些窗")
 do -- 主程式區域變數上限 200
