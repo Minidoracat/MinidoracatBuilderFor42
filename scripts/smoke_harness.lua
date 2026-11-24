@@ -15602,7 +15602,8 @@ end)()
     -- 結果框（假框架）：兩層以上有東西才列勾選框；取消勾選就重算片數與存檔鈕，全不勾時存檔鈕停用
     local M = { getY = function(s) return s.y end, setY = function(s, y) s.y = y end, getX = function() return 0 end,
         contentTop = function() return 24 end, setEnabled = function(s, on) s.enabled = on end,
-        addChild = function(s, c) s.kids[#s.kids + 1] = c end }
+        addChild = function(s, c) s.kids[#s.kids + 1] = c end, setHeight = function(s, h) s.h = h end,
+        getHeight = function(s) return s.h end, getText = function(s) return s.text end, setText = function(s, t) s.text = t end }
     local function fake(o)
         o.kids = {}
         return setmetatable(o, { __index = function(_, k) return M[k] or function() end end })
@@ -15615,8 +15616,8 @@ end)()
             boxes[#boxes + 1] = fake({ y = o.y, height = 20, label = o.label, o = o })
             return boxes[#boxes]
         end },
-        TextField = { new = function(o) return fake({ o = o }) end },
-        Button = { new = function(o) return fake({ width = o.width or 60 }) end } }
+        TextField = { new = function(o) return fake({ o = o, y = o.y, text = o.text }) end },
+        Button = { new = function(o) return fake({ width = o.width or 60, y = o.y }) end } }
     local realUI = { B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight }
     B.Window, UIFont, ISPanel = { ui = function() return fw end }, { Small = 0 }, { new = function() return fake({}) end }
@@ -15645,9 +15646,34 @@ end)()
     local op, ob = Cap.panel, boxes[nb + 1]
     local ovSum = #op.sum
     ob.o.onChange(ob.o.target, false)
-    local ovLast, ovName = op.sum[#op.sum].y + 16, op.field.o.y - (ob.y - ob.o.y) - 16
+    local ovLast, ovName = op.sum[#op.sum].y + 16, op.field:getY() - (ob.y - ob.o.y) - 16
     check(ovSum == 2 and #op.sum == 3 and ovLast <= ovName,
         "結果框勾層：超過上限又沒有不收的，取消第 1 層多出的不收兩行不壓到名稱那一行（" .. ovLast .. " ≤ " .. ovName .. "）")
+    -- 勾少後警告也會變多（二樓也超過上限、最先收進的是一扇超過寬度上限的車庫門和一片原點在框外的）：名稱、名稱欄、按鈕
+    -- 跟著往下排、視窗變高，名稱欄還是同一個、打好的名稱還在（植入：只照全勾時排、或只先留兩行，多的行疊在名稱上）
+    local wv = Cap.scan(600, 600, 663, 663, 0)
+    local wr = wv.res
+    local function wput(x, y, z, d, w)
+        wr.n = wr.n + 1
+        wr.pieces[wr.n] = { id = "pcf_01_0", x = 600 + x, y = 600 + y, z = z, d = d, w = w }
+    end
+    for i = 0, 4095 do wput(i % 64, math.floor(i / 64), 0, 0) end
+    wput(0, 0, 1, 1, 40)
+    wput(70, 1, 1, 0)
+    for i = 0, 4095 do wput(i % 64, math.floor(i / 64), 1, 0) end
+    local wb0 = #boxes
+    Cap.show(0, Cap.build(wv, "wv"), 64, 64, "wv")
+    local wp, wb = Cap.panel, boxes[wb0 + 1]
+    local wField, wSum, wH = wp.field, #wp.sum, wp.win:getHeight()
+    wField:setText("我的房子")
+    wb.o.onChange(wb.o.target, false)
+    local wTop = wb.y - wb.o.y
+    local wLast, wName = wp.sum[#wp.sum].y + 16, wp.field:getY() - wTop - 16
+    local wBtn = wp.saveBtn:getY()
+    check(wSum == 2 and #wp.sum == 5 and wp.out.wide == 1 and wLast <= wName and wp.field == wField
+        and wField:getText() == "我的房子" and wp.win:getHeight() > wH and wBtn >= wp.field:getY() + 26,
+        "結果框勾層：勾少後多出上限、車庫門、不收、框外的行，名稱、名稱欄、按鈕往下排、視窗變高，打好的名稱還在（"
+        .. wLast .. " ≤ " .. wName .. "，高 " .. tostring(wH) .. "→" .. tostring(wp.win:getHeight()) .. "）")
     Cap.panel = nil
     B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight = realUI[1], realUI[2], realUI[3], realUI[4], realUI[5], realUI[6], realUI[7], realUI[8]

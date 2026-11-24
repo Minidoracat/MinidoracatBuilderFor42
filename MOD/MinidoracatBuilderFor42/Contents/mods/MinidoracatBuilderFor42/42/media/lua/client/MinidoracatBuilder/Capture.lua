@@ -299,10 +299,28 @@ local function summary(p)
     return rows, y
 end
 
--- 勾選一變：照勾的層重做藍圖、重組那幾行；一片都沒有時存檔鈕停用
+-- 摘要以下照摘要的結束位置排：名稱、名稱欄、按鈕，視窗跟著變高或變矮（勾少時原本超過上限沒收的片會真的去收，警告與不收
+-- 的行可能變多）。名稱欄只挪位置，打好的名稱與焦點都留著；回視窗高度
+local function place(p)
+    local y
+    p.sum, y = summary(p)
+    p.name = {}
+    y = para(p, p.name, y + GAP, getText("IGUI_MBLD_Cap_Name"), p.c.text)
+    p.field:setY(p.top + y)
+    y = y + p.fieldH + GAP
+    p.body:setHeight(y)
+    local h = math.min(p.maxH, p.top + y + p.btnH + PAD)
+    p.win:setHeight(h)
+    p.saveBtn:setY(h - PAD - p.btnH)
+    p.cancel:setY(h - PAD - p.btnH)
+    return h
+end
+
+-- 勾選一變：照勾的層重做藍圖、重排摘要以下；視窗變高超出畫面底就往上挪；一片都沒有時存檔鈕停用
 function Panel:refresh()
     self.out = Capture.build(self.out.job, self.fallback, self.on)
-    self.sum = summary(self)
+    local h = place(self)
+    if self.win:getY() + h > self.bottom then self.win:setY(self.bottom - h) end
     self.saveBtn:setEnabled(self.out.plan.n > 0)
 end
 
@@ -366,17 +384,8 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
         end
     end
     if #boxes > 0 then y = y + GAP end
-    -- 版面照全勾時排：勾得少，那幾行只會更短。超過上限時例外：沒收進去的片勾少後會真的去收，原點在框外的多出「不收」與
-    -- 「框外」兩行，先留位置
     self.sumY = y
-    self.sum, y = summary(self)
-    if out.over > 0 then y = y + ((out.skipped > 0 and 0 or 1) + (out.skip.OUTSIDE and 0 or 1)) * fh end
-    y = para(self, rows, y + GAP, getText("IGUI_MBLD_Cap_Name"), c.text)
-    local plan = out.plan
-    local fieldY = y
-    local fieldH = fh + 10
-    y = y + fieldH + GAP
-    local btnH = fh + 10
+    self.fieldH, self.btnH, self.maxH, self.bottom = fh + 10, fh + 10, sh - 40, sy + sh - 20
     local saveTitle = getText("IGUI_MBLD_Cap_Save")
     local saveW = tm:MeasureStringX(font, saveTitle) + 20
     local win = UI.Window.new({ x = 0, y = 0, width = w, height = 100, title = getText("IGUI_MBLD_Cap_Title"),
@@ -388,34 +397,35 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     self.win = win
     Capture.panel = self
     local top = win:contentTop() + GAP
-    local h = math.min(sh - 40, top + y + btnH + PAD)
-    win:setHeight(h)
+    self.top = top
     win:setX(sx + math.floor((sw - w) / 2))
-    win:setY(sy + math.floor((sh - h) / 2))
-    local body = ISPanel:new(0, top, w, y) -- 先加：畫在勾選框底下
+    local body = ISPanel:new(0, top, w, 100) -- 先加：畫在勾選框底下
     body:initialise()
     body.background = false
     body.render = function(el)
         draw(el, rows, font)
         draw(el, self.sum, font)
+        draw(el, self.name, font)
     end
+    self.body = body
     win:addChild(body)
     -- 焦點順序照畫面由上而下：各層勾選框、名稱欄、取消、存（框架 Focus 照位置排：方向鍵與手把在控制項之間移動）
     for _, box in ipairs(boxes) do
         box:setY(top + box:getY())
         win:addChild(box)
     end
-    self.field = UI.TextField.new({ x = PAD, y = top + fieldY, width = innerW, height = fieldH, text = plan.name,
+    self.field = UI.TextField.new({ x = PAD, y = top, width = innerW, height = self.fieldH, text = out.plan.name,
         maxLength = Plan.MAX_NAME, theme = theme, font = font })
     win:addChild(self.field)
-    local by = h - PAD - btnH
-    self.saveBtn = UI.Button.new({ x = w - PAD - saveW, y = by, width = saveW, height = btnH, title = saveTitle,
+    self.saveBtn = UI.Button.new({ x = w - PAD - saveW, y = 0, width = saveW, height = self.btnH, title = saveTitle,
         style = "primary", theme = theme, font = font, target = self, onClick = function(p) p:save() end })
-    self.saveBtn:setEnabled(plan.n > 0)
-    local cancel = UI.Button.new({ x = 0, y = by, height = btnH, title = getText("UI_Cancel"), theme = theme, font = font,
+    self.saveBtn:setEnabled(out.plan.n > 0)
+    self.cancel = UI.Button.new({ x = 0, y = 0, height = self.btnH, title = getText("UI_Cancel"), theme = theme, font = font,
         onClick = function() win:close() end })
-    cancel:setX(self.saveBtn:getX() - GAP - cancel.width)
-    win:addChild(cancel)
+    self.cancel:setX(self.saveBtn:getX() - GAP - self.cancel.width)
+    local h = place(self)
+    win:setY(sy + math.floor((sh - h) / 2))
+    win:addChild(self.cancel)
     win:addChild(self.saveBtn)
     win:addToUIManager()
     return self
