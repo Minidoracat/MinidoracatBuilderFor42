@@ -14,7 +14,7 @@ local Place = MinidoracatBuilder.Place
 local F, T = IsoFlagType, IsoObjectType
 local LOG = "[MinidoracatBuilderFor42] basement "
 
-Basement.ROOM = "mdcbuilderbasement" -- 房間名：只在 Basement.pre 認「是不是本 MOD 的房間」時用
+Basement.ROOM = "mdcbuilderbasement" -- 房間名：認「是不是本 MOD 的房間」時用（登錄、能不能挖、客戶端補切房間燈）
 Basement.MAX = 400                   -- 一塊最多幾格（＝Circuits.ROOM_MAX）
 -- 外邊土牆的圖：判斷「是不是土牆」一律查這張表。原版的土牆圖沒有屬性，牆屬性來自本 MOD 的圖塊補丁檔
 -- media/mdcbuilder_basement.patch.tiles（scripts/gen_basement_tiles.py 寫出，和 Basement Building 的那三格相同）
