@@ -3394,6 +3394,27 @@ local function dismantleScenario()
             and drop.dropped["Base.Axe"] == nil and Floors.get(G) == nil
     end)(), "一樓的地板（不給原版搬動工具拆）：照地板帳本退、不看 modData、移除時帳本清掉")
     check((function()
+        -- 1.3.0 以前半格地板照地板蓋（IsoThumpable、isFloor、地板帳本）；現在的圖歸地面覆蓋，拆的時候仍要照地板帳本退
+        local Floors, Overlays = MinidoracatBuilder.Floors, MinidoracatBuilder.Overlays
+        local halfS = sprite("dht_01_0", 2290, { flags = { "solidfloor", "FloorOverlay" } })
+        local sq = engineSq(77, 75, 0)
+        local H = ours(sq, halfS, {})
+        function sq:getFloor() if has(self, H) then return H end end -- 照地板蓋的：它就是那格的地板
+        H.dism = false
+        Floors.put(H, { ["Base.Plank"] = 1 })
+        Overlays.put(sq, "dht_01_0", { ["Base.Nails"] = 5 }) -- 同格同名的覆蓋帳本：不能照它退
+        local drop = at(75, 76, 0)
+        drop.dropped = {}
+        unbuild(FP, 28, 77, 75, 0, "dht_01_0")
+        local first = Server.dismantle(FP, 28, 1)
+        local plank, nails = drop.dropped["Base.Plank"], drop.dropped["Base.Nails"]
+        local dirt = false -- 照地板拆才補泥土（Server 的 kind＝floor 那段）
+        for _, o in ipairs(sq.objects) do if o.name == "blends_natural_01_64" then dirt = true end end
+        local again = Server.dismantle(FP, 28, 1)
+        return Rules.classify(halfS) == "floorOverlay" and first and not has(sq, H) and plank == 1 and nails == nil
+            and dirt and Floors.get(H) == nil and again == false and drop.dropped["Base.Plank"] == 1
+    end)(), "1.3.0 以前蓋成地板的半格地板：伺服器照地板拆（一樓補泥土）、照地板帳本退、不照同格的覆蓋帳本、清帳；同一件再送不再退")
+    check((function()
         local Floors = MinidoracatBuilder.Floors
         local otherS = sprite("dfo_01_9", 2215, { flags = { "solidfloor" } })
         local V = ours(at(75, 75, 0), floorS, {})
@@ -4792,7 +4813,8 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
     local looseS = sprite("ov_scrap_01_1", 2604, { flags = { "attachedFloor" }, keys = { CanScrap = "", Material = "OvMetal" } })
     local gridS = sprite("ov_grid_01_0", 2605, { flags = { "FloorOverlay" } })
     gridS.grid = { getAnchorSprite = function() return gridS end }
-    world({ floorS, tlS, tl2S, debrisS, scrapS, looseS, gridS })
+    local htS = sprite("ov_half_01_0", 2620, { flags = { "solidfloor", "FloorOverlay" } }) -- 半格地板
+    world({ floorS, tlS, tl2S, debrisS, scrapS, looseS, gridS, htS })
     local TL, TL2 = "ov_lines_01_10", "ov_lines_01_11"
     check(Rules.onFloor("floorOverlay", tlS) and not Rules.onFloor("floorOverlay", debrisS)
         and not Rules.onFloor("floorOverlay", gridS) and not Rules.onFloor("solid", tlS)
@@ -4886,6 +4908,29 @@ print("情境二十六：地面覆蓋照地圖掛在地板上（2026-10-31 交�
         and fA.sprites == 2 and fA.mds == 2, "拆：拿掉附加圖與記號並同步、清帳本、照帳本退（最多全部）")
     c, a = unbuild(Pl, 2608, 44, 44, TL)
     check(c == "dismantleSkipped" and a.code == "GONE", "拆過的再拆一次：GONE、不再退")
+    -- 半格地板（solidfloor＋FloorOverlay）：預覽與伺服器同一個判斷；新蓋的走覆蓋帳本（對照情境二十一的舊半格走地板帳本）
+    local HT, PV = htS:getName(), { preview = true }
+    local H, fH = ground(46, 45)
+    local onP, onS = Check.item(Pl, HT, 0, { 46, 45, 0 }, PV), Check.item(Pl, HT, 0, { 46, 45, 0 })
+    local upP = Check.item(Pl, HT, 0, { 46, 46, 1 }, PV)
+    square(46, 46, 1) -- 伺服器補出的空格子（替身的 createNewGridSquare 不建）
+    local upS = Check.item(Pl, HT, 0, { 46, 46, 1 })
+    squares["46,46,1"] = nil
+    check(onP == nil and onS == nil and upP == "BLOCKED" and upS == "BLOCKED",
+        "半格地板：已有地板的格子預覽與伺服器都放行；上一層還沒有格子（沒有地板可掛）兩邊都 BLOCKED（✗ 預覽放行、伺服器才擋；"
+            .. tostring(onP) .. "／" .. tostring(onS) .. "／" .. tostring(upP) .. "／" .. tostring(upS) .. "）")
+    local hPay = Cost.of("floorOverlay", htS, 1).items
+    give(Pl, hPay)
+    local hOk = build(Pl, 2617, HT, { 46, 45, 0 })
+    local hRec = Overlays.get(H, HT) ~= nil
+    here.dropped = {}
+    c = unbuild(Pl, 2618, 46, 45, HT)
+    local hBack = true
+    for ft, n in pairs(hPay) do if here.dropped[ft] ~= n then hBack = false end end
+    local hAgain = unbuild(Pl, 2619, 46, 45, HT)
+    check(hOk and hRec and #H.objects == 0 and c == "dismantled" and hung(fH) == "" and H:getFloor() == fH and hBack
+        and Overlays.get(H, HT) == nil and hAgain == "dismantleSkipped",
+        "新蓋的半格地板：掛在地板上、照覆蓋帳本退、地板留著；再拆不再退")
     -- 記號只決定選單列不列：記號被清掉、附加圖與帳本都在，伺服器照樣拆
     local W, fW = ground(45, 45)
     give(Pl, pay)

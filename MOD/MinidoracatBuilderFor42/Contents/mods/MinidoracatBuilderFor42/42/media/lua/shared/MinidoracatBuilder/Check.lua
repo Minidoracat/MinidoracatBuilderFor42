@@ -10,7 +10,7 @@ require "MinidoracatBuilder/Materials"
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Check = MinidoracatBuilder.Check or {}
 MinidoracatBuilder.Check = Check
-local Entry, Cost = MinidoracatBuilder.Entry, MinidoracatBuilder.Cost
+local Entry, Cost, Rules = MinidoracatBuilder.Entry, MinidoracatBuilder.Cost, MinidoracatBuilder.Rules
 local Place, Materials = MinidoracatBuilder.Place, MinidoracatBuilder.Materials
 
 local LOG = "[MinidoracatBuilderFor42] "
@@ -273,9 +273,10 @@ function Check.item(player, name, d, anchor, ...)
             end
         elseif (entry.kind == "roof" and not Place.roofAt(c.x, c.y, c.z, planned))
             or (entry.kind == "floor" and not Place.floorAt(c.x, c.y, c.z, planned))
-            or (Entry.EDGE[entry.kind] and not Place.edgeHeldAt(entry.kind, c.spr, c.x, c.y, c.z)) then
-            -- 預覽：上一層的格子常常還沒建，屋頂、地板與格邊的東西（牆、框、柵欄、門窗）照座標查撐不撐得住
-            -- （伺服器補了格子照樣走上面那段）
+            or (Entry.EDGE[entry.kind] and not Place.edgeHeldAt(entry.kind, c.spr, c.x, c.y, c.z))
+            or Rules.onFloor(entry.kind, c.spr) then
+            -- 預覽：上一層的格子常常還沒建，屋頂、地板與格邊的東西（牆、框、柵欄、門窗）照座標查撐不撐得住；
+            -- 地面覆蓋（半格這類）要掛在那格的地板上，沒有格子就沒有地板（伺服器補了格子照樣走上面那段，回同一個 BLOCKED）
             return "BLOCKED", { x = c.x, y = c.y, z = c.z }, info
         end
     end
