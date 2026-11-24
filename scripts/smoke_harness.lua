@@ -21450,7 +21450,7 @@ end)()
 
 -- ===== 建造時顯示同層屋頂（RoofShow） =====
 ;(function()
-    print("建造時顯示同層屋頂（RoofShow：游標渲染前換替身、同一段繪製的 DoBuilding 換回、存檔不換、各玩家分開掃、收起後重畫、載入格子修正）")
+    print("建造時顯示同層屋頂（RoofShow：游標渲染前換替身、同一段繪製的 DoBuilding 換回、存檔不換、各玩家分開掃與重畫、載入格子修正）")
     local B = MinidoracatBuilder
     require "MinidoracatBuilder/Rules"
     require "MinidoracatBuilder/RoofShow"
@@ -21463,7 +21463,7 @@ end)()
     end
     local sB, sM, sT = roof("rs_01_0", 41000, T.WestRoofB), roof("rs_01_1", 41001, T.WestRoofM), roof("rs_01_2", 41002, T.WestRoofT)
     local flat = roof("rs_01_3", 41003, T.WestRoofB) -- 擺在不是斜屋頂的格子：不掃
-    local stuck = roof("rs_01_4", 41004, T.UNUSED10) -- 上次沒換回的替身：掃到時先換回 WestRoofM
+    local tiled = roof("rs_01_4", 41004, T.UNUSED10) -- 圖塊包合法用的 UNUSED10（引擎接受的 tiledef 型別），和斜屋頂同格
     local function obj(s) return { getSprite = function() return s end } end
     local function sq(slope, list)
         local objs = {}
@@ -21478,11 +21478,17 @@ end)()
     local p = { getX = function() return px + 0.5 end, getY = function() return 10.5 end, getZ = function() return 1 end }
     local p1 = { getX = function() return 200.5 end, getY = function() return 200.5 end, getZ = function() return 1 end }
     local inval = {}
+    local function chunkMap(pn)
+        return {
+            getWidthInTiles = function() return 8 * 13 end,
+            getChunk = function(_, i, j)
+                return { invalidateRenderChunkLevel = function(_, z, f) inval[#inval + 1] = pn .. ":" .. i .. "," .. j .. "," .. z .. "," .. f end }
+            end,
+        }
+    end
     local cellObj = {
         getGridSquare = function(_, x, y, z) return sqs[x .. "," .. y .. "," .. z] end,
-        getChunk = function(_, wx, wy)
-            return { invalidateRenderChunkLevel = function(_, z, f) inval[#inval + 1] = wx .. "," .. wy .. "," .. z .. "," .. f end }
-        end,
+        getChunkMap = function(_, pn) return chunkMap(pn) end,
     }
     getCell = function() return cellObj end
     getSpecificPlayer = function(pn) return (pn == 0 and p) or (pn == 1 and p1) or nil end
@@ -21565,16 +21571,20 @@ end)()
     check(same(types(), orig), "換回中途出錯後，下一次換回把剩下的也換回")
     sM.setTileType = realSet
 
-    sqs["13,10,1"] = sq(true, { stuck })
+    -- 移動了但未滿重掃間隔：新格子的屋頂不收；圖塊包本來就是 UNUSED10 的 sprite 從來不算替身
+    local late = roof("rs_01_7", 41007, T.WestRoofM)
+    sqs["13,10,1"] = sq(true, { tiled, late })
     px = 11
     B.Cursor.beforeWorldRender(cur)
-    check(stuck:getType() == T.UNUSED10, "移動了但未滿重掃間隔：不重掃")
+    check(late:getType() == T.WestRoofM, "移動了但未滿重掃間隔：不重掃")
     RS.restore()
-    check(stuck:getType() == T.UNUSED10, "不在清單裡的不動：換回只換回自己換的")
+    check(late:getType() == T.WestRoofM and tiled:getType() == T.UNUSED10, "不在清單裡的不動：換回只換回自己換的")
     now = now + 500
     B.Cursor.beforeWorldRender(cur)
+    check(late:getType() == T.UNUSED10 and tiled:getType() == T.UNUSED10, "重掃後新格子的屋頂也換；本來就是 UNUSED10 的不收")
     RS.restore()
-    check(stuck:getType() == T.WestRoofM and same(types(), orig), "重掃時認得卡在替身的 sprite、記下原型別，換回後全都是原型別")
+    check(late:getType() == T.WestRoofM and same(types(), orig), "自己換過的都換回原型別")
+    check(tiled:getType() == T.UNUSED10, "從沒換過、型別剛好是替身的 sprite 保持原樣（不改成 WestRoofM）")
 
     -- 站著不動：附近新出現的屋頂款式也收進來
     local fresh = roof("rs_01_5", 41005, T.WestRoofT)
@@ -21595,7 +21605,7 @@ end)()
     check(far:getType() == T.WestRoofB and sB:getType() == T.UNUSED9, "再輪回玩家 0：換回玩家 1 的、換玩家 0 的")
     RS.restore()
 
-    -- 收起游標後：換著時畫過的 chunk 層標髒重畫
+    -- 收起游標後：那位玩家 chunk map 裡每一塊、換著時的那一層標髒重畫（sprite 全圖共用，視野內哪一塊重畫都可能烤到）
     tickFn()
     tickFn()
     inval = {}
@@ -21606,33 +21616,75 @@ end)()
     tickFn()
     check(#inval == 0, "游標還拿著：不重畫")
     tickFn()
-    local hit = {}
-    for _, k in ipairs(inval) do hit[k] = true end
-    check(#inval == 49 and hit["1,1,1,7"] and hit["-2,-2,1,7"] and hit["4,4,1,7"],
-        "收起游標後下一次世界更新：玩家所在 chunk 周圍 7x7 的那一層標 DIRTY_REDRAW")
+    local function hits()
+        local h, n0, n1 = {}, 0, 0
+        for _, k in ipairs(inval) do
+            h[k] = true
+            if k:sub(1, 2) == "0:" then n0 = n0 + 1 else n1 = n1 + 1 end
+        end
+        return h, n0, n1
+    end
+    local hit, n0, n1 = hits()
+    check(n0 == 169 and n1 == 0 and hit["0:0,0,1,7"] and hit["0:12,12,1,7"] and hit["0:6,6,1,7"],
+        "收起游標後下一次世界更新：那位玩家 chunk map 13x13 塊（含 7x7 以外）的那一層標 DIRTY_REDRAW")
     inval = {}
     tickFn()
     check(#inval == 0, "只重畫一次")
 
-    -- 載入格子：換著時串流執行緒算的型別帶替身，主執行緒載入時重算
+    -- 分割畫面：一人還拿著、另一人收起 → 收起的那位照樣重畫
+    now = now + 500
+    B.Cursor.beforeWorldRender(cur)
+    B.Cursor.beforeWorldRender({ player = 1 })
+    RS.restore()
+    tickFn()
+    inval = {}
+    B.Cursor.beforeWorldRender(cur)
+    RS.restore()
+    tickFn()
+    hit, n0, n1 = hits()
+    check(n0 == 0 and n1 == 169 and hit["1:12,0,1,7"], "分割畫面：玩家 0 還拿著、玩家 1 收起了 → 只重畫玩家 1 的 chunk map")
+    inval = {}
+    tickFn()
+    hit, n0, n1 = hits()
+    check(n0 == 169 and n1 == 0, "玩家 0 也收起 → 再重畫玩家 0 的")
+
+    -- 載入格子：換著時串流執行緒算的型別帶替身，主執行緒載入時重算；算好的 chunk 何時交付沒有上限，掛上就不拿掉
     local recalc = 0
     local function loadSq(bits)
         return { has = function(_, t) return bits[t] == true end, RecalcProperties = function() recalc = recalc + 1 end }
     end
     loadFn(loadSq({ [T.UNUSED10] = true }))
     loadFn(loadSq({ [T.WestRoofB] = true }))
-    check(recalc == 1, "最近換過型別：載入的格子帶替身才重算")
-    now = now + 10000
-    tickFn()
-    check(count("LoadGridsquare") == 0, "收起游標滿 10 秒後拿掉 LoadGridsquare")
-    B.Cursor.beforeWorldRender(cur)
+    check(recalc == 1, "載入的格子帶替身才重算")
+    now = now + 600000 -- 收起游標後暫停十分鐘（OnTickEvenPaused 照跑）
+    for _ = 1, 50 do tickFn() end
+    local late2 = mine("LoadGridsquare")
+    check(count("LoadGridsquare") == 1 and late2 ~= nil, "用過一次：暫停很久之後還掛著")
+    if late2 then late2(loadSq({ [T.UNUSED24] = true })) end
+    check(recalc == 2, "換著時算好、很久之後才交付的格子照樣重算")
     B.Cursor.beforeWorldRender(cur)
     RS.restore()
-    check(count("LoadGridsquare") == 1, "再拿游標換型別：重新掛一次，不重複")
+    check(count("LoadGridsquare") == 1, "再拿游標換型別：不重複掛")
+
+    -- 接線游標（Wiring.lua 的 MinidoracatBuilderWireCursor）也照樣換
+    require "MinidoracatBuilder/Wiring"
+    local function upv(f, name)
+        for i = 1, 200 do
+            local n, v = debug.getupvalue(f, i)
+            if n == nil then return nil end
+            if n == name then return v end
+        end
+    end
+    local WC = upv(upv(B.Wiring.open, "newCursor"), "WireCursor")
+    check(WC ~= nil and type(WC.beforeWorldRender) == "function", "接線游標掛了 beforeWorldRender")
+    if WC and WC.beforeWorldRender then
+        now = now + 500
+        WC.beforeWorldRender({ player = 0 })
+        check(same(types(), swappedTypes), "接線游標：渲染前同樣換替身")
+        RS.restore()
+    end
     tickFn()
-    now = now + 10000
     tickFn()
-    check(count("LoadGridsquare") == 0, "第二次到期也拿掉")
 
     for _, s in ipairs({ "10,10,1", "14,12,1", "11,10,1", "12,9,0", "13,10,1", "12,11,1", "200,200,1" }) do sqs[s] = nil end
     getCell, getSpecificPlayer, getTimestampMs, B.Window.options, FBORenderChunk = real.cell, real.spec, real.clock, real.opts, real.fbo

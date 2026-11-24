@@ -389,6 +389,7 @@ local WireCursor, Class = {}, nil
 function WireCursor:getSprite() return self.mode.sw.e end
 function WireCursor:rotateKey() end
 function WireCursor:rotateMouse() end
+function WireCursor:beforeWorldRender() local R = B.RoofShow if R then R.before(self.player) end end -- 建造時顯示同層屋頂
 
 -- 點燈接線時不讓原版順便開關燈（原版只在拖曳物件有這個方法時才擋，ISObjectClickHandler.lua:315-318；點號呼叫，
 -- 第一個參數是被點的物件，不是游標）。builder-input-1029c／d：沒有這個方法時，點一下燈就被切一次
