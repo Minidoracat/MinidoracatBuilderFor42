@@ -7732,6 +7732,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         return stands[sq] == true or stands[sq] == "here"
     end
     luautils = { walkAdj = stand, walkAdjWall = stand }
+    AdjacentFreeTileFinder = { Find = function() return nil end } -- 照那一格本身再找也沒有（walkNear 的第二次）
     local function shape()
         local out = {}
         for k, a in ipairs(queued) do
@@ -7868,6 +7869,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     P.pos = keepPos
     MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
     isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
+    AdjacentFreeTileFinder = nil
 end)()
 
 print("情境三十五：硬核（需要技能、原版材料）、同一套的材質繼承、整套（2026-11-01 設計稿 builder-hardcore-sets-1101）")
@@ -13901,6 +13903,16 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     nowMs = nowMs + 6000
     MinidoracatBuilder.Client.build(P, "blends_natural_02_6", { { 493, 492, 0, 0 } }, nil)
     check(adjWalks == 1 and #finds == 3 and #q == 1 and q[1].i == 1, "只挖一格：照舊走原版的走到旁邊")
+    -- 人在那格北牆的另一側（rooms-mp：站隔牆北側那間，掛開關到南側那間的北牆）：原版改找牆後那一格的旁邊，那格在土裡、
+    -- 和目標隔著土牆，找不到（luautils.lua:137、202-210）。照那一格本身再找、走過去再排動作，不停在「旁邊沒有空位」
+    local keepAdj = luautils.walkAdj
+    luautils.walkAdj = function() return false end
+    nowMs = nowMs + 6000
+    MinidoracatBuilder.Client.build(P, "blends_natural_02_6", { { 493, 492, 0, 0 } }, nil)
+    check(#finds == 4 and finds[4].sq == at(493, 492) and #q == 2 and q[1].walk == at(493, 496) and q[2].i == 1
+        and not MinidoracatBuilder.Client.pending.noRoom,
+        "原版找不到站位（牆後那格在土裡）：照那一格本身再找，走過去再排動作，不記沒有空位")
+    luautils.walkAdj = keepAdj
     -- 後面有一格找不到站位：整批不排（只排前面幾格的話，挖完可能把最後站的地方圍住），記下是第幾格
     local calls = 0
     AdjacentFreeTileFinder.Find = function()
@@ -13922,6 +13934,7 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
         return { x = x, y = y, z = 0, name = "blends_natural_02_6", kind = "water", route = "builder", obj = obj }
     end
     luautils.walkAdj = function(_, sq) return sq == at(491, 492) end
+    AdjacentFreeTileFinder.Find = function() return nil end -- 四周都是水：照那一格本身再找也沒有
     nowMs = nowMs + 6000
     MinidoracatBuilder.Client.dismantleMany(P, { fillItem(w3, 490, 490), fillItem(w2, 490, 492), fillItem(w1, 491, 492) }, nil)
     local ub = MinidoracatBuilder.Client.pendingUnbuild

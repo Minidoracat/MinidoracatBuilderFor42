@@ -74,7 +74,13 @@ local function walkNear(player, kind, north, x, y, z, ...)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local sq = cell:getGridSquare(x, y, z)
     if not sq then return nil end
-    return luautils.walkAdj(player, sq, true, own)
+    if luautils.walkAdj(player, sq, true, own) then return true end
+    -- 玩家在那格北／西牆的另一側時，原版改找牆後那一格的旁邊（luautils.getCorrectSquareForWall，luautils.lua:202-210）；
+    -- 牆後是土或屋外、和那格之間又隔著牆就找不到。照那一格本身再找一次
+    local adj = AdjacentFreeTileFinder.Find(sq, player, own)
+    if not adj then return false end
+    ISTimedActionQueue.add(ISWalkToTimedAction:new(player, adj))
+    return true
 end
 
 -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
