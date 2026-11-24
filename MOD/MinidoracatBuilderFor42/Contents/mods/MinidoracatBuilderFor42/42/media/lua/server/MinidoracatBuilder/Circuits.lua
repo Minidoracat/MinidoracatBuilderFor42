@@ -488,8 +488,8 @@ end
 -- 按開關（id＝線路編號）、本工具蓋的燈（id＝nil），或地下室裡沒接燈的牆上開關（id＝nil，第四個參數＝房間編號：
 -- 同一間的這些開關一起切；canSwitchLight 不過就不動，同原版，IsoLightSwitch.java:415-424）。順序：距離（同一層、
 -- PRESS_REACH 格內）→ Safehouse 的 USE（拒絕時它自己推通知；我們的 complete 不呼叫原版，包在內層的 Safehouse 不會跑）
--- → 地下室那一塊還有延後沒登錄的格子、沒重算的分房就當下做（Basement.growNow：沒有房間時有市電也認不到電；分房變了
--- 房間編號重查）→ 冷卻 → 切。回 complete 的結果。
+-- → 地下室那一塊還有延後沒登錄的格子、沒重算的分房就當下做（Basement.growNow：沒有房間時有市電也認不到電）；沒接燈的牆上
+-- 開關再照現在的牆確認分房、重查房間編號（Basement.resplit；那一塊有格子沒載入時照舊的分）→ 冷卻 → 切。回 complete 的結果。
 function Circuits.press(player, obj, id, ...)
     local rid = ...
     local sq = obj:getSquare()
@@ -502,7 +502,10 @@ function Circuits.press(player, obj, id, ...)
     end
     if useDenied(player, x, y, z) then return false end
     B.Basement.growNow(x, y, z)
-    if rid then rid = roomOf(x, y, z, false) end
+    if rid then
+        B.Basement.resplit(x, y, z)
+        rid = roomOf(x, y, z, false)
+    end
     if rid and not obj:canSwitchLight() then return false end
     local k = id or rid or Ledger.key(obj)
     local t = now()
@@ -586,16 +589,16 @@ end
 
 -- 開關放下或按「接同一房間」：同一個封閉房間裡、還沒接在別條線路的燈接上。開關自己還沒有線路時，房間裡另一個開關的線路
 -- 放得下就併進去（雙切）；都沒有線路的話和房間裡另一個開關接成一條。別條線路的燈不搶、只記數。每片燈、被併的開關與
--- 成員都照預覽查 BUILD（不寫稽核；沒權限的跳過），全部查完才寫入。地下室剛蓋的牆還排在延後批次時先重算那一塊的分房
--- （Basement.growNow 的 split：分法變了才做），不照舊的分法接到牆另一邊。
--- 回 code（NOT_ENCLOSED／INTERNAL）或 nil, { id（沒有線路時 nil）, n = 接上幾片, taken = 別條線路的幾盞, skipped = 太遠、
+-- 成員都照預覽查 BUILD（不寫稽核；沒權限的跳過），全部查完才寫入。地下室先照現在的牆確認分房（Basement.resplit）：
+-- 那一塊有格子沒載入、分不了就回 NOT_LOADED、不接，不照舊的分法接到牆另一邊。
+-- 回 code（NOT_ENCLOSED／NOT_LOADED／INTERNAL）或 nil, { id（沒有線路時 nil）, n = 接上幾片, taken = 別條線路的幾盞, skipped = 太遠、
 -- 線路滿了或沒權限的幾盞, jx, jy = 併進的那個開關, later = 之後放進房間的燈會自動接上 }
 function Circuits.autoWire(player, sw)
     local d = data()
     if not d then return "INTERNAL" end
     local sq = sw:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
-    B.Basement.growNow(x, y, z, true)
+    if not B.Basement.resplit(x, y, z) then return "NOT_LOADED" end
     local rid = roomOf(x, y, z, true)
     if not rid then return "NOT_ENCLOSED" end
     local lamps, switches = roomScan(x, y, z, rid)
@@ -673,14 +676,15 @@ function Circuits.autoWire(player, sw)
     return nil, info
 end
 
--- 燈放下：同一個封閉房間裡的開關只有一組（一條線路，或只有一個沒接線的開關）就接進去。地下室的分房先照 autoWire 那樣重算。
+-- 燈放下：同一個封閉房間裡的開關只有一組（一條線路，或只有一個沒接線的開關）就接進去。地下室的分房先照 autoWire 那樣確認
+-- （分不了就不接、不通知）。
 -- 要接的開關（新線路就是那一個，既有線路就是那條的每個開關）照預覽查 BUILD，被拒就不接。
 -- 回線路編號；沒接上而房間裡（燈的 RANGE 格內）有本工具的開關時回 nil, 原因（MULTI／FULL／OUT_OF_RANGE／DENIED）
 function Circuits.lampPlaced(player, lamp)
     local d = data()
     if not d then return nil end
     local sq = lamp:getSquare()
-    B.Basement.growNow(sq:getX(), sq:getY(), sq:getZ(), true)
+    if not B.Basement.resplit(sq:getX(), sq:getY(), sq:getZ()) then return nil end
     local rid = roomOf(sq:getX(), sq:getY(), sq:getZ(), true)
     if not rid then return nil end
     local _, switches = roomScan(sq:getX(), sq:getY(), sq:getZ(), rid)
@@ -807,7 +811,7 @@ function Circuits.placed(player, objs)
     local d = data()
     if Circuits.isSwitch(first) then
         local code, info = Circuits.autoWire(player, first)
-        matchRoom(first)
+        if code ~= "NOT_LOADED" then matchRoom(first) end -- 分不了房時不照舊的那一間對齊開關狀態
         if code then return reply(player, nil, d, nil, { auto = "switch", code = code }) end
         print(LOG .. "CIRCUIT auto user=" .. server().who(player) .. " id=" .. tostring(info.id) .. " lamps=" .. info.n
             .. " taken=" .. info.taken .. " skipped=" .. info.skipped .. " joined=" .. tostring(info.jx ~= nil))

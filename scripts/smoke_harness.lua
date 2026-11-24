@@ -4414,6 +4414,7 @@ local function circuitScenario()
             return o
         end
         Bm.add({ { 110, 100 }, { 111, 100 }, { 112, 100 } })
+        square(111, 100, -1) -- 塊的每一格都要載入才分得了房（Basement.resplit）
         local UL = down(110, 100, lampS)
         down(113, 100, lampS) -- 塊外
         local US = down(112, 100, swS)
@@ -4430,7 +4431,7 @@ local function circuitScenario()
         local foreign = last()
         ugRooms["130,100"], ugRooms["128,100"] = def("emptyoutside", 5), def("hall", 401)
         local big = {}
-        for x = 200, 219 do for y = 200, 219 do big[#big + 1] = { x, y } end end
+        for x = 200, 219 do for y = 200, 219 do big[#big + 1] = { x, y } square(x, y, -1) end end
         big[#big + 1] = { 220, 200 }
         Bm.add(big)
         local codes = {}
@@ -4456,20 +4457,20 @@ local function circuitScenario()
         check(split.code == nil and nL(split) == 1 and wired(split, ML) and not wired(split, UL),
             "c15 塊分成兩間：開關只接同一間的燈，牆另一邊的不接（" .. tostring(split.code) .. " " .. nL(split) .. "）")
         fire("OnObjectAboutToBeRemoved", US2)
-        -- 牆剛蓋好、重算分房還排在延後批次（Basement.dirty；分法還是舊的一間）就放開關、放燈：同一個呼叫裡先重算那一塊，
-        -- 不照舊的一間接到牆另一邊
+        -- 牆剛蓋好、分房還沒重算（本工具蓋的排在延後批次 Basement.dirty；原版與別的 MOD 蓋的沒有事件，等巡查）就放開關、
+        -- 放燈：同一個呼叫裡照現在的牆分，不照舊的一間接到牆另一邊。開關那一次不標 dirty（原版的牆、「接同一房間」）
         local keepOnline = getOnlinePlayers
         getOnlinePlayers = keepOnline or function() return javaList({}) end -- 重算後推 block 要找附近的玩家；這一段沒有
-        local function stale()
+        local function stale(mark)
             Bm.setRooms({ { { 110, 100 }, { 111, 100 }, { 112, 100 } } })
-            Bm.dirty(111, 100, -1)
+            if mark then Bm.dirty(111, 100, -1) end
         end
-        stale()
+        stale(false)
         local US3 = down(112, 100, swS)
         sent = {}
         Circuits.placed(P, { US3 })
         local late = last()
-        stale()
+        stale(true)
         sent = {}
         Circuits.placed(P, { down(110, 100, lampS) })
         local joined = false
@@ -4482,31 +4483,52 @@ local function circuitScenario()
         -- 重算後哪一邊是 1 號看走訪順序，拿舊房號（一間時的 1 號）去找的話，按到 2 號那邊的會切到隔壁
         local SA, SB = down(110, 100, swS), down(111, 100, swS, w)
         SA.canSwitchLight, SB.canSwitchLight = function() return true end, function() return true end
-        local function pressStale(o)
+        -- mark＝本工具蓋的牆（排進延後批次）；沒有＝原版或別的 MOD 蓋的牆（沒有事件，Basement.resplit 才看得到）
+        local function pressStale(o, mark)
             w.cutW = nil
             Bm.dirty(111, 100, -1)
             Bm.growNow(111, 100, -1) -- 還沒有牆：一間
             w.cutW = true
-            Bm.dirty(111, 100, -1) -- 牆蓋好、還沒重算
+            if mark then Bm.dirty(111, 100, -1) end -- 牆蓋好、還沒重算
             nowMs = nowMs + 2000
-            return act(P, o)
+            local grow = Bm.grow
+            Bm.grow = function() return false end -- 向引擎登錄失敗（growNow 回 false），分房照樣換了：房間編號照樣要重查
+            local r = act(P, o)
+            Bm.grow = grow
+            return r
         end
         P.pos.x, P.pos.y, P.pos.z = 110.5, 100.5, -1
-        local pa = pressStale(SA)
+        local pa = pressStale(SA, true)
         local onlyA = pa == true and SA.on == false and SB.on == true
         SA.on = true -- 兩個都開著再按另一邊：被誤切的那個才看得出來
-        local pb = pressStale(SB)
+        local pb = pressStale(SB, false)
         local onlyB = pb == true and SB.on == false and SA.on == true
         P.pos.x, P.pos.y, P.pos.z = 101.5, 101.5, 0
         check(onlyA and onlyB, "c15 牆剛蓋好就按沒接燈的牆上開關：只切自己那一間的，牆另一邊的開關不跟著切（" .. tostring(pa)
             .. tostring(onlyA) .. " " .. tostring(pb) .. tostring(onlyB) .. "）")
-        -- 分法沒變（牆早就算過）時放開關、放燈不把排著的提前做：split 那一種回 false，排著的還在（接著不帶 split 的做得到）
+        -- 分法沒變（牆早就算過）時放開關、放燈不把排著的提前做（專用伺服器每裝一個牆上開關就重登錄那一棟）：放完排著的還在
         Bm.dirty(111, 100, -1)
-        local lazy, still = Bm.growNow(111, 100, -1, true), Bm.growNow(111, 100, -1)
-        check(lazy == false and still == true, "c15 分法沒變時放開關、放燈不提前登錄，排著的留給延後批次（" .. tostring(lazy)
-            .. " " .. tostring(still) .. "）")
+        local S5 = down(112, 100, swS)
+        Circuits.placed(P, { S5 })
+        Circuits.placed(P, { down(112, 100, lampS) })
+        local still = Bm.growNow(111, 100, -1)
+        check(still == true, "c15 分法沒變時放開關、放燈不提前登錄，排著的留給延後批次（" .. tostring(still) .. "）")
+        fire("OnObjectAboutToBeRemoved", S5)
         fire("OnObjectAboutToBeRemoved", SA)
         fire("OnObjectAboutToBeRemoved", SB)
+        -- 那一塊有一格沒載入（分不了房）：放開關回 NOT_LOADED、什麼都不接，不照舊的一間接到牆另一邊；放燈也不接
+        Bm.add({ { 112, 101 } }) -- 沒有格子＝沒載入
+        Bm.setRooms({ { { 110, 100 }, { 111, 100 }, { 112, 100 }, { 112, 101 } } })
+        local US4 = down(112, 100, swS)
+        sent = {}
+        Circuits.placed(P, { US4 })
+        local un = last()
+        sent = {}
+        Circuits.placed(P, { down(110, 100, lampS) })
+        check(un.code == "NOT_LOADED" and nL(un) == 0 and #sent == 0,
+            "c15 那一塊有格子沒載入時放開關回 NOT_LOADED、放燈不接，不照舊的一間接到牆另一邊（" .. tostring(un.code) .. " "
+            .. nL(un) .. " " .. #sent .. "）")
+        fire("OnObjectAboutToBeRemoved", US4)
         getOnlinePlayers = keepOnline
         fire("OnObjectAboutToBeRemoved", FS)
         Bm.reset({}, 0, 0)
@@ -10259,8 +10281,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             isClient = function() return client end
             here = { ... }
         end
-        local function cell(x, y)
-            local sq = ug(x, y)
+        local function cell(x, y, ...)
+            local f = ... -- 格旗標（{ cutW = true }＝西邊有牆）
+            local sq = ug(x, y, nil, f and { flags = f } or nil)
             function sq:isUserDefinedRoom() return false end
             return sq
         end
@@ -10311,15 +10334,15 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local MOVABLE = { lightR = "200", lightG = "200", lightB = "200", IsMoveAble = "" }
         local gone = {}
 
-        -- 伺服器，6100..6104 × 6100..6101：西三列一間、東兩列一間，先登錄好再裝開關。同一間兩個沒接燈的開關 A、B，
-        -- 一個接了燈的 W（＋燈 L）；隔壁間一個 C
+        -- 伺服器，6100..6104 × 6100..6101：西三列一間、東兩列一間（x＝6103 西邊一面牆），先登錄好再裝開關。同一間兩個沒接燈的
+        -- 開關 A、B，一個接了燈的 W（＋燈 L）；隔壁間一個 C
         local p = player({ id = 2301, x = 6101.5, y = 6100.5, z = Z })
         local p4 = player({ id = 2302, x = 6201.5, y = 6200.5, z = Z })
         setMode(true, false, p, p4)
         local xs, t, west, east = {}, {}, {}, {}
         for x = 6100, 6104 do
             for y = 6100, 6101 do
-                xs[tk(x, y)], t[#t + 1] = cell(x, y), { x, y }
+                xs[tk(x, y)], t[#t + 1] = cell(x, y, x == 6103 and { cutW = true } or nil), { x, y }
                 local side = x <= 6102 and west or east
                 side[#side + 1] = { x, y }
             end

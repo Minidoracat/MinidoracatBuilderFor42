@@ -1033,13 +1033,14 @@ function Basement.split(id)
     return room, n
 end
 
--- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，list（新挖的格子）與要重建的棟一次登錄；專用伺服器上這一批有新格子或
--- 分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與分房，登錄失敗也推），分房記進帳本（save）。專用伺服器
--- 只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
+-- 伺服器與單機：塊 ids（{ [編號]＝true，或已經算好的 { 房號, 房間數 }（Basement.resplit）}）重算分房，list（新挖的格子）
+-- 與要重建的棟一次登錄；專用伺服器上這一批有新格子或分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與
+-- 分房，登錄失敗也推），分房記進帳本（save）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
 local function refresh(ids, list)
     local push = {}
-    for id in pairs(ids) do
-        local room, n = Basement.split(id)
+    for id, v in pairs(ids) do
+        local room, n
+        if v == true then room, n = Basement.split(id) else room, n = v[1], v[2] end
         if room and renumber(id, room, n) then push[id] = true end
     end
     for _, t in ipairs(list) do push[cells[key(t[1], t[2])]] = true end
@@ -1181,16 +1182,9 @@ function Basement.dirty(x, y, z)
     if hit then later() end
 end
 
--- 伺服器與單機：(x, y, z) 所在那一塊在延後批次裡排著的新格子與要重算分房的格子當下登錄（同一個呼叫裡），別的塊照舊等。
--- 按地下室裡的開關或燈時用（Circuits.press）：有市電時開關要自己或四周 3×3 有一格在房間裡才算有電（IsoLightSwitch.java:
--- 415-466 canSwitchLight、isBuildingSquare），還沒登錄的那一塊沒有房間，按了不會動。這一塊沒有排著的不做事、回 false。
--- 選用的第四個參數 split＝true（放開關、放燈，Circuits.autoWire、lampPlaced）：分法沒變就不做、排著的照舊等延後批次。
--- 自動接線只看分房；每放一個就把排著的登錄提前的話，專用伺服器裝一個牆上開關就重登錄那一棟一次（實機 56–73 ms）
-function Basement.growNow(x, y, z, ...)
-    local split = ...
-    if isClient() or z ~= Z then return false end
-    local id = cells[key(x, y)]
-    if not id then return false end
+-- 塊 id 在延後批次裡排著的新格子與要重算分房的格子當下做（同一個呼叫裡），別的塊照舊等。part＝Basement.resplit 算好的
+-- { 房號, 房間數 }：沒有排著的也做。回 nil＝沒有要做的，否則回登錄成不成功
+local function flushBlock(id, part)
     local list, dk, sk = {}, {}, {}
     for k, v in pairs(due) do
         if cells[k] == id then
@@ -1201,16 +1195,36 @@ function Basement.growNow(x, y, z, ...)
     for k in pairs(stale) do
         if cells[k] == id then sk[#sk + 1] = k end
     end
-    if #dk + #sk == 0 then return false end
-    if split then
-        local room = Basement.split(id)
-        if not room or samePart(blocks[id].room, room, blocks[id].tiles) then return false end
-    end
+    if #dk + #sk == 0 and not part then return nil end
     for _, k in ipairs(dk) do due[k] = nil end
     for _, k in ipairs(sk) do stale[k] = nil end
-    local ok, done = pcall(refresh, { [id] = true }, list)
+    local ok, done = pcall(refresh, { [id] = part or true }, list)
     if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
     return ok and done == true
+end
+
+-- 伺服器與單機：(x, y, z) 所在那一塊排著的當下做（flushBlock）。按地下室裡的開關或燈時用（Circuits.press）：有市電時開關要
+-- 自己或四周 3×3 有一格在房間裡才算有電（IsoLightSwitch.java:415-466 canSwitchLight、isBuildingSquare），還沒登錄的那一塊
+-- 沒有房間，按了不會動。這一塊沒有排著的不做事、回 false
+function Basement.growNow(x, y, z)
+    if isClient() or z ~= Z then return false end
+    local id = cells[key(x, y)]
+    return id ~= nil and flushBlock(id, nil) == true
+end
+
+-- 伺服器與單機：自動接線、按沒接燈的牆上開關前（Circuits.autoWire、lampPlaced、press）照現在的牆確認 (x, y, z) 所在那一塊的
+-- 分房。原版與別的 MOD 蓋的牆沒有事件、本工具蓋的牆要停手 GROW_QUIET 才分、巡查每 10 遊戲分鐘一次：照舊的分法接線會接到
+-- 牆另一邊、寫進線路帳本，之後分好了也不會拔。分法變了當下換（那一塊排著的一起做）；沒變不做事，排著的照舊等延後批次
+-- （每裝一個牆上開關就提前登錄的話，專用伺服器每裝一個就重登錄那一棟一次，實機 56–73 ms）。花一次 split。
+-- 回 false＝那一塊有格子沒載入、分不了，呼叫端不照舊的分法接線；不是本 MOD 地下室的格子回 true
+function Basement.resplit(x, y, z)
+    if isClient() or z ~= Z then return true end
+    local id = cells[key(x, y)]
+    if not id then return true end
+    local room, n = Basement.split(id)
+    if not room then return false end
+    if not samePart(blocks[id].room, room, blocks[id].tiles) then flushBlock(id, { room, n }) end
+    return true
 end
 
 -- 伺服器與單機，每 10 遊戲分鐘（BasementLedger 掛 EveryTenMinutes，GameTime.java:617-631；一天 90 分鐘的預設下每 37.5 秒）：
