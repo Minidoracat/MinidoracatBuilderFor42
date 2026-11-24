@@ -6,12 +6,15 @@ require "MinidoracatBuilder/Messages"
 require "MinidoracatBuilder/Materials"
 require "TimedActions/MinidoracatBuilderPlaceAction"
 require "TimedActions/MinidoracatBuilderDismantleAction"
+require "TimedActions/MinidoracatBuilderStandAction"
 require "MinidoracatBuilder/Place"
+require "MinidoracatBuilder/Check"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
 MinidoracatBuilder.Client = Client
 local Entry, Messages, Materials = MinidoracatBuilder.Entry, MinidoracatBuilder.Messages, MinidoracatBuilder.Materials
+local Place, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Check
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
@@ -155,20 +158,46 @@ end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
--- 佇列空了以後 Queue.tick 照它提示。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，
--- Check.near）
+-- 佇列空了以後 Queue.tick 照它提示。地板、屋頂的第 2 格起排隊當下沒找到站位的，先排站位動作，輪到時（前一格已蓋好）
+-- 才找（Client.stand）。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，Check.near）
+local DEFER = { floor = true, roof = true }
 local function queue(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
     if walk and b.kind == "water" and #b.cells > 1 then return queueDig(b) end
     for i, c in ipairs(b.cells) do
-        if walk and walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) == false then
+        local r = walk and walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
+        if walk and r ~= true and i > 1 and DEFER[b.kind] then
+            ISTimedActionQueue.add(MinidoracatBuilderStandAction:new(b.player, b.n, i))
+        elseif walk and r == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
             b.noRoom = i
             return
         end
         ISTimedActionQueue.add(MinidoracatBuilderPlaceAction:new(b.player, b.n, i))
     end
+end
+
+-- 站位動作（MinidoracatBuilderStandAction）開始前：單機、請求已換掉，或多人時前一格已同步到客戶端（這一格有地板或屋頂撐著）
+function Client.standReady(n, i)
+    local b = Client.pending
+    if not isClient() or not (b and b.n == n) then return true end
+    local c = b.cells[i]
+    if b.kind == "roof" then return Place.roofAt(c[1], c[2], c[3]) end
+    return Place.floorAt(c[1], c[2], c[3])
+end
+
+-- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
+-- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。都不行時記 noRoom、回 false
+function Client.stand(n, i)
+    local b = Client.pending
+    if not (b and b.n == n) then return false end
+    local c = b.cells[i]
+    if walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) ~= false then return true end
+    if Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then return true end
+    print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped at " .. i)
+    b.noRoom = i
+    return false
 end
 
 local function remember(cmd, args)

@@ -439,8 +439,8 @@ end
 
 -- 一位玩家的第一筆：還沒送的等動作佇列空了送；送出的收下後佇列空了一陣子還沒蓋完＝停下了，取消全部、提示一次。
 -- 佇列空了分不出是玩家自己走開、按 ESC，還是路徑走不通（動作停下一律 resetQueue，不留原因：ISBaseTimedAction.lua:63-64），
--- 所以只有排隊時就知道的「旁邊沒空位」（Client.lua 的 queue 記在 noRoom）另外說；其他照實說蓋好幾格。材料是一格一格在
--- Server.complete 扣的（Place.build 成功後才 Materials.consume），停下時沒蓋的格子沒有扣。
+-- 所以只有找站位時就知道的「旁邊沒空位」（Client.lua 的 queue，或輪到那一格時的 Client.stand，記在 noRoom）另外說；其他照實說
+-- 蓋好幾格。材料是一格一格在 Server.complete 扣的（Place.build 成功後才 Materials.consume），停下時沒蓋的格子沒有扣。
 -- 兩筆之間（上一筆最後一格的 placed 到了、動作還在跑）按取消或走開：原版清掉動作後佇列也是空的，要先看按鍵，不然下一筆照送。
 -- 更早一點（最後一格的動作做完了、placed 還沒到）按一下就放開的，輪到下一筆時已經讀不到：動作佇列空著時看到就記在 s.cut
 local function step(s, j)
