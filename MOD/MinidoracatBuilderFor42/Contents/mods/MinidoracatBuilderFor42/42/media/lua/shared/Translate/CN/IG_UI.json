@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "要站在旁边已经挖开的格子上（东西南北其中一格）才能挖。走到那里再挖。",
   "IGUI_MBLD_Refuse_DIG_DONE": "这格已经挖开了，换旁边还没挖的格子。",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "加开的入口：楼梯的 3 格和楼梯脚前面那一格都要已经挖开，先用「地下室挖一格」挖好再放。要开新的地下室，整座楼梯要离这个地下室至少一格。",
+  "IGUI_MBLD_Basement_Partial": "这次挖掘有一部分没做好（例如入口的洞或外围的土墙），材料已经扣除。请管理员查看 console.txt 里「basement ... failed」那一行。",
   "IGUI_MBLD_Refuse_DIG_HUNG": "这面土墙上挂着东西（画、开关、墙面装饰或漆）。先取下来或拆掉，再往这边挖。"
 }

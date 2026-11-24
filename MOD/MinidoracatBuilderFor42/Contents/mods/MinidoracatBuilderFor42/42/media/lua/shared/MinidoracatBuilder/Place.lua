@@ -1438,12 +1438,22 @@ end
 local function newLight(c)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
+    -- 本 MOD 地下室的牆上開關由 Circuits 切：伺服器上先把那格記成開關格、摘掉房間（Basement.setSwitchTile，只在伺服器做事），
+    -- 建構子就不把它收進房間的開關清單（IsoLightSwitch.java:89-100）
+    local Basement = MinidoracatBuilder.Basement
+    local under = Basement and Rules.switchProps(p) and Basement.has(sq:getX(), sq:getY(), sq:getZ())
+    if under and Basement.setSwitchTile then Basement.setSwitchTile(sq:getX(), sq:getY(), true) end
     local obj = IsoLightSwitch.new(getCell(), sq, spr, sq:getRoomID())
     obj:addLightSourceFromSprite()
     -- 燈蓋好就開（同原版搬燈，ISMoveableSpriteProps.lua:2329）。格子有房間時，開關（沒有 lightR）沿用建構子照房間設的狀態
     -- （IsoLightSwitch.java:90-96）：強制開的話房間燈關著時開關顯示開、房間暗，第一次按看起來沒反應。有房間的是地圖房屋，
-    -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開
-    if p:has("lightR") or not sq:getRoom() then obj:setActivated(true) end
+    -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開。
+    -- 伺服器上地下室的牆上開關先關，同一間已有的開關是開的話放好後跟著開（Circuits.placed）
+    if under and isServer() then
+        obj:setActivated(false)
+    elseif p:has("lightR") or not sq:getRoom() then
+        obj:setActivated(true)
+    end
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
     if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = spr:getName()

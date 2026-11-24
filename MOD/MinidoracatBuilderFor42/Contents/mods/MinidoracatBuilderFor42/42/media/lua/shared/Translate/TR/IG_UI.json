@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Kazmak için hemen yanındaki kazılmış bir kareye (kuzey, güney, doğu ya da batı) geç.",
   "IGUI_MBLD_Refuse_DIG_DONE": "Bu kare zaten kazılmış. Yanında henüz kazılmamış birini seç.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Ek bir giriş için merdivenin 3 karesi ve merdiven dibinin önündeki kare zaten kazılmış olmalı: önce \"Bodrum Karesi Kaz\" ile kaz. Yeni bir bodrum için merdivenin tamamı bu bodrumdan en az bir kare uzakta olmalı.",
+  "IGUI_MBLD_Basement_Partial": "Bu kazının bir kısmı tamamlanmadı (örneğin giriş açıklığı veya dış toprak duvarlar). Malzemeler yine de harcandı. Yöneticiler: console.txt içindeki \"basement ... failed\" satırına bakın.",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Bu toprak duvarda asılı bir şey var (tablo, anahtar, duvar süsü ya da boya). Buradan kazmadan önce indir ya da kaldır."
 }

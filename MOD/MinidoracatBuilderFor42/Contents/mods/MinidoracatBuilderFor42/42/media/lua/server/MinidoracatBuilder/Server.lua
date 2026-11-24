@@ -478,13 +478,13 @@ function Server.complete(player, n, i)
     -- 地下室 MOD 外邊的土牆（Place.check 放行了才蓋得到這裡）：拆不掉就和蓋到一半出錯一樣撤回、不扣料
     if ok then ok, err = pcall(Place.clearDirt, entry.kind, cells) end
     -- 挖地下室：新挖的格數（磨鏟子用）要在記進集合之前數；帳本記不進去照蓋到一半出錯撤回（commit 自己拿掉寫了一半的）
-    local dug, holes = 0, nil
+    local dug, holes, partial = 0, nil, nil
     if ok and entry.kind == "dig" then
         local Basement = MinidoracatBuilder.Basement
         for _, c in ipairs(cells) do
             if c.role ~= "hole" and c.role ~= "platform" and not Basement.has(c.x, c.y, c.z) then dug = dug + 1 end
         end
-        ok, holes = pcall(MinidoracatBuilder.BasementLedger.commit, player, cells, a)
+        ok, holes, partial = pcall(MinidoracatBuilder.BasementLedger.commit, player, cells, a)
         if not ok then err = holes end
     end
     if not ok then
@@ -552,7 +552,8 @@ function Server.complete(player, n, i)
     it.left = it.left - 1
     it.exp = now() + INTENT_TTL_MS
     if it.left <= 0 then Server.intents[keyOf(player)] = nil end
-    Server.send(player, "placed", { n = n, i = i, replaced = rep and true or nil })
+    -- partial：地下室這次有一步沒做完（BasementLedger.commit 已記 log），客戶端提示蓋的人
+    Server.send(player, "placed", { n = n, i = i, replaced = rep and true or nil, partial = partial or nil })
     return true
 end
 

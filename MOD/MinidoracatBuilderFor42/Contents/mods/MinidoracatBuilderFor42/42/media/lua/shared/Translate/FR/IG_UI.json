@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Placez-vous sur une case déjà creusée juste à côté (nord, sud, est ou ouest) pour la creuser.",
   "IGUI_MBLD_Refuse_DIG_DONE": "Cette case est déjà creusée. Choisissez-en une à côté qui ne l'est pas.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Pour une entrée supplémentaire, les 3 cases de l'escalier et la case devant le pied de l'escalier doivent déjà être creusées : creusez-les d'abord avec \"Creuser une case de sous-sol\". Pour un nouveau sous-sol, gardez tout l'escalier à au moins une case de celui-ci.",
+  "IGUI_MBLD_Basement_Partial": "Une partie de ce creusement n'a pas été terminée (par exemple l'ouverture de l'entrée ou les murs de terre extérieurs). Les matériaux ont quand même été utilisés. Admins : voir la ligne \"basement ... failed\" dans console.txt.",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Quelque chose est fixé sur ce mur de terre (un tableau, un interrupteur, une décoration murale ou de la peinture). Décrochez-le ou retirez-le avant de creuser par ici."
 }
