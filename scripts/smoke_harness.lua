@@ -3993,6 +3993,40 @@ local function circuitScenario()
     rooms["103,101,0"] = nil
     check(r.code == nil and nS(r) == 2, "接線模式再點已接的開關：從線路拿掉")
 
+    -- 地下層 z=-1：引擎查區域會陣列越界、記錯誤後回 nil（DataChunk.java:124-126），四個入口都不能去查
+    do
+        local under = 0
+        local inner = IsoRegions.getIsoWorldRegion
+        IsoRegions.getIsoWorldRegion = function(x, y, z)
+            if z < 0 then under = under + 1 return nil end
+            return inner(x, y, z)
+        end
+        for x = 100, 103 do square(x, 100, -1) end
+        local realAt = at
+        at = function(x, y) return squares[x .. "," .. y .. ",-1"] end
+        local B1, BL = light(101, 100, swS, "ours"), light(102, 100, lampS, "ours")
+        local BL2 = light(103, 100, lampS, "ours")
+        at = realAt
+        sent = {}
+        Circuits.placed(P, { B1 })
+        check(last().code == "NOT_ENCLOSED" and under == 0, "地下層放開關：NOT_ENCLOSED，不查區域（" .. under .. " 次）")
+        r = wire(P, "room", B1)
+        check(r.code == "NOT_ENCLOSED" and under == 0, "地下層按「接同一房間」：NOT_ENCLOSED，不查區域（" .. under .. " 次）")
+        r = wire(P, "add", B1, BL)
+        check(r.code == nil and nL(r) == 1, "地下層手動接燈：照常接上")
+        nowMs = nowMs + 2000
+        local before = BL.on
+        P.pos.z = -1
+        local a = act(P, B1)
+        P.pos.z = 0
+        check(a == true and BL.on ~= before and under == 0, "地下層按開關：切自己的線路，不查區域（" .. under .. " 次）")
+        sent = {}
+        Circuits.placed(P, { BL2 })
+        check(#sent == 0 and under == 0, "地下層放燈：不自動接、不回覆，不查區域（" .. under .. " 次）")
+        fire("OnObjectAboutToBeRemoved", B1) -- 拆掉開關、線路跟著刪，後面數線路條數的斷言不受影響
+        IsoRegions.getIsoWorldRegion = inner
+    end
+
     -- 接線指令：手動加室外那盞、限流、範圍、權限、上限
     r = wire(P, "add", O.SW1, O.OUT)
     check(r.code == nil and nL(r) == 6 and r.op == "add", "接線模式加燈：室外那盞接上")

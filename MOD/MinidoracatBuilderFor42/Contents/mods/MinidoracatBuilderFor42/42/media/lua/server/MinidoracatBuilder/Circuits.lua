@@ -283,6 +283,8 @@ end
 -- 那一格的區域編號與區域；isEnclosed 為真才回（small＝true 時還要不超過 ROOM_MAX 格）。編號會變（IsoRegionManager.java:26），
 -- 只在這一次比
 local function roomOf(x, y, z, small)
+    -- 地下沒有區域資料，引擎查 z < 0 會陣列越界、記一大段錯誤；引擎自己的入口也先擋（IsoGridSquare.java:9987-9989）
+    if z < 0 then return nil end
     local r = IsoRegions.getIsoWorldRegion(x, y, z)
     if not (r and r:isEnclosed()) then return nil end
     if small and r:getSquareSize() > Circuits.ROOM_MAX then return nil end
