@@ -22481,6 +22481,50 @@ end)()
         K.pos.x, K.pos.y = 532.5, 532.5
     end
 
+    -- 8c. 地面覆蓋等同格的地板先蓋（審查 1124 Codex）：A（500,500）只有半格、B（501,500）是地板＋同款半格，玩家在西北角外，
+    --     蛇形從 A 起。假伺服器照 Server.complete 換地圖地板：蓋地板時那格掛著的覆蓋連帳本一起沒了（不是地毯，見「換地圖
+    --     地板（不算替換）」那條）。蓋完 B 的地板、半格與帳本都在（✗ 第一批 A、B 的半格一起送，B 的半格被地板拆掉）
+    do
+        local realPush8c = Q.push
+        ENT.pp_o = { kind = "floorOverlay", spr = "pp_o" }
+        local floorAt, hung = {}, {}
+        Q.push = function(_, id, anchors, _, _, opts)
+            pushes[#pushes + 1] = { id = id, anchors = anchors }
+            for _, a in ipairs(anchors) do
+                local key = a[1] .. "," .. a[2]
+                if id == "pp_a" then floorAt[key], hung[key] = id, nil else hung[key] = id end
+            end
+            opts.onDone({ owner = "plan", count = #anchors, placed = #anchors, stopped = false })
+            return #pushes
+        end
+        sb.MaxCellsPerDrag = 8
+        R.stop()
+        pl, S = Plan.new("overlayFirst"), {}
+        local fa, ov = Plan.item(pl, "pp_a"), Plan.item(pl, "pp_o")
+        S[Plan.add(pl, 0, 0, 0, 0, 0, ov)] = "ok"
+        S[Plan.add(pl, 1, 0, 0, 0, 0, fa)] = "ok"
+        S[Plan.add(pl, 1, 0, 0, 0, 0, ov)] = "ok"
+        K.pos.x, K.pos.y = 499.5, 499.5
+        pushes = {}
+        R.start(K)
+        for _ = 1, 200 do
+            if R.state() == "done" then break end
+            run(1)
+        end
+        local seq = {}
+        for _, b in ipairs(pushes) do
+            local cells = {}
+            for _, a in ipairs(b.anchors) do cells[#cells + 1] = a[1] .. "," .. a[2] end
+            seq[#seq + 1] = b.id .. "@" .. table.concat(cells, "+")
+        end
+        check(R.state() == "done" and (R.reason()) == "DONE" and floorAt["501,500"] == "pp_a" and hung["501,500"] == "pp_o"
+            and hung["500,500"] == "pp_o",
+            "照圖蓋：同格還有地板沒蓋時那格的地面覆蓋不先蓋，蓋完 B 的地板、半格與帳本都在（" .. table.concat(seq, " ") .. "）")
+        R.stop()
+        ENT.pp_o, Q.push, sb.MaxCellsPerDrag, pushes = nil, realPush8c, 8, {}
+        K.pos.x, K.pos.y = 532.5, 532.5
+    end
+
     -- 9. 伺服器限流：照圖蓋照這台客戶端最近一個窗送過的請求數節流（手動送的也算）、被限流時等一下重送、連續被限流才暫停。
     --    假伺服器照 Server 的 rateOk 算（每人一個窗，窗從窗外的第一個請求起算 RATE_WINDOW_MS、含兩端，超過 RATE_MAX
     --    不收），收下的瞬間蓋好；假的 Queue 照真的一樣經過 Client 的送出點記一筆（Client.build 裡的 Client.sent）

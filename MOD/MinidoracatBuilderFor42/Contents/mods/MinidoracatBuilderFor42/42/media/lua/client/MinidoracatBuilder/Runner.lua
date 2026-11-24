@@ -95,12 +95,20 @@ local function kindOf(id)
     return e and e.kind or nil
 end
 
--- 項目 → 段（查過的記著；換藍圖時清掉）
-local segCache = {}
+-- 項目 → 種類、段（查過的記著；換藍圖時清掉）
+local kindCache, segCache = {}, {}
+local function cachedKind(id)
+    local k = kindCache[id]
+    if k == nil then
+        k = kindOf(id) or false
+        kindCache[id] = k
+    end
+    return k
+end
 local function segmentOf(id)
     local s = segCache[id]
     if s == nil then
-        local k = kindOf(id)
+        local k = cachedKind(id)
         s = k and Runner.SEGMENT[k] or LAST_SEGMENT
         segCache[id] = s
     end
@@ -624,6 +632,20 @@ local function snakeKey(x, y)
     return r * s.w + k
 end
 
+-- 這片（地面覆蓋）那格還有沒蓋好、之後還會蓋的地板：換地板（Place.clearFloor）連掛在舊地板上的覆蓋一起拆，只有地毯掛回
+-- （Server.complete 的 rugsOf），先蓋覆蓋的話料和帳本都白費。地毯也一起等，不分兩種規則
+local function floorPending(plan, p)
+    local PC = planCheck()
+    for _, q in ipairs(B.Plan.at(plan, p.x, p.y, p.z)) do
+        local id = not (st.skip[q] or st.placed[q]) and resolve(q)
+        if id and cachedKind(id) == "floor" then
+            local s, code = PC.state(q)
+            if s ~= "done" and (s ~= "blocked" or code == "WAIT" or (PC.RECHECK and PC.RECHECK[code])) then return true end
+        end
+    end
+    return false
+end
+
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、順序最前（key：地板那一段是蛇形序號，其他段是離玩家的
 -- 距離）的那片，再收同項目、同層、同疊放值順序最前的幾片。
 -- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
@@ -650,7 +672,8 @@ local function pickBatch(player, plan, settled)
                 if s and (not pendingSeg or s < pendingSeg) then pendingSeg = s end
             elseif state == "ok" or (state == "short" and boxes) then
                 local id, x, y, z, d, o, w = resolve(p)
-                if id and not (settled and not settled(x, y, z)) then
+                if id and not (settled and not settled(x, y, z))
+                    and not (cachedKind(id) == "floorOverlay" and floorPending(plan, p)) then
                     local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id) }
                     c.key = c.seg == 1 and snakeKey(x, y) or (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2
                     cand[#cand + 1] = c
@@ -1015,7 +1038,7 @@ function Runner.start(player)
     if not plan or not (PM.origin and PM.origin()) or not (PC and PC.state and PC.resolve) then return nil, "NO_PLAN" end
     if not player or player:isDead() then return nil, "NO_PLAN" end
     if handBusy(player) then return nil, "BUSY" end
-    if st.plan ~= plan then segCache = {} end
+    if st.plan ~= plan then kindCache, segCache = {}, {} end
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
