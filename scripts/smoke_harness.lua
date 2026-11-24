@@ -4500,6 +4500,11 @@ local function circuitScenario()
         P.pos.x, P.pos.y, P.pos.z = 101.5, 101.5, 0
         check(onlyA and onlyB, "c15 牆剛蓋好就按沒接燈的牆上開關：只切自己那一間的，牆另一邊的開關不跟著切（" .. tostring(pa)
             .. tostring(onlyA) .. " " .. tostring(pb) .. tostring(onlyB) .. "）")
+        -- 分法沒變（牆早就算過）時放開關、放燈不把排著的提前做：split 那一種回 false，排著的還在（接著不帶 split 的做得到）
+        Bm.dirty(111, 100, -1)
+        local lazy, still = Bm.growNow(111, 100, -1, true), Bm.growNow(111, 100, -1)
+        check(lazy == false and still == true, "c15 分法沒變時放開關、放燈不提前登錄，排著的留給延後批次（" .. tostring(lazy)
+            .. " " .. tostring(still) .. "）")
         fire("OnObjectAboutToBeRemoved", SA)
         fire("OnObjectAboutToBeRemoved", SB)
         getOnlinePlayers = keepOnline

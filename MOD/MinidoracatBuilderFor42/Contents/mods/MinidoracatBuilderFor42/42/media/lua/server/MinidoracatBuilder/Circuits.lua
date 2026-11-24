@@ -587,7 +587,7 @@ end
 -- 開關放下或按「接同一房間」：同一個封閉房間裡、還沒接在別條線路的燈接上。開關自己還沒有線路時，房間裡另一個開關的線路
 -- 放得下就併進去（雙切）；都沒有線路的話和房間裡另一個開關接成一條。別條線路的燈不搶、只記數。每片燈、被併的開關與
 -- 成員都照預覽查 BUILD（不寫稽核；沒權限的跳過），全部查完才寫入。地下室剛蓋的牆還排在延後批次時先重算那一塊的分房
--- （Basement.growNow），不照舊的分法接到牆另一邊。
+-- （Basement.growNow 的 split：分法變了才做），不照舊的分法接到牆另一邊。
 -- 回 code（NOT_ENCLOSED／INTERNAL）或 nil, { id（沒有線路時 nil）, n = 接上幾片, taken = 別條線路的幾盞, skipped = 太遠、
 -- 線路滿了或沒權限的幾盞, jx, jy = 併進的那個開關, later = 之後放進房間的燈會自動接上 }
 function Circuits.autoWire(player, sw)
@@ -595,7 +595,7 @@ function Circuits.autoWire(player, sw)
     if not d then return "INTERNAL" end
     local sq = sw:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
-    B.Basement.growNow(x, y, z)
+    B.Basement.growNow(x, y, z, true)
     local rid = roomOf(x, y, z, true)
     if not rid then return "NOT_ENCLOSED" end
     local lamps, switches = roomScan(x, y, z, rid)
@@ -680,7 +680,7 @@ function Circuits.lampPlaced(player, lamp)
     local d = data()
     if not d then return nil end
     local sq = lamp:getSquare()
-    B.Basement.growNow(sq:getX(), sq:getY(), sq:getZ())
+    B.Basement.growNow(sq:getX(), sq:getY(), sq:getZ(), true)
     local rid = roomOf(sq:getX(), sq:getY(), sq:getZ(), true)
     if not rid then return nil end
     local _, switches = roomScan(sq:getX(), sq:getY(), sq:getZ(), rid)

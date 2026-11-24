@@ -1183,8 +1183,11 @@ end
 
 -- 伺服器與單機：(x, y, z) 所在那一塊在延後批次裡排著的新格子與要重算分房的格子當下登錄（同一個呼叫裡），別的塊照舊等。
 -- 按地下室裡的開關或燈時用（Circuits.press）：有市電時開關要自己或四周 3×3 有一格在房間裡才算有電（IsoLightSwitch.java:
--- 415-466 canSwitchLight、isBuildingSquare），還沒登錄的那一塊沒有房間，按了不會動。這一塊沒有排著的不做事、回 false
-function Basement.growNow(x, y, z)
+-- 415-466 canSwitchLight、isBuildingSquare），還沒登錄的那一塊沒有房間，按了不會動。這一塊沒有排著的不做事、回 false。
+-- 選用的第四個參數 split＝true（放開關、放燈，Circuits.autoWire、lampPlaced）：分法沒變就不做、排著的照舊等延後批次。
+-- 自動接線只看分房；每放一個就把排著的登錄提前的話，專用伺服器裝一個牆上開關就重登錄那一棟一次（實機 56–73 ms）
+function Basement.growNow(x, y, z, ...)
+    local split = ...
     if isClient() or z ~= Z then return false end
     local id = cells[key(x, y)]
     if not id then return false end
@@ -1199,6 +1202,10 @@ function Basement.growNow(x, y, z)
         if cells[k] == id then sk[#sk + 1] = k end
     end
     if #dk + #sk == 0 then return false end
+    if split then
+        local room = Basement.split(id)
+        if not room or samePart(blocks[id].room, room, blocks[id].tiles) then return false end
+    end
     for _, k in ipairs(dk) do due[k] = nil end
     for _, k in ipairs(sk) do stale[k] = nil end
     local ok, done = pcall(refresh, { [id] = true }, list)
