@@ -4527,6 +4527,29 @@ local function circuitScenario()
         local still = Bm.growNow(111, 100, -1)
         check(still == true, "c15 分法沒變時放開關、放燈不提前登錄，排著的留給延後批次（" .. tostring(still) .. "）")
         fire("OnObjectAboutToBeRemoved", S5)
+        -- 開關的圖沒有名稱（別的 MOD 用 setSprite(String) 換的，Ledger.key 回 nil）、原版的牆、沒有排著的：照樣照當下的牆
+        -- 重分房、重查房號，牆另一邊的不跟著切
+        local Ldg = MinidoracatBuilder.Ledger
+        local realKey = Ldg.key
+        Ldg.key = function(o) if o == SA or o == SB then return nil end return realKey(o) end
+        SA.on, SB.on = true, true
+        P.pos.x, P.pos.y, P.pos.z = 110.5, 100.5, -1
+        local pn = pressStale(SA, false)
+        Ldg.key = realKey
+        local onlyN = pn == true and SA.on == false and SB.on == true
+        -- 那一塊有一格沒載入、又有排著的：按沒接燈的牆上開關照樣只掃一次，排著的照樣做掉
+        Bm.add({ { 112, 101 } }) -- 沒有格子＝沒載入
+        Bm.dirty(111, 100, -1)
+        local nU = 0
+        Bm.split = function(...) nU = nU + 1 return realSplit(...) end
+        nowMs = nowMs + 2000
+        local pu = act(P, SA)
+        Bm.split = realSplit
+        local drained = Bm.growNow(111, 100, -1) == false
+        P.pos.x, P.pos.y, P.pos.z = 101.5, 101.5, 0
+        check(onlyN and pu == true and nU == 1 and drained,
+            "c15 開關的圖沒有名稱也照當下的牆重分房；有格子沒載入又有排著的時按開關只掃一次、排著的照樣做掉（"
+            .. tostring(pn) .. tostring(onlyN) .. " " .. tostring(pu) .. " " .. nU .. " " .. tostring(drained) .. "）")
         fire("OnObjectAboutToBeRemoved", SA)
         fire("OnObjectAboutToBeRemoved", SB)
         -- 那一塊有一格沒載入（分不了房）：放開關回 PART_UNLOADED、什麼都不接，不照舊的一間接到牆另一邊；放燈也不接

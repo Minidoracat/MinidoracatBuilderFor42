@@ -1034,7 +1034,8 @@ function Basement.split(id)
     return room, n
 end
 
--- 伺服器與單機：塊 ids（{ [編號]＝true，或已經算好的 { 房號, 房間數 }（Basement.resplit）}）重算分房，list（新挖的格子）
+-- 伺服器與單機：塊 ids（{ [編號]＝true，或已經算好的 { 房號, 房間數 }（Basement.resplit），或 false＝這次試過分不了、
+-- 不再算）重算分房，list（新挖的格子）
 -- 與要重建的棟一次登錄；專用伺服器上這一批有新格子或分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與
 -- 分房，登錄失敗也推），分房記進帳本（save）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。選用的
 -- 第三個參數 only（flushBlock）：只登錄這幾塊，別的塊排著的重建留給延後批次。回登錄成不成功
@@ -1043,7 +1044,7 @@ local function refresh(ids, list, ...)
     local push = {}
     for id, v in pairs(ids) do
         local room, n
-        if v == true then room, n = Basement.split(id) else room, n = v[1], v[2] end
+        if v == true then room, n = Basement.split(id) elseif v then room, n = v[1], v[2] end
         if room and renumber(id, room, n) then push[id] = true end
     end
     for _, t in ipairs(list) do push[cells[key(t[1], t[2])]] = true end
@@ -1186,8 +1187,8 @@ function Basement.dirty(x, y, z)
 end
 
 -- 塊 id 在延後批次裡排著的新格子與要重算分房的格子當下做（同一個呼叫裡），只登錄這一塊（別的塊排著的照舊等）。
--- part＝Basement.resplit 算好的 { 房號, 房間數 }（不再算一次）；force＝沒有排著的也做（分法變了）。回 nil＝沒有要做的，
--- 否則回登錄成不成功
+-- part＝Basement.resplit 算好的 { 房號, 房間數 }，或 false＝它試過分不了（兩種都不再算一次；nil＝要算）；force＝沒有
+-- 排著的也做（分法變了）。回 nil＝沒有要做的，否則回登錄成不成功
 local function flushBlock(id, part, force)
     local list, dk, sk = {}, {}, {}
     for k, v in pairs(due) do
@@ -1202,7 +1203,7 @@ local function flushBlock(id, part, force)
     if #dk + #sk == 0 and not force then return nil end
     for _, k in ipairs(dk) do due[k] = nil end
     for _, k in ipairs(sk) do stale[k] = nil end
-    local ok, done = pcall(refresh, { [id] = part or true }, list, { [id] = true })
+    local ok, done = pcall(refresh, { [id] = part == nil or part }, list, { [id] = true })
     if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
     return ok and done == true
 end
@@ -1229,7 +1230,7 @@ function Basement.resplit(x, y, z, ...)
     if not id then return true end
     local room, n = Basement.split(id)
     local changed = room ~= nil and not samePart(blocks[id].room, room, blocks[id].tiles)
-    if changed or flush then flushBlock(id, room and { room, n } or nil, changed) end
+    if changed or flush then flushBlock(id, room and { room, n } or false, changed) end
     return room ~= nil
 end
 

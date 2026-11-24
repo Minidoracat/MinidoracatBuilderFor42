@@ -502,10 +502,13 @@ function Circuits.press(player, obj, id, ...)
         return false
     end
     if useDenied(player, x, y, z) then return false end
-    local t, ok = now(), rid and Ledger.key(obj)
-    if ok then
-        if cooling(lastPress[ok], t, Circuits.PRESS_MS) then return false end
-        lastPress[ok] = t
+    local t = now()
+    if rid then
+        local ok = Ledger.key(obj) -- 圖沒有名稱（別的 MOD 用 setSprite(String) 換的）時沒有鍵：不先擋，照樣重分房
+        if ok then
+            if cooling(lastPress[ok], t, Circuits.PRESS_MS) then return false end
+            lastPress[ok] = t
+        end
         B.Basement.resplit(x, y, z, true)
         rid = roomOf(x, y, z, false)
     else
