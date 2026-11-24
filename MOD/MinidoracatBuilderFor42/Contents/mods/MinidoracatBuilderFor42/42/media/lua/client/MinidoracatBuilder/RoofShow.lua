@@ -58,6 +58,13 @@ local function scan(s, x, y, z)
     end
 end
 
+-- 載入 chunk 時串流執行緒算格子型別（IsoChunk.java:2398-2467，WorldStreamer.java:480），可能正好在換著的那段；
+-- 主執行緒在尋路收進這個 chunk 前發 LoadGridsquare（IsoChunk.java:3834 早於 :3864），這時已換回，重算一次。
+-- 每載入一格叫一次，只在最後一次換型別後 HOT 毫秒內掛著
+local function loaded(sq)
+    if sq:has(T.UNUSED9) or sq:has(T.UNUSED10) or sq:has(T.UNUSED24) then sq:RecalcProperties() end
+end
+
 function RS.before(pn)
     RS.restore() -- 上一段繪製沒走到 DoBuilding（游標指在地圖外）或分割畫面的另一位玩家
     if block or not on() then return end
@@ -82,6 +89,7 @@ function RS.before(pn)
             for j = cy - D, cy + D do dirty[i .. "," .. j .. "," .. z] = { i, j, z } end
         end
     end
+    if not hot then Events.LoadGridsquare.Add(loaded) end
     used, hot, last = true, true, now
     cur = s
     for i = 1, s.n do s.list[i]:setTileType(SWAP[s.orig[i]]) end
@@ -101,23 +109,22 @@ end
 local function tick()
     RS.restore()
     block = false
-    if not used then
-        if not table.isempty(dirty) then flush() end
-        if hot and math.abs(getTimestampMs() - last) >= HOT then hot = false end
+    if used then
+        used = false
+        return
     end
-    used = false
+    if not hot then return end
+    if not table.isempty(dirty) then flush() end
+    if math.abs(getTimestampMs() - last) >= HOT then
+        hot = false
+        Events.LoadGridsquare.Remove(loaded)
+    end
 end
 
 -- 存檔畫縮圖也呼叫游標的 beforeWorldRender，卻不發 OnPostRender（GameWindow.java:1034-1037）：存檔起到下一次世界更新前不換
 local function saving()
     RS.restore()
     block = true
-end
-
--- 載入 chunk 時串流執行緒算格子型別（IsoChunk.java:2398-2467，WorldStreamer.java:480），可能正好在換著的那段；
--- 主執行緒在尋路收進這個 chunk 前發 LoadGridsquare（IsoChunk.java:3834 早於 :3864），這時已換回，重算一次
-local function loaded(sq)
-    if hot and (sq:has(T.UNUSED9) or sq:has(T.UNUSED10) or sq:has(T.UNUSED24)) then sq:RecalcProperties() end
 end
 
 -- 建造游標類別在第一次用到時才從這張表複製（Cursor.lua 的 base），所以掛在這裡就好；規劃與配方的游標各自掛
@@ -130,6 +137,5 @@ Events.OnDoTileBuilding3.Add(RS.restore)
 Events.OnPostRender.Add(RS.restore)
 Events.OnTickEvenPaused.Add(tick)
 Events.OnSave.Add(saving)
-Events.LoadGridsquare.Add(loaded)
 
 return RS

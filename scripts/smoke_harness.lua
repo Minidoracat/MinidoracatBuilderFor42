@@ -21425,15 +21425,26 @@ end)()
             if debug.getinfo(f, "S").source:find("RoofShow", 1, true) then return f end
         end
     end
-    local tickFn, saveFn, loadFn = mine("OnTickEvenPaused"), mine("OnSave"), mine("LoadGridsquare")
+    local function count(name)
+        local n = 0
+        for _, f in ipairs(handlers[name] or {}) do
+            if debug.getinfo(f, "S").source:find("RoofShow", 1, true) then n = n + 1 end
+        end
+        return n
+    end
+    local tickFn, saveFn = mine("OnTickEvenPaused"), mine("OnSave")
 
     check(type(B.Cursor.beforeWorldRender) == "function", "建造游標掛了 beforeWorldRender（Cursor.lua 的 base 會複製過去）")
     B.Cursor.beforeWorldRender(cur)
     check(same(types(), orig), "選項關著：渲染前不換型別")
+    tickFn()
+    check(count("LoadGridsquare") == 0, "選項沒開過：不掛 LoadGridsquare（每載入一格叫一次）")
 
     tick.v = true
     B.Cursor.beforeWorldRender(cur)
     check(same(types(), swappedTypes), "選項開著：同層斜屋頂格的 WestRoofB/M/T 換成替身，不是斜屋頂的格子、別層不動")
+    local loadFn = mine("LoadGridsquare")
+    check(count("LoadGridsquare") == 1, "換過型別才掛 LoadGridsquare")
     check(Rules.typeCode(T.UNUSED9) == nil, "Rules 不認替身：游標 render 在換回之後")
     B.Cursor.beforeWorldRender(cur)
     check(sB:getType() == T.UNUSED9, "同一段繪製再叫一次照樣是換著的")
@@ -21454,7 +21465,7 @@ end)()
     check(same(types(), orig), "連叫兩次換回不出錯、還是原型別")
 
     -- 存檔：OnSave 之後畫縮圖（只叫 beforeWorldRender、不發 OnPostRender），到下一次世界更新前都不換
-    check(type(saveFn) == "function" and type(tickFn) == "function" and type(loadFn) == "function", "掛了 OnSave、OnTickEvenPaused、LoadGridsquare")
+    check(type(saveFn) == "function" and type(tickFn) == "function", "掛了 OnSave、OnTickEvenPaused")
     B.Cursor.beforeWorldRender(cur)
     saveFn()
     check(same(types(), orig), "存檔先換回")
@@ -21534,8 +21545,15 @@ end)()
     check(recalc == 1, "最近換過型別：載入的格子帶替身才重算")
     now = now + 10000
     tickFn()
-    loadFn(loadSq({ [T.UNUSED10] = true }))
-    check(recalc == 1, "收起游標滿 10 秒後不再檢查")
+    check(count("LoadGridsquare") == 0, "收起游標滿 10 秒後拿掉 LoadGridsquare")
+    B.Cursor.beforeWorldRender(cur)
+    B.Cursor.beforeWorldRender(cur)
+    RS.restore()
+    check(count("LoadGridsquare") == 1, "再拿游標換型別：重新掛一次，不重複")
+    tickFn()
+    now = now + 10000
+    tickFn()
+    check(count("LoadGridsquare") == 0, "第二次到期也拿掉")
 
     for _, s in ipairs({ "10,10,1", "14,12,1", "11,10,1", "12,9,0", "13,10,1", "12,11,1", "200,200,1" }) do sqs[s] = nil end
     getCell, getSpecificPlayer, getTimestampMs, B.Window.options, FBORenderChunk = real.cell, real.spec, real.clock, real.opts, real.fbo
