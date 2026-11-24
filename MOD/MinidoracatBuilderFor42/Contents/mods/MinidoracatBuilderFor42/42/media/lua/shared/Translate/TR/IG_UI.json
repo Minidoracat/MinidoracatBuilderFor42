@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "Devre dolu (en fazla %1 düğme ve %2 lamba). Önce bir lambanın bağlantısını kes ya da başka bir düğmeden yeni bir devre başlat.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Bu lamba devredeki düğmeden çok uzak. Her düğmeye en fazla %1 kare ve %2 kat mesafede olmalı. Lambayı daha yakına inşa et.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "Burası kapalı bir oda değil, bu yüzden lamba bağlanmadı. Elle bağlamak için düğmeye sağ tıklayıp Kablolama... seç.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Bu bodrumun bir kısmı çok uzakta ve henüz yüklenmedi, bu yüzden odalar ayrılamıyor ve lamba bağlanmadı. Elle bağlamak için düğmeye sağ tıklayıp Kablolama... seç.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Bu lamba bu devreye bağlı değil.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "Bağlama başarısız. Tekrar dene; sürekli başarısız olursa bir yöneticiye bildir ve console.txt dosyanı ekle.",
   "IGUI_MBLD_WireRefuse_Other": "Bağlanamadı (%1). Tekrar dene; sürekli başarısız olursa console.txt dosyanla bildir.",

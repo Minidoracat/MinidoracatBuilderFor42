@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "O circuito está cheio (até %1 interruptores e %2 luzes). Desconecte uma luz primeiro ou comece outro circuito a partir de outro interruptor.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Esta luz está longe demais de um interruptor do circuito. Ela deve ficar a até %1 quadrados e %2 andares de cada interruptor. Construa a luz mais perto.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "Este não é um cômodo fechado, então nenhuma luz foi conectada. Clique no interruptor com o botão direito e escolha Fiação... para conectá-las à mão.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Uma parte deste porão está longe demais e ainda não carregou, então não dá para separar os cômodos e nenhuma luz foi conectada. Clique no interruptor com o botão direito e escolha Fiação... para conectá-las à mão.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Esta luz não está conectada a este circuito.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "A fiação falhou. Tente de novo; se continuar falhando, avise a administração e envie seu console.txt.",
   "IGUI_MBLD_WireRefuse_Other": "Não foi possível conectar (%1). Tente de novo; se continuar falhando, relate o problema com seu console.txt.",

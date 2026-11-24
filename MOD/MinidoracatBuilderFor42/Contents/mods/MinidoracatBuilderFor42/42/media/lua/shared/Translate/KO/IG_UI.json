@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "회로가 가득 찼습니다(최대 스위치 %1개, 조명 %2개). 먼저 조명 하나를 배선 해제하거나 다른 스위치로 새 회로를 시작하세요.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "이 조명은 회로의 스위치에서 너무 멉니다. 모든 스위치에서 %1칸, %2층 이내여야 합니다. 조명을 더 가까이 지으세요.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "닫힌 방이 아니어서 조명을 배선하지 않았습니다. 스위치를 우클릭하고 '배선...'을 골라 직접 배선하세요.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "이 지하실의 일부가 너무 멀어 아직 불러오지 않아 방을 나눌 수 없으므로 조명을 배선하지 않았습니다. 스위치를 우클릭하고 '배선...'을 골라 직접 배선하세요.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "이 조명은 이 회로에 배선되어 있지 않습니다.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "배선에 실패했습니다. 다시 시도하고, 계속 실패하면 console.txt와 함께 관리자에게 알려 주세요.",
   "IGUI_MBLD_WireRefuse_Other": "배선할 수 없습니다(%1). 다시 시도하고, 계속 실패하면 console.txt와 함께 제보하세요.",

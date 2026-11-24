@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "线路已满（最多 %1 个开关、%2 盏灯）。先断开一盏，或用另一个开关另接一条线路。",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "这盏灯离线路上的开关太远：要在每个开关 %1 格内、上下 %2 层内。把灯建近一点。",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "这里不是封闭的房间，没有自动接灯。右键开关选「接线...」手动接。",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "这个地下室有一部分离得太远、还没加载，分不出房间，没有自动接灯。右键开关选「接线...」手动接。",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "这盏灯没有接在这条线路上。",
   "IGUI_MBLD_WireRefuse_INTERNAL": "接线失败。再试一次；一直失败请反馈给管理员，并附上 console.txt。",
   "IGUI_MBLD_WireRefuse_Other": "无法接线（%1）。再试一次；一直失败请附上 console.txt 反馈。",

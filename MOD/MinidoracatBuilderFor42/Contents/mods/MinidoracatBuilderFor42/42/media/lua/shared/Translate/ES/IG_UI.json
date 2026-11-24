@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "El circuito está lleno (hasta %1 interruptores y %2 luces). Desconecta primero una luz o empieza otro circuito desde otro interruptor.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Esta luz está demasiado lejos de un interruptor del circuito. Debe estar a %1 casillas y %2 niveles como máximo de cada interruptor. Construye la luz más cerca.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "Esto no es una habitación cerrada, así que no se conectó ninguna luz. Haz clic derecho en el interruptor y elige Cableado... para conectarlas a mano.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Una parte de este sótano está lejos y todavía no se ha cargado, así que no se pueden separar sus habitaciones y no se conectó ninguna luz. Haz clic derecho en el interruptor y elige Cableado... para conectarlas a mano.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Esta luz no está conectada a este circuito.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "El cableado falló. Inténtalo de nuevo; si sigue fallando, avisa a un admin y adjunta tu console.txt.",
   "IGUI_MBLD_WireRefuse_Other": "No se pudo conectar (%1). Inténtalo de nuevo; si sigue fallando, repórtalo con tu console.txt.",

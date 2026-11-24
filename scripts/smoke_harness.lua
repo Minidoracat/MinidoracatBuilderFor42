@@ -4461,6 +4461,8 @@ local function circuitScenario()
         -- 放燈：同一個呼叫裡照現在的牆分，不照舊的一間接到牆另一邊。開關那一次不標 dirty（原版的牆、「接同一房間」）
         local keepOnline = getOnlinePlayers
         getOnlinePlayers = keepOnline or function() return javaList({}) end -- 重算後推 block 要找附近的玩家；這一段沒有
+        Bm.growNow(111, 100, -1) -- 拆 US2 標的 dirty 先做掉：下面原版的牆那一次從沒有排著的狀態起跑
+        local clean = Bm.growNow(111, 100, -1) == false
         local function stale(mark)
             Bm.setRooms({ { { 110, 100 }, { 111, 100 }, { 112, 100 } } })
             if mark then Bm.dirty(111, 100, -1) end
@@ -4475,7 +4477,7 @@ local function circuitScenario()
         Circuits.placed(P, { down(110, 100, lampS) })
         local joined = false
         for _, m in ipairs(sent) do joined = joined or m.args.auto == "lamp" end
-        check(late.code == nil and nL(late) == 1 and wired(late, ML) and not wired(late, UL) and not joined,
+        check(clean and late.code == nil and nL(late) == 1 and wired(late, ML) and not wired(late, UL) and not joined,
             "c15 牆剛蓋好、分房還沒重算就放開關或燈：先重算那一塊，開關只接同一間的燈、牆另一邊新放的燈不接進它的線路（"
             .. tostring(late.code) .. " " .. nL(late) .. " " .. tostring(joined) .. "）")
         fire("OnObjectAboutToBeRemoved", US3)
@@ -4503,6 +4505,17 @@ local function circuitScenario()
         SA.on = true -- 兩個都開著再按另一邊：被誤切的那個才看得出來
         local pb = pressStale(SB, false)
         local onlyB = pb == true and SB.on == false and SA.on == true
+        -- 按一次只掃一次那一塊（排著的一起做）；同一個開關 PRESS_MS 內再按，掃之前就擋
+        local realSplit, nSplit = Bm.split, 0
+        Bm.split = function(...) nSplit = nSplit + 1 return realSplit(...) end
+        Bm.dirty(111, 100, -1)
+        nowMs = nowMs + 2000
+        local p1 = act(P, SA)
+        local p2 = act(P, SA)
+        Bm.split = realSplit
+        check(p1 == true and p2 == false and nSplit == 1,
+            "c15 按沒接燈的牆上開關只掃一次那一塊（排著的一起做）；同一個開關連按在掃之前就擋（" .. tostring(p1) .. " "
+            .. tostring(p2) .. " " .. nSplit .. "）")
         P.pos.x, P.pos.y, P.pos.z = 101.5, 101.5, 0
         check(onlyA and onlyB, "c15 牆剛蓋好就按沒接燈的牆上開關：只切自己那一間的，牆另一邊的開關不跟著切（" .. tostring(pa)
             .. tostring(onlyA) .. " " .. tostring(pb) .. tostring(onlyB) .. "）")
@@ -4516,7 +4529,7 @@ local function circuitScenario()
         fire("OnObjectAboutToBeRemoved", S5)
         fire("OnObjectAboutToBeRemoved", SA)
         fire("OnObjectAboutToBeRemoved", SB)
-        -- 那一塊有一格沒載入（分不了房）：放開關回 NOT_LOADED、什麼都不接，不照舊的一間接到牆另一邊；放燈也不接
+        -- 那一塊有一格沒載入（分不了房）：放開關回 PART_UNLOADED、什麼都不接，不照舊的一間接到牆另一邊；放燈也不接
         Bm.add({ { 112, 101 } }) -- 沒有格子＝沒載入
         Bm.setRooms({ { { 110, 100 }, { 111, 100 }, { 112, 100 }, { 112, 101 } } })
         local US4 = down(112, 100, swS)
@@ -4525,8 +4538,8 @@ local function circuitScenario()
         local un = last()
         sent = {}
         Circuits.placed(P, { down(110, 100, lampS) })
-        check(un.code == "NOT_LOADED" and nL(un) == 0 and #sent == 0,
-            "c15 那一塊有格子沒載入時放開關回 NOT_LOADED、放燈不接，不照舊的一間接到牆另一邊（" .. tostring(un.code) .. " "
+        check(un.code == "PART_UNLOADED" and nL(un) == 0 and #sent == 0,
+            "c15 那一塊有格子沒載入時放開關回 PART_UNLOADED、放燈不接，不照舊的一間接到牆另一邊（" .. tostring(un.code) .. " "
             .. nL(un) .. " " .. #sent .. "）")
         fire("OnObjectAboutToBeRemoved", US4)
         getOnlinePlayers = keepOnline
@@ -4838,6 +4851,15 @@ local function circuitScenario()
     local cB = Wiring.at(83, 106, 0)
     check(gone ~= nil and Wiring.mode == m and cB ~= nil and cB.e ~= cA.e,
         "同一格的燈被拒（GONE）：接線模式留著，下一次點換到另一盞")
+    -- 「接同一房間」時地下室有一部分沒載入（PART_UNLOADED）：說原因，接線模式留著，眼前的燈照樣手動接
+    local realAuto, realToastP, toldP, doneP = Circuits.autoWire, MinidoracatBuilder.Messages.toast, nil, false
+    Circuits.autoWire = function() return "PART_UNLOADED" end
+    MinidoracatBuilder.Messages.toast = function(_, text) toldP = text end
+    nowMs = nowMs + 300
+    Wiring.op("room", nil, function() doneP = true end)
+    Circuits.autoWire, MinidoracatBuilder.Messages.toast = realAuto, realToastP
+    check(Wiring.mode == m and doneP and toldP == "IGUI_MBLD_WireRefuse_PART_UNLOADED",
+        "「接同一房間」分不了房（PART_UNLOADED）：說原因、接線模式不關（" .. tostring(toldP) .. " " .. tostring(doneP) .. "）")
     lpSq.objects[#lpSq.objects + 1] = gone
     -- 自動接線的通知選對句子（getText 替身只回鍵名）
     local realToast, toldW = MinidoracatBuilder.Messages.toast, nil
@@ -10339,10 +10361,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local p = player({ id = 2301, x = 6101.5, y = 6100.5, z = Z })
         local p4 = player({ id = 2302, x = 6201.5, y = 6200.5, z = Z })
         setMode(true, false, p, p4)
-        local xs, t, west, east = {}, {}, {}, {}
+        local xs, t, west, east, wall6 = {}, {}, {}, {}, { cutW = true } -- wall6：x＝6103 那兩格共用，拿掉／蓋回那面牆用
         for x = 6100, 6104 do
             for y = 6100, 6101 do
-                xs[tk(x, y)], t[#t + 1] = cell(x, y, x == 6103 and { cutW = true } or nil), { x, y }
+                xs[tk(x, y)], t[#t + 1] = cell(x, y, x == 6103 and wall6 or nil), { x, y }
                 local side = x <= 6102 and west or east
                 side[#side + 1] = { x, y }
             end
@@ -10397,6 +10419,25 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "地下室沒接燈的牆上開關：重登錄後開關格不在矩形裡；按一個同一間的一起切（開、再按另一個關），隔壁間與接了燈的不動；"
                 .. "接了燈的照線路；canSwitchLight 不過就不動（" .. tostring(out) .. "," .. tostring(r1) .. "," .. tostring(r2)
                 .. "," .. tostring(r3) .. "," .. tostring(r4) .. "）")
+        -- 照當下的牆換分房（Basement.resplit，分法變了）時只登錄這一塊：另一塊排著的重建（裝開關標的 redo）留給延後批次，
+        -- 不在玩家按開關、放開關的那一刻順手重登錄（專用伺服器上一棟一次 56–73 ms）
+        local tB = { { 6300, 6300 }, { 6301, 6300 } }
+        for _, xy in ipairs(tB) do cell(xy[1], xy[2]) end
+        Basement.grow(Basement.add(tB))
+        Basement.setSwitchTile(6301, 6300, true)
+        local ap0 = eng.applies
+        wall6.cutW = nil
+        local rs = Basement.resplit(6101, 6100, Z)
+        local ap1 = eng.applies
+        flush()
+        local ap2 = eng.applies
+        wall6.cutW = true
+        Basement.resplit(6101, 6100, Z)
+        Basement.setSwitchTile(6301, 6300, false)
+        flush()
+        check(rs == true and ap1 == ap0 and ap2 == ap0 + 1,
+            "照當下的牆換分房只登錄那一塊：另一塊排著的重建留給延後批次，只登錄一次（" .. tostring(rs) .. " " .. ap1 - ap0
+                .. " " .. ap2 - ap0 .. "）")
 
         -- 拆掉地下室的牆上開關：那格還有別的牆上開關就不清；最後一個拆掉才 setSwitchTile(x, y, false)，下一批回到房間
         local A2, n0 = mount(sqA, false), #calls

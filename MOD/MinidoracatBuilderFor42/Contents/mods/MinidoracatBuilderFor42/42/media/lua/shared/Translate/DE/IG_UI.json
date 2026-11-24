@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "Der Stromkreis ist voll (bis zu %1 Schalter und %2 Lampen). Trenn zuerst eine Lampe oder starte an einem anderen Schalter einen neuen Stromkreis.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Diese Lampe ist zu weit von einem Schalter im Kreis entfernt. Sie muss zu jedem Schalter innerhalb von %1 Kacheln und %2 Etagen liegen. Bau die Lampe näher.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "Das ist kein geschlossener Raum, daher wurden keine Lampen verkabelt. Rechtsklick auf den Schalter und „Verkabeln...“ wählen, um sie von Hand zu verkabeln.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Ein Teil dieses Kellers ist zu weit weg und noch nicht geladen, daher lassen sich die Räume nicht trennen und es wurden keine Lampen verkabelt. Rechtsklick auf den Schalter und „Verkabeln...“ wählen, um sie von Hand zu verkabeln.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Diese Lampe ist nicht mit diesem Stromkreis verkabelt.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "Verkabeln fehlgeschlagen. Versuch es erneut; scheitert es weiter, sag einem Admin Bescheid und häng deine console.txt an.",
   "IGUI_MBLD_WireRefuse_Other": "Verkabeln nicht möglich (%1). Versuch es erneut; scheitert es weiter, melde es mit deiner console.txt.",

@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "Obwód jest pełny (maks. przełączniki: %1, lampy: %2). Najpierw odłącz lampę albo zacznij inny obwód od innego przełącznika.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Ta lampa jest za daleko od przełącznika w obwodzie. Od każdego przełącznika: odległość w polach maks. %1, różnica poziomów maks. %2. Zbuduj lampę bliżej.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "To nie jest zamknięty pokój, więc nie podłączono lamp. Kliknij przełącznik PPM i wybierz „Podłączanie...”, by podłączyć je ręcznie.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Część tej piwnicy jest za daleko i nie została jeszcze wczytana, więc nie da się rozdzielić pokoi i nie podłączono lamp. Kliknij przełącznik PPM i wybierz „Podłączanie...”, by podłączyć je ręcznie.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Ta lampa nie jest podłączona do tego obwodu.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "Podłączanie nie powiodło się. Spróbuj ponownie; jeśli dalej się nie udaje, powiadom administratora i dołącz console.txt.",
   "IGUI_MBLD_WireRefuse_Other": "Nie udało się podłączyć (%1). Spróbuj ponownie; jeśli dalej się nie udaje, zgłoś to i dołącz console.txt.",

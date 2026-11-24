@@ -82,7 +82,7 @@ end
 
 local CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, BAD_REQUEST = true, RATE_LIMITED = true, NOT_LOADED = true,
     GONE = true, NOT_SWITCH = true, NOT_WIRABLE = true, TOO_FAR = true, SAFEHOUSE = true, FULL = true, OUT_OF_RANGE = true,
-    NOT_ENCLOSED = true, NOT_WIRED = true, INTERNAL = true }
+    NOT_ENCLOSED = true, PART_UNLOADED = true, NOT_WIRED = true, INTERNAL = true }
 
 -- 接線的拒絕碼 → 一句話（翻譯鍵 IGUI_MBLD_WireRefuse_<碼>）
 function Wiring.refusal(code)

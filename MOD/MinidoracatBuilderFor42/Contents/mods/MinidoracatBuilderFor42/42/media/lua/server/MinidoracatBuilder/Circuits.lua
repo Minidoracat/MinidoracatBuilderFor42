@@ -489,7 +489,8 @@ end
 -- 同一間的這些開關一起切；canSwitchLight 不過就不動，同原版，IsoLightSwitch.java:415-424）。順序：距離（同一層、
 -- PRESS_REACH 格內）→ Safehouse 的 USE（拒絕時它自己推通知；我們的 complete 不呼叫原版，包在內層的 Safehouse 不會跑）
 -- → 地下室那一塊還有延後沒登錄的格子、沒重算的分房就當下做（Basement.growNow：沒有房間時有市電也認不到電）；沒接燈的牆上
--- 開關再照現在的牆確認分房、重查房間編號（Basement.resplit；那一塊有格子沒載入時照舊的分）→ 冷卻 → 切。回 complete 的結果。
+-- 開關先擋同一個開關連按（分房要掃整塊），再照現在的牆確認分房、重查房間編號（Basement.resplit 的 flush：排著的一起做、
+-- 只掃一次；那一塊有格子沒載入時照舊的分）→ 冷卻 → 切。回 complete 的結果。
 function Circuits.press(player, obj, id, ...)
     local rid = ...
     local sq = obj:getSquare()
@@ -501,14 +502,17 @@ function Circuits.press(player, obj, id, ...)
         return false
     end
     if useDenied(player, x, y, z) then return false end
-    B.Basement.growNow(x, y, z)
-    if rid then
-        B.Basement.resplit(x, y, z)
+    local t, ok = now(), rid and Ledger.key(obj)
+    if ok then
+        if cooling(lastPress[ok], t, Circuits.PRESS_MS) then return false end
+        lastPress[ok] = t
+        B.Basement.resplit(x, y, z, true)
         rid = roomOf(x, y, z, false)
+    else
+        B.Basement.growNow(x, y, z)
     end
     if rid and not obj:canSwitchLight() then return false end
     local k = id or rid or Ledger.key(obj)
-    local t = now()
     if cooling(lastPress[k], t, Circuits.PRESS_MS) then return false end
     lastPress[k] = t
     local list, skipped = nil, 0
@@ -590,15 +594,15 @@ end
 -- 開關放下或按「接同一房間」：同一個封閉房間裡、還沒接在別條線路的燈接上。開關自己還沒有線路時，房間裡另一個開關的線路
 -- 放得下就併進去（雙切）；都沒有線路的話和房間裡另一個開關接成一條。別條線路的燈不搶、只記數。每片燈、被併的開關與
 -- 成員都照預覽查 BUILD（不寫稽核；沒權限的跳過），全部查完才寫入。地下室先照現在的牆確認分房（Basement.resplit）：
--- 那一塊有格子沒載入、分不了就回 NOT_LOADED、不接，不照舊的分法接到牆另一邊。
--- 回 code（NOT_ENCLOSED／NOT_LOADED／INTERNAL）或 nil, { id（沒有線路時 nil）, n = 接上幾片, taken = 別條線路的幾盞, skipped = 太遠、
+-- 那一塊有格子沒載入、分不了就回 PART_UNLOADED、不接，不照舊的分法接到牆另一邊（客戶端不關接線模式，眼前的燈照樣手動接）。
+-- 回 code（NOT_ENCLOSED／PART_UNLOADED／INTERNAL）或 nil, { id（沒有線路時 nil）, n = 接上幾片, taken = 別條線路的幾盞, skipped = 太遠、
 -- 線路滿了或沒權限的幾盞, jx, jy = 併進的那個開關, later = 之後放進房間的燈會自動接上 }
 function Circuits.autoWire(player, sw)
     local d = data()
     if not d then return "INTERNAL" end
     local sq = sw:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
-    if not B.Basement.resplit(x, y, z) then return "NOT_LOADED" end
+    if not B.Basement.resplit(x, y, z) then return "PART_UNLOADED" end
     local rid = roomOf(x, y, z, true)
     if not rid then return "NOT_ENCLOSED" end
     local lamps, switches = roomScan(x, y, z, rid)
@@ -811,7 +815,7 @@ function Circuits.placed(player, objs)
     local d = data()
     if Circuits.isSwitch(first) then
         local code, info = Circuits.autoWire(player, first)
-        if code ~= "NOT_LOADED" then matchRoom(first) end -- 分不了房時不照舊的那一間對齊開關狀態
+        if code ~= "PART_UNLOADED" then matchRoom(first) end -- 分不了房時不照舊的那一間對齊開關狀態
         if code then return reply(player, nil, d, nil, { auto = "switch", code = code }) end
         print(LOG .. "CIRCUIT auto user=" .. server().who(player) .. " id=" .. tostring(info.id) .. " lamps=" .. info.n
             .. " taken=" .. info.taken .. " skipped=" .. info.skipped .. " joined=" .. tostring(info.jx ~= nil))

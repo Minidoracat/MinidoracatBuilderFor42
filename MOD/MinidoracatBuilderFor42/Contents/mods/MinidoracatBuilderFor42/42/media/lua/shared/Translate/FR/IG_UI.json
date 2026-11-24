@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "Le circuit est plein (%1 interrupteurs et %2 lampes max.). Débranchez d'abord une lampe, ou créez un autre circuit depuis un autre interrupteur.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "Cette lampe est trop loin d'un interrupteur du circuit. Elle doit être à %1 cases et %2 étages maximum de chaque interrupteur. Construisez la lampe plus près.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "Ce n'est pas une pièce fermée : aucune lampe n'a été câblée. Faites un clic droit sur l'interrupteur et choisissez Câblage... pour les câbler à la main.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Une partie de ce sous-sol est trop loin et pas encore chargée : impossible d'en séparer les pièces, aucune lampe n'a été câblée. Faites un clic droit sur l'interrupteur et choisissez Câblage... pour les câbler à la main.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "Cette lampe n'est pas câblée à ce circuit.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "Le câblage a échoué. Réessayez ; si l'échec persiste, prévenez un admin en joignant votre console.txt.",
   "IGUI_MBLD_WireRefuse_Other": "Câblage impossible (%1). Réessayez ; si l'échec persiste, signalez-le avec votre console.txt.",

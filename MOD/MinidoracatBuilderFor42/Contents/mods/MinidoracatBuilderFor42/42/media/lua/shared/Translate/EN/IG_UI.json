@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "The circuit is full (up to %1 switches and %2 lights). Unwire a light first, or start another circuit from another switch.",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "This light is too far from a switch on the circuit. It must be within %1 tiles and %2 levels of every switch. Build the light closer.",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "This isn't a closed room, so no lights were wired. Right-click the switch and choose Wiring... to wire them by hand.",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "Part of this basement is too far away and isn't loaded yet, so its rooms can't be told apart and no lights were wired. Right-click the switch and choose Wiring... to wire them by hand.",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "This light isn't wired to this circuit.",
   "IGUI_MBLD_WireRefuse_INTERNAL": "Wiring failed. Try again; if it keeps failing, tell an admin and include your console.txt.",
   "IGUI_MBLD_WireRefuse_Other": "Couldn't wire (%1). Try again; if it keeps failing, report it with your console.txt.",

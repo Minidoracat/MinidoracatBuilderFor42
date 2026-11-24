@@ -752,6 +752,7 @@
   "IGUI_MBLD_WireRefuse_FULL": "線路滿了（最多 %1 個開關、%2 盞燈）。先拔掉一盞，或用另一個開關另接一條線路。",
   "IGUI_MBLD_WireRefuse_OUT_OF_RANGE": "這盞燈離線路上的開關太遠：要在每個開關 %1 格內、上下 %2 層內。把燈蓋近一點。",
   "IGUI_MBLD_WireRefuse_NOT_ENCLOSED": "這裡不是封閉的房間，沒有自動接燈。右鍵開關選「接線...」手動接。",
+  "IGUI_MBLD_WireRefuse_PART_UNLOADED": "這個地下室有一部分離得太遠、還沒載入，分不出房間，沒有自動接燈。右鍵開關選「接線...」手動接。",
   "IGUI_MBLD_WireRefuse_NOT_WIRED": "這盞燈沒有接在這條線路上。",
   "IGUI_MBLD_WireRefuse_INTERNAL": "接線失敗。再試一次；一直失敗就回報管理員，並附上 console.txt。",
   "IGUI_MBLD_WireRefuse_Other": "無法接線（%1）。再試一次；一直失敗就回報並附上 console.txt。",

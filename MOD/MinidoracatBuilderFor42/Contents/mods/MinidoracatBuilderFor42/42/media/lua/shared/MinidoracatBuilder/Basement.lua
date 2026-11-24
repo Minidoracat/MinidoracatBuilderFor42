@@ -904,9 +904,10 @@ function Basement.registerAll()
     return register(list)
 end
 
--- 新增的格子（Basement.add 回的）當下登錄進引擎；挖掘中的新格子走 growLater，它到時候也是呼叫這裡
-function Basement.grow(tiles)
-    return register(tiles)
+-- 新增的格子（Basement.add 回的）當下登錄進引擎；挖掘中的新格子走 growLater，它到時候也是呼叫這裡。選用的第二個參數同
+-- register 的 only（只登錄這幾塊，別的塊排著的重建照舊等）
+function Basement.grow(tiles, ...)
+    return register(tiles, ...)
 end
 
 -- 兩份房號（[鍵]＝房號）在 tiles 上分出的房間是否相同（號碼可以不同，一對一對得上就是同一種分法）
@@ -1035,8 +1036,10 @@ end
 
 -- 伺服器與單機：塊 ids（{ [編號]＝true，或已經算好的 { 房號, 房間數 }（Basement.resplit）}）重算分房，list（新挖的格子）
 -- 與要重建的棟一次登錄；專用伺服器上這一批有新格子或分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與
--- 分房，登錄失敗也推），分房記進帳本（save）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
-local function refresh(ids, list)
+-- 分房，登錄失敗也推），分房記進帳本（save）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。選用的
+-- 第三個參數 only（flushBlock）：只登錄這幾塊，別的塊排著的重建留給延後批次。回登錄成不成功
+local function refresh(ids, list, ...)
+    local only = ...
     local push = {}
     for id, v in pairs(ids) do
         local room, n
@@ -1044,7 +1047,7 @@ local function refresh(ids, list)
         if room and renumber(id, room, n) then push[id] = true end
     end
     for _, t in ipairs(list) do push[cells[key(t[1], t[2])]] = true end
-    local done = Basement.grow(list)
+    local done = Basement.grow(list, only)
     for id in pairs(push) do save(id) end
     local L = isServer() and MinidoracatBuilder.BasementLedger
     for id in pairs(L and push or {}) do
@@ -1182,9 +1185,10 @@ function Basement.dirty(x, y, z)
     if hit then later() end
 end
 
--- 塊 id 在延後批次裡排著的新格子與要重算分房的格子當下做（同一個呼叫裡），別的塊照舊等。part＝Basement.resplit 算好的
--- { 房號, 房間數 }：沒有排著的也做。回 nil＝沒有要做的，否則回登錄成不成功
-local function flushBlock(id, part)
+-- 塊 id 在延後批次裡排著的新格子與要重算分房的格子當下做（同一個呼叫裡），只登錄這一塊（別的塊排著的照舊等）。
+-- part＝Basement.resplit 算好的 { 房號, 房間數 }（不再算一次）；force＝沒有排著的也做（分法變了）。回 nil＝沒有要做的，
+-- 否則回登錄成不成功
+local function flushBlock(id, part, force)
     local list, dk, sk = {}, {}, {}
     for k, v in pairs(due) do
         if cells[k] == id then
@@ -1195,10 +1199,10 @@ local function flushBlock(id, part)
     for k in pairs(stale) do
         if cells[k] == id then sk[#sk + 1] = k end
     end
-    if #dk + #sk == 0 and not part then return nil end
+    if #dk + #sk == 0 and not force then return nil end
     for _, k in ipairs(dk) do due[k] = nil end
     for _, k in ipairs(sk) do stale[k] = nil end
-    local ok, done = pcall(refresh, { [id] = part or true }, list)
+    local ok, done = pcall(refresh, { [id] = part or true }, list, { [id] = true })
     if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
     return ok and done == true
 end
@@ -1209,22 +1213,24 @@ end
 function Basement.growNow(x, y, z)
     if isClient() or z ~= Z then return false end
     local id = cells[key(x, y)]
-    return id ~= nil and flushBlock(id, nil) == true
+    return id ~= nil and flushBlock(id, nil, false) == true
 end
 
 -- 伺服器與單機：自動接線、按沒接燈的牆上開關前（Circuits.autoWire、lampPlaced、press）照現在的牆確認 (x, y, z) 所在那一塊的
 -- 分房。原版與別的 MOD 蓋的牆沒有事件、本工具蓋的牆要停手 GROW_QUIET 才分、巡查每 10 遊戲分鐘一次：照舊的分法接線會接到
 -- 牆另一邊、寫進線路帳本，之後分好了也不會拔。分法變了當下換（那一塊排著的一起做）；沒變不做事，排著的照舊等延後批次
 -- （每裝一個牆上開關就提前登錄的話，專用伺服器每裝一個就重登錄那一棟一次，實機 56–73 ms）。花一次 split。
+-- 選用的第四個參數 flush＝true（Circuits.press）：分法沒變、分不了時也把那一塊排著的當下做（同 growNow，不另外再算一次）。
 -- 回 false＝那一塊有格子沒載入、分不了，呼叫端不照舊的分法接線；不是本 MOD 地下室的格子回 true
-function Basement.resplit(x, y, z)
+function Basement.resplit(x, y, z, ...)
+    local flush = ...
     if isClient() or z ~= Z then return true end
     local id = cells[key(x, y)]
     if not id then return true end
     local room, n = Basement.split(id)
-    if not room then return false end
-    if not samePart(blocks[id].room, room, blocks[id].tiles) then flushBlock(id, { room, n }) end
-    return true
+    local changed = room ~= nil and not samePart(blocks[id].room, room, blocks[id].tiles)
+    if changed or flush then flushBlock(id, room and { room, n } or nil, changed) end
+    return room ~= nil
 end
 
 -- 伺服器與單機，每 10 遊戲分鐘（BasementLedger 掛 EveryTenMinutes，GameTime.java:617-631；一天 90 分鐘的預設下每 37.5 秒）：
