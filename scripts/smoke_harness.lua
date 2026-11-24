@@ -25712,9 +25712,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     BM.reset({}, math.floor(90100 / BM.AREA), math.floor(90100 / BM.AREA))
 
     -- 同步（審查 F8、F11）：多人收 dug／分段的 basements 驗資料、更新集合、登錄、重算高度；壞資料整則丟；單機只重算高度
-    local realIsClient, realGrow, realAll, realZ = isClient, BM.grow, BM.registerAll, BM.recalcZ
+    local realIsClient, realGrow, realAll, realZ = isClient, BM.growLater, BM.registerAll, BM.recalcZ
     local calls = {}
-    BM.grow = function(t) calls[#calls + 1] = "grow" .. #t end
+    BM.growLater = function(t) calls[#calls + 1] = "grow" .. #t end
     BM.registerAll = function() calls[#calls + 1] = "all" end
     BM.recalcZ = function() calls[#calls + 1] = "z" end
     local function log()
@@ -25829,7 +25829,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "F9 藍圖的「把缺的換成…」不能換成挖掘項目（" .. tostring(swWhy) .. "）")
 
     BM.reset({}, A, A)
-    isClient, BM.grow, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
+    isClient, BM.growLater, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
 
     -- F7 挖這一格的站位：只站四個正交鄰格裡已挖的（伺服器 Check.item 照同一條驗，不符回 UNREACHABLE）；斜角、沒挖的不站；
     -- 已經站在已挖的鄰格就不走；沒有這種鄰格不原地挖（記 noRoom）；排第 2 格起的站位要等前一格進了地下室集合

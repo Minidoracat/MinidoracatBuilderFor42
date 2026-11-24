@@ -666,7 +666,7 @@ function Client.onBasement(cmd, args)
             if inSynced(t) then keep[#keep + 1] = t end
         end
         if #keep == 0 then return end
-        BM.grow(BM.add(keep))
+        BM.growLater(BM.add(keep)) -- 登錄等挖完一陣子再一次做（Basement.growLater）；高度範圍當下重算
     elseif not onSegment(args) then
         return
     end
