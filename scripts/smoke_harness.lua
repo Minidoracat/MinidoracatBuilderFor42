@@ -15336,6 +15336,78 @@ end)()
     for _, g in ipairs(Cap.groups(out.skip)) do groups[g.group] = g.n end
     check(out.skipped == 3 and groups.Terrain == 2 and groups.Plant == 1 and out.over == 0 and out.wide == 0,
         "不收的分組：天然地面連它邊緣的漸層圖 2、樹 1")
+    -- 勾要哪幾層（Capture.build 的 on）：第 1 層 4,096 片＋一棵樹、第 2 層 10 片＋一片原點在框外、第 3、4 層各 1 片
+    local lv = Cap.scan(600, 600, 663, 663, 0)
+    local lr = lv.res
+    local function put(x, y, z)
+        lr.n = lr.n + 1
+        lr.pieces[lr.n] = { id = "pcf_01_0", x = 600 + x, y = 600 + y, z = z, d = 0 }
+    end
+    for i = 0, 4095 do put(i % 64, math.floor(i / 64), 0) end
+    for i = 0, 9 do put(i, 1, 1) end
+    put(70, 1, 1)
+    put(0, 2, 2)
+    put(0, 3, 3)
+    Cap.tile(lr, "pct_01_0", 600, 600, 0, 0)
+    local function zs(o)
+        local seen, s = {}, {}
+        Plan.each(o.plan, function(p) seen[p.z] = true end)
+        for z = 0, 3 do if seen[z] then s[#s + 1] = z end end
+        return table.concat(s, ",")
+    end
+    local lAll, lUp = Cap.build(lv, "lv"), Cap.build(lv, "lv", { [1] = true })
+    local lUp2, lOdd, lNone = Cap.build(lv, "lv", { [1] = true }), Cap.build(lv, "lv", { [1] = true, [3] = true }),
+        Cap.build(lv, "lv", {})
+    local lAll2 = Cap.build(lv, "lv", { [0] = true, [1] = true, [2] = true, [3] = true })
+    check(lAll.plan.n == 4096 and lAll.over == 13 and lAll.skipped == 1 and lAll.skip.OUTSIDE == nil
+        and lAll2.plan.n == 4096 and lAll2.over == 13 and lAll2.skipped == 1,
+        "擷取勾層：全勾（沒給 on 或四層都給）收滿 4,096 片，其他 13 片算沒收進去；第 1 層的樹算不收")
+    check(lUp.plan.n == 10 and zs(lUp) == "0" and lUp.over == 0 and lUp.skip.OUTSIDE == 1 and lUp.skipped == 1,
+        "擷取勾層：只勾第 2 層，10 片、z 都變 0、沒有沒收進去的；第 1 層的樹不算、第 2 層框外那片算 " .. zs(lUp))
+    check(lOdd.plan.n == 11 and zs(lOdd) == "0,2", "擷取勾層：勾第 2、4 層，z 是 0 與 2（中間沒勾的層不壓縮） " .. zs(lOdd))
+    check(lNone.plan.n == 0 and lNone.skipped == 0, "擷取勾層：全不勾，0 片")
+    check(lUp2.skipped == 1 and lUp2.skip.OUTSIDE == 1 and lr.skipped == 1 and lAll.job == lv,
+        "擷取勾層：重算兩次，原點在框外的不累加（不改掃到的結果）")
+    -- 結果框（假框架）：兩層以上有東西才列勾選框；取消勾選就重算片數與存檔鈕，全不勾時存檔鈕停用
+    local M = { getY = function(s) return s.y end, setY = function(s, y) s.y = y end, getX = function() return 0 end,
+        contentTop = function() return 24 end, setEnabled = function(s, on) s.enabled = on end,
+        addChild = function(s, c) s.kids[#s.kids + 1] = c end }
+    local function fake(o)
+        o.kids = {}
+        return setmetatable(o, { __index = function(_, k) return M[k] or function() end end })
+    end
+    local boxes = {}
+    local fw = { Theme = { create = function() return { colors = setmetatable({}, { __index = function() return {} end }) } end },
+        Text = { wrap = function(s) return { s } end },
+        Window = { new = function() return fake({}) end },
+        Checkbox = { new = function(o)
+            boxes[#boxes + 1] = fake({ y = o.y, height = 20, label = o.label, o = o })
+            return boxes[#boxes]
+        end },
+        TextField = { new = function() return fake({}) end },
+        Button = { new = function(o) return fake({ width = o.width or 60 }) end } }
+    local realUI = { B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
+        getPlayerScreenHeight }
+    B.Window, UIFont, ISPanel = { ui = function() return fw end }, { Small = 0 }, { new = function() return fake({}) end }
+    getTextManager = function()
+        return { getFontHeight = function() return 16 end, MeasureStringX = function(_, _, s) return #s * 7 end }
+    end
+    getPlayerScreenLeft, getPlayerScreenTop = function() return 0 end, function() return 0 end
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 1920 end, function() return 1080 end
+    local shown = Cap.show(0, lAll, 64, 64, "lv")
+    local pnl, nBox = Cap.panel, #boxes
+    boxes[1].o.onChange(boxes[1].o.target, false)
+    local n1, en1, sum1 = pnl.out.plan.n, pnl.saveBtn.enabled, #pnl.sum
+    for i = 2, nBox do boxes[i].o.onChange(boxes[i].o.target, false) end
+    local one = Cap.scan(700, 700, 701, 701, 0)
+    one.res.pieces[1], one.res.n = { id = "pcf_01_0", x = 700, y = 700, z = 1, d = 0 }, 1
+    local shownOne = Cap.show(0, Cap.build(one, "one"), 2, 2, "one")
+    check(shown and nBox == 4 and boxes[1].y > 24 and n1 == 12 and en1 == true and sum1 >= 1 and pnl.out.plan.n == 0
+        and pnl.saveBtn.enabled == false and shownOne and #boxes == nBox,
+        "結果框勾層：四層有東西列 4 個勾選框；取消第 1 層剩 12 片、存檔鈕可按；全不勾 0 片、存檔鈕停用；只有一層有東西時不列勾選框")
+    Cap.panel = nil
+    B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
+        getPlayerScreenHeight = realUI[1], realUI[2], realUI[3], realUI[4], realUI[5], realUI[6], realUI[7], realUI[8]
     -- 存檔、讀回片數相同（假磁碟）
     local disk = {}
     getFileWriter = function(p)
@@ -19814,10 +19886,10 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
     do
         fresh()
         local Cap, Plan = MinidoracatBuilder.Capture, MinidoracatBuilder.Plan
-        local function capture(x1, y1, x2, y2)
+        local function capture(x1, y1, x2, y2, ...)
             local job = Cap.scan(x1, y1, x2, y2, 0)
             while not Cap.step(job) do end
-            local r = Cap.build(job, "t")
+            local r = Cap.build(job, "t", ...)
             local got = {}
             Plan.each(r.plan, function(p)
                 got[#got + 1] = { id = r.plan.items[p.it].id, x = job.x1 + p.x, y = job.y1 + p.y, z = job.z0 + p.z, d = p.d }
@@ -19887,6 +19959,11 @@ print("情境（坡道）：分類、整組、轉向、成本、能不能蓋、�
         local cost = s0 - P.inv:count("Base.Plank")
         local sWhole = capture(468, 404, 473, 406)
         local sPart = capture(468, 404, 470, 406)
+        -- 勾層：只勾樓上（樓梯那層沒勾）時平台照地板收、記在第 0 層；兩層都勾時只有樓梯一項
+        local sUp, sBoth = capture(468, 404, 473, 406, { [1] = true }), capture(468, 404, 473, 406, { [0] = true, [1] = true })
+        check(#sUp == 1 and sUp[1].id == Entry.STAIR_FLOOR and sUp[1].x == 469 and sUp[1].z == 0
+            and #sBoth == 1 and sBoth[1].id == "rpt_01_0",
+            "坡道（Ramp）✗ 框選勾層：只勾樓上時樓梯口的平台照地板收（第 0 層）；兩層都勾時只收樓梯、不重複收平台")
         fresh()
         -- 拿掉原來那座（前面情境的 IsoThumpable 假物件走不了本工具的拆除，直接從格子移除，照樣觸發移除事件）
         for dx = 0, 2 do

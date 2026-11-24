@@ -2,8 +2,8 @@
 -- 跳結果框（能收幾片幾種、不收的照原因分組、名稱）→ 存成藍圖檔、打開藍圖庫。只讀世界，不動世界、不送伺服器。
 -- 只收建造工坊能蓋的圖（Entry.resolve）與原版建造配方蓋的東西（收成 recipe: 項目）；容器裡的東西、地上物品、車、屍體
 -- 不是格上的圖塊，不收。開著的門、破掉的窗、拉上的窗簾照 Entry.why 認回能蓋的那一張（門窗一律記成關著）；
--- 多格物件、樓梯、坡道只在原點那一片記一次（那一組收得進藍圖時，它補的平台也不另外收）；車庫門、雙開門照 Place.doorGroup
--- 認回第一片、錨點與寬度，一扇記一片。
+-- 多格物件、樓梯、坡道只在原點那一片記一次（它補的平台照地板記、標上那一組在哪層，那層有勾時不另外收）；車庫門、雙開門照
+-- Place.doorGroup 認回第一片、錨點與寬度，一扇記一片。結果框可勾要哪幾層（Capture.build 的 on）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Plan"
@@ -31,8 +31,14 @@ Capture.ORDER = { "Off", "Special", "Plant", "Terrain", "Outside", "Closed" }
 
 -- ===== 認圖（只讀） =====
 
-local function skip(res, code)
-    res.skip[code] = (res.skip[code] or 0) + 1
+-- 不收的照層記（結果框只數勾著的層）
+local function skip(res, code, z)
+    local t = res.skipZ[z]
+    if not t then
+        t = {}
+        res.skipZ[z] = t
+    end
+    t[code] = (t[code] or 0) + 1
     res.skipped = res.skipped + 1
 end
 
@@ -79,7 +85,7 @@ function Capture.tile(res, name, x, y, z, z0)
     if entry then
         local k = entry.kind
         if z == z0 and (k == "floor" or k == "water" or k == "floorOverlay") and name:find("^blends_natural_") then
-            return skip(res, "TERRAIN")
+            return skip(res, "TERRAIN", z)
         end
         return addTile(res, entry, name, x, y, z)
     end
@@ -89,21 +95,23 @@ function Capture.tile(res, name, x, y, z, z0)
     if code == "PART" or code == "STAIRS_SET" then return end
     local altEntry = alt and Entry.resolve(alt)
     if altEntry then return addTile(res, altEntry, alt, x, y, z) end -- 開著的門、窗的狀態圖、拉上的窗簾、疊放圖
-    skip(res, code or "UNKNOWN")
+    skip(res, code or "UNKNOWN", z)
 end
 
--- 坡道、樓梯補的平台（Place.deckOwner）：那一組收得進藍圖時不另外收，放那一組時會帶平台（Place.build）。收得進＝框選會
--- 讀到、記成那一組的那一片（坡道頭片、樓梯底片）和錨點都在框裡，而且那一片能蓋（Entry.resolve）。收不進（在框外、
--- 那種沒開放）、不是坡道或樓梯通到的同圖地板、圖和那一組會補的不同時，照一般地板收
+-- 坡道、樓梯補的平台（Place.deckOwner）：那一組收得進藍圖時回那一組在哪層（平台照地板記、標上這層，Capture.build 在這層
+-- 有勾時不收：放那一組時會帶平台，Place.build；沒勾時照地板收，只勾樓上時樓梯口才有地板）。收得進＝框選會讀到、記成那一組
+-- 的那一片（坡道頭片、樓梯底片）和錨點都在框裡，而且那一片能蓋（Entry.resolve）。收不進（在框外、那種沒開放）、不是坡道或
+-- 樓梯通到的同圖地板、圖和那一組會補的不同時回 nil（照一般地板收）
 local function inBox(b, x, y, z)
     return x >= b.x1 and x <= b.x2 and y >= b.y1 and y <= b.y2 and z >= b.z0 and z <= b.z1
 end
 
 local function platform(res, name, sq)
     local b = res.box
-    if not b then return false end
+    if not b then return nil end
     local x, y, z, px, py, pname = Place.deckOwner(name, sq)
-    return x ~= nil and inBox(b, x, y, z) and inBox(b, px, py, z) and Entry.resolve(pname) ~= nil
+    if x ~= nil and inBox(b, x, y, z) and inBox(b, px, py, z) and Entry.resolve(pname) ~= nil then return z end
+    return nil
 end
 
 -- 一格上的每一件（地上物品不收：容器裡的東西、車、屍體本來就不在格上的物件裡）
@@ -121,12 +129,14 @@ function Capture.square(res, sq, z0)
                 -- 車庫門、雙開門：整扇記一片，記在第一片那格（其他片讀到時錨點不是自己那格，略過）
                 local g = Place.doorGroup(o)
                 if not g then
-                    skip(res, "DOOR_SET")
+                    skip(res, "DOOR_SET", z)
                 elseif g.x == x and g.y == y and g.z == z then
                     add(res, g.e, x, y, z, 0, g.garage and g.w or nil)
                 end
-            elseif not platform(res, name, sq) then
+            else
+                local n, deck = res.n, platform(res, name, sq)
                 Capture.tile(res, name, x, y, z, z0)
+                if deck and res.n > n then res.pieces[res.n].deck = deck end
             end
             local att = o:getAttachedAnimSprite()
             for j = 0, att and att:size() - 1 or -1 do
@@ -149,7 +159,7 @@ function Capture.scan(x1, y1, x2, y2, z)
     if y1 > y2 then y1, y2 = y2, y1 end
     if x2 - x1 + 1 > Capture.SIDE or y2 - y1 + 1 > Capture.SIDE then return nil, "TOO_WIDE" end
     return { x1 = x1, y1 = y1, x2 = x2, y2 = y2, z0 = z, z1 = z + Capture.LEVELS - 1, x = x1, y = y1, z = z,
-        res = { pieces = {}, n = 0, seen = {}, skip = {}, skipped = 0,
+        res = { pieces = {}, n = 0, seen = {}, skipZ = {}, skipped = 0,
             box = { x1 = x1, y1 = y1, x2 = x2, y2 = y2, z0 = z, z1 = z + Capture.LEVELS - 1 } } }
 end
 
@@ -170,23 +180,46 @@ function Capture.step(job)
     return job.z > job.z1
 end
 
--- 掃的結果做成藍圖（原點＝框的西北角、最低層）。超過 4,096 片的照掃到的順序收到滿為止。
--- 回 { plan, kinds＝幾種, over＝沒收進去的片數, wide＝這裡蓋不了的車庫門扇數, skip, skipped }
-function Capture.build(job, name)
+local function picked(on, dz)
+    return on == nil or on[dz] == true
+end
+
+-- 掃的結果做成藍圖（原點＝框的西北角、最低勾選層）。選填的 on＝{ [層差 0..3] = true }，沒給＝四層都收；中間沒勾的層照留空
+-- （壓縮會讓上層地板落在下層牆的位置）。超過 4,096 片的照掃到的順序收到滿為止。不改 job：勾選一變就再跑一次。
+-- 回 { plan, kinds＝幾種, over＝沒收進去的片數, wide＝這裡蓋不了的車庫門扇數, skip＝勾選層不收的照原因數, skipped, job }
+function Capture.build(job, name, ...)
+    local on = ...
     local res, plan = job.res, Plan.new(name)
-    local over, wide = 0, 0
+    local over, wide, skips, skipped, base = 0, 0, {}, 0, nil
+    for dz = Capture.LEVELS - 1, 0, -1 do
+        local t = res.skipZ[job.z0 + dz]
+        if picked(on, dz) then base = dz end
+        if t and picked(on, dz) then
+            for code, n in pairs(t) do
+                skips[code] = (skips[code] or 0) + n
+                skipped = skipped + n
+            end
+        end
+    end
+    base = base or 0
     local maxW = math.max(2, tonumber(Entry.settings().MaxCellsPerDrag) or 32)
     for i = 1, res.n do
         local p = res.pieces[i]
-        if plan.n >= Plan.MAX_PIECES then
-            over = over + 1
-        else
-            local it = Plan.item(plan, p.id, PlanFile.source(p.id))
-            local ok, why = Plan.add(plan, p.x - job.x1, p.y - job.y1, p.z - job.z0, p.d, 0, it, p.w)
-            if ok then
-                if p.w and p.w > maxW then wide = wide + 1 end
-            elseif why == "TOO_WIDE" or why == "TOO_HIGH" or why == "RANGE" then
-                skip(res, "OUTSIDE") -- 原點落在框外、撐出 64 格或 4 層的多格物件
+        local dz = p.z - job.z0
+        -- 層差不在 0..3 的（多格物件的錨點在框外）照舊交給 Plan.add 擋
+        if (dz < 0 or dz >= Capture.LEVELS or picked(on, dz)) and not (p.deck and picked(on, p.deck - job.z0)) then
+            if plan.n >= Plan.MAX_PIECES then
+                over = over + 1
+            else
+                local it = Plan.item(plan, p.id, PlanFile.source(p.id))
+                local ok, why = Plan.add(plan, p.x - job.x1, p.y - job.y1, dz - base, p.d, 0, it, p.w)
+                if ok then
+                    if p.w and p.w > maxW then wide = wide + 1 end
+                elseif why == "TOO_WIDE" or why == "TOO_HIGH" or why == "RANGE" then
+                    -- 原點落在框外、撐出 64 格或 4 層的多格物件
+                    skips.OUTSIDE = (skips.OUTSIDE or 0) + 1
+                    skipped = skipped + 1
+                end
             end
         end
     end
@@ -195,7 +228,7 @@ function Capture.build(job, name)
     for i = 1, plan.nItems do
         if plan.items[i].n > 0 then kinds = kinds + 1 end
     end
-    return { plan = plan, kinds = kinds, over = over, wide = wide, skip = res.skip, skipped = res.skipped }
+    return { plan = plan, kinds = kinds, over = over, wide = wide, skip = skips, skipped = skipped, job = job }
 end
 
 -- 不收的照分組數：{ { group, n }… }，照 Capture.ORDER
@@ -224,7 +257,7 @@ function Capture.save(plan, name, fallback)
     return true, file
 end
 
--- ===== 結果框（框架 Window＋TextField，同一區拆除的確認面板寫法） =====
+-- ===== 結果框（框架 Window＋Checkbox＋TextField，同一區拆除的確認面板寫法） =====
 
 local Panel = {}
 Panel.__index = Panel
@@ -236,6 +269,47 @@ local function discard(p)
             p.win:setVisible(false)
             p.win:removeFromUIManager()
         end)
+    end
+end
+
+-- 一段字照寬度斷行接在 rows 後面（從 y 排起），回下一行的 y
+local function para(p, rows, y, text, color)
+    local lines = p.UI.Text.wrap(text, p.innerW, p.font)
+    for i = 1, #lines do
+        rows[#rows + 1] = { s = lines[i], y = y, c = color }
+        y = y + p.fh
+    end
+    return y
+end
+
+-- 跟著勾選變的那幾行（收幾片、上限、車庫門、不收的分組），從 p.sumY 排起；回 rows, 下一行的 y
+local function summary(p)
+    local out, c, rows = p.out, p.c, {}
+    local n = tostring(out.plan.n)
+    local y = para(p, rows, p.sumY, getText("IGUI_MBLD_Cap_Got", n, tostring(out.kinds)), c.text)
+    if out.over > 0 then y = para(p, rows, y, getText("IGUI_MBLD_Cap_Over", n, tostring(out.over)), c.warning) end
+    if out.wide > 0 then y = para(p, rows, y, getText("IGUI_MBLD_Cap_Wide", tostring(out.wide)), c.warning) end
+    if out.skipped > 0 then
+        y = para(p, rows, y, getText("IGUI_MBLD_Cap_Skipped", tostring(out.skipped)), c.textMuted)
+        for _, g in ipairs(Capture.groups(out.skip)) do
+            y = para(p, rows, y, getText("IGUI_MBLD_ShortCount", getText("IGUI_MBLD_Cap_Skip_" .. g.group), tostring(g.n)),
+                c.textMuted)
+        end
+    end
+    return rows, y
+end
+
+-- 勾選一變：照勾的層重做藍圖、重組那幾行；一片都沒有時存檔鈕停用
+function Panel:refresh()
+    self.out = Capture.build(self.out.job, self.fallback, self.on)
+    self.sum = summary(self)
+    self.saveBtn:setEnabled(self.out.plan.n > 0)
+end
+
+local function draw(el, rows, font)
+    for i = 1, #rows do
+        local r = rows[i]
+        el:drawText(r.s, PAD, r.y, r.c.r, r.c.g, r.c.b, r.c.a or 1, font)
     end
 end
 
@@ -260,33 +334,43 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     local tm = getTextManager()
     local fh = tm:getFontHeight(font)
     local s = fh / 16
-    local self = setmetatable({ UI = UI, playerNum = playerNum, out = out, fallback = fallback }, Panel)
     local sx, sy = getPlayerScreenLeft(playerNum), getPlayerScreenTop(playerNum)
     local sw, sh = getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)
     local w = math.min(sw - 40, math.floor(380 * s))
     local innerW = w - 2 * PAD
-    local rows, y = {}, 0
-    local function para(text, color)
-        local lines = UI.Text.wrap(text, innerW, font)
-        for i = 1, #lines do
-            rows[#rows + 1] = { s = lines[i], y = y, c = color }
-            y = y + fh
+    local self = setmetatable({ UI = UI, playerNum = playerNum, out = out, fallback = fallback, c = c, font = font, fh = fh,
+        innerW = innerW, on = {} }, Panel)
+    local rows = {}
+    local y = para(self, rows, 0, getText("IGUI_MBLD_Cap_Intro", tostring(cw), tostring(ch), tostring(Capture.LEVELS)),
+        c.textMuted) + GAP
+    -- 每層讀到幾片；兩層以上有東西才列勾選框，預設全勾（沒東西的層沒有框、一直算勾著，全勾時和沒給 on 一樣）
+    local res, per, filled, boxes = out.job.res, {}, 0, {}
+    for dz = 0, Capture.LEVELS - 1 do self.on[dz], per[dz] = true, 0 end
+    for i = 1, res.n do
+        local dz = res.pieces[i].z - out.job.z0
+        if per[dz] then per[dz] = per[dz] + 1 end
+    end
+    for dz = 0, Capture.LEVELS - 1 do
+        if per[dz] > 0 then filled = filled + 1 end
+    end
+    for dz = 0, Capture.LEVELS - 1 do
+        if filled > 1 and per[dz] > 0 then
+            local box = UI.Checkbox.new({ x = PAD, y = y, width = innerW, theme = theme, font = font, checked = true,
+                label = getText("IGUI_MBLD_Count", getText("IGUI_MBLD_PlanFloor", tostring(dz + 1)), tostring(per[dz])),
+                target = self, onChange = function(p, checked)
+                    p.on[dz] = checked == true
+                    p:refresh()
+                end })
+            boxes[#boxes + 1] = box
+            y = y + box.height
         end
     end
+    if #boxes > 0 then y = y + GAP end
+    -- 版面照全勾時排：勾得少，那幾行只會更短
+    self.sumY = y
+    self.sum, y = summary(self)
+    y = para(self, rows, y + GAP, getText("IGUI_MBLD_Cap_Name"), c.text)
     local plan = out.plan
-    para(getText("IGUI_MBLD_Cap_Intro", tostring(cw), tostring(ch), tostring(Capture.LEVELS)), c.textMuted)
-    y = y + GAP
-    para(getText("IGUI_MBLD_Cap_Got", tostring(plan.n), tostring(out.kinds)), c.text)
-    if out.over > 0 then para(getText("IGUI_MBLD_Cap_Over", tostring(plan.n), tostring(out.over)), c.warning) end
-    if out.wide > 0 then para(getText("IGUI_MBLD_Cap_Wide", tostring(out.wide)), c.warning) end
-    if out.skipped > 0 then
-        para(getText("IGUI_MBLD_Cap_Skipped", tostring(out.skipped)), c.textMuted)
-        for _, g in ipairs(Capture.groups(out.skip)) do
-            para(getText("IGUI_MBLD_ShortCount", getText("IGUI_MBLD_Cap_Skip_" .. g.group), tostring(g.n)), c.textMuted)
-        end
-    end
-    y = y + GAP
-    para(getText("IGUI_MBLD_Cap_Name"), c.text)
     local fieldY = y
     local fieldH = fh + 10
     y = y + fieldH + GAP
@@ -306,17 +390,19 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     win:setHeight(h)
     win:setX(sx + math.floor((sw - w) / 2))
     win:setY(sy + math.floor((sh - h) / 2))
-    local body = ISPanel:new(0, top, w, y)
+    local body = ISPanel:new(0, top, w, y) -- 先加：畫在勾選框底下
     body:initialise()
     body.background = false
     body.render = function(el)
-        for i = 1, #rows do
-            local r = rows[i]
-            el:drawText(r.s, PAD, r.y, r.c.r, r.c.g, r.c.b, r.c.a or 1, font)
-        end
+        draw(el, rows, font)
+        draw(el, self.sum, font)
     end
     win:addChild(body)
-    -- 焦點順序照畫面由上而下：名稱欄、取消、存（框架 Focus：方向鍵與手把在控制項之間移動）
+    -- 焦點順序照畫面由上而下：各層勾選框、名稱欄、取消、存（框架 Focus 照位置排：方向鍵與手把在控制項之間移動）
+    for _, box in ipairs(boxes) do
+        box:setY(top + box:getY())
+        win:addChild(box)
+    end
     self.field = UI.TextField.new({ x = PAD, y = top + fieldY, width = innerW, height = fieldH, text = plan.name,
         maxLength = Plan.MAX_NAME, theme = theme, font = font })
     win:addChild(self.field)
