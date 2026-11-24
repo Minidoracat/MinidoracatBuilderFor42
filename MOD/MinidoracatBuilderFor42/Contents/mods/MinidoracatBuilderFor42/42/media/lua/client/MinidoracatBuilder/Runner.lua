@@ -649,7 +649,9 @@ end
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、順序最前（key：地板那一段是蛇形序號，其他段是離玩家的
 -- 距離）的那片，再收同項目、同層、同疊放值順序最前的幾片。
 -- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
--- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。
+-- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。還不能挑的地板（第 1 段）排在挑到的片之前時
+-- 先等（最多 WAIT_MS）：剛擺好就按時先挑掃描剛看過的玩家身邊那幾片，第一批會蓋在藍圖中間；蓋到一半材料變了的重排裡，
+-- 下一片多半是剛算過的身邊那片，不等
 -- 回 batch，"again"（還沒看完），"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
 local function pickBatch(player, plan, settled)
     local PC = planCheck()
@@ -659,23 +661,26 @@ local function pickBatch(player, plan, settled)
         st.scan = sc
     end
     local pieces, cand, boxes, px, py = st.pieces, sc.cand, sc.boxes, sc.px, sc.py
-    local best, bk1, bk2, bk3, pendingSeg = sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg
+    local best, bk1, bk2, bk3, pendingSeg, hz, hk = sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg, sc.hz, sc.hk
     local last = math.min(#pieces, sc.i + Runner.PICK_CHUNK - 1)
     for k = sc.i, last do
         local p = pieces[k]
         -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）
         if not (st.skip[p] or st.placed[p] or st.later[p]) then
             local state = PC.state(p)
-            if state == nil then
-                local id = resolve(p)
-                local s = id and segmentOf(id)
-                if s and (not pendingSeg or s < pendingSeg) then pendingSeg = s end
-            elseif state == "ok" or (state == "short" and boxes) then
+            if state == nil or state == "ok" or (state == "short" and boxes) then
                 local id, x, y, z, d, o, w = resolve(p)
-                if id and not (settled and not settled(x, y, z))
-                    and not (cachedKind(id) == "floorOverlay" and floorPending(plan, p)) then
-                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id) }
-                    c.key = c.seg == 1 and snakeKey(x, y) or (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2
+                local seg = id and segmentOf(id)
+                local early = settled and id and not settled(x, y, z)
+                if early and seg == 1 then
+                    local key = snakeKey(x, y)
+                    if not hz or z < hz or (z == hz and key < hk) then hz, hk = z, key end
+                end
+                if state == nil then
+                    if seg and (not pendingSeg or seg < pendingSeg) then pendingSeg = seg end
+                elseif id and not early and not (cachedKind(id) == "floorOverlay" and floorPending(plan, p)) then
+                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = seg }
+                    c.key = seg == 1 and snakeKey(x, y) or (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2
                     cand[#cand + 1] = c
                     if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3))) then
                         best, bk1, bk2, bk3 = c, c.seg, c.z, c.key
@@ -685,11 +690,12 @@ local function pickBatch(player, plan, settled)
         end
     end
     if last < #pieces then
-        sc.i, sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg = last + 1, best, bk1, bk2, bk3, pendingSeg
+        sc.i, sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg, sc.hz, sc.hk = last + 1, best, bk1, bk2, bk3, pendingSeg, hz, hk
         return "again"
     end
     st.scan = nil
-    if pendingSeg and (not best or pendingSeg < bk1) then
+    local hold = hz and (not best or bk1 > 1 or hz < bk2 or (hz == bk2 and hk < bk3))
+    if hold or (pendingSeg and (not best or pendingSeg < bk1)) then
         local t = getTimestampMs()
         st.waitFrom = st.waitFrom or t
         if t < st.waitFrom then st.waitFrom = t end

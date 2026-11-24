@@ -22603,6 +22603,50 @@ end)()
         K.pos.x, K.pos.y = 532.5, 532.5
     end
 
+    -- 8d. PlanCheck 掃描中按照圖蓋（審查 1124 實機 snScan）：8×4 地板，玩家站在中間，掃描只看完玩家身邊 3×3 格。地板那一段先等
+    --     （✗ 先送玩家身邊那幾片，第一批蓋在藍圖中間）；掃描完第一片是蛇形起點角；等滿 WAIT_MS 還沒掃完就照挑身邊的。
+    --     蓋到一半材料變了的重排：第 0 排蓋好、玩家在西北角外、只有前兩排算過，下一片（第 1 排東端）就在算過的裡面：
+    --     不等（✗ 等到後兩排也算完，每批都多等）
+    do
+        local near = function(x, y) return x >= 502 and x <= 504 and y >= 500 and y <= 502 end
+        local ready
+        B.PlanCheck.settled = function(x, y) return ready(x, y) end
+        sb.MaxCellsPerDrag = 8
+        local function begin(px, py, f, done)
+            R.stop()
+            pl, S = Plan.new("scanHold"), {}
+            local it = Plan.item(pl, "pp_a")
+            for y = 0, 3 do for x = 0, 7 do S[Plan.add(pl, x, y, 0, 0, 0, it)] = (done and y == 0) and "done" or "ok" end end
+            K.pos.x, K.pos.y, ready, pushes = px, py, f, {}
+            R.start(K)
+        end
+        begin(503.5, 501.5, near)
+        run(20)
+        local held = #pushes
+        ready = function() return true end
+        for _ = 1, 20 do
+            if pushes[1] then break end
+            run(1)
+        end
+        local a = pushes[1] and pushes[1].anchors[1]
+        local corner = a and (a[1] == 500 or a[1] == 507) and (a[2] == 500 or a[2] == 503)
+        begin(503.5, 501.5, near)
+        run(40)
+        local b = pushes[1] and pushes[1].anchors[1]
+        local late = b and near(b[1], b[2])
+        begin(499.5, 499.5, function(_, y) return y <= 501 end, true)
+        run(2)
+        local m = pushes[1] and pushes[1].anchors[1]
+        local mid = m and m[1] == 507 and m[2] == 501
+        R.stop()
+        local function at(v) return v and (v[1] .. "," .. v[2]) or "nil" end
+        check(held == 0 and corner and late and mid,
+            "照圖蓋在掃描中：地板先等、不挑玩家身邊的片；掃描完從蛇形起點角起；等滿上限照挑身邊的；下一片算過了就不等（held="
+            .. held .. " first=" .. at(a) .. " late=" .. at(b) .. " mid=" .. at(m) .. "）")
+        B.PlanCheck.settled, sb.MaxCellsPerDrag, pushes = nil, 8, {}
+        K.pos.x, K.pos.y = 532.5, 532.5
+    end
+
     -- 9. 伺服器限流：照圖蓋照這台客戶端最近一個窗送過的請求數節流（手動送的也算）、被限流時等一下重送、連續被限流才暫停。
     --    假伺服器照 Server 的 rateOk 算（每人一個窗，窗從窗外的第一個請求起算 RATE_WINDOW_MS、含兩端，超過 RATE_MAX
     --    不收），收下的瞬間蓋好；假的 Queue 照真的一樣經過 Client 的送出點記一筆（Client.build 裡的 Client.sent）
