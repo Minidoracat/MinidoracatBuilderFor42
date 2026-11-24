@@ -10022,7 +10022,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 getBadHighlitedColor = function() return color end } end
             Core = { getTileScale = function() return 1 end }
             local eE = Entry.resolve(E)
-            local cur = setmetatable({ character = p, name = eE.name, entry = eE, d = 0, canDrag = false, offsBy = {},
+            local cur = setmetatable({ character = q, name = eE.name, entry = eE, d = 0, canDrag = false, offsBy = {},
                 colors = { warning = color }, texts = function() end }, { __index = Cursor })
             local kept = {}
             for _, c in ipairs(info.cells or {}) do kept[c.x .. "," .. c.y .. "," .. c.z] = true end
@@ -10030,18 +10030,18 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 for i = 1, n do if not kept[xs[i] .. "," .. ys[i] .. "," .. zs[i]] then return false end end
                 return true
             end
-            cur:refresh(X0 - 1, Y0 + 3, 0, X0 - 1, Y0 + 3)
+            cur:refresh(XA, YA, 0, XA, YA)
             local drawn, drawnOk = cur.g.n, onlyKept(cur.g.x, cur.g.y, cur.g.z, cur.g.n)
             local parts
             Cursor.send = function(_, _, _, ps) parts = ps end
-            cur.kx, cur.ky, cur.kz = X0 - 1, Y0 + 3, 0
-            cur:tryBuild(X0 - 1, Y0 + 3, 0)
+            cur.kx, cur.ky, cur.kz = XA, YA, 0
+            cur:tryBuild(XA, YA, 0)
             local ps = parts and parts[1] or {}
             local px, py, pz = {}, {}, {}
             for i, q in ipairs(ps) do px[i], py[i], pz[i] = q[1], q[2], q[3] end
-            local far = player({ id = 7108, x = X0 + Check.INTENT_REACH + 10.5, y = Y0 + 3.5 })
+            local far = player({ id = 7108, x = XA + Check.INTENT_REACH + 10.5, y = YA + 0.5 })
             cur.character = far
-            cur:refresh(X0 - 1, Y0 + 3, 0, X0 - 1, Y0 + 3)
+            cur:refresh(XA, YA, 0, XA, YA)
             local farCode, farN = cur.res[1].code, cur.g.n
             Cursor.send, getCore, Core = realSend, realCore, realCoreT
             check(drawn == 7 and drawnOk and #ps == 4 and onlyKept(px, py, pz, #ps) and farCode ~= nil and farN == 13,
