@@ -21464,8 +21464,10 @@ end)()
     local fakeMaterials = function() return { need = {}, have = {}, tools = {} } end
     local realMaterials2 = PC.materials
     PC.materials = fakeMaterials -- Runner 總結用；這裡的假圖沒有成本表
+    -- 7c～7d' 玩家站在 64×64 地板的東南角（蛇形起點）：地板照蛇形從離玩家最近的角蓋，腳下那片就是第一片
+    K.pos.x, K.pos.y = 563.5, 563.5
 
-    -- 7c. 4,096 片、材料到了之後第 0～3 幀按照圖蓋（預算一直超過、每幀只算一片）：送出的第一片是玩家腳下那片，
+    -- 7c. 4,096 片、材料到了之後第 0～3 幀按照圖蓋（預算一直超過、每幀只算一片）：送出的第一片是玩家腳下那片（蛇形起點），
     --     和全部算完才按同一片（✗ 不是清單前段先算出來的遠片）。第 0 幀＝每秒一次的比對還沒看到就按
     local function pressAfter(k)
         R.stop()
@@ -21487,7 +21489,7 @@ end)()
     end
     local nearRef = pressAfter(nil)
     local nearPicks = { pressAfter(0), pressAfter(1), pressAfter(2), pressAfter(3) }
-    check(nearRef == "532,532" and nearPicks[1] == nearRef and nearPicks[2] == nearRef and nearPicks[3] == nearRef
+    check(nearRef == "563,563" and nearPicks[1] == nearRef and nearPicks[2] == nearRef and nearPicks[3] == nearRef
         and nearPicks[4] == nearRef,
         "照圖蓋在材料到了之後第 0～3 幀按：第一片是玩家腳下那片，和全部算完才按同一片（" .. table.concat(nearPicks, " ") .. "）")
 
@@ -21505,11 +21507,11 @@ end)()
     R.tick()
     local staleAt = firstSent(2)
     R.stop()
-    check(frontOk and staleStart == true and staleAt == "532,532",
+    check(frontOk and staleStart == true and staleAt == "563,563",
         "照圖蓋：遠處的片本來就能蓋、身邊的剛拿到料，同一幀按下先等身邊重算，第一片是腳下那片（送了 " .. tostring(staleAt) .. "）")
 
     -- 7d. 剛拿到料就按照圖蓋（PlanCheck 每秒一次的比對還沒看到）：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），
-    --     重算完送出最近的能蓋的片；真的沒料（摘要沒變）時照舊回 NOTHING、不在重排
+    --     重算完送出蛇形起點（離玩家最近的角）那片；真的沒料（摘要沒變）時照舊回 NOTHING、不在重排
     local function smallPress(k, give)
         R.stop()
         pl = Plan.new("mnGo")
@@ -21538,7 +21540,7 @@ end)()
         if not (a and started == true and why == nil and busyNow and at == "531,531") then mnOk = false end
     end
     local na, nStarted, nWhy, nBusy = smallPress(1, false)
-    check(mnOk, "剛拿到料就按照圖蓋：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），重算完送最近的那片")
+    check(mnOk, "剛拿到料就按照圖蓋：同一幀、第 1 幀、第 30 幀按都開得了（✗ 不回 NOTHING），重算完送蛇形起點（離玩家最近的角）那片")
     check(na and nStarted == nil and nWhy == "NOTHING" and nBusy == false,
         "沒拿到料時按照圖蓋：照舊回 NOTHING、不在重排（反面）")
 
@@ -21578,7 +21580,7 @@ end)()
         PC.state = realState7
         local chunk = R.PICK_CHUNK or 512 -- 舊版沒有這個常數：照 512 比
         -- 最後一幀另外再問挑到的那一批（挑到的那片＋一批最多 32 片，審查第 5 輪 R5-5）
-        check(allOk and started == true and ticks == 8 and most <= chunk + 33 and at == "532,532",
+        check(allOk and started == true and ticks == 8 and most <= chunk + 33 and at == "563,563",
             "照圖蓋挑 4,096 片都能蓋的藍圖：分 8 幀看完、一幀最多問 " .. chunk .. " 片（最後一幀多問挑到的那一批），第一片是腳下那片（"
             .. ticks .. " 幀、一幀最多 " .. most .. " 片、送 " .. tostring(at) .. "）")
         check(busyStart == true and busyNow and startAsks == 0,
@@ -21588,7 +21590,7 @@ end)()
         bigPlan(nil)
         materialsChange()
         settle(nil)
-        local foot, footAsks = Plan.at(pl, 32, 32, 0)[1], 0
+        local foot, footAsks = Plan.at(pl, 63, 63, 0)[1], 0
         pushes = {}
         local started2 = R.start(K)
         PC.state = function(p)
@@ -21604,18 +21606,18 @@ end)()
             ticks2 = ticks2 + 1
         end
         for _, a2 in ipairs(pushes[1] and pushes[1].anchors or {}) do
-            if a2[1] == 532 and a2[2] == 532 then sentFoot = true end
+            if a2[1] == 563 and a2[2] == 563 then sentFoot = true end
         end
         R.stop()
         PC.state = realState7
         check(started2 == true and pushes[1] ~= nil and footAsks > 1 and not sentFoot,
             "照圖蓋分幀挑片途中腳下那片變成蓋好：不送它（✗ 照舊狀態再蓋一次、多扣料），重看後送別片（看了 " .. ticks2 .. " 幀）")
-        -- 複核：同一批裡不是最近的那片在送出前變成蓋好：只丟那一片，腳下那片照送
+        -- 複核：同一批裡不是第一片的那片（蛇形同一排的下一片）在送出前變成蓋好：只丟那一片，腳下那片照送
         R.stop()
         bigPlan(nil)
         materialsChange()
         settle(nil)
-        local side, sideAsks = Plan.at(pl, 33, 32, 0)[1], 0
+        local side, sideAsks = Plan.at(pl, 62, 63, 0)[1], 0
         pushes = {}
         local started3 = R.start(K)
         PC.state = function(p)
@@ -21631,14 +21633,15 @@ end)()
             ticks3 = ticks3 + 1
         end
         for _, a3 in ipairs(pushes[1] and pushes[1].anchors or {}) do
-            if a3[1] == 533 and a3[2] == 532 then sentSide = true end
-            if a3[1] == 532 and a3[2] == 532 then sentFoot3 = true end
+            if a3[1] == 562 and a3[2] == 563 then sentSide = true end
+            if a3[1] == 563 and a3[2] == 563 then sentFoot3 = true end
         end
         R.stop()
         PC.state = realState7
         check(started3 == true and side ~= nil and sideAsks > 1 and sentFoot3 and not sentSide,
             "照圖蓋同一批裡旁邊那片在送出前變成蓋好：只丟那一片、腳下那片照送（✗ 整批照舊狀態送出）")
     end
+    K.pos.x, K.pos.y = 532.5, 532.5
     PC.materials = realMaterials2
     pushes, SHORT, CODE = {}, false, {}
     PC.reset()
@@ -21774,6 +21777,102 @@ end)()
     check(rampBatch and rampBatch.id == "pp_ramp" and #rampBatch.anchors == 1 and floorBatch and #floorBatch.anchors == 3
         and R.SEGMENT.ramp == R.SEGMENT.stairs,
         "Runner：坡道一批只送一組（地板照一批上限 3 片）；坡道和樓梯同一段")
+
+    -- 8b. 地板那一段照蛇形一排一排蓋（從藍圖範圍離玩家最近的角開始，一輪只定一次）：8×4 一樓地板，玩家在西北角外，第一批
+    --     32 片是第 0 排 x 由小到大、第 1 排由大到小…；玩家在東南角外從東南角反向走；牆照舊由近到遠；兩種地板交錯時每批
+    --     同一種、序號遞增
+    do
+        local realPush8 = Q.push
+        -- 西北角（500,500）起的蛇形序號；fx/fy＝從東／南邊起
+        local function snake(x, y, fx, fy)
+            local r = fy and (503 - y) or (y - 500)
+            local k = fx and (507 - x) or (x - 500)
+            if r % 2 == 1 then k = 7 - k end
+            return r * 8 + k
+        end
+        local function order(b, fx, fy)
+            local bad = {}
+            for i, a in ipairs(b and b.anchors or {}) do
+                if snake(a[1], a[2], fx, fy) ~= i - 1 then bad[#bad + 1] = i .. ":" .. a[1] .. "," .. a[2] end
+            end
+            return b ~= nil and #b.anchors == 32 and #bad == 0, table.concat(bad, " ")
+        end
+        local function firstBatch(px, py)
+            R.stop()
+            pl = Plan.new("snake")
+            local it = Plan.item(pl, "pp_a")
+            S = {}
+            for y = 0, 3 do for x = 0, 7 do S[Plan.add(pl, x, y, 0, 0, 0, it)] = "ok" end end
+            K.pos.x, K.pos.y = px, py
+            pushes = {}
+            R.start(K)
+            run(1)
+            R.stop()
+            return pushes[1]
+        end
+        sb.MaxCellsPerDrag = 32
+        local nwOk, nwBad = order(firstBatch(499.5, 499.5), false, false)
+        check(nwOk, "照圖蓋地板照蛇形：8×4 地板、玩家在西北角外，第一批 32 片第 0 排 x 由小到大、第 1 排由大到小…（錯在 " .. nwBad .. "）")
+        local seOk, seBad = order(firstBatch(508.5, 504.5), true, true)
+        check(seOk, "照圖蓋地板照蛇形：玩家在東南角外，從東南角那片起反向一排一排（錯在 " .. seBad .. "）")
+        -- 牆：同一排 8 片，玩家站在 x＝505 那格的北邊：由近到遠（✗ 照蛇形從最近的角 507 起）
+        ENT.pp_w = { kind = "wall", spr = "pp_w" }
+        R.stop()
+        pl = Plan.new("snakeWall")
+        local wi = Plan.item(pl, "pp_w")
+        S = {}
+        for x = 0, 7 do S[Plan.add(pl, x, 0, 0, 0, 0, wi)] = "ok" end
+        K.pos.x, K.pos.y = 505.5, 499.5
+        pushes = {}
+        R.start(K)
+        run(1)
+        R.stop()
+        local wb, near, last = pushes[1], true, -1
+        for _, a in ipairs(wb and wb.anchors or {}) do
+            local d = (a[1] + 0.5 - 505.5) ^ 2 + (a[2] + 0.5 - 499.5) ^ 2
+            if d < last then near = false end
+            last = d
+        end
+        check(wb and #wb.anchors == 8 and wb.anchors[1][1] == 505 and near,
+            "照圖蓋的牆照舊由近到遠（第一片是玩家旁邊那格，不照地板的蛇形）")
+        ENT.pp_w = nil
+        -- 兩種地板棋盤格交錯、一批最多 8 片、假伺服器收下就蓋好：4 批，每批同一種、序號遞增，同一種接著上一批往後
+        ENT.pp_b = { kind = "floor", spr = "pp_b" }
+        sb.MaxCellsPerDrag = 8
+        Q.push = function(_, id, anchors, _, _, opts)
+            pushes[#pushes + 1] = { id = id, anchors = anchors }
+            opts.onDone({ owner = "plan", count = #anchors, placed = #anchors, stopped = false })
+            return #pushes
+        end
+        pl, S = Plan.new("snakeMix"), {}
+        local xa, xb = Plan.item(pl, "pp_a"), Plan.item(pl, "pp_b")
+        for y = 0, 3 do for x = 0, 7 do S[Plan.add(pl, x, y, 0, 0, 0, (x + y) % 2 == 0 and xa or xb)] = "ok" end end
+        pushes = {}
+        K.pos.x, K.pos.y = 499.5, 499.5
+        R.start(K)
+        for _ = 1, 40 do
+            if #pushes >= 4 then break end
+            run(1)
+        end
+        R.stop()
+        local mixOk, lastOf, ids = #pushes == 4, {}, {}
+        for _, b in ipairs(pushes) do
+            ids[#ids + 1] = b.id
+            local prev = lastOf[b.id] or -1
+            for _, a in ipairs(b.anchors) do
+                local want = (a[1] + a[2]) % 2 == 0 and "pp_a" or "pp_b"
+                local k = snake(a[1], a[2], false, false)
+                if want ~= b.id or k <= prev then mixOk = false end
+                prev = k
+            end
+            lastOf[b.id] = prev
+            if #b.anchors ~= 8 then mixOk = false end
+        end
+        check(mixOk and table.concat(ids, " ") == "pp_a pp_b pp_a pp_b",
+            "照圖蓋兩種地板交錯：每批同一種、序號遞增（" .. table.concat(ids, " ") .. "）")
+        ENT.pp_b, Q.push, sb.MaxCellsPerDrag, pushes = nil, realPush8, 8, {}
+        K.pos.x, K.pos.y = 532.5, 532.5
+    end
 
     -- 9. 伺服器限流：照圖蓋照這台客戶端最近一個窗送過的請求數節流（手動送的也算）、被限流時等一下重送、連續被限流才暫停。
     --    假伺服器照 Server 的 rateOk 算（每人一個窗，窗從窗外的第一個請求起算 RATE_WINDOW_MS、含兩端，超過 RATE_MAX

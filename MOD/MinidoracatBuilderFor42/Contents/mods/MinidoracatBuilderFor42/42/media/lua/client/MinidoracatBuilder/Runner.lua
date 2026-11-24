@@ -1,5 +1,6 @@
 -- 照圖蓋：照地上的藍圖一批一批送現有的建造請求（Queue.push，owner＝"plan"），伺服器照樣每片檢查、扣料、記帳，不新增指令。
--- 一批＝同一個項目、同一層、離玩家最近的幾格（最多沙盒「一次最多幾格」）；順序固定六段（SEGMENT），同一段先低層、再近的。
+-- 一批＝同一個項目、同一層、順序最前的幾格（最多沙盒「一次最多幾格」）；順序固定六段（SEGMENT），同一段先低層、再看順序：
+-- 地板那一段（SEGMENT 1）照蛇形一排一排（st.snake），其他段離玩家近的先。
 -- 每次挑批都重看各片狀態（PlanCheck.state），所以前面蓋好之後才撐得住的片（上層地板、屋頂）下一批就挑得到。
 -- 能不能蓋只問 Check.item（帶 preview），缺料、被擋、走不到的跳過，一輪結束後 summary 一次列出；再按一次照圖蓋從剩下的接著蓋。
 -- 材料箱：玩家點名的容器（存 PlanStore 的 boxes）。背包缺料時走到箱子旁邊，用原版搬運動作拿這一批缺的，拿到不超重為止。
@@ -31,7 +32,7 @@ Runner.BUSY_MAX_MS = 10000
 -- 建造、拆除請求（Client.recentSends：手動蓋、拖一排、拆除、照圖蓋都算），到上限減 RATE_SPARE 就先不送，
 -- 留幾個給玩家同時手動送的。多人連線時伺服器限流是不回覆（只能等 Queue 逾時），所以要先擋在這裡
 local RATE_SPARE = 2
--- 還是被限流（別的請求也算在同一個額度裡）：不暫停、不通知，等 RATE_RETRY_MS 重挑（同一片還是最近的那片）；
+-- 還是被限流（別的請求也算在同一個額度裡）：不暫停、不通知，等 RATE_RETRY_MS 重挑（同一片還是順序最前的那片）；
 -- 連續被限流到 RATE_GIVE_UP_MS 才照「伺服器拒絕整批」暫停
 Runner.RATE_RETRY_MS = 1500
 Runner.RATE_GIVE_UP_MS = 15000
@@ -614,7 +615,17 @@ end
 -- 17 ms（能蓋的約 100 片）到 32 ms（約 4,000 片都能蓋）（E2EPerf11 重量 fc52b53 的 bigRun）
 Runner.PICK_CHUNK = 512
 
--- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、離玩家最近的那片，再收同項目、同層、同疊放值最近的幾片。
+-- 世界座標這一格在這一輪蛇形順序（st.snake）的序號：第 r 排（從起點角那一排數）偶數排順著走、奇數排倒著走
+local function snakeKey(x, y)
+    local s = st.snake
+    local r = s.fy and (s.y1 - y) or (y - s.y0)
+    local k = s.fx and (s.x1 - x) or (x - s.x0)
+    if r % 2 == 1 then k = s.w - 1 - k end
+    return r * s.w + k
+end
+
+-- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、順序最前（key：地板那一段是蛇形序號，其他段是離玩家的
+-- 距離）的那片，再收同項目、同層、同疊放值順序最前的幾片。
 -- 片照 Runner.start 記下的這一輪的片（st.pieces）一幀看 PICK_CHUNK 片，看到一半記在 st.scan、回 "again"，下一幀接著看。
 -- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。
 -- 回 batch，"again"（還沒看完），"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
@@ -640,11 +651,11 @@ local function pickBatch(player, plan, settled)
             elseif state == "ok" or (state == "short" and boxes) then
                 local id, x, y, z, d, o, w = resolve(p)
                 if id and not (settled and not settled(x, y, z)) then
-                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id),
-                        dist = (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2 }
+                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = segmentOf(id) }
+                    c.key = c.seg == 1 and snakeKey(x, y) or (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2
                     cand[#cand + 1] = c
-                    if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.dist < bk3))) then
-                        best, bk1, bk2, bk3 = c, c.seg, c.z, c.dist
+                    if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3))) then
+                        best, bk1, bk2, bk3 = c, c.seg, c.z, c.key
                     end
                 end
             end
@@ -681,16 +692,16 @@ local function pickBatch(player, plan, settled)
             return "again"
         end
     end
-    -- 同項目、同層、同疊放值最近的幾片（逐筆插入，最多 max 片）。車庫門一扇、坡道一組一次（伺服器只收一個錨點，
+    -- 同項目、同層、同疊放值順序最前的幾片（逐筆插入，最多 max 片）。車庫門一扇、坡道一組一次（伺服器只收一個錨點，
     -- 多個回 BAD_REQUEST）
     local max = one and 1 or perBatch()
     local list = {}
     for _, c in ipairs(cand) do
         if c.id == best.id and c.z == best.z and c.o == best.o then
             local k = #list + 1
-            if k <= max or c.dist < list[max].dist then
+            if k <= max or c.key < list[max].key then
                 if k > max then k = max end
-                while k > 1 and list[k - 1].dist > c.dist do
+                while k > 1 and list[k - 1].key > c.key do
                     list[k] = list[k - 1]
                     k = k - 1
                 end
@@ -1027,6 +1038,14 @@ function Runner.start(player)
         if s == nil or s == "ok" or (s == "short" and boxes) then any = true end
     end)
     st.pieces = pieces
+    -- 地板那一段的蛇形順序：從藍圖範圍離玩家最近的角開始，一排一排來回；一輪只定一次（玩家站在中間開工不會兩側交替）
+    local x0, y0, _, x1, y1 = B.Plan.bounds(plan)
+    if x0 then
+        local px, py = player:getX(), player:getY()
+        x0, x1, y0, y1 = x0 + st.ox, x1 + st.ox, y0 + st.oy, y1 + st.oy
+        st.snake = { x0 = x0, x1 = x1, y0 = y0, y1 = y1, w = x1 - x0 + 1,
+            fx = math.abs(px - x1) < math.abs(px - x0), fy = math.abs(py - y1) < math.abs(py - y0) }
+    end
     if not any and standingOn(player, plan) then any = true end -- 只剩腳下那一片：走開就能蓋
     if not any then
         summary, summaryAt = buildSummary(), getTimestampMs()
