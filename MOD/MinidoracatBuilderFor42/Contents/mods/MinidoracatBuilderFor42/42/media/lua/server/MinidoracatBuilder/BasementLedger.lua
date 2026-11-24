@@ -73,9 +73,10 @@ local function areaOf(x, y) return math.floor(x / Basement.AREA), math.floor(y /
 
 -- 洞那格：照 BD openHole（aparosa_BD_Build.lua:383-393）拿掉地板與草、可移除的植物，格邊的牆與掛件留著
 -- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），真的拆掉了才算
--- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960；審查 round1 F2）。回退料表或 nil
+-- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960；審查 round1 F2）。拆掉地板時補推區域資料
+-- （Place.repush；洞在 z=0，引擎的區域資料只收 z ≥ 0，IsoRegionWorker.java:379）。回退料表或 nil
 local function openHole(sq)
-    local had, objects = nil, sq:getObjects()
+    local had, gone, objects = nil, false, sq:getObjects()
     for i = objects:size() - 1, 0, -1 do
         local o = objects:get(i)
         local p = o:getProperties()
@@ -85,10 +86,14 @@ local function openHole(sq)
             or (p:has(IsoFlagType.vegitation) and o:getType() ~= IsoObjectType.tree)))
             or (tex and tex:find("blends_grassoverlays", 1, true)) then
             local refund = floor and Place.refundOf(o)
-            if sq:transmitRemoveItemFromSquare(o) >= 0 and refund then had = refund end
+            if sq:transmitRemoveItemFromSquare(o) >= 0 and floor then
+                gone = true
+                if refund then had = refund end
+            end
         end
     end
     sq:RecalcAllWithNeighbours(true)
+    if gone then Place.repush(sq, nil) end
     return had
 end
 

@@ -9797,6 +9797,17 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(d0 ~= nil and goneOk and eng.tile[tk(30000, 30000)] ~= nil and eng.tile[tk(30000, 30000)] ~= d0,
             "F18 basements 拿掉一格、之後又挖回來：重新登錄")
 
+        -- basements 拿掉主建物裡的一格，同一塊再挖一格：重登錄的主建物不含拿掉的那格
+        Basement.add({ { 31000, 31000 }, { 31001, 31000 }, { 31002, 31000 } })
+        Basement.registerAll()
+        local d1 = eng.live[tk(31000, 31000)]
+        Basement.reset({ { 31000, 31000 }, { 31001, 31000 } }, 121, 121)
+        Basement.grow(Basement.add({ { 31000, 31001 } }))
+        local d2 = eng.live[tk(31000, 31000)]
+        check(d1 and d1.n == 3 and d2 and d2 ~= d1 and d2.n == 3 and eng.tile[tk(31002, 31000)] == nil
+            and eng.tile[tk(31000, 31001)] == d2,
+            "basements 拿掉主建物的一格後同一塊再挖：重登錄的主建物不含拿掉的那格（" .. tostring(d2 and d2.n) .. " 格）")
+
         local L = Basement.LIMIT
         local far = Basement.add({ { L, 5 }, { -1, 5 }, { 5, L } })
         local code, at = Basement.pre(H.near, nil, { { x = L, y = 5, z = Z, role = "dig" } }, { L, 5, Z }, nil, false)
@@ -10134,6 +10145,30 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 "E1 單機、洞上是原版地板：照常挖好、洞開好、不退料（" .. tostring(code) .. "）")
         end)()
 
+        -- 洞拆地板、樓梯補推區域資料（Place.repush）：洞那幾格（z=0）真的拆掉地板才推，沒拆掉的不推；樓梯照樓梯補推
+        ;(function()
+            local realRe, calls = B.Place.repush, {}
+            B.Place.repush = function(sq, kind, ...)
+                calls[#calls + 1] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), kind = kind }
+                return realRe(sq, kind, ...)
+            end
+            local ok, code, r = paidDig(3500, 7138, function(hs)
+                hs[2].transmitRemoveItemFromSquare = function() return -1 end
+            end)
+            B.Place.repush = realRe
+            local function pushed(sq, kind)
+                for _, c in ipairs(calls) do
+                    if c.x == sq:getX() and c.y == sq:getY() and c.z == sq:getZ() and c.kind == kind then return true end
+                end
+                return false
+            end
+            local stairs = 0
+            for _, c in ipairs(calls) do if c.kind == "stairs" then stairs = stairs + 1 end end
+            check(ok and pushed(r.hs[0], nil) and pushed(r.hs[1], nil) and not pushed(r.hs[2], nil) and stairs >= 3,
+                "洞拆掉地板的兩格補推區域資料、沒拆掉的那格不推；樓梯三片照樓梯補推（" .. tostring(code) .. "，stairs "
+                .. stairs .. "）")
+        end)()
+
         -- E4：洞上本工具蓋的地板的退料掉在玩家腳下（drop：AddWorldInventoryItem），不進背包；BUILD 紀錄寫 back=
         ;(function()
             local logs, keepPrint = {}, print
@@ -10195,7 +10230,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         ;(function()
             getOnlinePlayers = function() return javaList({}) end
             for x = 3148, 3184 do for y = 3148, 3152 do ug(x, y) end end
-            local applied, keepGet = 0, BuildingRoomsEditor.getInstance
+            local applied, keepGet, grows, keepGrow = 0, BuildingRoomsEditor.getInstance, 0, Basement.grow
+            Basement.grow = function(t) grows = grows + 1 return keepGrow(t) end
             BuildingRoomsEditor.getInstance = function()
                 local e = keepGet()
                 if not e.counted then
@@ -10229,10 +10265,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             nowMs = nowMs + Basement.GROW_QUIET
             fire("OnTick")
             getOnlinePlayers = nil
-            BuildingRoomsEditor.getInstance = keepGet
+            BuildingRoomsEditor.getInstance, Basement.grow = keepGet, keepGrow
             local def2 = eng.tile[tk(3181, 3150)]
             check(inSet == 8 and walls and Ledger.stats().n == n0 + 8 + 24 and mid == 0 and first == 1 and def ~= nil
-                and def.n == 8 and long == 1 and applied == 3 and def2 ~= nil and def2.n == 32,
+                and def.n == 8 and long == 1 and applied == 3 and grows == 3 and def2 ~= nil and def2.n == 32,
                 "E3 一排挖 8 格：集合、帳本、土牆每格當下就有；登錄等最後一格之後安靜夠久才一次（applyChanges "
                 .. mid .. " → " .. first .. " 次）；一路不停挖 24 格：排滿 60 秒中途登錄一次、最後再一次（" .. long .. "／"
                 .. applied .. "）")
@@ -25908,6 +25944,42 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(s1 == true and walk1 and stay and none and notYet and ready,
         "F7 挖這一格的站位：只走到已挖的正交鄰格（斜角、沒挖的不站）；站在已挖鄰格上不走；沒有就不原地挖、記 noRoom；"
         .. "第 2 格起等前一格進了地下室集合才找站位")
+
+    -- 框選地下一層擷取：入口樓梯六張圖（carpentry_02_88–90、96–98）在遊戲裡帶 EntityScript（原版 Wood_Stairs 的圖，
+    -- SpriteConfigManager.java:134-140），圖塊分類回 ENTITY，擷取交給配方：照原版 Wood_Stairs 配方收一件（那一面的
+    -- 第一格那張記錨點，其他兩張不另記）；沒有那個配方時三張都記成不收（ENTITY）
+    ;(function()
+        local R = B.Recipes
+        local STAIR = { "carpentry_02_96", "carpentry_02_97", "carpentry_02_98" }
+        local list = {}
+        for i, n in ipairs(STAIR) do
+            list[#list + 1] = sprite(n, 5220 + i, { type = T["stairs" .. ({ "B", "M", "T" })[i] .. "N"], flags = { "EntityScript" } })
+        end
+        world(list)
+        local function face(rows)
+            return { getWidth = function() return 1 end, getHeight = function() return #rows end,
+                getTileInfo = function(_, _, y) local n = rows[y + 1] return n and { getSpriteName = function() return n end } end }
+        end
+        local faces = { [1] = face({ "carpentry_02_98", "carpentry_02_97", "carpentry_02_96" }) }
+        local r = { id = R.PREFIX .. "Base.Wood_Stairs", info = { getFace = function(_, f) return faces[f] end } }
+        local keepL, keepId, keepBy = R.list, R.byId, R.bySprite
+        R.list, R.byId, R.bySprite = { n = 1, r }, { [r.id] = r }, {}
+        for _, n in ipairs(STAIR) do R.bySprite[n] = r end
+        local function grab()
+            local res = Cap.scan(320, 300, 322, 304, -1).res
+            for i, n in ipairs(STAIR) do Cap.tile(res, n, 321, 300 + i, -1, -1) end
+            return res
+        end
+        local withR = grab()
+        R.list, R.byId, R.bySprite = { n = 0 }, {}, {}
+        local noR = grab()
+        R.list, R.byId, R.bySprite = keepL, keepId, keepBy
+        local p1 = withR.pieces[1]
+        check(Entry.resolve("carpentry_02_98") == nil and withR.n == 1 and p1.id == r.id and p1.y == 303 and p1.z == -1
+            and withR.skipped == 0 and noR.n == 0 and noR.skipped == 3 and (noR.skipZ[-1] or {}).ENTITY == 3,
+            "擷取地下一層的入口樓梯（帶 EntityScript）：照原版 Wood_Stairs 配方收一件；沒有那個配方時三張記成不收（ENTITY）（"
+            .. withR.n .. "／" .. noR.skipped .. "）")
+    end)()
     C.pending = nil
     for _, k in ipairs(made) do squares[k] = nil end
     BM.reset({}, AT, AT)

@@ -1781,7 +1781,7 @@ function Place.build(kind, cells, placed)
         return repushPlaced(kind, placed, first)
     end
     -- 挖地下室：地下的格子沒有地板就鋪泥土地，樓梯三片和落腳處照樓梯放（頂片在第一個，整組的退料在它那一格）；
-    -- 洞與帳本由 BasementLedger.commit 接著做。地下沒有區域資料（IsoRegionWorker.java:379），不補推
+    -- 洞與帳本由 BasementLedger.commit 接著做。照樓梯補推（z=0 的平台地板；地下的引擎不收，IsoRegionWorker.java:379）
     if kind == "dig" then
         local stairs = {}
         for _, c in ipairs(cells) do
@@ -1793,7 +1793,7 @@ function Place.build(kind, cells, placed)
             if c.role ~= "dig" and c.role ~= "hole" then stairs[#stairs + 1] = c end
         end
         if stairs[1] then placeStairs(stairs, placed) end
-        return
+        return repushPlaced("stairs", placed, first)
     end
     if kind == "ramp" then
         placeRamp(cells, placed)

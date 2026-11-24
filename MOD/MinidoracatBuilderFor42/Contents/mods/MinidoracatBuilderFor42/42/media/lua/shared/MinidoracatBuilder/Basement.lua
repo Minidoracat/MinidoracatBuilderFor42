@@ -123,9 +123,16 @@ function Basement.reset(tiles, ax, ay)
         local old = main
         cells, blocks, main = {}, {}, {}
         Basement.add(rest)
+        -- 主建物接回時 tiles 只留還在同一塊的格子（建新表）：舊表帶著拿掉的格子，下一次登錄的 mainRects 會把它們又登錄進去
         for _, m in pairs(old) do
             local id = cells[key(m.cx, m.cy)]
-            if id and not main[id] then main[id] = m end
+            if id and not main[id] then
+                local tiles = {}
+                for k, t in pairs(m.tiles) do
+                    if cells[k] == id then tiles[k] = t end
+                end
+                m.tiles, main[id] = tiles, m
+            end
         end
     end
     return Basement.add(inside)
@@ -577,7 +584,7 @@ function Basement.registerAll()
     return register(list)
 end
 
--- 新增的格子（Basement.add 回的）登錄進引擎
+-- 新增的格子（Basement.add 回的）當下登錄進引擎；挖掘中的新格子走 growLater，它到時候也是呼叫這裡
 function Basement.grow(tiles)
     return register(tiles)
 end
@@ -600,7 +607,7 @@ local function flushGrow()
     end
     due = {}
     if #list == 0 then return end
-    local ok, done = pcall(register, list)
+    local ok, done = pcall(Basement.grow, list)
     if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
 end
 function Basement.growLater(tiles)
