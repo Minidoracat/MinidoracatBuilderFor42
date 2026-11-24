@@ -307,6 +307,7 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3830045886
 [*] [b]土牆那條邊能蓋牆[/b]：裝了 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3806513504]Basement Building[/url] 時，地下室外圍土牆那條邊可以蓋牆。
 [*] [b]只能蓋實牆[/b]：照那個 MOD 的規則，不能蓋窗、門、柵欄、門框、窗框，或和土牆同一張圖的牆。
 [*] [b]蓋好與拆掉[/b]：蓋好時那面土牆會被換掉，拆掉牆後土牆自己回來。
+[*] [b]它的木牆、原木牆可以直接換[/b]：它挖地下室時在外圍放的牆，可以直接蓋別的牆換掉，原本那面不退材料。轉角那面只換一邊時，另一邊會留下同款、同等級的單面牆。
 [/list]
 === 🧰 各種東西的規則：門窗與窗簾
 [h3]門窗[/h3]

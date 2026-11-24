@@ -307,6 +307,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Walls on the dirt wall edge[/b]: with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3806513504]Basement Building[/url] installed, you can build a wall on the edge of a basement's outer dirt wall.
 [*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
 [*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
+[*] [b]Its wooden and log walls can be swapped directly[/b]: the walls it places around a basement can be replaced by building another wall over them; the old wall gives no materials back. Replacing only one side of a corner wall leaves a single wall of the same style and tier on the other side.
 [/list]
 === 🧰 Rules for each kind: doors, windows and curtains
 [h3]Doors and windows[/h3]
