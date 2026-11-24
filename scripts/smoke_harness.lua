@@ -4406,8 +4406,8 @@ local function circuitScenario()
         -- 室外（emptyoutside）、超過 ROOM_MAX 的不接
         local Bm = MinidoracatBuilder.Basement
         local function def(name, area) return { getName = function() return name end, getArea = function() return area end } end
-        local function down(x, y, spr)
-            square(x, y, -1)
+        local function down(x, y, spr, flags)
+            square(x, y, -1, { flags = flags })
             at = function(x2, y2) return squares[x2 .. "," .. y2 .. ",-1"] end
             local o = light(x, y, spr, "ours")
             at = realAt
@@ -4444,9 +4444,9 @@ local function circuitScenario()
             and table.concat(codes, ",") == "NOT_ENCLOSED,NOT_ENCLOSED,NOT_ENCLOSED" and under == 0,
             "c15 地下層放開關：本 MOD 挖的塊與外來 MOD 的房間照一間自動接燈（塊外、另一間的不接）；室外、超過 400 格的房間"
             .. "與 401 格的塊 NOT_ENCLOSED（" .. table.concat(codes, ",") .. "）")
-        -- 牆把塊隔成兩間（伺服器分好的房間，Basement.setRooms）：開關只接自己那間的燈
+        -- 牆把塊隔成兩間（(111,100) 西邊一面牆；伺服器分好的房間，Basement.setRooms）：開關只接自己那間的燈
         fire("OnObjectAboutToBeRemoved", US)
-        local ML = down(111, 100, lampS)
+        local ML = down(111, 100, lampS, { cutW = true })
         Bm.setRooms({ { { 110, 100 } }, { { 111, 100 }, { 112, 100 } } })
         local US2 = down(112, 100, swS)
         sent = {}
@@ -4455,6 +4455,29 @@ local function circuitScenario()
         check(split.code == nil and nL(split) == 1 and wired(split, ML) and not wired(split, UL),
             "c15 塊分成兩間：開關只接同一間的燈，牆另一邊的不接（" .. tostring(split.code) .. " " .. nL(split) .. "）")
         fire("OnObjectAboutToBeRemoved", US2)
+        -- 牆剛蓋好、重算分房還排在延後批次（Basement.dirty；分法還是舊的一間）就放開關、放燈：同一個呼叫裡先重算那一塊，
+        -- 不照舊的一間接到牆另一邊
+        local keepOnline = getOnlinePlayers
+        getOnlinePlayers = keepOnline or function() return javaList({}) end -- 重算後推 block 要找附近的玩家；這一段沒有
+        local function stale()
+            Bm.setRooms({ { { 110, 100 }, { 111, 100 }, { 112, 100 } } })
+            Bm.dirty(111, 100, -1)
+        end
+        stale()
+        local US3 = down(112, 100, swS)
+        sent = {}
+        Circuits.placed(P, { US3 })
+        local late = last()
+        stale()
+        sent = {}
+        Circuits.placed(P, { down(110, 100, lampS) })
+        local joined = false
+        for _, m in ipairs(sent) do joined = joined or m.args.auto == "lamp" end
+        check(late.code == nil and nL(late) == 1 and wired(late, ML) and not wired(late, UL) and not joined,
+            "c15 牆剛蓋好、分房還沒重算就放開關或燈：先重算那一塊，開關只接同一間的燈、牆另一邊新放的燈不接進它的線路（"
+            .. tostring(late.code) .. " " .. nL(late) .. " " .. tostring(joined) .. "）")
+        getOnlinePlayers = keepOnline
+        fire("OnObjectAboutToBeRemoved", US3)
         fire("OnObjectAboutToBeRemoved", FS)
         Bm.reset({}, 0, 0)
         getWorld = realWorld
