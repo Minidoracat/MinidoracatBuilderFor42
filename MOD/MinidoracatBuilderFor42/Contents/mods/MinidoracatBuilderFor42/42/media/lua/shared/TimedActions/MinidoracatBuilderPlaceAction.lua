@@ -56,7 +56,7 @@ function MinidoracatBuilderPlaceAction:getDuration()
     if S then return S.duration(self.character, self.n, self.i) end
     if self.character:isTimedActionInstant() then return 1 end
     local b = pending(self)
-    return MinidoracatBuilder.Entry.duration(b and b.kind, self.character)
+    return MinidoracatBuilder.Entry.duration(b and b.kind, self.character, b and b.e)
 end
 
 function MinidoracatBuilderPlaceAction:new(character, n, i)

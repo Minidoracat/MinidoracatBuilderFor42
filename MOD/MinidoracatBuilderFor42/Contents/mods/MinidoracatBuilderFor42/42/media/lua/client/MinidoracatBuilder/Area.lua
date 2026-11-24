@@ -1,4 +1,4 @@
--- 一區拆除（設計稿 claim 3，使用者 2026-11-01 選「本工具拆的＋原版拆解的」）：右鍵「拆除一區...（建造工坊）」→
+-- 一區拆除（設計稿，使用者 2026-11-01 選「本工具拆的＋原版拆解的」）：右鍵「拆除一區...（建造工坊）」→
 -- 拖長方形（Cursor.startArea，只用滑鼠）→ 放開跳確認面板（照頁籤分種類勾選）→ 一張清單送出（Client.dismantleMany）→
 -- 輪完或停下跳總結通知。範圍是玩家那一層，另收正上方那層的屋頂（從屋裡框地板拆得到頭上那片，同 Menu.targets）。
 -- 這裡的判斷只給畫面用：能不能拆、退什麼料由伺服器照清單一件一件重查（Server.dismantle）；原版拆解照原版動作自己查。
@@ -19,7 +19,7 @@ local LOG = "[MinidoracatBuilderFor42] "
 local PAD, GAP = 8, 6
 -- 一區拆除的預覽不再照時間過期：同一個範圍、世界戳記（Area.stamp）沒變就回同一份（游標拖曳中停住才問、按住不動每秒問一次）
 
--- 拆的順序（設計稿 3.4）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板（水面跟地板一起填平）；同一順位由上層往下。
+-- 拆的順序（設計稿）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板（水面跟地板一起填平）；同一順位由上層往下。
 -- 二樓地板上有東西時不給拆（FLOOR_IN_USE），照這個順序拆到它時上面已經空了。表外的種類算 2
 local ORDER = {
     floorOverlay = 1, wallOverlay = 1, wallObject = 1, windowObject = 1, attached = 1, overlay = 1,
@@ -187,13 +187,14 @@ local function maxItems()
     return math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
 end
 
--- 送給 Client.dismantleMany 的一件（C6）。t＝Area.scan／Menu.targets 的一項
+-- 送給 Client.dismantleMany 的一件。t＝Area.scan／Menu.targets 的一項
 function Area.item(t)
     local sq = t.overlay and t.overlay.sq or t.obj:getSquare()
     local own = {}
     for i, o in ipairs(t.plan and t.plan.remove or {}) do own[i] = o:getSquare() end
     return { x = sq:getX(), y = sq:getY(), z = sq:getZ(), name = t.name, kind = t.kind,
-        north = t.obj and Entry.north(t.kind, t.obj:getSprite()) or nil, own = own, route = t.route, obj = t.obj }
+        north = Entry.edgeNorth(t.kind, t.overlay and t.overlay.spr or t.obj:getSprite()), own = own, route = t.route,
+        obj = t.obj }
 end
 
 -- ---------------------------------------------------------------- 游標預覽
@@ -213,11 +214,16 @@ end
 local cache = { key = nil, stamp = nil, out = nil }
 
 -- 世界戳記：範圍（玩家那層與上一層）每格的物件數、每件容器裡的件數、每件掛的附加圖張數（地板的地面覆蓋、牆上的疊圖），
--- 加上玩家背包件數與建造作弊。
+-- 地板防護會看的格子有沒有人站著，加上玩家背包件數與建造作弊。
 -- 拆完、別人蓋了或拆了、容器放進拿出、工具進出背包都會變，預覽照它決定要不要重算。整區 3,200 格約幾毫秒，比重算便宜。
+-- 有沒有人站著只看 Dismantle.check 地板分支會查的格子：玩家那一層（上一層 Area.scan 只收屋頂，不走地板分支）、z <= 0、
+-- 正下方那一層有格子。用和預覽同一個 me（沒開建造作弊＝玩家本人不算，作弊＝全算），所以「只有自己」和「只有別人」
+-- 分得出來；別處（含站在地下室時頭頂的地面）有人走動不重算。
 -- ponytail：同一格的東西原地換成別款（件數不變）認不出來，要等範圍變了才重算；放開時一律重新 collect、伺服器也一件一件重查
 function Area.stamp(x1, y1, x2, y2, z, player)
     local cell, s = getCell(), 0
+    local cheat = player ~= nil and B.Materials.cheat(player)
+    local me, occupied = not cheat and player or nil, B.Check.occupied
     for x = x1, x2 do
         for y = y1, y2 do
             for dz = 0, 1 do
@@ -233,13 +239,15 @@ function Area.stamp(x1, y1, x2, y2, z, player)
                         local list = o:getAttachedAnimSprite()
                         if list then n = n + 4096 * list:size() end
                     end
+                    local guarded = dz == 0 and z <= 0 and cell:getGridSquare(x, y, z - 1) ~= nil
+                    n = n * 2 + ((guarded and occupied(sq, me)) and 1 or 0)
                 end
                 s = (s * 31 + n) % 2147483629
             end
         end
     end
     local inv = player and player:getInventory()
-    return s .. ":" .. (inv and inv:getItems():size() or -1) .. ":" .. tostring(B.Materials.cheat(player))
+    return s .. ":" .. (inv and inv:getItems():size() or -1) .. ":" .. tostring(cheat)
 end
 
 -- Cursor.startArea 的 preview：要拆的格子（bad＝false，游標畫紅）與不拆的東西的格子（bad＝true）；只是超過一次上限
@@ -289,7 +297,7 @@ function Area.outline(x1, y1, x2, y2)
     } }
 end
 
--- 右鍵「拆除一區...（建造工坊）」：開長方形游標（Cursor.startArea，C7），放開跳確認面板
+-- 右鍵「拆除一區...（建造工坊）」：開長方形游標（Cursor.startArea），放開跳確認面板
 function Area.start(playerNum)
     local Cursor = B.Cursor
     local player = getSpecificPlayer(playerNum)
@@ -427,7 +435,7 @@ function Panel.new(UI, playerNum, list, cw, ch)
     if sum.smash > 0 then para(getText("IGUI_MBLD_Area_Smash", tostring(sum.smash)), c.textMuted) end
     if listed > 0 then para(getText("IGUI_MBLD_Unbuild_RefundTip"), c.textMuted) end
     if listed > self.max then para(getText("IGUI_MBLD_Area_Over", tostring(self.max)), c.warning, true) end
-    -- 按鈕寬照最長的標題（全勾、取到上限時）定死：setTitle 不重算明示的寬度（ui.md 已知坑）
+    -- 按鈕寬照最長的標題（全勾、取到上限時）定死：setTitle 不重算明示的寬度
     local btnH = fh + 10
     local goTitle = getText("IGUI_MBLD_Area_Go", tostring(math.min(listed, self.max)))
     local goW = tm:MeasureStringX(font, goTitle) + 20

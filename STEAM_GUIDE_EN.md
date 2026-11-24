@@ -1,7 +1,7 @@
 <!-- 指南網址：https://steamcommunity.com/sharedfiles/filedetails/?id=3830047545 -->
 <!-- Steam guide source (English). The full description lives in this guide; the Workshop page only has a summary. Format and sync: pz-family-docs/release.md "完整說明：Steam 指南" -->
 <!-- 標題：📖 Minidoracat Build Anything Mod Guide: Build Window, Blueprints, Materials, Wiring and Dismantling -->
-<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sub-kinds, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing, dragging rows and batches, turning to all four edges of a tile, the quick pick bar and placing keys, the rules for walls, posts, doors and windows, garage and double doors, curtains, stairs, ramps, roofs, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling, blueprints (planning, the Roof Helper, placing, the blueprint panel, building from a blueprint with supply boxes, the library, share codes and import, capturing a building) and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
+<!-- 摘要：A picture guide to Minidoracat Build Anything: searching, tabs, sub-kinds, sources and favorites in the build window, the eyedropper and picking a tile with a right-click, full sets, build recipes from vanilla and other mods, placing, dragging rows and batches, turning to all four edges of a tile, the quick pick bar and placing keys, the rules for walls, posts, doors and windows, garage and double doors, curtains, stairs, ramps, roofs, basements, furniture, lights and containers, materials, tools and XP, the hardcore options (skill levels and vanilla recipe materials), switches and wiring, dismantling, blueprints (planning, the Roof Helper, placing, the blueprint panel, building from a blueprint with supply boxes, the library, share codes and import, capturing a building) and gamepad controls, plus the admin panel, the sandbox options, how to turn off other mods' facilities, the API for mod authors, known limitations and what to do before removing the mod. -->
 <!-- Screenshots: docs/screenshots/steam/en/ -->
 === 🚀 Quick start
 [b]中文版：[/b] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3830047491]Minidoracat Build Anything MOD 完整說明[/url]
@@ -194,7 +194,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Maximum distance[/b]: 3 tiles by default, at most one level up or down, and the admin can change it.
 [*] [b]Your character walks over[/b]: it walks next to each tile before building.
-[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences can be built from either side.
+[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences can be built from either side. So can wall overlays stuck on a wall (baseboards, grime, graffiti and the like): build or dismantle them from either side of the wall.
 [*] [b]Places you can't reach[/b]: through a wall or a closed door or window, furniture and the like can't be placed.
 [*] [b]With the build cheat on[/b]: your character doesn't walk over: it builds and dismantles from where it stands, at any distance, even unreachable places. Actions still take their usual time. Area dismantles that use vanilla Disassemble are still walked to.
 [*] [b]Someone standing there[/b]: things that block movement are not placed on a square where a player or zombie stands.
@@ -281,6 +281,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
+[*] [b]Floors with someone on them[/b]: an upper-level floor, or a ground-floor floor over a basement (plus the tile east or south of it), can't be replaced while a person, zombie or animal stands on it: the tile turns red. A floor over a basement can't be dismantled then either. The tile would be briefly floorless, and they'd fall and get hurt. On your own tile it still works, even when dragging: you step aside first; with no free tile around, that tile is skipped and uses no materials. With build cheat you don't step aside, so move off yourself. Other ground floors and floors inside a basement aren't affected.
 [*] [b]Walls from the second floor up[/b]: a floor underneath is enough; without one, a wall can still go up when the square right below has a wall on the same edge (stacked on the wall below), or when the squares on both sides of that edge have roof pieces on the same level (gable walls, for example). Otherwise it still needs a floor first.
 [*] [b]Walls one level up[/b]: walls, fences, posts, door frames, window frames, doors and windows can also switch between one level up and this level with PgUp/PgDn; they start on this level. You can build second-floor walls while standing downstairs: your character walks to that edge on the level below. What holds them up: walls follow the line above; fences, posts, door frames and window frames need a floor on this square or on the square across that edge; whether a door or window needs a frame is unchanged (see the door and window entries below). Walls from building recipes work as in vanilla and can't change level.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
@@ -310,6 +311,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Walls on the dirt wall edge[/b]: with [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3806513504]Basement Building[/url] installed, you can build a wall on the edge of a basement's outer dirt wall.
 [*] [b]Solid walls only[/b]: following that mod's rules, no windows, doors, fences, door frames, window frames, or walls with the same tile as the dirt wall.
 [*] [b]Building and dismantling[/b]: the dirt wall on that edge is replaced when the wall is built, and comes back by itself when the wall is dismantled.
+[*] [b]Its wooden and log walls can be swapped directly[/b]: the walls it places around a basement can be replaced by building another wall over them; the old wall gives no materials back. Replacing only one side of a corner wall leaves a single wall of the same style and tier on the other side.
 [/list]
 === 🧰 Rules for each kind: doors, windows and curtains
 [h3]Doors and windows[/h3]
@@ -386,6 +388,65 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Keeping rain out[/b]: once a rain-proof roof is built, the square below is no longer outdoors.
 [*] [b]Counting as indoors (temperature)[/b]: the level above also needs a floor.
 [*] [b]Roof pieces that let rain in[/b]: eaves and many roof pieces never kept rain out, and the details point them out.
+[/list]
+=== 🧰 Rules for each kind: basements
+[h3]Turning it on and where to find it[/h3]
+[list]
+[*] [b]Off by default[/b]: an admin turns on Basements in the sandbox page "what can be built" or in the Manage panel before anyone can dig.
+[*] [b]Where[/b]: the Basements kind in the Stairs & ramps tab, with three items: South Basement Entrance, East Basement Entrance and Dig Basement Tile; while placing an entrance, press R to switch between south and east.
+[*] [b]One level down only[/b]: place the entrance on the ground floor, and use Dig Basement Tile on the level below.
+[*] [b]With Basement Building installed[/b]: the three items are still listed but can't be used, so dig with that mod; basements dug earlier with this tool still count as indoors.
+[*] [b]Permissions[/b]: the usual building rules apply (Enable building, Who can build, Where players can build, safehouses).
+[/list]
+[h3]Opening an entrance[/h3]
+[list]
+[*] [b]What it opens[/b]: a wooden staircase down, and a 3×2 space beyond the foot of the stairs; with the stairs it covers 3×5 (5×3 for the east entrance).
+[*] [b]The 3 tiles over the stairs[/b]: their floor and grass are removed; floors placed with this tool are refunded as when dismantled, dropped at your feet.
+[*] [b]Clear them first[/b]: furniture, a rug, a floor overlay or dropped items on those 3 tiles block the entrance, so move or remove them; a person or a vehicle standing there blocks it too.
+[*] [b]Top of the stairs[/b]: the tile you stand on before walking down needs a floor or ground and can't be other stairs or blocked; its edge toward the stairs can't have a wall, window frame or fence, but a door frame or door is fine.
+[*] [b]Other underground spaces[/b]: you can't dig within one tile of a basement from the map or another mod's underground room.
+[*] [b]New entrances[/b]: the whole staircase must be at least one tile away from other basements; to connect them, dig through from inside with Dig Basement Tile.
+[*] [b]Extra entrances[/b]: to add an entrance over a basement you already dug, the 3 stair tiles and the tile in front of the stairs' foot must already be dug; the preview shows only the tiles it will actually open.
+[*] [b]Work time[/b]: about 35 seconds for an entrance and about 6 seconds per dug tile.
+[*] [b]Zombies[/b]: like any stairs, zombies can walk down the entrance stairs.
+[/list]
+[h3]Digging outward[/h3]
+[list]
+[*] [b]How[/b]: on the level below, choose Dig Basement Tile and click a tile, or hold the left button and drag an area.
+[*] [b]Where you stand[/b]: on a dug tile right next to it (north, south, east or west); when you drag an area, your character walks over and digs it tile by tile.
+[*] [b]Outward from what's dug[/b]: the tile must have at least one already dug tile to its north, south, east or west.
+[*] [b]Size limit[/b]: one connected basement can have at most 400 tiles; two basements can't be joined if together they go over the limit, so to dig more, open a new entrance at least one tile away.
+[*] [b]Something on a dirt wall[/b]: you can't dig through a dirt wall with a picture, switch, wall decoration or paint on it; take it down or remove it first.
+[*] [b]The dug-out dirt[/b]: doesn't turn into items.
+[*] [b]Digging into someone else's area[/b]: digging a tile removes the dirt walls between it and the dug tiles next to it, so you also need permission to dismantle on those tiles.
+[*] [b]Floors right above a basement[/b]: can't be replaced or dismantled while a person, zombie or animal stands on them; see "Floors with someone on them" under Walls, floors and fences.
+[/list]
+[h3]Materials and tools[/h3]
+[list]
+[*] [b]Digging a tile[/b]: only a shovel, no materials and no XP; the shovel wears down as you dig.
+[*] [b]An entrance[/b]: also takes the materials and tools for wooden stairs, scaled by the material multiplier, and gives the same XP as wooden stairs.
+[*] [b]No skill needed[/b]: even when the server turns on Require vanilla skill levels.
+[/list]
+[h3]Dirt walls, rooms and lights[/h3]
+[list]
+[*] [b]Dirt walls[/b]: dirt walls form around what you dig, the ground is dirt, and it counts as indoors.
+[*] [b]Replacing the outer dirt walls[/b]: build a solid wall on an outer edge (the side against undug earth) with Build Anything and the dirt wall there moves aside; dismantle that wall later and the dirt wall comes back by itself.
+[*] [b]No openings on the outer edge[/b]: door frames, window frames, see-through walls, and things you can climb over such as low walls and fences can't go on an outer edge; the cursor turns red. A wall with the same tile as the dirt wall says This tile already has the same piece, because that edge already is that dirt wall.
+[*] [b]Beside the entrance stairs[/b]: walls, doors and windows can't go on the stair tiles, so the outer dirt walls beside the stairs can't be replaced.
+[*] [b]Vanilla build menu and paint[/b]: walls from the vanilla build menu can't go on an outer edge, so use Build Anything to replace a dirt wall; vanilla paint and signs can be painted on dirt walls.
+[*] [b]Corner posts[/b]: an inward corner of an L-shaped basement gets a dirt-colored corner post by itself; when you build a wall beside that corner, the post moves aside.
+[*] [b]Inside[/b]: walls, doors and furniture between dug tiles follow the usual rules.
+[*] [b]Rooms[/b]: walls and doors divide a basement into separate rooms.
+[*] [b]Each room needs light[/b]: each room needs its own switch or light, and a room without one stays dark; as above ground, lights need power.
+[*] [b]Switches[/b]: a switch placed in a basement wires the lights in its room by the rules in Switches and wiring.
+[*] [b]When it counts as indoors[/b]: about 10 seconds after you stop, the tiles you just dug count as indoors together; if you keep digging, this happens about once a minute. Pressing a switch or light in that area before then makes it count as indoors first, then switches.
+[/list]
+[h3]Dismantling and blueprints[/h3]
+[list]
+[*] [b]Can't be filled back[/b]: dug ground can't be filled back in and gives no materials back; Undo last build doesn't fill it in either.
+[*] [b]Entrance stairs[/b]: can be dismantled like regular stairs, with materials back; the dug area stays.
+[*] [b]Not in blueprints[/b]: none of the three items can go into a blueprint, and while planning the cursor says Basements can't go into a blueprint. Leave planning, then dig directly.
+[*] [b]Capture and blueprint files[/b]: loading a blueprint file or capturing an existing building skips them, along with entrance stairs inside a basement.
 [/list]
 === 🧰 Rules for each kind: furniture, containers and lights
 [h3]Furniture and containers[/h3]
@@ -605,7 +666,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Lights placed later[/b]: when the room has only one group of switches, lights placed in it later are wired too when possible.
 [*] [b]When it doesn't wire[/b]: several groups of switches in the room, a full circuit, too far from the switch, or no permission, with a notice saying why.
 [*] [b]Too big or not closed[/b]: placing a switch there gives a This isn't a closed room notice, so wire it by hand.
-[*] [b]Below ground[/b]: basements have no room data in the game, so lights are not wired automatically and placing a switch gives the same This isn't a closed room notice; right-click the switch, choose Wiring... (Build Anything) and click the lights one by one in wiring mode.
+[*] [b]Below ground[/b]: basements dug with this tool, basements from the map and basements dug with Basement Building wire lights automatically like regular rooms (up to 400 tiles per room). Other underground tiles with no room don't, and placing a switch there gives the same This isn't a closed room notice; right-click the switch, choose Wiring... (Build Anything) and click the lights one by one in wiring mode.
 [*] [b]When there is no notice[/b]: a light placed somewhere not closed, or with no switch within 16 tiles on the same level, is not wired and no notice appears.
 [*] [b]If it doesn't wire[/b]: wire it by hand, see the next section.
 [/list]
@@ -941,11 +1002,11 @@ Players who can change sandbox options can turn what can be built on or off for 
 [/list]
 [h3]Four pages[/h3]
 [list]
-[*] [b]Kinds[/b]: turn the 25 kinds on or off, such as floors, walls, posts, ramps and furniture. Wells and Hand Pumps and Water are off by default; the others are on.
+[*] [b]Kinds[/b]: turn the 26 kinds on or off, such as floors, walls, posts, ramps and furniture. Wells and Hand Pumps, Water and Basements are off by default; the others are on.
 [*] [b]Sources[/b]: turn all tiles from a mod on or off.
 [*] [b]Tilesets[/b]: click a row to turn that tileset on or off, and filter the list with the box at the top.
 [*] [b]Rules[/b]: the thirteen rules from the sandbox page: Enable building, Who can build, Where players can build, Maximum build distance, Most items at once, Most pieces per tile, Material cost multiplier, Require vanilla skill levels, Vanilla recipe materials, Zombies can't break builds, Zombies can't break doors, Container capacity multiplier and Allow building from blueprints.
-[*] [b]Server records[/b]: at the bottom of the Rules page, how many entries, files and how much space each of the server's four records uses (Floors and water; Floor and wall overlays; Lights, appliances, stair landings, garage doors and double doors; Circuits). When a file gets too big, the server moves on to the next one by itself.
+[*] [b]Server records[/b]: at the bottom of the Rules page, how many entries, files and how much space each of the server's five records uses (Floors and water; Floor and wall overlays; Lights, appliances, stair landings, garage doors and double doors; Circuits; Basements). When a file gets too big, the server moves on to the next one by itself.
 [/list]
 [h3]Applying[/h3]
 [list]
@@ -955,12 +1016,12 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Changes by other admins[/b]: changes you have already received are kept; if two admins press Apply at almost the same time, the later one overwrites the earlier one.
 [*] [b]If the server doesn't apply them[/b]: the panel says why, and Try again sends them again.
 [*] [b]Kinds turned off[/b]: players can't see or build them, and things already built stay and can still be dismantled.
-[*] [b]Sources and tilesets turned off[/b]: players can't see or build those tiles.
+[*] [b]Sources and tilesets turned off[/b]: players can't see or build those tiles. The three basement digging items aren't affected by these two pages; only the Basements kind on the Kinds page counts.
 [*] [b]The base game[/b]: can't be turned off as a whole, so turn off its tilesets or kinds instead.
 [/list]
 [h3]Shortcuts in the details[/h3]
 [list]
-[*] [b]Where[/b]: when an admin selects an item, Turn off this tileset and Turn off this source appear above Build in the details.
+[*] [b]Where[/b]: when an admin selects an item, Turn off this tileset and Turn off this source appear above Build in the details. Both are grayed out for the three basement digging items; turn off Basements on the Kinds page of the admin panel instead.
 [*] [b]Confirm first[/b]: a confirmation says how many items it turns off, and pressing Turn off applies it for every player.
 [*] [b]Turning it back on[/b]: use the admin panel.
 [*] [b]Narrow window[/b]: the two buttons are hidden.
@@ -995,7 +1056,7 @@ On the Minidoracat Build Anything page of the sandbox settings, or in game with 
 [*] [b]Safehouse[/b]: with Minidoracat Safehouse installed, every square follows its safehouse permissions.
 [/list]
 === ⚙️ Sandbox options: what can be built
-The other page, Minidoracat Build Anything: what can be built, has 25 checkboxes, all on by default except Wells and Hand Pumps and Water. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
+The other page, Minidoracat Build Anything: what can be built, has 26 checkboxes, all on by default except Wells and Hand Pumps, Water and Basements. A kind that is off can't be seen or built by players, and things already built stay and can still be dismantled.
 [table]
 [tr][th]Option[/th][th]Covers[/th][/tr]
 [tr][td]Floor[/td][td]Floors, including flat roof floors[/td][/tr]
@@ -1014,6 +1075,7 @@ The other page, Minidoracat Build Anything: what can be built, has 25 checkboxes
 [tr][td]Roof[/td][td]Roof pieces and eaves[/td][/tr]
 [tr][td]Stairs[/td][td]Three-piece stairs[/td][/tr]
 [tr][td]Ramps[/td][td]A 20-tile ramp that rises one level; people and vehicles can use it[/td][/tr]
+[tr][td]Basements[/td][td]A level below ground, dug from an entrance opened at ground level, off by default[/td][/tr]
 [tr][td]Furniture[/td][td]Furniture and objects that can be picked up[/td][/tr]
 [tr][td]Container[/td][td]Containers you can store items in, such as cabinets, fridges and crates[/td][/tr]
 [tr][td]Wells and Hand Pumps[/td][td]Wells and hand pumps with water that never runs out, off by default[/td][/tr]
@@ -1106,6 +1168,17 @@ end)
 [*] [b]Full-height windows can't take curtains[/b]: curtains can't be hung on full-height windows.
 [*] [b]Multi-tile containers moved as one item[/b]: a few multi-tile containers (mostly other mods' tiles) become a single item when picked up the vanilla way, and after moving they're back to vanilla capacity, without the multiplier.
 [*] [b]Moved lights and a few blocking pieces of furniture[/b]: with Zombies can't break builds on, lights and a few wall-mounted or tabletop pieces that block movement (69 tiles) can be broken by zombies after being picked up and moved the vanilla way.
+[*] [b]Freshly dug basement tiles[/b]: if you keep dragging without stopping, newly dug tiles can take up to about 1 minute to count as indoors.
+[*] [b]A dig that half failed[/b]: if the entrance opening or the outer dirt walls occasionally aren't finished, the materials are still used and you get a notice that part of this dig wasn't finished; digging another tile next to it fills in the dirt walls around there, and for anything else tell an admin when it happened.
+[*] [b]Basement digging unavailable[/b]: when another mod uses the same tile file number, basement digging turns itself off and basements already dug still count as indoors; admins can check the digging is off line in console.txt.
+[*] [b]Multiplayer: wall switches in basements[/b]: a wall switch you just put up on a basement's corner tile goes back to off after that area unloads and reloads, so press it once; it stops happening after a server restart. Wall switches placed in a basement by other mods go back to off after every server restart.
+[*] [b]Two circuits' wall switches in one room[/b]: when a room has two or more wall switches wired to different circuits, after pressing one the other may need two presses to switch.
+[*] [b]Together with Basement Building[/b]: its switches may affect lights in basements dug with this tool before it was installed.
+[*] [b]Stair row in Basement Building basements[/b]: with Basement Building active, the outer walls along the row with its stairs may not be buildable, since walls can't go on a tile that has stairs.
+[*] [b]Basement console messages[/b]: invalid room metaID and invalid building metaID appearing in pairs where there are basements when loading, and duplicate BuildingDef.metaID ERROR after expanding a basement, are expected; the basements still count as indoors.
+[*] [b]Vanilla actions underground[/b]: moving the vanilla Dig Graves cursor past the dirt walls, or moving multi-tile furniture past a wall underground, prints vanilla errors in the console without affecting the game.
+[*] [b]Areas outside the map[/b]: digging basements inside mods that open areas outside the map, such as RV interiors, hasn't been tested.
+[*] [b]Safehouses[/b]: if the server turns on SafehouseAllowNonResidential (off by default), a basement can be claimed as a safehouse. A vanilla safehouse covers the building plus 2 tiles around it on every level, so it also covers the ground right above the basement.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
@@ -1117,6 +1190,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove fireplaces and stoves you don't want[/b]: fireplaces and immovable stoves built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove floor overlays and wall overlays you don't want[/b]: road markings, cracks, and baseboards or graffiti stuck to walls, built with Build Anything, can't be removed after removal.
+[*] [b]Saves with dug basements[/b]: after removal, basements count as outdoors and are no longer rooms; the dirt walls are still drawn but no longer block movement. Before removing it, replace the outer dirt walls with regular walls using Build Anything; edges you replaced still block after removal. If you only want to stop players from digging, turn off Basements in the sandbox options instead.
 [*] [b]Zombie-proof builds and container capacity[/b]: to turn what you built back to vanilla, switch off Zombies can't break builds and Zombies can't break doors, set Container capacity multiplier back to 1, restart the server (reload the save in singleplayer), then visit every place you built so the area loads again. This can't be changed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
 [*] [b]Singleplayer[/b]: back up the save, remove this mod from that save's mod list, then load it.
@@ -1129,6 +1203,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Containers[/b]: the items inside are still there, and the capacity stays as it was before removal.
 [*] [b]Movable lights[/b]: switch them on and off directly, or pick them up as in vanilla.
 [*] [b]Loading[/b]: the save loads without errors.
+[*] [b]Basements[/b]: the dug area, the entrance stairs and the opening above them stay, and this mod's basement record files (gos_MinidoracatBuilderBasements_*.bin) stay in the save folder.
 [/list]
 [h3]Switches and lights[/h3]
 [list]
@@ -1148,6 +1223,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] [b]Restored[/b]: wiring and Dismantle (Build Anything) work again.
 [*] [b]Lights picked up while it was removed[/b]: are no longer wired.
+[*] [b]Basements[/b]: they all count as indoors again, the outer dirt walls block again, and you can keep digging.
 [/list]
 === ❓ FAQ
 [h3]I can't find what I want to build[/h3]

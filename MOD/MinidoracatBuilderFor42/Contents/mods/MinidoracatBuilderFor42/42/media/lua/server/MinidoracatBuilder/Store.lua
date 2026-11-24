@@ -33,7 +33,7 @@ Store.SHARD_MAX = 16
 -- 到 SYSTEM_MAX 連第一片都不開（那一本這一場不記新的，分片以前的存檔照樣讀得到）
 Store.SYSTEM_BUDGET = 100
 Store.SYSTEM_MAX = 120
-Store.ORDER = { "floors", "overlays", "ledger", "circuits" } -- report 的順序
+Store.ORDER = { "floors", "overlays", "ledger", "circuits", "basements" } -- report 的順序
 local byId = {}
 
 -- 位置（edge＝0 那一格、1..3 那一格某條邊的牆）→ 一個數字鍵：x、y 各 22 bits（±2,097,152 格）、z 6 bits、edge 2 bits，
@@ -43,6 +43,16 @@ function Store.pos(x, y, z, ...)
     local edge = ...
     if x < -HALF or x >= HALF or y < -HALF or y >= HALF or z < -32 or z > 31 then return nil end
     return (((x + HALF) * SPAN + (y + HALF)) * 64 + (z + 32)) * 4 + (edge or 0)
+end
+
+-- Store.pos 的反函式：鍵 → x, y, z, edge。除數都是 2 的次方，鍵 < 2^53，floor 算得準
+function Store.unpos(k)
+    local r = math.floor(k / 4)
+    local edge = k - r * 4
+    local q = math.floor(r / 64)
+    local z = r - q * 64 - 32
+    local xs = math.floor(q / SPAN)
+    return xs - HALF, q - xs * SPAN - HALF, z, edge
 end
 
 -- 字串存檔是 UTF-8、# 算的是字元數：不是 ASCII 的字元每個最多 3 bytes

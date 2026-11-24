@@ -1,11 +1,11 @@
 -- 右鍵「拆除（建造工坊）」（設計稿「拆」）：本 MOD 蓋的、本工具能拆的東西（Dismantle.kindOf）寫名稱列出，停上去亮出要拆的
 -- 每一片。選了送一件的拆除清單（Client.dismantleMany），伺服器收下才走過去、排動作。這裡的判斷只給選單看：不能拆的照樣
 -- 列出、變灰並寫原因（距離不查，選了會先走過去；建造作弊不走）；能不能拆、退什麼料由伺服器重查（Server.dismantle）。本 MOD 蓋的、
--- 不歸本工具拆的（能搬、原版拆解、只能砸、窗簾）也列，變灰並寫該用原版哪個動作（審查 1101 #5）。
--- 右鍵「拆除一區...（建造工坊）」（Area.start，只用滑鼠）與「換成...（建造工坊）」（Window.openReplace）：設計稿 claim 3、4。
+-- 不歸本工具拆的（能搬、原版拆解、只能砸、窗簾）也列，變灰並寫該用原版哪個動作。
+-- 右鍵「拆除一區...（建造工坊）」（Area.start，只用滑鼠）與「換成...（建造工坊）」（Window.openReplace）。
 -- 右鍵「挑圖塊（建造工坊）」（使用者 2026-10-31 定案）：點到的格子上每一張圖，選了就打開建造視窗、用完整圖塊名搜尋，
 -- 選到那一項；不能蓋的照樣列出、變紅並寫原因（Entry.why）。建造視窗的吸管（Window.startPick → Menu.pickAt）用同一份清單。
--- 建造配方的圖（玩家看得到那個配方時）選到那個配方項目（使用者 2026-11-09 設計稿 claim 4）。
+-- 建造配方的圖（玩家看得到那個配方時）選到那個配方項目（使用者 2026-11-09 設計稿）。
 require "MinidoracatBuilder/Dismantle"
 require "MinidoracatBuilder/Names"
 require "MinidoracatBuilder/Messages"
@@ -69,8 +69,8 @@ local function tip(opt, text)
     opt.toolTip = t
 end
 
--- 這個玩家正在拆、還沒輪到的件數（Client.pendingUnbuild.left，C6；輪完清成 nil）：新的拆除會取消它們（每人一個請求），
--- 選項先說（審查 #8）
+-- 這個玩家正在拆、還沒輪到的件數（Client.pendingUnbuild.left；輪完清成 nil）：新的拆除會取消它們（每人一個請求），
+-- 選項先說
 local function unbuildLeft(player)
     local b = Client.pendingUnbuild
     if not (b and b.player == player) then return 0 end
@@ -78,7 +78,7 @@ local function unbuildLeft(player)
 end
 
 -- cancels＝接在說明後面的「會取消正在拆的 N 件」（沒有時是空字串）。不能選的列標籤後面加狀態字（IGUI_MBLD_Menu_No*）：
--- 原版只把它畫成紅字（ISContextMenu.lua:441-443），對比低又只靠顏色（審查 1116 #4）；E2E 照「以那句開頭」比對，不受影響
+-- 原版只把它畫成紅字（ISContextMenu.lua:441-443），對比低又只靠顏色；E2E 照「以那句開頭」比對，不受影響
 local function addOne(context, label, player, t, cancels)
     local code, extra = Dismantle.check(player, t.kind, t.plan, true)
     local opt = context:addOption(code and getText("IGUI_MBLD_Menu_NoDismantle", label) or label, player, Menu.onPick, t)
@@ -101,12 +101,12 @@ local function addOther(context, label, t)
     return opt
 end
 
--- 能原地換掉的那件（設計稿 claim 4；和 Dismantle.replaceable 同一份條件）
+-- 能原地換掉的那件（設計稿；和 Dismantle.replaceable 同一份條件）
 local function swappable(t)
     return t.obj ~= nil and Dismantle.replaceableOld(t.kind, t.obj, t.plan)
 end
 
--- 「換成...」：打開建造視窗，只列和那件同一組、同材料的款式（Window.openReplace，C9）
+-- 「換成...」：打開建造視窗，只列和那件同一組、同材料的款式（Window.openReplace）
 function Menu.replace(playerNum, name)
     local W = MinidoracatBuilder.Window
     if W and W.openReplace then W.openReplace(playerNum, name) end
@@ -201,6 +201,13 @@ function Menu.pickTile(playerNum, name)
     if W and W.open(playerNum) then W.setQuery(name) end
 end
 
+-- 挖地下室的三個項目 ID 借用原版的圖名（Rules.DIG）：世界上本來就有同名的物件（引擎補的隱形地板、地圖的地下土塊），
+-- 點到的是它們，不是本 MOD 能蓋的東西：照有挖掘之前一樣當不能蓋的原版圖（同 Rules.kindOf 的 UNLISTED：LUA）
+local function why(name)
+    if MinidoracatBuilder.Rules.DIG[name] then return "LUA" end
+    return Entry.why(name)
+end
+
 -- 子選單一列：能蓋的「種類：名稱」；同一件東西有能蓋的那一項時（開著的門、多格的其他格…）照樣能選，寫那一項的種類；
 -- 建造配方的圖寫「配方：配方名」；其他不能蓋的變紅、標籤後面加「（不能蓋）」、停上去寫原因（紅字是原版「不能選」的顏色，
 -- ISContextMenu.lua:441-443）
@@ -210,12 +217,8 @@ local function addPick(sub, playerNum, name)
         sub:addOption(getText("IGUI_MBLD_Menu_Named", getText("IGUI_MBLD_Recipe_Badge"), r.name), playerNum, Menu.pickTile, name)
         return
     end
-    local e = Entry.resolve(name)
-    local code, arg, alt
-    if not e then
-        code, arg, alt = Entry.why(name)
-        e = alt and Entry.resolve(alt)
-    end
+    local code, arg, alt = why(name)
+    local e = not code and Entry.resolve(name) or (alt and Entry.resolve(alt))
     local label = e and getText("IGUI_MBLD_Menu_Named", Names.kind(e.kind), name) or name
     local bad = code and not alt
     local opt = sub:addOption(bad and getText("IGUI_MBLD_Menu_NoBuild", label) or label, playerNum, Menu.pickTile, name)
@@ -255,7 +258,7 @@ function Menu.pickAt(playerNum, sq, ...)
     end
     local only, n = nil, 0
     for _, name in ipairs(tiles) do
-        local code, _, alt = Entry.why(name) -- 能蓋的回 nil
+        local code, _, alt = why(name) -- 能蓋的回 nil
         if not code or alt or Recipes.forSprite(playerNum, name) then only, n = name, n + 1 end
     end
     if n == 1 then return Menu.pickTile(playerNum, only) end
@@ -265,7 +268,7 @@ function Menu.pickAt(playerNum, sq, ...)
 end
 
 -- 拆除：一件直接列「拆除（建造工坊）：名稱」，好幾件時展開成子選單、每件寫名稱（不歸本工具拆的排在後面、變灰）。
--- 有本 MOD 蓋的東西時另加「拆除一區...」（手把不開：長方形游標只用滑鼠，C7）與能原地換的「換成...」。挑圖塊：一律子選單
+-- 有本 MOD 蓋的東西時另加「拆除一區...」（手把不開：長方形游標只用滑鼠）與能原地換的「換成...」。挑圖塊：一律子選單
 function Menu.fill(playerNum, context, worldobjects, test)
     local player = getSpecificPlayer(playerNum)
     if not player or player:getVehicle() then return end

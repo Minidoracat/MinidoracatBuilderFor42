@@ -2,6 +2,8 @@ require "TimedActions/ISBaseTimedAction"
 
 -- 排在建造請求第 i 項（第 2 項起）的建造動作前面：排隊當下沒排進走路的（地板、屋頂旁邊沒地方站或還沒有格子；
 -- 任何種類「現在就在旁邊」），輪到時才找站位、把走路插在自己後面（Client.stand）。
+-- 拆本工具的地板時排在拆除請求第 i 件的位置：輪到時人站在那一件上才排走路，再排拆除動作（Client.stand → unbuildStand；
+-- 不等前一件，standReady 只認建造請求）
 -- 不定義 complete：只在客戶端跑，不是網路動作（LuaTimedActionNew 看類別有沒有 complete）
 MinidoracatBuilderStandAction = ISBaseTimedAction:derive("MinidoracatBuilderStandAction")
 

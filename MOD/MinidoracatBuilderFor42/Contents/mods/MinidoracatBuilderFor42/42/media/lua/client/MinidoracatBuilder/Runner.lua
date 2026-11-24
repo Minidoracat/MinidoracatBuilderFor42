@@ -44,7 +44,7 @@ local NAILS, NAILS_BOX, PER_BOX = "Base.Nails", "Base.NailsBox", 100 -- 同 Mate
 Runner.SEGMENT = {
     floor = 1, floorOverlay = 1, water = 1,
     wall = 2, fence = 2, post = 2, doorFrame = 2, windowFrame = 2,
-    stairs = 3, ramp = 3,
+    stairs = 3, ramp = 3, dig = 3,
     door = 4, window = 4, curtain = 4, windowObject = 4,
     roof = 5,
     furniture = 6, container = 6, solid = 6, well = 6, light = 6, wallObject = 6, wallOverlay = 6, attached = 6,

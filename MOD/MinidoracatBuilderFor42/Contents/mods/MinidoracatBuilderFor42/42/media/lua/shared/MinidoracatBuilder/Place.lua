@@ -1,4 +1,4 @@
--- 放置：補格子、每格能不能放、依種類建立物件並同步。出處 bt-authority §2、§4.2。
+-- 放置：補格子、每格能不能放、依種類建立物件並同步。
 -- 兩端共用：伺服器（單機在本機）放置；客戶端只用 Place.check 給游標預覽（Check.item 的 preview 不補格子，只查已有的格子）。
 -- 通則：建好物件、設完屬性，才 AddSpecialObject（引擎自己更新室內判定與碰撞），再 transmit 一次。
 -- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4419-4460）。
@@ -83,7 +83,7 @@ end
 
 -- 牆面疊圖的宿主只認佔住那條邊的東西（和下面 edgeTaken 同一組鍵）：getWall 只看 cutN／cutW，會找到只帶 cutN 的裝飾片
 -- （wallOverlay 種類）或那條邊沒牆時獨立放的牆面疊圖本身。那條邊之後還能蓋牆，新牆插在地板後、它前面，宿主就換人，掛在它
--- 身上的圖再也找不到（審查 1112 Codex、Claude）。這類照同一條件往後找，找不到就照舊建獨立物件
+-- 身上的圖再也找不到。這類照同一條件往後找，找不到就照舊建獨立物件
 local EDGE_KEYS = {
     N = { F.WallN, F.WallNTrans, F.WallNW, F.collideN, F.DoorWallN, "DoorWallNTrans", F.WindowN, F.HoppableN, F.TallHoppableN },
     W = { F.WallW, F.WallWTrans, F.WallNW, F.collideW, F.DoorWallW, "DoorWallWTrans", F.WindowW, F.HoppableW, F.TallHoppableW },
@@ -146,18 +146,21 @@ local function edgeTaken(sq, north, skip, dirt)
     return sq:getDoor(side) ~= nil or sq:getWindow(side) ~= nil
 end
 
--- Basement Building（Workshop 3806513504，Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）
--- 的土牆是最底層，別的牆可以蓋在上面；蓋好它拆掉那條邊的土牆，上層牆拆了它下一個 tick 補回（aparosa_BD_DirtLayer.lua:1-18、
--- 138-151、196-221）。它只包原版新式建造（:309-397），本工具自己建物件不經過那裡，所以照它的同一份判斷：外邊土牆不算擋，
--- 外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定，:131-135、243-266），被擋的回 BLOCKED（不另立原因碼）。
--- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推，aparosa_BD_Sync.lua:1-16），預覽同一份判斷。
+-- Basement Building（Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）的土牆是最底層，別的牆
+-- 可以蓋在上面；蓋好它拆掉那條邊的土牆，上層牆拆了它下一個 tick 補回。它只包原版新式建造，本工具自己建物件不經過那裡，所以照
+-- 它的同一份判斷：外邊土牆不算擋，外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定），被擋的回 BLOCKED（不另立原因碼）。
+-- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推），預覽同一份判斷。
+-- 本 MOD 挖的地下室（Basement）也走這裡：土牆的查與拆用同名的 isOuterEdge、isDirtOnOuterEdge、clearDirt，能不能蓋用它自己的 refuses。
 -- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
 -- 判斷丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
--- 每格再丟一次（審查 1107 Grok）。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
+-- 每格再丟一次。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
 local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "isFrameOnDirt", "isDirtLookOnOuterEdge", "clearDirt" }
 local broken
 local function dirtLayer(sq)
     if sq:getZ() >= 0 then return nil end
+    -- 本 MOD 挖的地下室（Basement）
+    local B = MinidoracatBuilder.Basement
+    if B and B ~= broken and B.near(sq) then return B end
     local D = aparosa_BD_DirtLayer
     if type(D) ~= "table" or D == broken then return nil end
     for i = 1, #BD_FNS do
@@ -166,24 +169,69 @@ local function dirtLayer(sq)
     return D
 end
 
--- 這條邊（k＝"N"／"W"）是它的外邊時，這格上它的外邊土牆；不是外邊或沒有回 nil
-local function outerDirt(D, sq, k)
+-- 它挖地下室時放在外邊的牆（木牆、原木牆）：圖名 → 格邊（"W"／"N"／"NW"），從它的 SPRITE.variant／tier 的 wall 收，
+-- 不收牆角柱 SE、跳過土牆那張表（tier.dirt 就是 SPRITE.dirt）。第二個回傳：西北角的圖名 → { 換掉的邊 → 補回另一邊的單邊圖 }，
+-- 取同一張表（同一系列、同一級，它升級也整張表換）。它沒載入或表的形狀不對回空表（只認土牆）。
+-- 照 SPRITE 那張表快取：它重載換了表就重收。讀的時候丟錯由 basement() 的 pcall 接住、設 broken
+local bdKey, bdNames, bdRest = nil, {}, {}
+local function bdWalls()
+    local S = type(aparosa_BD_Build) == "table" and aparosa_BD_Build.SPRITE or nil
+    if S == bdKey then return bdNames, bdRest end
+    local names, rest = {}, {}
+    local dirt = type(S) == "table" and type(S.dirt) == "table" and S.dirt.wall or nil
+    for _, group in ipairs(type(S) == "table" and { S.variant, S.tier } or {}) do
+        for _, look in pairs(type(group) == "table" and group or {}) do
+            local wall = type(look) == "table" and look.wall or nil
+            if type(wall) == "table" and wall ~= dirt then
+                for _, k in ipairs({ "W", "N", "NW" }) do
+                    if type(wall[k]) == "string" then names[wall[k]] = k end
+                end
+                if type(wall.NW) == "string" then
+                    rest[wall.NW] = { N = type(wall.W) == "string" and wall.W or nil, W = type(wall.N) == "string" and wall.N or nil }
+                end
+            end
+        end
+    end
+    bdKey, bdNames, bdRest = S, names, rest
+    return names, rest
+end
+
+-- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls）。它放的牆是一般 IsoObject；
+-- 同一張圖的 IsoThumpable 是玩家用本工具或原版蓋的，不算（它升級時也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。
+-- 西北角那件一件管兩邊：both（另一邊這次也換）時兩邊都算；只換一邊時
+-- 要補得回另一邊（bdWalls 的單邊圖在 namedMap）才算，補不回照舊擋（整件拆了另一邊變回土牆，升級的料沒了）。
+-- 不是外邊或沒有回 nil
+local function outerDirt(D, sq, k, both)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return nil end
-    local list, objects = {}, sq:getObjects()
+    local list, objects, walls, rest = {}, sq:getObjects(), bdWalls()
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
-        if D.isDirtOnOuterEdge(o) then list[#list + 1] = o end
+        local spr = o:getSprite()
+        local edge = spr and walls[spr:getName()]
+        if edge == "NW" and not both then
+            local name = rest[spr:getName()] and rest[spr:getName()][k]
+            if not (name and IsoSpriteManager.instance:getNamedMap():containsKey(name)) then edge = nil end
+        end
+        if D.isDirtOnOuterEdge(o) or ((edge == k or edge == "NW") and not instanceof(o, "IsoThumpable")) then
+            list[#list + 1] = o
+        end
     end
     return list[1] and list or nil
 end
 
-local function basementCheck(D, sq, name, n, w)
-    if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
-    return false, n and outerDirt(D, sq, "N"), w and outerDirt(D, sq, "W")
+-- n0、w0＝Entry.edges 的原始格邊，n、w＝bdEdges 篩過的。本 MOD 的層照 refuses；Basement Building 的層照它的三支
+local function basementCheck(D, sq, spr, n0, w0, n, w)
+    if D == MinidoracatBuilder.Basement then
+        if D.refuses(sq, spr, n0, w0) then return true end
+    else
+        local name = spr:getName()
+        if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
+    end
+    return false, n and outerDirt(D, sq, "N", w), w and outerDirt(D, sq, "W", n)
 end
 
--- 它只認實牆的格邊（aparosa_BD_DirtLayer.lua:46-63 edgesOf 的 WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
--- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋（審查 1107 Claude）
+-- 它只認實牆的格邊（WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
+-- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋
 local function bdEdges(spr, n, w)
     local p = spr:getProperties()
     local nw = p:has(F.WallNW)
@@ -195,8 +243,8 @@ end
 local function basement(sq, spr, n, w)
     local D = dirtLayer(sq)
     if not D then return nil end
-    n, w = bdEdges(spr, n, w)
-    local ok, refused, dn, dw = pcall(basementCheck, D, sq, spr:getName(), n, w)
+    local bn, bw = bdEdges(spr, n, w)
+    local ok, refused, dn, dw = pcall(basementCheck, D, sq, spr, n, w, bn, bw)
     if not ok then
         broken = D
         print("[MinidoracatBuilderFor42] Basement Building check failed, treated as not installed: " .. tostring(refused))
@@ -322,7 +370,7 @@ end
 
 -- 格上有斜面（坡道片，本 MOD 蓋的或任何帶 SlopedSurfaceDirection 的物件）時還放得下的：佔格邊的（Entry.EDGE）與掛在牆、
 -- 窗上的（不站在地板上）。其他站在地板上的東西引擎照高度 0 放，坡面卻是 0.05～1（探針：容器、牆、地板都放得下、
--- 高度都是 0，見 builder-dev placement.md「坡道」）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
+-- 高度都是 0）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
 local ON_SLOPE = { curtain = true, wallObject = true, windowObject = true, wallOverlay = true }
 local function slopeOk(kind, spr)
     return Entry.EDGE[kind] or ON_SLOPE[kind] or Rules.onWall(kind, spr) ~= nil
@@ -376,8 +424,8 @@ local function rampExit(sq, north)
     end
     return false
 end
--- 要放的圖會不會擋那條邊：牆、窗（collideN／W、windowN／W）。門不算：門開著走得過，先放坡道再裝門可以（使用者裁定，
--- builder-dev placement.md「門開著也擋（刻意）」）；放坡道時的 edgeBlocked 照 isSomethingTo 連門一起擋，門隨時可能被關上
+-- 要放的圖會不會擋那條邊：牆、窗（collideN／W、windowN／W）。門不算：門開著走得過，先放坡道再裝門可以（使用者裁定）；
+-- 放坡道時的 edgeBlocked 照 isSomethingTo 連門一起擋，門隨時可能被關上
 local function blocksEdge(p, north)
     if north then return p:has(F.collideN) or p:has(F.windowN) end
     return p:has(F.collideW) or p:has(F.windowW)
@@ -388,7 +436,7 @@ end
 -- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門，不然走到坡頂
 -- 過不去。那條邊照持有它的格子查（edgeBlocked）：往北、西上坡是坡頂格與它正上方那格，往南、東是前方格與平台格；
 -- 預覽時另一側的格子可能還沒載入，照樣查得到。格上已經有斜面的由 Place.check 開頭擋（slopeOk）。正上方有地板不擋：
--- 探針走得過去（見 builder-dev placement.md「坡道」）
+-- 探針走得過去
 local function rampOk(spr, sq, role)
     if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
@@ -428,7 +476,7 @@ function Place.caution(kind, spr, sq)
     return nil
 end
 
--- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
+-- 屋頂（原版沒有放屋頂的路徑）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
 -- 一樓（z＝0）不查支撐：原版地圖的屋簷、貼牆的邊緣裝飾、帳篷與碉堡頂都放在一樓（離線讀 Muldraugh 的 lotpack，z＝0 的
 -- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆或屋頂片，
 -- 四鄰往下一層有屋頂片（單斜往上一層接：那片正下方只有天花板，靠斜下方的鄰片撐），或這格、四鄰同一層有地板或屋頂
@@ -439,7 +487,7 @@ end
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
 -- 屋頂片＝屋頂型別或帶 RoofGroup、而且不是樓板：平屋頂地板片（roofs_01_22 這類，帶 RoofGroup 的 solidfloor 片，分類是地板）
--- 是樓板，算了的話鋪在一樓就能讓正上方、旁邊上一層浮空蓋（審查第 5 輪）；同一層的支撐照 supports 的 solidfloor 算
+-- 是樓板，算了的話鋪在一樓就能讓正上方、旁邊上一層浮空蓋；同一層的支撐照 supports 的 solidfloor 算
 local function roofPiece(sq)
     if not sq then return false end
     local objects = sq:getObjects()
@@ -486,7 +534,7 @@ function Place.roofAt(x, y, z, ...)
     if z < 0 then return false end
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
-    if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋（審查 1109 Claude）
+    if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋
     if z == 0 then return true end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
     if roofPiece(below) or roofPiece(cell:getGridSquare(x - 1, y, z - 1)) or roofPiece(cell:getGridSquare(x + 1, y, z - 1))
@@ -782,7 +830,7 @@ end
 -- 這些），再放水面。物件已經送出，記號另外 transmitModData（存檔跟著物件）。伺服器在地板帳本記一筆空的退料：這片是不是
 -- 本工具挖的以帳本為準（Place.refundOf）。水面放不上去：補回原本的地面（補不上就把拆掉的那片原地板放回去）再報錯。
 -- 放上去就記進 placed（{ water = 物件 }，同 Place.attach 的紀錄），後面出錯時 Place.undo 換回地面。不登記水面 zone
--- （那一帶會沒有「釣魚」，原型 Q4）
+-- （那一帶會沒有「釣魚」）
 function Place.dig(sq, spr, placed)
     local floor = sq:getFloor()
     local fs = floor and floor:getSprite()
@@ -840,6 +888,7 @@ end
 function Place.check(kind, spr, sq, ...)
     local player, role, planned, replacing, overlap = ...
     if sq:hasSlopedSurface() and not slopeOk(kind, spr) then return false end
+    if kind == "dig" then return MinidoracatBuilder.Basement.checkCell(sq, role, spr) end
     if kind == "stairs" then return stairsOk(spr, sq, role) end
     if kind == "ramp" then return rampOk(spr, sq, role) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
@@ -912,7 +961,7 @@ function Place.check(kind, spr, sq, ...)
         if buildUtil.stairIsBlockingPlacement(sq, true, nil) then return false end
     end
     if p:has("IsMoveAble") then
-        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑（bt-authority §4.2）。
+        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑。
         -- 成功時回的不一定是 true（掛牆時回那面牆），照真假看。
         local props = ISMoveableSpriteProps.new(spr)
         -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
@@ -981,7 +1030,7 @@ local function refundable(cost)
 end
 
 -- 一樓以下（含地下室）的地板：buildMaterials 留空，也不給原版搬動工具拆（isDismantable＝false）；本工具會拆的退料記在
--- 伺服器的地板帳本（Floors）。見 builder-dev placement.md「一樓地板的退料」
+-- 伺服器的地板帳本（Floors）。
 local function groundFloor(obj, sq)
     if sq:getZ() > 0 then return false end
     if obj:isFloor() then return true end
@@ -1041,7 +1090,7 @@ end
 -- 還沒搬的舊地板照 buildMaterials（Place.migrate）。本工具挖的水面也照地板帳本認（Place.dig 記的那筆，圖要一樣），
 -- 不收料所以退空表。車庫門、雙開門照伺服器帳本那一組的一筆（Place.build；obj 是哪一片都行），坡道照頭片那格那一筆
 -- （Place.rampOrigin 照圖與位置推頭片格，不看記號；某片被別的方式移走後那一筆是空表，見 Place.onAboutToBeRemoved）。
--- 都沒有回 nil。
+-- 都沒有回 nil。buildMaterials 只有 IsoThumpable 有（IsoThumpable.java:179,187；原版地板是一般 IsoObject，沒有這兩個方法）
 function Place.refundOf(obj)
     local door = Place.doorAnchor(obj)
     if door then
@@ -1065,14 +1114,15 @@ function Place.refundOf(obj)
         return e and e.s == obj:getSprite():getName() and e.i or nil
     end
     local sq = obj:getSquare()
-    if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return obj:getBuildMaterials() end
+    local thump = instanceof(obj, "IsoThumpable")
+    if not (sq and sq:getZ() <= 0 and obj:isFloor()) then return thump and obj:getBuildMaterials() or nil end
     local Floors = MinidoracatBuilder.Floors
     local e = Floors and Floors.get(obj)
     if e then
         local spr = obj:getSprite()
         return spr and e.s == spr:getName() and not otherFloor(sq, obj) and e.i or nil
     end
-    if isServer() or not obj:hasBuildMaterials() then return nil end -- 專用伺服器讀格子前就建好帳本，都搬過了
+    if isServer() or not thump or not obj:hasBuildMaterials() then return nil end -- 專用伺服器讀格子前就建好帳本，都搬過了
     return obj:getBuildMaterials()
 end
 
@@ -1195,8 +1245,8 @@ function Place.isRug(name, p)
 end
 local function isRug(o, p) return Place.isRug(o:getTextureName(), p) end
 
--- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:372-437），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
--- bt-authority §2.1-4），地毯留著、新地板插在地毯前面；沒有地毯時插回舊地板原本的位置（原版加在最後：同一格已有家具時
+-- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:372-437），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上），
+-- 地毯留著、新地板插在地毯前面；沒有地毯時插回舊地板原本的位置（原版加在最後：同一格已有家具時
 -- 地板排到家具後面，之後蓋的牆照「插在最後一個地板後面」也跟著排到家具後面，見 edgeIndex）。舊物件只拆這一格的那片：
 -- 多格的一組照原版整組拆會動到沒驗證過的格子（IsoGridSquare.java:5933-5956）。IsoThumpable 的地板照建的時候設的
 -- isFloor 拆，不看現在的圖：地板帳本一格只記一筆（Floors）。回新地板該插的位置，或 nil（加在最後）
@@ -1335,14 +1385,18 @@ local function placeStairs(cells, placed)
         -- 拆樓梯時只拆本 MOD 補的平台（Server.dismantle）：一般 IsoObject、和原版補的同一張圖，只能記在伺服器帳本
         if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
     end
-    sq:getModData()["ConnectedToStairs" .. tostring(not west)] = true
+    -- 記號先記進 placed（{ flag＝格子, key, old＝原本的值 }）：之後出錯 Place.undo 照原本的值寫回，不留一個擋住
+    -- 之後同向樓梯的假記號
+    local md, flagKey = sq:getModData(), "ConnectedToStairs" .. tostring(not west)
+    placed[#placed + 1] = { flag = sq, key = flagKey, old = md[flagKey] }
+    md[flagKey] = true
     sq:RecalcAllWithNeighbours(true)
     local above = Place.square(top.x, top.y, top.z + 1)
     if above then above:RecalcAllWithNeighbours(true) end
 end
 
--- 坡道：每片一個一般物件（引擎照格上物件的圖塊屬性算斜面，IsoThumpable 也是物件，但原版與探針都用一般物件，
--- 見 builder-dev placement.md「坡道」），AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
+-- 坡道：每片一個一般物件（引擎照格上物件的圖塊屬性算斜面，IsoThumpable 也是物件，但原版與探針都用一般物件），
+-- AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
 -- 記號＝頭片名（Place.ramp，只給右鍵選單看）放之前寫好，跟著整件物件送給玩家。照樓梯清掉這格的草。坡頂上一層沒有地板
 -- 時補平台（layFloor：引擎半途出錯的那片拿掉、整組失敗），記帳本（拆坡道時一起拆，Dismantle.plan）。整組的退料記成
 -- 伺服器帳本一筆，鍵是頭片那格加上頭片圖名（Ledger.rampKey、Place.refundOf）：這一筆是「這組是本 MOD 蓋的」唯一的憑據，記不進去就整組失敗
@@ -1384,12 +1438,22 @@ end
 local function newLight(c)
     local sq, spr = c.sq, c.spr
     local p = spr:getProperties()
+    -- 本 MOD 地下室的牆上開關由 Circuits 切：伺服器上先把那格記成開關格、摘掉房間（Basement.setSwitchTile，只在伺服器做事），
+    -- 建構子就不把它收進房間的開關清單（IsoLightSwitch.java:89-100）
+    local Basement = MinidoracatBuilder.Basement
+    local under = Basement and Rules.switchProps(p) and Basement.has(sq:getX(), sq:getY(), sq:getZ())
+    if under and Basement.setSwitchTile then Basement.setSwitchTile(sq:getX(), sq:getY(), true) end
     local obj = IsoLightSwitch.new(getCell(), sq, spr, sq:getRoomID())
     obj:addLightSourceFromSprite()
     -- 燈蓋好就開（同原版搬燈，ISMoveableSpriteProps.lua:2329）。格子有房間時，開關（沒有 lightR）沿用建構子照房間設的狀態
     -- （IsoLightSwitch.java:90-96）：強制開的話房間燈關著時開關顯示開、房間暗，第一次按看起來沒反應。有房間的是地圖房屋，
-    -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開
-    if p:has("lightR") or not sq:getRoom() then obj:setActivated(true) end
+    -- 單機的自建房屋也是（客戶端與伺服器同一份世界）；MP 伺服器上自建房屋沒有房間（IsoRegions.java:212-214），照樣開。
+    -- 伺服器上地下室的牆上開關先關，同一間已有的開關是開的話放好後跟著開（Circuits.placed）
+    if under and isServer() then
+        obj:setActivated(false)
+    elseif p:has("lightR") or not sq:getRoom() then
+        obj:setActivated(true)
+    end
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
     if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = spr:getName()
@@ -1400,7 +1464,7 @@ end
 -- 那裡 camping_01_04..06 的 campfire 例外，目錄沒有這三張）。建成 IsoThumpable 的話原版認不得：生火選單只開給
 -- isFireInteractionObject（IsoFireplace、IsoBarbecue，IsoObject.java:6779-6781），爐子、洗衣機的功能也在各自的類別裡。
 -- 擋路的（solid／solidtrans）照原版搬家具放爐子、烤肉架、洗衣機、烘衣機設 movedThumpable（ISMoveableSpriteProps.lua:2246-2263,
--- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時（審查 1109 Claude）；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
+-- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
 -- 照當下的值改（同燈）。目錄的壁爐靠牆、不擋整格（collideN／W），原版搬家具也不設，照舊不打。沒有 buildMaterials：拆了退什麼記在伺服器帳本（同燈）。
 -- 0.6.1 以前蓋成 IsoThumpable 的照舊，拆掉重蓋才是新的（使用者 2026-11-09 裁定）。
 local APPLIANCE = {
@@ -1496,7 +1560,6 @@ end
 -- 拆了退什麼只看伺服器的覆蓋帳本（server/MinidoracatBuilder/Overlays.lua）。那一件被移除（換地板、拆牆、打壞）時圖跟著
 -- 它走（地圖的也是），它是那格的地板或 Place.wallAt 那一件時帳本跟著清（Overlays.drop；原地換牆由 Server.complete 掛回新牆）。
 -- 不觸發移除事件的原版動作不清：鏟地、清除塗鴉與污垢只拿掉附加圖；火燒對一般物件只拿掉附加圖、IsoThumpable 直接換成新物件。
--- 見 builder-dev placement.md「掛上去的地面覆蓋與牆面疊圖」。
 local LOG = "[MinidoracatBuilderFor42] "
 local function at(sq) return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() end
 
@@ -1583,8 +1646,8 @@ end
 
 -- 區域資料（引擎算室內、房間圍合用的 IsoRegions）補推。引擎有兩份緩衝輪流當前台，格子的更新在背景執行緒成批套用；
 -- 排到那一批「套用」後面的格子只寫進一份（IsoRegionWorker.java:129-208 取空佇列就開批、:210-296 兩份各跑一輪），之後
--- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回
--- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
+-- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回。
+-- 所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
 -- 放好或拆掉後，下一個 tick 照那一格當時的樣子再推一次：兩份已經一致時引擎不改資料。這是降低機率、不是保證：補推
 -- 自己也可能只寫進一份，兩次都遇上才會留下。存座標不存格子（格子物件會回收重用）。kind 給 nil＝不看種類
 -- （Place.undo、挖水、填平）。o＝剛放好或剛拆掉的物件：牆面疊圖的圖帶 cut 時（牆頂橫條）在區域位元裡算一面牆（flagsOf），
@@ -1592,8 +1655,9 @@ end
 do
     local REGIONAL = { floor = true, stairs = true, ramp = true }
     local pending, n = {}, 0
-    -- 這格照現在的物件該有的區域位元：照 IsoRegions.calculateSquareFlags（IsoRegions.java:322-349；protected，Lua 叫不到）
-    local function flagsOf(sq)
+    -- 這格照現在的物件該有的區域位元：照 IsoRegions.calculateSquareFlags（IsoRegions.java:322-349；protected，Lua 叫不到）。
+    -- 1＝北邊隔開、2＝西邊隔開（地下室分房也照這兩位，Basement.split）
+    function Place.flagsOf(sq)
         local f = sq:has(F.solidfloor) and 16 or 0
         if sq:has(F.cutN) or sq:has(T.doorFrN) then
             f = f + ((sq:has(F.WindowN) or sq:has(F.windowN) or sq:has(F.DoorWallN)) and 5 or 1)
@@ -1603,6 +1667,7 @@ do
         end
         return sq:HasStairs() and f + 32 or f
     end
+    local flagsOf = Place.flagsOf
     -- 引擎只在位元和「之前」不同時才送：一般拿 0 當「之前」；位元本身是 0 的（上層沒地板的格子拆掉牆，或
     -- 柱子讓引擎不算同格的西牆）改拿正下方地面那格（有地板，不是 0）。送完把「之前」設回 0
     local function push(cell, sq, x, y, z)
@@ -1622,6 +1687,8 @@ do
         end
     end
     function Place.repush(sq, kind, ...)
+        local B = MinidoracatBuilder.Basement
+        if B and sq:getZ() < 0 then B.dirty(sq:getX(), sq:getY(), sq:getZ()) end -- 地下室的格邊可能變了：重算分房
         if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then
             local o = ...
             local p = kind == "wallOverlay" and o and o:getProperties()
@@ -1719,7 +1786,7 @@ end
 local function repushPlaced(kind, placed, first)
     for i = first, #placed do
         local o = placed[i]
-        local sq = not (type(o) == "table" and (o.attached == true or o.water)) and o:getSquare()
+        local sq = not (type(o) == "table" and (o.attached == true or o.water or o.flag)) and o:getSquare()
         if sq then Place.repush(sq, kind, o) end
     end
 end
@@ -1731,6 +1798,21 @@ function Place.build(kind, cells, placed)
     if kind == "stairs" then
         placeStairs(cells, placed)
         return repushPlaced(kind, placed, first)
+    end
+    -- 挖地下室：地下的格子沒有地板就鋪泥土地，樓梯三片和落腳處照樓梯放（頂片在第一個，整組的退料在它那一格）；
+    -- 洞與帳本由 BasementLedger.commit 接著做。照樓梯補推（z=0 的平台地板；地下的引擎不收，IsoRegionWorker.java:379）
+    if kind == "dig" then
+        local stairs = {}
+        for _, c in ipairs(cells) do
+            if c.role ~= "hole" and c.role ~= "platform" and not c.sq:getFloor() then
+                local floor = layFloor(c.sq, Place.DIRT)
+                if not floor then error("basement floor not placed at " .. c.x .. "," .. c.y .. "," .. c.z) end
+                placed[#placed + 1] = floor
+            end
+            if c.role ~= "dig" and c.role ~= "hole" then stairs[#stairs + 1] = c end
+        end
+        if stairs[1] then placeStairs(stairs, placed) end
+        return repushPlaced("stairs", placed, first)
     end
     if kind == "ramp" then
         placeRamp(cells, placed)
@@ -1778,7 +1860,7 @@ function Place.build(kind, cells, placed)
         else
             obj = thumpable(c, kind, north)
             -- 屋頂不擋整格；AddSpecialObject 不會重算下面幾層「有屋頂」（客戶端收到 AddItemToMap 才算，
-            -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對（bt-newkinds §5.2）
+            -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對
             if kind == "roof" then obj:setBlockAllTheSquare(false) end
             placed[#placed + 1] = obj
             if kind == "floor" then
@@ -1806,6 +1888,7 @@ function Place.build(kind, cells, placed)
 end
 
 -- 拆回這次已放的（放到一半出錯時）。多格的一組缺片時伺服器整組不拆（IsoObjectUtils.java:119-155），所以逐片拆。
+-- 樓梯平台的記號（{ flag }，placeStairs）寫回原本的值。
 -- 不在格子上的物件 transmitRemoveItemFromSquare 直接回 -1。掛上去的（Place.attach 的紀錄）拿掉那張、清帳本。
 -- 挖好的水面（{ water }）換回原本的地面，不留一格沒有地板；出錯只記 log（呼叫端已經在收拾，不再往上丟）。
 -- 蓋地板時原本的地面已經拆掉（placeFloor 的 Place.clearFloor）：z ≤ 0 拆回後補泥土（同拆地板，Server.lua 的 removeAll）
@@ -1816,6 +1899,8 @@ function Place.undo(placed)
             Place.detach(obj.host, obj.name)
             local Overlays, sq = MinidoracatBuilder.Overlays, obj.host:getSquare()
             if Overlays and sq then Overlays.forget(sq, obj.name, obj.edge) end
+        elseif type(obj) == "table" and obj.flag then
+            obj.flag:getModData()[obj.key] = obj.old
         elseif type(obj) == "table" and obj.water then
             if obj.water:getSquare() then
                 local ok, err = pcall(Place.fill, obj.water)
@@ -1843,17 +1928,41 @@ function Place.settle(cells)
     end
 end
 
-local function clearDirtAt(D, c, n, w)
-    local x, y, z = c.sq:getX(), c.sq:getY(), c.sq:getZ()
-    if n and D.isOuterEdge(x, y, z, "N") then D.clearDirt(c.sq, "N") end
-    if w and D.isOuterEdge(x, y, z, "W") then D.clearDirt(c.sq, "W") end
+-- 它的 clearDirt 只拆土牆；它放的牆（outerDirt 收到、不是土牆的）本工具自己拆，它在移除事件記下、下一個 tick 看到那條邊
+-- 有本工具的牆就不補土牆。先拆土牆：clearDirt 丟錯撤回時它的牆還在。
+-- 只換西北角那件的一邊（both 不成立）：先在另一邊補回同一張表的單邊牆，再拆西北角那件；另一邊有牆，它下一個 tick 不補土牆，
+-- 補回的這件和它放的一樣（一般 IsoObject、它的牆表的圖），它的升級與本工具之後都認得。補不回的 Place.check 已經擋下
+local function clearEdge(D, sq, k, both)
+    if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return end
+    D.clearDirt(sq, k)
+    local list = outerDirt(D, sq, k, both)
+    local _, rest = bdWalls()
+    for i = 1, list and #list or 0 do
+        local o = list[i]
+        if not D.isDirtOnOuterEdge(o) then
+            local keep, obj = not both and rest[o:getSprite():getName()], nil
+            if keep then
+                obj = IsoObject.new(getCell(), sq, keep[k])
+                sq:AddTileObject(obj)
+                obj:transmitCompleteItemToClients()
+            end
+            -- 西北角那件拆不掉（回 -1）：剛補的單邊牆也拿掉，不然那條邊多一件
+            local r = sq:transmitRemoveItemFromSquare(o)
+            if obj and not (r and r >= 0) then sq:transmitRemoveItemFromSquare(obj) end
+        end
+    end
 end
 
--- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
--- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
--- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
--- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）。
--- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣（審查 1107 Claude 第 2 輪）；INTERNAL 會清掉
+local function clearDirtAt(D, c, n, w)
+    if n then clearEdge(D, c.sq, "N", w) end
+    if w then clearEdge(D, c.sq, "W", n) end
+end
+
+-- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：和地下室 MOD 包住原版建造完成的那段做同一件事：
+-- 這次蓋的格邊是外邊就拆掉那條邊的土牆和它放的牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
+-- Place.undo、原地替換拆舊的）時，那一層在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆，本工具不必管。
+-- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回。
+-- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣；INTERNAL 會清掉
 -- 客戶端排在後面的動作，不會每格再丟
 function Place.clearDirt(kind, cells)
     if not Entry.EDGE[kind] then return end
@@ -1862,6 +1971,8 @@ function Place.clearDirt(kind, cells)
         if D then
             local n, w = bdEdges(c.spr, Entry.edges(kind, c.spr))
             clearDirtAt(D, c, n, w)
+            -- 本 MOD 的層：這格邊上有了東西，西北角的牆角柱拿掉（Basement 的 fix 照這格現在的物件重看）
+            if D == MinidoracatBuilder.Basement then D.fixEdges(c.sq:getX(), c.sq:getY(), c.sq:getZ()) end
         end
     end
 end
@@ -1925,6 +2036,18 @@ end
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
+    -- 地下室的格子裡有東西被移除（拆、砸、蓋到一半撤回）：分房重算（Basement.dirty 排程，牆、門框、窗都可能隔開房間）；
+    -- 格邊上的東西（牆、門框、窗、牆角柱）：下一個 tick 外邊沒有牆就補回土牆、外凸轉角補回牆角柱（Basement.touch 排程）
+    local wsq = not isClient() and obj:getSquare()
+    local B = wsq and wsq:getZ() < 0 and MinidoracatBuilder.Basement
+    if B and B.near(wsq) then
+        local x, y, z = wsq:getX(), wsq:getY(), wsq:getZ()
+        B.dirty(x, y, z)
+        local spr = obj:getSprite()
+        local p = spr and spr:getProperties()
+        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW) or p:has(F.cutN) or p:has(F.cutW)
+            or p:has(F.WallSE)) then B.touch(x, y, z) end
+    end
     if not isClient() then stashNames(obj) end -- 撿走帶記號的容器：記下名字，放下時寫回
     local Overlays = MinidoracatBuilder.Overlays
     if Overlays and instanceof(obj, "IsoObject") then Overlays.drop(obj) end
@@ -1977,7 +2100,7 @@ function Place.onAdded(obj)
     if not id then return end
     -- 撿放過的家電：原版照擋路與否再設 movedThumpable（ISMoveableSpriteProps.lua:2246-2313,2501-2504），在 AddSpecialObject
     -- 之前、尋路當下就讀到（SquareUpdateTask.java:345-348），改了要再推。只有家電（Place.keyed 照類別認）有 harden 的分支；
-    -- 原版放成一般物件的擋路家具（69 張）這版不修（主代理 2026-11-21 裁定）
+    -- 原版放成一般物件的擋路家具（69 張）這版不修（2026-11-21 裁定）
     if not md.builderEntry and Place.keyed(obj) then
         local was = obj:isMovedThumpable()
         Place.harden(obj)

@@ -9,6 +9,7 @@ require "TimedActions/MinidoracatBuilderDismantleAction"
 require "TimedActions/MinidoracatBuilderStandAction"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Check"
+require "MinidoracatBuilder/Basement"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
@@ -56,14 +57,14 @@ function Client.sent()
     sends[#sends + 1] = t
 end
 
--- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；在上一層的先走到正下方同一條邊旁邊
--- （樓上那格沒有地板時 walkAdjWall 找不到站位），走不到才照上一層找。其他不站在 own（同一件的其他格）上，
--- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
--- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
-local function walkNear(player, kind, north, x, y, z, ...)
+-- 走到 (x, y, z) 旁邊。在格邊上動手的（north＝Entry.edgeNorth 不是 nil）照原版牆的寫法（ISBuildingObject:walkTo）站在
+-- 那條邊的任一側；在上一層的先走到正下方同一條邊旁邊（樓上那格沒有地板時 walkAdjWall 找不到站位），走不到才照上一層找。
+-- 其他不站在 own（同一件的其他格）上，在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格
+-- （luautils.walkAdj／walkAdjWall 沒排走路）；格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
+local function walkNear(player, north, x, y, z, ...)
     local own = ...
     local cell = getCell()
-    if Entry.EDGE[kind] then
+    if north ~= nil then
         local below = z > math.floor(player:getZ()) and cell:getGridSquare(x, y, z - 1)
         if below and luautils.walkAdjWall(player, below, north, true) then return true end
         local sq = cell:getGridSquare(x, y, z)
@@ -73,13 +74,24 @@ local function walkNear(player, kind, north, x, y, z, ...)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local sq = cell:getGridSquare(x, y, z)
     if not sq then return nil end
-    return luautils.walkAdj(player, sq, true, own)
+    -- 玩家在那格北／西牆的另一側時，原版改找牆後那一格的旁邊（luautils.getCorrectSquareForWall，luautils.lua:202-210）。
+    -- 牆後那格不存在（二樓以上的屋外、地下室沒挖的土）時它回 nil，walkAdj 拿去就丟錯（luautils.lua:137-138），所以先看；
+    -- 牆後是土或屋外、和那格之間又隔著牆也找不到。都照那一格本身再找一次
+    if luautils.getCorrectSquareForWall(player, sq) and luautils.walkAdj(player, sq, true, own) then return true end
+    local adj = AdjacentFreeTileFinder.Find(sq, player, own)
+    if not adj then return false end
+    ISTimedActionQueue.add(ISWalkToTimedAction:new(player, adj))
+    return true
 end
 
 -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
--- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。
+-- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。挖這一格照格邊種類：站在已挖的那一側（四個正交鄰格裡
+-- 已挖的，standBeside；隔著土牆動手），沒挖的鄰格沒有地板站不了
+local standBeside
 local function walkTo(player, kind, spr, c)
-    if Entry.EDGE[kind] then return walkNear(player, kind, Entry.north(kind, spr), c[1], c[2], c[3]) end
+    local north = Entry.edgeNorth(kind, spr)
+    if north ~= nil then return walkNear(player, north, c[1], c[2], c[3]) end
+    if kind == "dig" and spr:getName() == Entry.DIG_CELL then return standBeside(player, c[1], c[2], c[3], true) end
     local cell = getCell()
     local own, x, y = {}, c[1], c[2]
     for _, d in ipairs(Entry.cells(spr)) do
@@ -87,7 +99,7 @@ local function walkTo(player, kind, spr, c)
         if o then own[#own + 1] = o end
         if d[5] == "bottom" then x, y = c[1] + d[1], c[2] + d[2] end
     end
-    return walkNear(player, kind, nil, x, y, c[3], own)
+    return walkNear(player, nil, x, y, c[3], own)
 end
 
 -- 蓋 e（項目 ID），每格 cells[i] = { x, y, z, d } 一項：原點與朝向（0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面，
@@ -161,7 +173,7 @@ end
 -- 佇列空了以後 Queue.tick 照它提示。第 2 格起排隊當下沒排進走路的（地板、屋頂找不到站位或沒有格子；任何種類「現在就在旁邊」，
 -- luautils.lua:136-142，走完前面幾格就不在旁邊了），先排站位動作，輪到時才找（Client.stand）。
 -- 建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，Check.near）
-local DEFER = { floor = true, roof = true }
+local DEFER = { floor = true, roof = true, dig = true }
 local function queue(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
@@ -184,25 +196,30 @@ end
 
 -- 站位動作（MinidoracatBuilderStandAction）開始前：地板、屋頂要等前一格回了 placed（b.last）；前一格建造動作的 perform
 -- 當場就開始下一個動作，complete（真正蓋）在後（IsoGameCharacter 的動作迴圈）。地板還要等前一格的地板出現在客戶端
--- （站位靠它；多人要等同步）。其他種類不靠前一格、請求換掉了都不等
+-- （站位靠它；多人要等同步）；挖這一格還要等前一格進了客戶端的地下室集合（standBeside 只站已挖的格子；多人靠 dug）。
+-- 其他種類不靠前一格、請求換掉了都不等
 function Client.standReady(n, i)
     local b = Client.pending
     if not (b and b.n == n) or not DEFER[b.kind] then return true end
     if (b.last or 0) < i - 1 then return false end
-    if b.kind ~= "floor" then return true end
+    if b.kind ~= "floor" and b.kind ~= "dig" then return true end
     local p = b.cells[i - 1]
     local sq = p and getCell():getGridSquare(p[1], p[2], p[3])
-    return sq ~= nil and sq:has(IsoFlagType.solidfloor)
+    if not (sq ~= nil and sq:has(IsoFlagType.solidfloor)) then return false end
+    return b.e ~= Entry.DIG_CELL or MinidoracatBuilder.Basement.has(p[1], p[2], p[3])
 end
 
 -- 樓上往外還沒蓋的那一格沒有格子（walkNear 回 nil；2026-11-24 實機）：站到它四周已有、能站的格子（通常是剛蓋好的前一格），
--- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）
-local function standBeside(player, x, y, z)
+-- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）。
+-- dug＝挖這一格：只看四個正交、已挖（Basement.has）的鄰格；伺服器 Check.item 照同一條驗站的位置，不符回 DIG_STAND
+standBeside = function(player, x, y, z, dug)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local cell, here, best, far = getCell(), player:getCurrentSquare(), nil, math.huge
+    local BM = MinidoracatBuilder.Basement
     for dy = -1, 1 do
         for dx = -1, 1 do
-            local sq = (dx ~= 0 or dy ~= 0) and cell:getGridSquare(x + dx, y + dy, z)
+            local ok = (dx ~= 0 or dy ~= 0) and (not dug or (dx == 0 or dy == 0) and BM.has(x + dx, y + dy, z))
+            local sq = ok and cell:getGridSquare(x + dx, y + dy, z)
             if sq and sq == here then return true end
             if sq and sq:isFree(false) then
                 local d = math.abs(x + dx + 0.5 - player:getX()) + math.abs(y + dy + 0.5 - player:getY())
@@ -216,15 +233,21 @@ local function standBeside(player, x, y, z)
 end
 
 -- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
--- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。都不行時記 noRoom、回 false
+-- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。挖這一格不原地挖：伺服器要站在已挖的鄰格（回 DIG_STAND）。
+-- 都不行時記 noRoom、回 false。n 是還沒輪完的拆除那一筆時，改照拆除的規則（unbuildStand）
+local unbuildStand
 function Client.stand(n, i)
+    local u = Client.pendingUnbuild
+    if u and u.n == n then return unbuildStand(u, i) end
     local b = Client.pending
     if not (b and b.n == n) then return false end
     local c = b.cells[i]
     local r = walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
-    if r == nil then r = standBeside(b.player, c[1], c[2], c[3]) end
+    if r == nil then r = standBeside(b.player, c[1], c[2], c[3], false) end
     if r then return true end
-    if Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then return true end
+    if b.e ~= Entry.DIG_CELL and Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then
+        return true
+    end
     print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped at " .. i)
     b.noRoom = i
     return false
@@ -254,7 +277,20 @@ local function walkScrap(props, player, sq)
         or o:getType() == IsoObjectType.wall then
         walked = luautils.walkAdjWindowOrDoor(player, sq, o, true)
     else
-        walked = props:walkAdj(player, sq, true)
+        -- 同 walkNear：那格（多格的每一格）北／西牆後那一格不存在時，原版 walkAdj 與 walkAdjSquares 拿去就丟錯
+        -- （luautils.lua:137-138、386-390；ISMoveableSpriteProps.lua:2974-2978,3048-3066），照那一格本身找站位
+        local left, top = props:getSpriteGridTopLeft(sq:getX(), sq:getY())
+        local fine = luautils.getCorrectSquareForWall(player, sq) ~= nil
+        for _, s in ipairs(props:getMultiTileSquares(left, top, sq:getZ()) or {}) do
+            fine = fine and luautils.getCorrectSquareForWall(player, s) ~= nil
+        end
+        if fine then
+            walked = props:walkAdj(player, sq, true)
+        else
+            local adj = AdjacentFreeTileFinder.Find(sq, player)
+            if adj then ISTimedActionQueue.add(ISWalkToTimedAction:new(player, adj)) end
+            walked = adj ~= nil
+        end
     end
     local cheat = ISMoveableDefinitions.cheat
     if not walked and not cheat then return "NO_ROOM" end
@@ -367,6 +403,34 @@ local function finish(b, ...)
     if b.onDone then b.onDone(s) else tell(b, s) end
 end
 
+-- 拆本工具的地板（不開作弊）：輪到第 i 件才看下指令的人是不是站在那一件上（站位動作，Client.stand）。伺服器把自己也算進
+-- 「有人站著」（Dismantle.check 的地板分支；二樓以上拆了會掉下去），排隊當下的位置不準：前面幾件的走路可能把人帶到這一件上，
+-- 1.6 格內 luautils.walkAdj 就不排走路（luautils.lua:136-142）。站在上面先走到旁邊（排除這一件的格子），拆除動作插在走路後面；
+-- 旁邊沒有能站的照 NO_ROOM 跳過這一件、後面照走。沒站在上面直接排拆除，不多走一趟。回 true（站位動作照常結束）
+unbuildStand = function(b, i)
+    local it = b.list[i]
+    if not it then return false end
+    local sq = getCell():getGridSquare(it.x, it.y, it.z)
+    local here, skip = b.player:getCurrentSquare(), { sq }
+    local on = sq ~= nil and here == sq
+    for _, o in ipairs(it.own or {}) do
+        skip[#skip + 1] = o
+        on = on or o == here
+    end
+    if on then
+        local adj = AdjacentFreeTileFinder.Find(sq, b.player, skip)
+        if not adj then
+            print(LOG .. "dismantle not queued at " .. it.x .. "," .. it.y .. "," .. it.z .. ": NO_ROOM")
+            resolve(b, i, "NO_ROOM", { code = "NO_ROOM" })
+            if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
+            return true
+        end
+        ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, adj))
+    end
+    ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n, i))
+    return true
+end
+
 -- 斜面格上的地板（舊版照地板一片一片蓋的坡道片）要站哪：原版找站位不分斜面（AdjacentFreeTileFinder），挑到隔壁的坡道格時
 -- 角色得繞到坡底爬上去，路斷了走路當場停、整串佇列清空（玩家 2026-11-21 回報舊片拆不了；E2E ramp-legacy-mp）。
 -- 先找緊鄰、不是斜面的空格：排除清單放 own 與緊鄰的斜面格。回站位的格子；nil＝緊鄰的都是斜面
@@ -407,7 +471,7 @@ local function queueFill(b, ponds, slope)
             if flat then ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, flat)) end
             stand = flat ~= nil
         else
-            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+            stand = walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {})
         end
         if stand == false then
             for _, f in ipairs(filled) do
@@ -420,7 +484,7 @@ local function queueFill(b, ponds, slope)
             end
         end
         if stand == false and sq then
-            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+            stand = walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {})
         end
         if stand == false then
             resolve(b, b.index[it], "NO_ROOM", { code = "NO_ROOM" })
@@ -434,7 +498,8 @@ end
 
 -- 伺服器收下才走過去、照 items 的順序排動作（同 Client.build）。旁邊沒空位、原版拆解現在不能拆的那一件跳過，照排下一件。
 -- 建造作弊時本工具拆的不走過去（同 queue；原版 ISDestroyCursor.lua:24），原版拆解的照原版走（它看搬運作弊，不看建造作弊）。
--- 水面超過一格、斜面格上的地板（舊版照地板蓋的坡道片，一片也算）留到最後一起排（queueFill）
+-- 水面超過一格、斜面格上的地板（舊版照地板蓋的坡道片，一片也算）留到最後一起排（queueFill）。本工具拆的地板先排站位動作，
+-- 輪到時才看人是不是站在那一件上（unbuildStand），拆除動作由它排
 local function queueUnbuild(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
@@ -459,9 +524,11 @@ local function queueUnbuild(b)
             else
                 b.scrapping[#b.scrapping + 1] = it
             end
-        elseif walk and walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
+        elseif walk and walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {}) == false then
             code = "NO_ROOM"
             resolve(b, b.index[it], code, { code = code })
+        elseif walk and it.kind == "floor" then
+            ISTimedActionQueue.add(MinidoracatBuilderStandAction:new(b.player, b.n, b.index[it]))
         else
             ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n, b.index[it]))
         end
@@ -471,8 +538,9 @@ local function queueUnbuild(b)
     if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
 end
 
--- 拆一串（一區拆除，或右鍵拆一件）：items[i] = { x, y, z, name（sprite 名稱）, kind, north（格邊種類的方向）, own（同一件
--- 各片所在的格子，走路時不站上去）, route = "builder"（本工具拆）| "scrap"（原版拆解，obj＝物件）, obj }，照拆的順序。
+-- 拆一串（一區拆除，或右鍵拆一件）：items[i] = { x, y, z, name（sprite 名稱）, kind, north（Entry.edgeNorth：在格邊上
+-- 動手的那條邊是不是北邊，其他 nil）, own（同一件各片所在的格子，走路時不站上去）, route = "builder"（本工具拆）
+-- | "scrap"（原版拆解，obj＝物件）, obj }，照拆的順序。
 -- builder 的照順序送一筆拆除請求，伺服器收下後兩種動作照 items 的順序一起排（沒有 builder 的不送請求，直接排）。
 -- 全部輪完、被拒或停下時呼叫 onDone({ done, total, skipped = { [碼] = 件數 }, refund = { [fullType] = 件數 }, stopped,
 -- refused＝整筆被拒的碼或 nil, res = { [items 的那一項] = true（拆好）或跳過的碼；沒輪到的沒有 } })；沒給 onDone 時自己跳通知。
@@ -516,7 +584,7 @@ function Client.dismantle(player, obj, kind, ...)
     local own = ...
     local spr, sq = obj:getSprite(), obj:getSquare()
     return Client.dismantleMany(player, { { x = sq:getX(), y = sq:getY(), z = sq:getZ(), name = spr:getName(), kind = kind,
-        north = Entry.north(kind, spr), own = own, route = "builder", obj = obj } })
+        north = Entry.edgeNorth(kind, spr), own = own, route = "builder", obj = obj } })
 end
 
 -- dismantleAccepted：{ n }；dismantleRefused：{ n, i（0＝請求本身）, code, x, y, z }；
@@ -563,8 +631,208 @@ function Client.tickUnbuild()
 end
 Events.OnTick.Add(Client.tickUnbuild)
 
+-- ---------------------------------------------------------------- 地下室同步（伺服器 BasementLedger）
+-- dug＝{ t = { x1, y1, x2, y2, ... } }：剛挖好的格子。basements＝大區 (ax, ay) 周圍 3×3 範圍內全部連通塊的快照，
+-- 分 n 段送：每段 { ax, ay, i, n, v, b = { 塊, ... } }，一塊是房間清單 { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形；
+-- 一塊不拆開；一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。block＝{ v, r = 房間清單 }：伺服器那一批之後一塊
+-- 的整份現況。v＝伺服器的修訂號（每推一次 block 加 1，快照帶當下的值）：指令不保序（PacketTypes.java:508），較舊的照它略過。
+-- 座標都在地下一層。收到的數字逐個驗（整數、範圍；一塊最多 Basement.MAX 格），有一個不合整則丟掉
+local COORD_MAX = 99999 -- Place.key 每軸只留 5 位數
+local SEG_RECTS, SEG_MAX, V_MAX = 500, 1000, 2147483647
+local function int(v, lo, hi)
+    return type(v) == "number" and v == math.floor(v) and v >= lo and v <= hi
+end
+local function dugTiles(t)
+    local BM = MinidoracatBuilder.Basement
+    if type(t) ~= "table" or #t == 0 or #t % 2 ~= 0 or #t > 2 * BM.MAX then return nil end
+    local out = {}
+    for i = 1, #t, 2 do
+        if not (int(t[i], 0, COORD_MAX) and int(t[i + 1], 0, COORD_MAX)) then return nil end
+        out[#out + 1] = { t[i], t[i + 1] }
+    end
+    return out
+end
+-- 一間的矩形 { x, y, w, h, ... }（左上角在 x0..x1、y0..y1 內）攤成格子加進 out；回這間幾格，或 nil（壞資料）
+local function rectTiles(r, x0, y0, x1, y1, out)
+    local BM = MinidoracatBuilder.Basement
+    if type(r) ~= "table" or #r == 0 or #r % 4 ~= 0 then return nil end
+    local n = 0
+    for i = 1, #r, 4 do
+        local x, y, w, h = r[i], r[i + 1], r[i + 2], r[i + 3]
+        if not (int(x, x0, x1) and int(y, y0, y1) and int(w, 1, BM.MAX) and int(h, 1, BM.MAX)) then return nil end
+        n = n + w * h
+        if n > BM.MAX then return nil end
+        for dy = 0, h - 1 do
+            for dx = 0, w - 1 do out[#out + 1] = { x + dx, y + dy } end
+        end
+    end
+    return n
+end
+-- 一塊的房間清單攤成 { { { x, y }, ... }, ... }（每間一組格子）；累計 rects 個長方形超過 SEG_RECTS、一塊超過 Basement.MAX 格
+-- 或資料不合回 nil。回房間、累計的長方形數
+local function blockRooms(blk, x0, y0, x1, y1, rects)
+    if type(blk) ~= "table" or #blk == 0 then return nil end
+    local rooms, n = {}, 0
+    for i, r in ipairs(blk) do
+        rects = rects + (type(r) == "table" and #r / 4 or 0)
+        if rects > SEG_RECTS then return nil end
+        local room = {}
+        local got = rectTiles(r, x0, y0, x1, y1, room)
+        n = got and n + got
+        if not n or n > MinidoracatBuilder.Basement.MAX then return nil end
+        rooms[i] = room
+    end
+    return rooms, rects
+end
+-- 一段快照的塊加進 out（每塊一份房間清單）；回 out，或 nil（壞資料）
+local function areaTiles(args, out)
+    local BM = MinidoracatBuilder.Basement
+    local A, ax, ay, list = BM.AREA, args.ax, args.ay, args.b
+    if not (int(ax, 0, COORD_MAX / A) and int(ay, 0, COORD_MAX / A) and type(list) == "table") then return nil end
+    local x0, y0, x1, y1 = (ax - 1) * A, (ay - 1) * A, (ax + 2) * A - 1, (ay + 2) * A - 1
+    local rects = 0
+    for _, blk in ipairs(list) do
+        local rooms
+        rooms, rects = blockRooms(blk, x0, y0, x1, y1, rects)
+        if not rooms then return nil end
+        out[#out + 1] = rooms
+    end
+    return out
+end
+
+-- synced＝已經收齊快照的大區與修訂號（之後 dug、block 只收這個 3×3 範圍內的）；part＝收到一半的快照（ax, ay, n, v,
+-- got＝收到幾段, seg＝{ [段號]＝塊 }）
+local synced, part = nil, nil
+function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
+
+-- 登錄身邊的地下室（Basement.registerNear）排到這一次更新的 OnTick 一起做：每次更新先處理完收到的封包
+-- （GameWindow.logic → GameClient.update，GameClient.java:386-393），再跑遊戲時間（EveryOneMinute）與 OnTick
+-- （IngameState.java:1558,1653），所以同一批收到的幾則 block、快照與每分鐘檢查併成一次 applyChanges。ids（換過房號的塊，
+-- 不管等不等 block）併起來；有排著的才掛 OnTick，做完就拿掉
+local soon = nil
+local function registerSoon()
+    Events.OnTick.Remove(registerSoon)
+    local ids = soon
+    soon = nil
+    MinidoracatBuilder.Basement.registerNear(ids)
+end
+local function registerLater(ids)
+    if not soon then
+        soon = {}
+        Events.OnTick.Add(registerSoon)
+    end
+    for id in pairs(ids or {}) do soon[id] = true end
+end
+
+-- 快照收到前的 dug 不登錄：先登錄會以新格當主建物的角，快照到了其餘的格子變成一格一棟（快照本來就含它）
+local function inSynced(t)
+    if not synced then return false end
+    local A = MinidoracatBuilder.Basement.AREA
+    return t[1] >= (synced.ax - 1) * A and t[1] < (synced.ax + 2) * A and t[2] >= (synced.ay - 1) * A
+        and t[2] < (synced.ay + 2) * A
+end
+
+-- 一段快照：(ax, ay, n, v) 一樣的是同一份，照段號收、不要求順序。和已套用的同一區、修訂號比較小的丟掉；收到一半時來了另一份：
+-- 修訂號比較小的那一段丟掉，否則丟掉收到一半的、改收新的。重複的段丟掉；壞資料連收到一半的一起丟（EveryOneMinute 會再要）。
+-- 收齊了才換掉那一區（Basement.reset 留著還在等 block 的格子）、照本機的塊套用分房、排登錄身邊的塊（registerLater），並記成
+-- 已收到。回 true＝收齊了
+local function onSegment(args)
+    local i, n, v = args.i, args.n, args.v
+    if not (int(n, 1, SEG_MAX) and int(i, 1, n) and int(v, 0, V_MAX)) then
+        part = nil
+        return print(LOG .. "basements: bad data, dropped")
+    end
+    if synced and synced.ax == args.ax and synced.ay == args.ay and v < synced.v then return false end
+    if not (part and part.ax == args.ax and part.ay == args.ay and part.n == n and part.v == v) then
+        if part and v < part.v then return false end
+        part = { ax = args.ax, ay = args.ay, n = n, v = v, got = 0, seg = {} }
+    end
+    if part.seg[i] then return false end
+    local blocks = areaTiles(args, {})
+    if not blocks then part = nil return print(LOG .. "basements: bad data, dropped") end
+    part.seg[i], part.got = blocks, part.got + 1
+    if part.got < n then return false end
+    local BM, done = MinidoracatBuilder.Basement, part
+    part = nil
+    local tiles = {}
+    for s = 1, done.n do
+        for _, rooms in ipairs(done.seg[s]) do
+            for _, room in ipairs(rooms) do
+                for _, t in ipairs(room) do tiles[#tiles + 1] = t end
+            end
+        end
+    end
+    BM.reset(tiles, done.ax, done.ay)
+    for s = 1, done.n do
+        for _, rooms in ipairs(done.seg[s]) do BM.setRooms(rooms, done.v) end
+    end
+    registerLater(nil)
+    synced = { ax = done.ax, ay = done.ay, v = done.v }
+    return true
+end
+
+-- block：已同步範圍內的格子（範圍外的略過）還沒有的先加進集合，照本機的塊套用伺服器分好的房間（Basement.setRooms 照 v 略過
+-- 較舊的），換過房號的塊排登錄（身邊的，registerLater）；壞資料丟掉。回 true＝有範圍內的格子
+local function onBlock(args)
+    local BM = MinidoracatBuilder.Basement
+    local rooms = int(args.v, 0, V_MAX) and blockRooms(args.r, 0, 0, COORD_MAX, COORD_MAX, 0)
+    if not rooms then return print(LOG .. "block: bad data, dropped") end
+    local tiles = {}
+    for i, room in ipairs(rooms) do
+        local keep = {}
+        for _, t in ipairs(room) do
+            if inSynced(t) then keep[#keep + 1], tiles[#tiles + 1] = t, t end
+        end
+        rooms[i] = keep
+    end
+    if #tiles == 0 then return false end
+    BM.add(tiles)
+    registerLater(BM.setRooms(rooms, args.v))
+    return true
+end
+
+-- 單機：集合與登錄伺服器那一半已經做了（同一個 Lua），只重算畫面高度範圍
+function Client.onBasement(cmd, args)
+    local BM = MinidoracatBuilder.Basement
+    if not isClient() then return BM.recalcZ() end
+    if cmd == "dug" then
+        local tiles = dugTiles(args.t)
+        if not tiles then return print(LOG .. "dug: bad data, dropped") end
+        local keep = {}
+        for _, t in ipairs(tiles) do
+            if inSynced(t) then keep[#keep + 1] = t end
+        end
+        if #keep == 0 then return end
+        BM.await(BM.add(keep)) -- 登錄等伺服器那一批推來的 block（Basement.await）；高度範圍當下重算
+    elseif cmd == "block" then
+        if not onBlock(args) then return end
+    elseif not onSegment(args) then
+        return
+    end
+    BM.recalcZ()
+end
+
+-- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
+-- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要），
+-- 並排登錄走近了的、等 block 等太久的地下室（registerLater）
+local function askBasements()
+    local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
+    if not p then return end
+    local A = MinidoracatBuilder.Basement.AREA
+    local ax, ay = math.floor(p:getX() / A), math.floor(p:getY() / A)
+    if synced and ax == synced.ax and ay == synced.ay then return end
+    sendClientCommand(p, MODULE, "basements", {})
+end
+function Client.askEveryMinute()
+    if not isClient() then return end
+    askBasements()
+    registerLater(nil)
+end
+Events.OnGameStart.Add(Client.askEveryMinute)
+Events.EveryOneMinute.Add(Client.askEveryMinute)
+
 -- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
--- placed：{ n, i, replaced（原地替換了舊的那件時 true）}
+-- placed：{ n, i, replaced（原地替換了舊的那件時 true）, partial（挖地下室有一步沒做完時 true）}
 -- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
 function Client.onServerCommand(cmd, args)
     if UNBUILD[cmd] then return onUnbuild(cmd, args) end
@@ -572,6 +840,7 @@ function Client.onServerCommand(cmd, args)
         if MinidoracatBuilder.Admin then MinidoracatBuilder.Admin.onLedgers(args) end
         return
     end
+    if cmd == "dug" or cmd == "basements" or cmd == "block" then return Client.onBasement(cmd, args) end
     if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
     local b = Client.pending
     if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end
@@ -581,6 +850,10 @@ function Client.onServerCommand(cmd, args)
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
     end
     if cmd == "placed" and b and b.n == args.n then b.last = math.max(b.last or 0, args.i or 0) end
+    if cmd == "placed" and args.partial then
+        Messages.toast(b and b.n == args.n and b.player or getSpecificPlayer(0), getText("IGUI_MBLD_Basement_Partial"),
+            getText("IGUI_MBLD_Title"))
+    end
     if Client.onResult then Client.onResult(cmd, args) end
 end
 
@@ -596,11 +869,16 @@ end)
 --     看起來沒反應（builder-rooms-1029g）。switchLight 會把房間裡其他燈與開關的 activated 一起改掉（:517-523），同一幀照原值
 --     還原（同伺服器 Circuits 的 apply）。地圖房屋的房間燈由伺服器同步，客戶端自己切會和伺服器不一致；沒有房間時切了也看不到
 --     （開關的光源不畫，:790-794）。招牌不算開關（Rules.switchProps），不補。
--- 自建房間的開關照自己的狀態切房間燈，房間裡其他燈與開關的 activated 同一幀還原。回那個房間（不在自建房間回 nil）
+-- 自建房間的開關照自己的狀態切房間燈，房間裡其他燈與開關的 activated 同一幀還原。回那個房間（不在自建房間回 nil）。
+-- 本 MOD 的地下室（房間名 Basement.ROOM，不是自建房間）同樣補切，但只補開著的：同一間沒接燈的開關由伺服器一起切，
+-- 關著的那個照自己切會把同一間其他開著的開關的燈熄掉
 local function lightRoom(obj)
     local sq = obj:getSquare()
-    local room = sq and sq:isUserDefinedRoom() and sq:getRoom()
+    local room = sq and sq:getRoom()
     if not room then return nil end
+    local under = not sq:isUserDefinedRoom() and room:getName() == MinidoracatBuilder.Basement.ROOM
+    if not (under or sq:isUserDefinedRoom()) then return nil end
+    if under and not obj:isActivated() then return room end
     local list, others, was = room:getLightSwitches(), {}, {}
     for i = 0, list:size() - 1 do
         local o = list:get(i)
@@ -624,10 +902,7 @@ end
 -- 只在換房間物件時切：switchLight 會讓整張光照重算（:556 recalcLightTime），不能每秒都切。
 local WATCH_MS = 1000
 local watched, watchAt, watching = {}, 0, false
-local function watchTick()
-    local t = getTimestampMs()
-    if t >= watchAt and t - watchAt < WATCH_MS then return end
-    watchAt = t
+local function watchNow()
     for i = #watched, 1, -1 do
         local w = watched[i]
         local obj = w.obj
@@ -644,6 +919,15 @@ local function watchTick()
             end
         end
     end
+end
+-- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒
+MinidoracatBuilder.Basement.onApplied = watchNow
+
+local function watchTick()
+    local t = getTimestampMs()
+    if t >= watchAt and t - watchAt < WATCH_MS then return end
+    watchAt = t
+    watchNow()
     if #watched == 0 then
         watching = false
         Events.OnTick.Remove(watchTick)

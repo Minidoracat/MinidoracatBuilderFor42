@@ -78,9 +78,15 @@ local function recipeTile(res, name, x, y, z)
     return true
 end
 
--- 一張圖。z0＝框選的最低層（那一層的天然地面不收，連它邊緣附著的漸層圖一起：那些是地形，不是蓋出來的）
+-- 一張圖。z0＝框選的最低層（那一層的天然地面不收，連它邊緣附著的漸層圖一起：那些是地形，不是蓋出來的）。
+-- 挖地下室的三個項目 ID 借用原版圖名（Rules.DIG）：世界上同名的是引擎的隱形地板、地圖的地下土塊，不是挖出來的，
+-- 照有挖掘之前當引擎內部圖不收（LUA）；挖掉的地也不是能照圖蓋的東西（藍圖不認挖掘）。
+-- 入口的木樓梯是原版 Wood_Stairs 的圖，不擋會照配方收進去、照圖蓋成沒有洞也不記帳本的樓梯：在地下室集合裡的照挖掘不收
+-- （分不出是入口開的還是玩家在地下室裡用原版選單蓋的，一起不收）；集合外的同款樓梯照舊收成配方
 function Capture.tile(res, name, x, y, z, z0)
     if not name:find("_%d+$") then return end
+    if B.Rules.DIG[name] then return skip(res, "LUA", z) end
+    if Entry.digStair(name) and B.Basement and B.Basement.has(x, y, z) then return skip(res, "LUA", z) end
     local entry = Entry.resolve(name)
     if entry then
         local k = entry.kind
@@ -133,6 +139,9 @@ function Capture.square(res, sq, z0)
                 elseif g.x == x and g.y == y and g.z == z then
                     add(res, g.e, x, y, z, 0, g.garage and g.w or nil)
                 end
+            elseif z < 0 and B.Basement and (B.Basement.isDirtOnOuterEdge(o) or B.Basement.isPost(o)) then
+                -- 地下室外邊的土牆與外凸轉角的牆角柱是挖出來時自己長的地形（挖到哪長到哪），不是能照圖蓋的牆
+                skip(res, "TERRAIN", z)
             else
                 local n, deck = res.n, platform(res, name, sq)
                 Capture.tile(res, name, x, y, z, z0)

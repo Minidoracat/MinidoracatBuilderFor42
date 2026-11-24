@@ -1,4 +1,4 @@
--- 目錄分批整理（client）：進遊戲後才開始，不卡載入也不卡畫面（設計稿 1.1；bt-perf §10、§11）。
+-- 目錄分批整理（client）：進遊戲後才開始，不卡載入也不卡畫面（設計稿）。
 -- OnGameStart 只複製清單、掛事件（它是同步的，跑多久第一幀就晚多久）；之後每 tick 用時間預算分批：
 --   第一段：namedMap 每個 sprite → 過濾 → Rules.classify → Index.add
 --   第二段：讀 tiledef 來源表，再建搜尋鍵（有名稱的項目＋tileset），建 tileset 鍵時順便把它的桶照編號排
@@ -149,7 +149,7 @@ local function finish(state)
     job = nil
     Index.finish()
     Catalog.state = state
-    -- 毫秒時鐘的累計只當 log 參考；成本以 GameProfiler 為準（bt-perf §1.5）
+    -- 毫秒時鐘的累計只當 log 參考；成本以 GameProfiler 為準
     Catalog.stats = { sprites = j.n, items = Index.items, named = Index.nameKey.n, tilesets = Index.setName.n,
         ticks = j.ticks, busyMs = j.busy, maxMs = j.maxMs, wallMs = now() - j.t0, sourceMs = j.sourceMs }
     local s = Catalog.stats

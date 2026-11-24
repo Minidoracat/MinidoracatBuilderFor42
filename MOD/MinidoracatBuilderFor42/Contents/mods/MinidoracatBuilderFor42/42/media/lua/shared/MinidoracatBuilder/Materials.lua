@@ -1,8 +1,8 @@
--- 材料：自己找，不收客戶端給的清單（bt-authority §5.1）。
+-- 材料：自己找，不收客戶端給的清單。
 -- 找的順序照原版建造扣料（buildUtil.consumeMaterial，ISBuildUtil.lua:125-237）：背包（含袋子）→ 周圍 3×3 地上 →
 -- 釘子還不夠就拆背包裡的釘子盒。差別：地上以玩家所在格為中心（原版以建造格為中心），隔牆、隔關著的門窗的不拿。
--- ponytail：家具、車上的容器不找；要找時照 §5.1 逐個過安全屋拿取權限、上鎖與 2.5 格。
--- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣（§5.6）。plan／consume 只在伺服器的 complete() 跑，
+-- ponytail：家具、車上的容器不找；要找時逐個過安全屋拿取權限、上鎖與 2.5 格。
+-- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣。plan／consume 只在伺服器的 complete() 跑，
 -- MP 只發生一次。客戶端只用 summary／short／take 給畫面看（同一套找法），伺服器照樣重算。
 
 MinidoracatBuilder = MinidoracatBuilder or {}
@@ -93,6 +93,21 @@ function Materials.missingTools(player, tools)
         end
     end
     return out
+end
+
+-- 挖地下室磨鏟子（使用者 2026-11-25；其他工具照舊不消耗）：背包裡第一把沒壞、帶這個標籤的工具（同 hasTool 的找法）
+-- 擲 n 次 damageCheck(0, 2, false)，同原版十字鎬、大鎚（ISPickAxeGroundCoverItem.lua:150：每次以 1／(ConditionLowerChance×2)
+-- 的機率掉 1 點，InventoryItem.java:4553-4570）；有掉就同步給客戶端（同 ISShovelGround.lua:109）。建造作弊不擲
+function Materials.wear(player, name, n)
+    local tag = ItemTag[name]
+    if tag == nil or Materials.cheat(player) then return end
+    local item = player:getInventory():getFirstTagEvalRecurse(tag, notBroken)
+    if not item then return end
+    local lost = false
+    for _ = 1, n do
+        if item:damageCheck(0, 2, false) then lost = true end
+    end
+    if lost then sendItemStats(item) end
 end
 
 -- 硬核「原版材料」的耗材（Cost 的 uses）：照次數用，背包（含袋子）先、周圍 3×3 地上後（同原版 consumeMaterial 的

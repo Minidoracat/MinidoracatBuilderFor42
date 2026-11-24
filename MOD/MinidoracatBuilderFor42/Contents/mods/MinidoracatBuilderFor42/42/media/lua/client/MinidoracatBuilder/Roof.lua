@@ -32,7 +32,7 @@ end
 -- rise＝幾格升一層、maxSpan＝雙斜與四坡的跨距上限、off＝片種位移、core＝認整套要全部對上的片、shapes＝做得出的形狀、
 -- key＝排法用的角色 → 片種字首、gable＝山牆（牆的圖塊組，本 MOD 目錄是「牆 › 山牆與斜牆」）的模板。
 -- 30 度：11 款原版模板全部相同（90 片）。山牆 38 款相同（36 片），原版非燒毀款的外形完全一樣（差 0），不同片種最近只差 6 點
--- （Fall 與 Peak），所以容許取 3；燒毀款（walls_exterior_roofs_30_burnt_01 差到 49）認不出（量測見 builder-dev roof.md）
+-- （Fall 與 Peak），所以容許取 3；燒毀款（walls_exterior_roofs_30_burnt_01 差到 49）認不出（量測）
 Roof.FAM = {
     ["30"] = {
         ref = "roofs_30_01", tol = 16, rise = 6, maxSpan = 11, kind = "roof",
@@ -60,7 +60,7 @@ Roof.FAM = {
     -- 遊戲的遮罩是 alpha 不是 0 就算（PNGDecoder.markOpaquePixels），照這個量：屋脊頭 PeakE1／PeakS1 原版有兩種外形
     -- （_01@0 與 _01@72 差 15／12 點；穀倉、二手衣店是 @72 那種），所以每個片種比 alt 那套也比；兩套取近的，原版非燒毀款
     -- 同片種最大差 7（walls_exterior_roofs_04 PeakS1），不同片種最近差 10（PeakS1 與 RiseS1），容許取 7；
-    -- 燒毀款（差 8）與 walls_logs（差 9 以上）認不出（量測見 builder-dev roof.md）。
+    -- 燒毀款（差 8）與 walls_logs（差 9 以上）認不出（量測）。
     -- 跨距 7 以上的山牆中段（建築編輯器的 CapGap，是別的牆圖塊組的整面牆）這裡沒有片種：用房子那條邊正下方的直牆補
     -- （Roof.layout 的山牆段）
     ["45"] = {
@@ -78,7 +78,7 @@ Roof.FAM = {
 Roof.FAMILIES = { "30", "45" }
 -- 屋頂那一層每一格補的天花板（30、45 度都補；45 度平頂除外：平頂片自己是地板）。引擎替自建房間建房間要封閉而且屋頂過半
 -- （WorldRegionToMetaGrid.java:183），「有屋頂」照上面幾層有沒有 solidfloor 算（DataChunk.recalcRoofs），斜片都沒有
--- solidfloor；地圖房子屋頂層每格也都疊這張。30 度不補時整間不算室內，四面牆畫成不透光的黑色（實測見 builder-dev roof.md）
+-- solidfloor；地圖房子屋頂層每格也都疊這張。30 度不補時整間不算室內，四面牆畫成不透光的黑色（實測）
 Roof.FILL = "ceilings_01_0"
 
 -- 每族的核心片（照編號排，比對時先失敗的先跳出）；45 度的平頂片不算核心

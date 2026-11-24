@@ -25,7 +25,7 @@ local WOOD = {
     solid = { [PLANK] = 2, [NAILS] = 2 },
     stairs = { [PLANK] = 13, [NAILS] = 8 },                                 -- Wood_Stairs（整組，stairs/entity_carpentry_stairs.txt）
     roof = { [PLANK] = 1, [NAILS] = 2 },                                    -- 原版沒有屋頂配方：比照木地板，斜面多一根釘子
-    ramp = { [PLANK] = 1, [NAILS] = 1 },                                    -- 坡道每片：原版沒有配方，照木地板（Q2 選維持現價）
+    ramp = { [PLANK] = 1, [NAILS] = 1 },                                    -- 坡道每片：原版沒有配方，照木地板（維持現價）
 }
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
@@ -93,8 +93,7 @@ local function scrapTools(def)
     end
     return nil
 end
--- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退；多格的每一格各收（使用者 2026-10-27 選並確認；
--- 原因見 AGENTS.md 踩坑錄）。
+-- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退；多格的每一格各收（使用者 2026-10-27 選並確認）。
 local ESCRAP = "Base.ElectronicsScrap"
 -- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給；技能選 B）：每付一件材料 5 點，給「拆掉時決定這件退不退」的
 -- 技能。有拆解材質的，原版每個 Material 照自己拆解定義的技能擲退料機率（ISMoveableSpriteProps.lua:3318-3324、
@@ -159,10 +158,13 @@ local WELL_PRICE = { items = { ["Base.Stone2"] = 40, ["Base.FlatStone"] = 8, ["B
 local PUMP_PRICE = { items = { [PIPE] = 6, ["Base.SmallSheetMetal"] = 4, ["Base.Screws"] = 6 }, tools = TOOLS.metal,
     perk = PERK.metal, level = SKILL.metal.stairs, uses = USES.metal.stairs }
 local WATER_PRICE = { items = {}, tools = { "DIG_GRAVE" } }
+-- 挖地下室（kind dig，使用者 2026-11-25）：每格只要鏟子、不給經驗、不要技能；入口的木樓梯另照樓梯收（Cost.forCells）
+local DIG_PRICE = { items = {}, tools = { "DIG_GRAVE" } }
 local GRASS_PRICE = { items = { ["Base.GrassTuft"] = 3 }, tools = {}, floor = true }
 local function fixedPrice(kind, spr)
     if kind == "well" then return spr:getName() == "camping_01_16" and WELL_PRICE or PUMP_PRICE end
     if kind == "water" then return WATER_PRICE end
+    if kind == "dig" then return DIG_PRICE end
     if MinidoracatBuilder.Rules.isGrass(kind, spr:getProperties()) then return GRASS_PRICE end
     return nil
 end
@@ -511,7 +513,19 @@ end
 -- （Rules.classify、Rules.stairsSet），所以三片的拆除方式都和頂片一樣。
 -- 坡道同理：整組放在第一格（頭片），其他片與平台不收，退料記在伺服器帳本整組一筆（Place.build）。同一組各片只差斜面高度，
 -- 所以照頭片的單價 × 片數算一次（倍率乘在整組上再進位，不會每片各進位一次）
+-- 挖地下室：每格只要鏟子；入口（第一格是樓梯頂片）的樓梯三格照上面的樓梯收一組，工具再加鏟子
 function Cost.forCells(kind, sprites, multiplier)
+    if kind == "dig" then
+        local each = {}
+        for i, spr in ipairs(sprites) do each[i] = Cost.of(kind, spr, multiplier) end
+        if sprites[1] and MinidoracatBuilder.Rules.typeCode(sprites[1]:getType()) == "stairs" then
+            local st = Cost.forCells("stairs", { sprites[1], sprites[2], sprites[3] }, multiplier)
+            local tools = st[1].tools -- 樓梯三格共用這一份（Cost.of 複製的）
+            tools[#tools + 1] = DIG_PRICE.tools[1]
+            each[1], each[2], each[3] = st[1], st[2], st[3]
+        end
+        return each
+    end
     local each = {}
     local n = 0
     if kind == "ramp" then
@@ -604,6 +618,7 @@ end
 -- 只看這一片的 sprite 屬性與拆解定義，不碰世界。
 function Cost.refund(kind, spr)
     if kind == "water" or kind == "ramp" then return "builder" end -- 坡道整組拆、退料記在帳本（Place.build）
+    if kind == "dig" then return "none" end -- 挖掉的地不能填回；入口的樓梯蓋好後照樓梯拆
     local p = spr:getProperties()
     local R = MinidoracatBuilder.Rules
     if kind == "door" and R.grouped(p) then return "builder" end

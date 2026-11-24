@@ -19,8 +19,8 @@ local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDi
 -- IsoObject 的地板，圖還是挖的那張）、坡道片（Place.ramp：一般 IsoObject，記號是頭片名），modData 的 builderEntry 有值；
 -- 車庫門、雙開門（IsoDoor）看整組第一片的記號（Place.ourDoor）。
 -- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
--- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
--- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
+-- 清退料表時不比圖）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
+-- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷
 local function mine(o)
     if instanceof(o, "IsoDoor") then return Place.ourDoor(o) end
     if not o:hasModData() then return false end
@@ -52,7 +52,7 @@ end
 
 -- 本 MOD 蓋的、本工具能拆的物件回種類，否則 nil。只看 modData 與 sprite。本 MOD 蓋的 IsoThumpable 都 isDismantable，
 -- 一樓以下的地板例外（Place.groundFloor，不給原版搬動工具拆），所以它們不看這一項；伺服器另外照帳本認（Place.refundOf）。
--- memo 見 Dismantle.classOf。
+-- 挖地下室入口的樓梯片照樓梯拆：圖帶 EntityScript，Rules.classify 不列（Entry.digStair）。memo 見 Dismantle.classOf。
 function Dismantle.kindOf(obj, ...)
     local memo = ...
     local ours, floor = mine(obj)
@@ -64,6 +64,9 @@ function Dismantle.kindOf(obj, ...)
     local spr = obj:getSprite()
     if not spr then return nil end
     local kind, refund = Dismantle.classOf(spr, memo)
+    if not kind and Entry.digStair(spr:getName()) and obj:isStairsObject() then
+        kind, refund = "stairs", Cost.refund("stairs", spr)
+    end
     -- 蓋成地板的照地板拆：0.5.0 以前帶 solidfloor 的圖塊包地毯被當地板蓋，現在歸家具或地面覆蓋（Rules.kindOf）；
     -- 照現在的種類拆，地面覆蓋那條路找的是地板上掛的圖，地板帳本也退不到
     if floor and kind ~= "floor" then kind, refund = "floor", Cost.refund("floor", spr) end
@@ -419,7 +422,7 @@ end
 
 -- 能不能拆，回 code, extra 或 nil。順序：
 --   整組門不完整（plan.incomplete：有片沒載入 NOT_LOADED、少了片 NOT_OURS）；同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
---   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆；建造作弊不查）。
+--   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；在格邊上動手的從哪一側都能拆；建造作弊不查）。
 --     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
 --   原版拆解擋的（canScrapObjectInternal，ISMoveableSpriteProps.lua:3905-3939）：
@@ -427,6 +430,10 @@ end
 --     NOT_EMPTY（集水的不列，Rules 的 COLLECTOR，所以不查有沒有水）。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
+--   一樓以下的地板、正下方那一層有格子（地下室正上方）：格上有人、殭屍或動物 OCCUPIED（Check.occupied）。拆了到補泥土
+--     （Server 的 removeAll）之間那格沒有地板，站在上面的會掉下去。preview 不算下指令的人自己（輪到那一件時站在上面會先
+--     走到旁邊，Client 的 unbuildStand），伺服器與建造作弊（原地拆）照算。二樓以上拆樓板不看人（原版同樣）。
+--     一區拆除的游標預覽照同一個條件把佔用併進快取戳記（Area.stamp），改條件要一起改。
 --   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
 function Dismantle.check(player, kind, plan, ...)
     local preview, toolMemo = ...
@@ -443,7 +450,8 @@ function Dismantle.check(player, kind, plan, ...)
     if plan.incomplete then return plan.incomplete, { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if plan.foreign then return "NOT_OURS", { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if not preview then
-        local code, extra = Check.near(player, cells, Entry.EDGE[kind], false)
+        local spr = plan.overlay and plan.overlay.spr or plan.remove[1]:getSprite()
+        local code, extra = Check.near(player, cells, Entry.edgeNorth(kind, spr) ~= nil, false)
         if code then return code, extra end
     end
     for _, c in ipairs(cells) do
@@ -454,10 +462,13 @@ function Dismantle.check(player, kind, plan, ...)
     if code then return code, at end
     if kind == "floor" then
         for _, c in ipairs(cells) do
+            local at2 = { x = c.x, y = c.y, z = c.z }
             if c.z > 0 then
-                local at2 = { x = c.x, y = c.y, z = c.z }
                 if stairsTop(c) then return "STAIRS_TOP", at2 end
                 if c.sq:getObjects():size() > 1 then return "FLOOR_IN_USE", at2 end
+            elseif getCell():getGridSquare(c.x, c.y, c.z - 1)
+                and Check.occupied(c.sq, preview and not Materials.cheat(player) and player or nil) then
+                return "OCCUPIED", at2
             end
         end
     end
@@ -468,7 +479,7 @@ function Dismantle.check(player, kind, plan, ...)
     return nil
 end
 
--- ---------------------------------------------------------------- 原地替換（設計稿 claim 4）
+-- ---------------------------------------------------------------- 原地替換（設計稿）
 -- 在本工具蓋的東西上蓋同一組的另一款＝換掉舊的。同一組：牆、柵欄、門框、窗框互換（不必先拆牆就能開窗），其他照種類。
 Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFrame = "edge" }
 -- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是

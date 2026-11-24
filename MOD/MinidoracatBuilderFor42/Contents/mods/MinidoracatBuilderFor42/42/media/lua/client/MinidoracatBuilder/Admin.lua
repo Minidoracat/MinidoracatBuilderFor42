@@ -1,4 +1,4 @@
--- 管理面板（設計稿 builder-feedback-1031 第 1、2 節）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
+-- 管理面板（設計稿）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
 -- 改開關只改面板裡的草稿；按「套用」才寫沙盒，走原版沙盒封包（不新增網路指令）：
 --   多人：當下從 getSandboxOptions() 複製一份、只改本 MOD 的鍵、sendToServer。伺服器先驗 Capability.SandboxOptions
 --   （PacketTypes.java:294-299,417），再存檔、轉送給每個連線（GameServer.java:1732-1750），客戶端收到後 toLua 更新
@@ -268,9 +268,9 @@ function Admin.quick(playerNum, field, id)
     return true
 end
 
--- ===== 伺服器紀錄：四本帳本的筆數、檔數、大小（伺服器指令 ledgers，Server.ledgers；伺服器只限速、不查權限） =====
+-- ===== 伺服器紀錄：五本帳本的筆數、檔數、大小（伺服器指令 ledgers，Server.ledgers；伺服器只限速、不查權限） =====
 
-Admin.LEDGERS = { "floors", "overlays", "ledger", "circuits" } -- 認得的 id；名稱 IGUI_MBLD_Admin_Ledger_<id>
+Admin.LEDGERS = { "floors", "overlays", "ledger", "circuits", "basements" } -- 認得的 id；名稱 IGUI_MBLD_Admin_Ledger_<id>
 Admin.LEDGER_GAP_MS, Admin.LEDGER_WAIT_MS = 3000, 5000
 -- asked＝上次向伺服器要的時間；rows＝收到的那份組好的行（nil＝這次還沒收到）
 Admin.ledger = Admin.ledger or { asked = nil, rows = nil }
@@ -424,9 +424,20 @@ end
 
 -- ----- 種類頁：照建造視窗的頁籤分組 -----
 
-function Panel:kindItem(k)
+-- 種類頁一列的名稱。挖掘開著也挖不了（土牆圖塊沒載入）時接原因：先短句（檔號與 console.txt，預設寬度放得下），
+-- 再接全文；全文放不下時列被截字，滑鼠停在列上就看得到整句（NavList 截字提示）
+function Admin.kindLabel(k, n)
     local label = Names.kind(k)
-    if self.ready then label = counted(label, Index.kindCount[k] or 0) end
+    if n then label = counted(label, n) end
+    if k == "dig" and B.Basement and not B.Basement.patched() then
+        local sep = getText("IGUI_MBLD_Sep")
+        label = label .. sep .. getText("IGUI_MBLD_Admin_DigPatch") .. sep .. getText("IGUI_MBLD_Why_DIG_PATCH")
+    end
+    return label
+end
+
+function Panel:kindItem(k)
+    local label = Admin.kindLabel(k, self.ready and (Index.kindCount[k] or 0) or nil)
     return { id = k, label = label, switch = {
         get = function() return self:kindOn(k) end,
         set = function(on) self:put("kinds", k, on == true, self.base.kinds[k] ~= false) end,
@@ -678,13 +689,13 @@ end
 -- ----- 草稿與狀態列 -----
 
 -- 從 SandboxVars 重讀。自己的套用成功、按「還原」：草稿清掉。重新打開面板、設定被別人或快捷鈕改了：keep＝true，草稿只留
--- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動，審查 1116 #6）
+-- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動）
 function Panel:reload(...)
     local keep = ...
     local s, old = Entry.settings(), keep and self.edit
     local b = { kinds = {}, srcOff = parseSet(s.DisabledSources), tsOff = parseSet(s.DisabledTilesets), rules = {},
         rawSrc = s.DisabledSources or "", rawTs = s.DisabledTilesets or "" }
-    for _, k in ipairs(Entry.KINDS or EMPTY) do b.kinds[k] = Entry.kindOn(k, s) ~= false end
+    for _, k in ipairs(Entry.KINDS or EMPTY) do b.kinds[k] = Entry.kindSet(k, s) ~= false end
     for _, r in ipairs(Admin.RULES) do
         local v = s[r.key]
         if v == nil then v = r.default end
@@ -724,7 +735,7 @@ function Panel:stale()
     local s, b = Entry.settings(), self.base
     if (s.DisabledSources or "") ~= b.rawSrc or (s.DisabledTilesets or "") ~= b.rawTs then return true end
     for k, on in pairs(b.kinds) do
-        if (Entry.kindOn(k, s) ~= false) ~= on then return true end
+        if (Entry.kindSet(k, s) ~= false) ~= on then return true end
     end
     for _, r in ipairs(Admin.RULES) do
         local v = s[r.key]

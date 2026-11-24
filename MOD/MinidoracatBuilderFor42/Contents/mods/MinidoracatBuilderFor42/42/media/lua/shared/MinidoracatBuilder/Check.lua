@@ -1,11 +1,12 @@
 -- 一項能不能蓋：伺服器 complete() 與客戶端預覽共用同一份判斷（從 Server.complete 抽出）。
--- 伺服器：照 bt-authority §9 的順序（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）），通過後材料、放置、扣料、
+-- 伺服器：照順序查（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）），通過後材料、放置、扣料、
 -- 經驗仍在 Server.complete。客戶端 preview：不補格子、不寫任何東西，格子不存在就略過要格子的檢查（交給伺服器），
 -- 材料用 Materials.summary 的摘要估。客戶端的結果只給畫面看，伺服器照樣每格重算。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Place"
 require "MinidoracatBuilder/Materials"
+require "MinidoracatBuilder/Basement"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Check = MinidoracatBuilder.Check or {}
@@ -71,7 +72,7 @@ local function reach(player, cells)
 end
 
 -- 同一層：玩家走得到最近那一格嗎。在兩格圍成的範圍外加一圈裡，沿 canReachTo 找路：牆（含透明牆）、關著的門窗都擋
--- （IsoGridSquare.java:934-956；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
+-- （IsoGridSquare.java:934-956；照 pitfalls「伺服器驗證要查可及性」）。在格邊上動手的（Entry.edgeNorth）從哪一側都能蓋，不查。
 -- 只讀已有的格子（getGridSquare 不建格子）。ponytail：範圍最大約 (2×MaxDistance＋3)² 格，每次判斷跑一次。
 local function reachable(player, c)
     local pz = math.floor(player:getZ())
@@ -127,8 +128,8 @@ function Check.safehouse(player, c, preview, ...)
 end
 local safehouseCode = Check.safehouse
 
--- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝格邊種類，
--- 從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
+-- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝在格邊上動手的，
+-- Entry.edgeNorth 不是 nil：從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
 -- 建造作弊不查（同 Check.inReach：角色不走過去，原地蓋、原地拆）。
 function Check.near(player, cells, edge, preview)
     if Materials.cheat(player) then return nil end
@@ -144,6 +145,15 @@ function Check.near(player, cells, edge, preview)
     return nil
 end
 
+-- 格上有會動的東西（人、殭屍、動物；車也算：BaseVehicle.postupdate 把車加進車心那一格的清單，BaseVehicle.java:3802-3806）。
+-- me＝不算的那個角色：游標預覽（walk）時下指令的玩家本人，Client.build 會先走到旁邊的格子再動手（walkTo 的站位不挑這件
+-- 佔的格子）。伺服器與建造作弊（原地蓋、不走開）不帶，站在上面照樣算。
+-- 拆地下室正上方的地板（Dismantle.check）與一區拆除預覽的戳記（Area.stamp）也用這一份
+function Check.occupied(sq, me)
+    local list = sq:getMovingObjects()
+    return not list:isEmpty() and not (me ~= nil and list:size() == 1 and list:get(0) == me)
+end
+
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
 --   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools
 --   ／SKILL 的 perk, level, have）。
@@ -157,7 +167,8 @@ end
 -- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器；
 -- 替換時只查要補的料與新舊工具）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
--- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）。
+-- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）；換地板的佔用檢查
+-- 不算玩家本人（occupied）。
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂或地板格（Place.roofAt、Place.floorAt），後面的格子可以靠它撐著。
 -- opts.overlap：疊放模式（Place.check 的 overlap；只對 Place.OVERLAP 的種類有用）。玩家在建造視窗打開，隨請求送到伺服器
 -- （Server.intent 的 o），伺服器只帶這一欄（沒有 preview，照樣補格子、不查摘要）。開著時不找原地替換：玩家要的是疊上去。
@@ -200,9 +211,35 @@ function Check.item(player, name, d, anchor, ...)
             return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
         end
     else
-        local why, extra = Check.near(player, cells, Entry.EDGE[entry.kind], preview)
+        local edge = Entry.edgeNorth(entry.kind, spr) ~= nil or entry.kind == "dig"
+        local why, extra = Check.near(player, cells, edge, preview)
         if why == "TOO_FAR" then extra = { x = anchor[1], y = anchor[2], z = anchor[3] } end
         if why then return why, extra, info end
+    end
+    -- 地下室（Basement.pre 只讀座標與已有的格子）：加開入口（skip）時兩旁已挖的格子不再挖，從這次的格子拿掉。
+    -- 「挖這一格」是從已挖的那一側往外挖：角色要站在地下一層、這格東南西北的鄰格上，那一格已經挖開（Check.near 對 dig
+    -- 不查走得到）。游標預覽（walk：Client.build 會先走過去）與建造作弊（同 Check.near）不查
+    if entry.kind == "dig" then
+        local B = MinidoracatBuilder.Basement
+        local code, extra, skip = B.pre(player, entry, cells, anchor, planned, preview)
+        if code then return code, extra, info end
+        if name == Entry.DIG_CELL and not walk and not Materials.cheat(player) then
+            local c = cells[1]
+            local px, py, pz = math.floor(player:getX()), math.floor(player:getY()), math.floor(player:getZ())
+            if pz ~= c.z or math.abs(px - c.x) + math.abs(py - c.y) ~= 1 or not B.has(px, py, pz) then
+                return "DIG_STAND", { x = c.x, y = c.y, z = c.z }, info
+            end
+        end
+        if skip then
+            local kc, ks = {}, {}
+            for j, c in ipairs(cells) do
+                if c.role ~= "dig" then
+                    kc[#kc + 1], ks[#ks + 1] = c, sprites[j]
+                end
+            end
+            cells, sprites = kc, ks
+            info.cells, info.sprites = cells, sprites
+        end
     end
     local cell = getCell()
     for _, c in ipairs(cells) do
@@ -239,7 +276,7 @@ function Check.item(player, name, d, anchor, ...)
     -- （不帶 replacing 的 Place.check 放不下），放得下就照舊同格共存（不同朝向的掛件、同格的屋頂片、桌上的東西）
     local Dismantle = MinidoracatBuilder.Dismantle
     local old, oldKind
-    if not overlap and #cells == 1 and entry.kind ~= "stairs" and cells[1].sq and Dismantle then
+    if not overlap and #cells == 1 and entry.kind ~= "stairs" and entry.kind ~= "dig" and cells[1].sq and Dismantle then
         local c = cells[1]
         old, oldKind = Dismantle.replaceable(c.sq, entry.kind, c.spr)
         if old and entry.kind ~= "floor" then
@@ -264,6 +301,12 @@ function Check.item(player, name, d, anchor, ...)
                 return "INTERNAL", nil, info
             end
             if not fine then return yoff or "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
+            -- 換地板是先拆舊的再放新的（Place.clearFloor），兩個封包之間那格沒有地板：正下方那一層有格子時（樓上的樓板、
+            -- 地下室正上方的一樓地板），站在上面的人會掉下去受傷。格上有人、殭屍或動物回 OCCUPIED
+            if entry.kind == "floor" and c.sq:getFloor() and cell:getGridSquare(c.x, c.y, c.z - 1)
+                and Check.occupied(c.sq, walk and not Materials.cheat(player) and player or nil) then
+                return "OCCUPIED", { x = c.x, y = c.y, z = c.z }, info
+            end
             c.yoff, c.over = yoff, over == true or nil
             for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
                 local o = cells[k2]

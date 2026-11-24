@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "When on, players can build wells and hand pumps: endless clean water that keeps working after the water shuts off. Off by default.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Plants",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Ornamental plants, grass and wildflowers. Decoration only.\nOff: players can't see or build it. Things already built stay and can still be dismantled.",
+    "Sandbox_MinidoracatBuilder_KindDig": "Basements",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "When on, players can dig a basement: open an entrance with wooden stairs at ground level, then dig it out one tile at a time. Digging only needs a shovel, which wears down as you dig; no skill. The entrance also takes the materials for wooden stairs. With Basement Building installed, dig with that mod instead. Off by default.\nOff: players can't see or use digging. Dug areas can't be filled back in; existing basements stay as they are.",
     "Sandbox_MinidoracatBuilder_KindWater": "Water",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "When on, players can dig water into natural ground such as grass or dirt at ground level. It only needs a shovel: no materials and no skill. The water blocks people and zombies, gives tainted water and can be fished. Dismantling fills it back to the original ground. Off by default.\nOff: players can't see or build it. Things already built stay and can still be dismantled."
 }

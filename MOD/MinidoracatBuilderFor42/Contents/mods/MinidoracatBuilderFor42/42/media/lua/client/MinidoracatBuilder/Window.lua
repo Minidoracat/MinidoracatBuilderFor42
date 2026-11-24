@@ -1,6 +1,6 @@
 -- 建造視窗（第三階段）：目錄瀏覽、搜尋、篩選、詳情，按「建造」交給 Cursor。家族框架 MinidoracatUIFor42。
--- 單例：關掉只是隱藏（QU/Window.lua:304-328 同法），搜尋字、頁籤、分類、捲動、選取都留著（設計稿 DD:135）。
--- 版面三段（規格 1.2，門檻乘字高比例 u/16）：寬＝篩選列／分類 NavList＋方格＋詳情／狀態列；中＝方格＋詳情、
+-- 單例：關掉只是隱藏（QU/Window.lua:304-328 同法），搜尋字、頁籤、分類、捲動、選取都留著（設計稿）。
+-- 版面三段（門檻乘字高比例 u/16）：寬＝篩選列／分類 NavList＋方格＋詳情／狀態列；中＝方格＋詳情、
 -- 分類改下拉；窄＝方格＋選取列。
 -- 每幀路徑（方格 drawTile、詳情與狀態列的 render、Dock 回呼）只讀預先備好的字串、貼圖與畫圖指令，不配置。
 -- 配置只發生在「有事才做」的時候：停手 120 ms 後的搜尋、換頁籤／分類、整理進度每 0.5 秒、材料摘要每秒最多一次，
@@ -35,10 +35,10 @@ local LOG = "[MinidoracatBuilderFor42] "
 W.MIN_REV = 22
 W.CAPS = { "window", "controls", "sliderRow", "dropdown", "focus", "tileGrid", "virtualList", "textWrap", "navList",
     "scrollPanel" }
-W.DEBOUNCE_MS = 120     -- 同框架 ItemPicker（Widgets/ItemPicker.lua:73,584-588；設計稿 DD:130）
+W.DEBOUNCE_MS = 120     -- 同框架 ItemPicker（Widgets/ItemPicker.lua:73,584-588）
 W.BIND = "MinidoracatBuilder_Toggle"
 local PAD, GAP = 8, 6
-local CATALOG_MS = 500  -- 整理中每 0.5 秒才重設方格（bt-perf §9.2）
+local CATALOG_MS = 500  -- 整理中每 0.5 秒才重設方格
 local SUMMARY_MS = 1000 -- 材料摘要每秒最多重算一次
 local BUDGET_MS = 2     -- 每幀補格子、缺料檢查的時間預算
 local CACHE_MAX = 1024  -- 貼圖、截好的字：滿了整張清掉（ponytail：不做 LRU，看得到的最多約 300 格）
@@ -54,7 +54,7 @@ W.TAB_KINDS = {
     wall = { "wall", "fence", "post", "wallOverlay" },
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
-    stairs = { "stairs", "ramp" },
+    stairs = { "stairs", "ramp", "dig" },
     furniture = { "furniture", "container", "solid", "well" },
     light = { "light" },
     decor = { "wallObject", "attached", "overlay", "plant" },
@@ -164,8 +164,10 @@ function W.sourceOf(ts)
     return Sources.byFile and Sources.byFile[file] or "?"
 end
 
--- 管理員關掉的 tileset 或來源（沙盒 DisabledTilesets／DisabledSources；伺服器同一套，Entry.resolve 回 DISABLED）
-function W.blocked(ts)
+-- 管理員關掉的 tileset 或來源（沙盒 DisabledTilesets／DisabledSources；伺服器同一套，Entry.resolve 回 DISABLED）。
+-- kind＝這一桶的種類：挖地下室只照種類開關，不看圖塊組與來源（同 Entry.resolve）
+function W.blocked(ts, kind)
+    if kind == "dig" then return false end
     local s = Entry.settings()
     if disabledTilesets(s.DisabledTilesets)[ts] then return true end
     local src = W.sourceOf(ts)
@@ -281,10 +283,9 @@ end
 local function exactBucket(q)
     if not q:find("_%d+$") or not Entry.sprite(q) then return nil end
     local ts = q:match("^(.*)_%d+$")
-    if W.blocked(ts) then return nil end
     local s = Entry.settings()
     for kind, sets in pairs(Index.bucket or {}) do
-        local b = Entry.BUILDABLE[kind] and Entry.kindOn(kind, s) and sets[ts] -- 目錄也收了車庫門，不能蓋
+        local b = Entry.BUILDABLE[kind] and Entry.kindOn(kind, s) and not W.blocked(ts, kind) and sets[ts] -- 目錄也收了車庫門，不能蓋
         if b then
             for i = 1, b.n do
                 if b[i] == q then return b end
@@ -343,7 +344,7 @@ local function queryHits(ql)
     return setHit, nameHit, named
 end
 
--- 最愛、最近使用：幾十項，逐項解析（這個伺服器沒有、被關掉的 resolve 回 nil，就不列；DD:133）。
+-- 最愛、最近使用：幾十項，逐項解析（這個伺服器沒有、被關掉的 resolve 回 nil，就不列）。
 -- 搜尋除了一般清單的命中（來源、圖塊組、英文原名），清單短，另外逐項比顯示名與完整圖塊名。
 -- 配方項目照這位玩家看得到的（Recipes.shown），搜尋比它的搜尋鍵
 local function filterList(st, list, ql, kinds)
@@ -386,7 +387,7 @@ end
 --          fav、recent（{ n, 名稱… }）}。回 names（{ n, 名稱… }）, jump（完整圖塊名命中時要選取的那一項；不在目錄時
 --          改選同一件東西在目錄裡的那一項，listedAlt；是這位玩家看得到的配方的圖時選那個配方項目）。
 -- 不逐項解析字串：沒有搜尋字時整桶接上；有搜尋字時只掃 Index.setKey（約 855 個，命中＝整桶）與
--- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出（bt-perf §5.4）。
+-- Index.nameKey（約 4 千個有名稱的項目），再照「種類 × tileset」的桶順序輸出。
 -- 圖塊排在前面、配方項目接在後面（使用者 2026-11-12 選：配方排在前面時，牆頁要捲過一大段配方才看得到圖塊）；選原版分類（r:）時只列配方
 local function listFor(st)
     local q = trim(st.query)
@@ -434,7 +435,7 @@ local function listFor(st)
             for j = 1, sets.n do
                 local ts = sets[j]
                 if (not fam or W.familyOf(ts) == fam) and (st.source == "all" or W.sourceOf(ts) == st.source)
-                    and not W.blocked(ts) then
+                    and not W.blocked(ts, k) then
                     if not setHit or setHit[ts] then
                         append(out, byTs[ts])
                     elseif hits and hits[ts] then
@@ -448,7 +449,7 @@ local function listFor(st)
     return out, nil
 end
 
--- 種類 k 照來源 src 算好的子種類。子種類照來源算，而「整套」「換成」直接改 st.source、不經 W.setSource（審查 1113 Codex）：
+-- 種類 k 照來源 src 算好的子種類。子種類照來源算，而「整套」「換成」直接改 st.source、不經 W.setSource：
 -- 所以快取記著是哪個來源算的，來源不同就當沒算過，不靠每個改來源的地方記得清。src 一律明傳（Kahlua 少傳的參數不保證是 nil）
 local function subsOf(v, k, src)
     local s = v and v.subs and v.subs[k]
@@ -490,7 +491,7 @@ function W.filter(st)
 end
 
 -- ===== 子種類（使用者 2026-11-13 選 cat=three）：選了有子種類的種類時，左欄在它下面縮排列子種類 =====
--- 照圖塊屬性或圖塊組名算（W.subOf），不在目錄整理時算（目錄迴圈不多呼叫 Java，bt-perf）：選到那個種類才在 W.pump 分批算
+-- 照圖塊屬性或圖塊組名算（W.subOf），不在目錄整理時算（目錄迴圈不多呼叫 Java）：選到那個種類才在 W.pump 分批算
 -- （同「只看能蓋的」），結果 v.subs[種類]＝{ of（名稱 → 子種類）, items（{ id, n }，照顯示順序；不到兩個是空的） }，
 -- 留到目錄重整、沙盒摘要或看得到的配方變了（W.refreshCatalog）、換來源（W.setSource）為止。配方項目照主圖算
 W.SUB_KINDS = {
@@ -623,7 +624,7 @@ local function startSubs(v, k)
     local sets, byTs = (Index.kindSets or EMPTY)[k], (Index.bucket or EMPTY)[k]
     for j = 1, sets and byTs and sets.n or 0 do
         local ts = sets[j]
-        if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then append(list, byTs[ts]) end
+        if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts, k) then append(list, byTs[ts]) end
     end
     local shown = Recipes.shown(W.playerNum).list
     for i = 1, shown.n do
@@ -728,13 +729,16 @@ function W.categories(tab)
         if sets then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then
+                if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts, k) then
                     local n = bucket[k][ts].n
                     kindN[k] = (kindN[k] or 0) + n
                     total = total + n
-                    local f = W.familyOf(ts)
-                    if not famN[f] then famList[#famList + 1] = f end
-                    famN[f] = (famN[f] or 0) + n
+                    -- 挖地下室借用的原版圖名（invisible_01、underground_01）對玩家沒有意義，不列成圖塊組；種類那一列就是它們
+                    if k ~= "dig" then
+                        local f = W.familyOf(ts)
+                        if not famN[f] then famList[#famList + 1] = f end
+                        famN[f] = (famN[f] or 0) + n
+                    end
                 end
             end
         end
@@ -796,7 +800,6 @@ function W.categories(tab)
 end
 
 -- 來源下拉：全部、原版、各 MOD（附圖塊數，只算這一版能蓋的；配方項目照定義它的 MOD）；管理員關掉的列在提示裡
--- （設計稿 DD:274）
 function W.sources()
     local counts, order, total = {}, {}, 0
     local bucket, kindSets = Index.bucket or EMPTY, Index.kindSets or EMPTY
@@ -805,7 +808,7 @@ function W.sources()
         if sets then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if not W.blocked(ts) then
+                if not W.blocked(ts, k) then
                     local src = W.sourceOf(ts)
                     if not counts[src] then order[#order + 1] = src end
                     local n = bucket[k][ts].n
@@ -854,6 +857,12 @@ local function texOf(v, name)
         local tex
         if r then
             tex = Recipes.icon(r) -- 原版建造視窗的圖示
+        elseif B.Rules.DIG[name] then -- 挖地下室：ID 是原版的隱形地板、地圖的地下土塊，看不出用途，改畫挖一格的泥土地板、入口的樓梯底片
+            local spr = Entry.sprite(name)
+            local cells = spr and Entry.cells(spr)
+            local part = cells and (cells[3] or cells[1])[4]
+            tex = part and getTexture(part:getName())
+            if tex then tex = tex:splitIcon() end
         else
             tex = getTexture(name) -- 世界圖塊的貼圖；splitIcon 裁掉透明邊，引擎自己快取（Texture.java:1193-1215）
             if tex then tex = tex:splitIcon() end
@@ -1091,7 +1100,7 @@ function W.tipOf(v, name, ...)
     if short == nil then short = v.dim[name] end
     local s = Names.of(name)
     if short == true then
-        -- 沒學會的配方（檢視未知配方開著時照列）寫沒學會、太暗寫太暗，不寫缺材料（審查 1109 Grok、第 2 輪 Claude）
+        -- 沒學會的配方（檢視未知配方開著時照列）寫沒學會、太暗寫太暗，不寫缺材料
         local r, why = Recipes.byId[name], "IGUI_MBLD_Tip_Short"
         if r and not Recipes.learned(W.playerNum, r) then why = "IGUI_MBLD_Recipe_NotLearned"
         elseif r and Recipes.dark(W.playerNum, r) then why = "IGUI_MBLD_Recipe_TooDark" end
@@ -1157,7 +1166,7 @@ function W.startReplace(v, rp)
         if (k == rp.kind or (g and G[k] == g)) and Entry.kindOn(k, s) and sets and byTs then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if not W.blocked(ts) then
+                if not W.blocked(ts, k) then
                     local b = byTs[ts]
                     for i = 1, b.n do
                         list.n = list.n + 1
@@ -1218,7 +1227,7 @@ end
 function W.whyText(code, detail, ...)
     local name = ...
     if code == "ENTITY" and name then
-        -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件；審查 1109 Claude）：別叫玩家去學配方。
+        -- 有功能、卻沒有建造配方的設施（咖啡機這類只有工作台、介面元件）：別叫玩家去學配方。
         -- Recipes.bySprite 收全部建造配方的每一張圖，這位玩家看不看得到都收
         Recipes.all()
         local r = Recipes.bySprite[name]
@@ -1230,7 +1239,7 @@ function W.whyText(code, detail, ...)
         end
     end
     if code == "DISABLED_KIND" then
-        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
+        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」
         if Entry.KIND_OFF[detail] then code = "OFF_DEFAULT" end
         detail = Names.kind(detail)
     elseif code == "DISABLED_SOURCE" and detail then
@@ -1242,8 +1251,8 @@ function W.whyText(code, detail, ...)
     return getTextOrNull("IGUI_MBLD_Why_" .. tostring(code), tostring(detail or "?")) or getText("IGUI_MBLD_Why_UNKNOWN")
 end
 
--- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（審查 1031 HIGH：原本叫玩家試較短的字，照做也找不到）：
--- 在目錄裡（或是這位玩家看得到的配方的圖，審查 1109）卻沒出現的，是被「只看能蓋的」或材料篩選濾掉；能蓋卻不在目錄的，
+-- 搜尋沒有結果時的標題與提示。完整圖塊名的說原因（原本叫玩家試較短的字，照做也找不到）：
+-- 在目錄裡（或是這位玩家看得到的配方的圖）卻沒出現的，是被「只看能蓋的」或材料篩選濾掉；能蓋卻不在目錄的，
 -- 是這版遊戲沒有它的貼圖（目錄只收有貼圖的），或目錄還在整理
 function W.emptyQuery(q)
     local matEmpty = W.v ~= nil and W.v.matEmpty == true
@@ -1252,13 +1261,13 @@ function W.emptyQuery(q)
         return getText("IGUI_MBLD_Empty_Query", q), getText(matEmpty and "IGUI_MBLD_Empty_Material" or "IGUI_MBLD_Empty_QueryHint")
     end
     -- 實際列的是那張圖的整桶、替代項目或配方項目（listFor）：分類要照那個項目 ID 查，不能拿搜尋字查
-    -- （狀態圖解析不了、配方要 recipe: ID；審查 1112 Codex 第 2 輪）
+    -- （狀態圖解析不了、配方要 recipe: ID）
     local alt = listedAlt(q)
     local r = Recipes.forSprite(W.playerNum, q)
     local item = exactBucket(q) and q or alt or (r and r.id)
     if item then
         -- 說材料的兩種情形：材料那關一項都沒過（v.matEmpty，runAffordable 記的），或要找的這一項自己沒用到那種材料
-        -- （同一桶別項有過材料、卻被「只看能蓋的」濾掉時 matEmpty 是 false；審查 1112 Claude 第 2 輪）。
+        -- （同一桶別項有過材料、卻被「只看能蓋的」濾掉時 matEmpty 是 false）。
         -- 其他才是「只看能蓋的」濾掉的
         local mat = W.st.material or "all"
         local byMat = matEmpty or (W.v ~= nil and mat ~= "all" and not hasMaterial(W.v, item, mat))
@@ -1538,8 +1547,24 @@ local function skillInfo(e)
     return getText("IGUI_MBLD_Detail_SkillShort", name, tostring(level), tostring(have)), false
 end
 
--- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3、坡道沿上坡方向 n 格（上一層的平台都不算）
+-- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3、坡道沿上坡方向 n 格（上一層的平台都不算）。
+-- 挖地下室照 Entry.cells 挖開的格子：地面的落腳處本來就有地板、樓梯上方的洞和樓梯同一格，都不另算。入口是樓梯三片
+-- 加前方 3×2 的室，往南 3×5、往東 5×3；不是整個長方形時第三個回值是格線要畫的格子 { [列 × 寬 ＋ 欄]＝true }
 local function footprint(spr, kind)
+    if kind == "dig" then
+        local x0, y0, x1, y1, dug = math.huge, math.huge, -math.huge, -math.huge, {}
+        for _, c in ipairs(Entry.cells(spr)) do
+            if c[5] ~= "platform" and c[5] ~= "hole" then
+                dug[#dug + 1] = c
+                x0, y0, x1, y1 = math.min(x0, c[1]), math.min(y0, c[2]), math.max(x1, c[1]), math.max(y1, c[2])
+            end
+        end
+        local w, d = x1 - x0 + 1, y1 - y0 + 1
+        if #dug == w * d then return w, d end
+        local mask = {}
+        for _, c in ipairs(dug) do mask[(c[2] - y0) * w + c[1] - x0] = true end
+        return w, d, mask
+    end
     local t = spr:getType()
     if B.Rules.typeCode(t) == "stairs" then
         if B.Rules.westStairs(t) then return 3, 1 end
@@ -1565,10 +1590,11 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     add(ops, { t = "box", x = 0, y = 0, w = dw, h = boxH, c = c.border or c.textFaint })
     local tex = texOf(v, e.name)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
-    local fw, fd = footprint(e.spr, e.kind)
+    local fw, fd, mask = footprint(e.spr, e.kind)
     local cell = math.max(6, math.floor(10 * s))
-    if fw * fd > 1 then -- 1×1 不畫佔地格線（介面審查 #9）
-        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
+    if fw * fd > 1 then -- 1×1 不畫佔地格線
+        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted,
+            mask = mask })
     end
     local y = boxH + GAP
     local fhM = getTextManager():getFontHeight(UIFont.Medium)
@@ -1578,15 +1604,19 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + fhM + 2
     end
     y = y + 2
-    -- 來源寫完整的 tileset ID（搜尋要用）：放不下就換行、不截字（詳情可以捲動）
-    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), dw, v.font)) do
-        text(ops, line, 0, y, c.textMuted, v.font)
-        y = y + lh
-    end
-    -- 完整圖塊名（審查 1031 MEDIUM：畫面上只看得到「blends street 01 #101」，玩家回報時給不出名稱；和 pzmap、TileZed 同寫法）
-    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Tile", e.name), dw, v.font)) do
-        text(ops, line, 0, y, c.textMuted, v.font)
-        y = y + lh
+    -- 來源寫完整的 tileset ID（搜尋要用）：放不下就換行、不截字（詳情可以捲動）。挖掘的三個項目借用原版圖名，
+    -- 圖名與 tileset 對玩家沒有意義，這兩列都不寫
+    if e.kind ~= "dig" then
+        local src = getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset)
+        for _, line in ipairs(Text.wrap(src, dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+        -- 完整圖塊名（畫面上只看得到「blends street 01 #101」，玩家回報時給不出名稱；和 pzmap、TileZed 同寫法）
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Tile", e.name), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
     end
     -- 朝向數照游標實際輪流的那份（Turn.states）；只有一個朝向的屋頂另有鏡像片
     local n = B.Turn.states(e).n
@@ -1634,10 +1664,14 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             y = y + lh
         end
     end
-    -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
+    -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
-    if refund == "none" then
-        y = warnLines(v, ops, getText("IGUI_MBLD_Refund_none"), y, dw)
+    if refund == "none" then -- 挖掉的地不能填回，另寫一句（砸也砸不回去）
+        y = warnLines(v, ops, getText(e.kind == "dig" and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Refund_none"), y, dw)
+        -- 裝了 Basement Building 時兩邊都挖不了（Basement.pre 回 DIG_BD）：放之前就在詳情說
+        if e.kind == "dig" and B.Basement and B.Basement.bd() then
+            y = warnLines(v, ops, getText("IGUI_MBLD_Refuse_DIG_BD"), y, dw)
+        end
     elseif refund and e.kind ~= "water" then -- 水面不收料、填平是換回原本的地面，種類說明已經寫了
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
@@ -1752,7 +1786,7 @@ local function detailRow(v, ops, e, total, missing, tools)
     -- 只能砸、不退料的在名稱那行右邊標出來（窄版沒有完整詳情）
     local nameW = dw - x
     if Cost.refund and Cost.refund(e.kind, e.spr) == "none" then
-        local s = getText("IGUI_MBLD_RefundShort_none")
+        local s = getText(e.kind == "dig" and "IGUI_MBLD_RefundShort_dig" or "IGUI_MBLD_RefundShort_none")
         add(ops, { t = "textR", s = s, x = dw, y = y, c = c.warning, f = v.font })
         nameW = nameW - getTextManager():MeasureStringX(v.font, s) - GAP
     end
@@ -1779,11 +1813,11 @@ local function detailRow(v, ops, e, total, missing, tools)
     text(ops, Text.fit(line, dw - tx, v.font), tx, y + fh + 4, short and c.warning or c.textMuted, v.font)
 end
 
--- ===== 建造配方項目的詳情（Recipes.lua；設計稿 claim 2）=====
+-- ===== 建造配方項目的詳情（Recipes.lua；設計稿）=====
 
 -- 材料、工具與技能（Recipes.needs）和還缺不缺（Recipes.state，方格的缺料標示同一個判斷）。哪個 MOD 的配方讓原版的判斷
 -- 丟錯：當不能蓋，只記一次 log（同 isShort）
-local NO_NEEDS = { items = {}, tools = {}, skills = {}, learned = true } -- 丟錯不是沒學會（審查 1109 第 2 輪）
+local NO_NEEDS = { items = {}, tools = {}, skills = {}, learned = true } -- 丟錯不是沒學會
 local function recipeNeeds(r)
     local ok, need = pcall(Recipes.needs, W.playerNum, r)
     if not ok then
@@ -1806,7 +1840,7 @@ local function recipeFull(v, ops, r, need)
     local tex = texOf(v, r.id)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
     local fw, fd, faces = Recipes.size(r)
-    if r.info and fw * fd > 1 then -- 1×1 不畫佔地格線（介面審查 #9）
+    if r.info and fw * fd > 1 then -- 1×1 不畫佔地格線
         local cell = math.max(6, math.floor(10 * s))
         add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
     end
@@ -1919,7 +1953,7 @@ local function prepareDetail(v)
         local why = code and W.whyText(code, arg, name) or getText("IGUI_MBLD_Detail_Gone")
         local y = para(v, ops, Names.of(name), 0, 0, v.detail.width, v.colors.text, v.mode == "narrow" and 1 or 2)
         h = math.max(h, para(v, ops, why, 0, y, v.detail.width, v.colors.warning, math.huge)) -- 詳情會捲動，原因不截
-    elseif v.mode ~= "narrow" then -- 沒選：說這一欄會出現什麼（介面審查 #7；窄版的選取列空著就好）
+    elseif v.mode ~= "narrow" then -- 沒選：說這一欄會出現什麼（窄版的選取列空著就好）
         h = math.max(h, para(v, ops, getText("IGUI_MBLD_Detail_Pick"), 0, 0, v.detail.width, v.colors.textMuted, math.huge))
     end
     v.detail:setHeight(h)
@@ -1981,12 +2015,16 @@ local function prepareDetail(v)
         or (name ~= nil and not kindOk) and getText("IGUI_MBLD_Overlap_TipKind")
         or getText("IGUI_MBLD_Overlap_Tip", tostring(max)))
     -- 管理員快捷鈕（W.layout 只在管理員的寬、中版排出來）：停用這一項的圖塊組；來源是 MOD 才能整個停用
-    -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）
+    -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）。挖地下室只照種類開關（Entry.resolve）：兩顆都不能按，
+    -- 提示寫去哪裡關
+    local dig = e ~= nil and e.kind == "dig"
     local src = e and W.sourceOf(e.tileset)
-    local modSrc = src ~= nil and src ~= "vanilla" and src ~= "?"
-    v.qTileset:setEnabled(e ~= nil)
+    local modSrc = not dig and src ~= nil and src ~= "vanilla" and src ~= "?"
+    local digTip = dig and getText("IGUI_MBLD_Admin_DigKind") or nil
+    v.qTileset:setEnabled(e ~= nil and not dig)
+    v.qTileset:setTooltip(digTip)
     v.qSource:setEnabled(modSrc)
-    v.qSource:setTooltip(src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
+    v.qSource:setTooltip(digTip or src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
 end
 W.prepareDetail = prepareDetail -- 離線測試用（同 W.runSubs）
 
@@ -2142,10 +2180,12 @@ function W.drawDetail(panel)
                 v.UI.Icons.draw(panel, o.key, o.x, o.y, o.size, c, 1)
             elseif t == "box" then
                 panel:drawRectBorder(o.x, o.y, o.w, o.h, c.a or 1, c.r, c.g, c.b)
-            elseif t == "grid" then
+            elseif t == "grid" then -- mask：只畫這些格（列 × cols ＋ 欄），沒有就整個長方形
                 for r = 0, o.rows - 1 do
                     for k = 0, o.cols - 1 do
-                        panel:drawRectBorder(o.x + k * o.cell, o.y + r * o.cell, o.cell + 1, o.cell + 1, c.a or 1, c.r, c.g, c.b)
+                        if not o.mask or o.mask[r * o.cols + k] then
+                            panel:drawRectBorder(o.x + k * o.cell, o.y + r * o.cell, o.cell + 1, o.cell + 1, c.a or 1, c.r, c.g, c.b)
+                        end
                     end
                 end
             end
@@ -2158,8 +2198,8 @@ function W.drawTile(v, el, name, x, y, w, h, state)
     local c = v.colors
     local dim = v.dim[name] == true
     local tex = v.tex[name]
-    -- 缺料的格子照樣能選、能按建造，不是停用：縮圖只淡一點、名稱用次要字色（審查 1029 #6：原本 0.45 與
-    -- textDisabled 量到 1.83:1、3.45:1）。缺料靠右上的警告圖示標（設計稿 DD:131）
+    -- 缺料的格子照樣能選、能按建造，不是停用：縮圖只淡一點、名稱用次要字色（原本 0.45 與
+    -- textDisabled 量到 1.83:1、3.45:1）。缺料靠右上的警告圖示標（設計稿）
     if tex then el:drawTextureScaledAspect(tex, x + 4, y + 4, w - 8, v.iconH, dim and 0.8 or 1, 1, 1, 1) end
     -- 建造配方項目：縮圖左下角標「配方」（accent 底；左上留給手把的已選取勾、右上是缺料）
     if Recipes.byId[name] then
@@ -2186,8 +2226,8 @@ function W.drawTile(v, el, name, x, y, w, h, state)
         end
     end
     if name == v.padPicked then
-        -- 手把：已選取（再按一次 A 就建造）畫 accent 雙框＋左上的勾，和焦點框分開（設計稿 DD:364-379）。
-        -- 不用 warning：這個視窗的 warning 是缺料（審查 1029 #7）
+        -- 手把：已選取（再按一次 A 就建造）畫 accent 雙框＋左上的勾，和焦點框分開（設計稿）。
+        -- 不用 warning：這個視窗的 warning 是缺料
         local ac = c.accent
         el:drawRectBorder(x, y, w, h, 1, ac.r, ac.g, ac.b)
         el:drawRectBorder(x + 1, y + 1, w - 2, h - 2, 1, ac.r, ac.g, ac.b)
@@ -2195,7 +2235,7 @@ function W.drawTile(v, el, name, x, y, w, h, state)
     end
 end
 
--- 方格自己的繪製後面畫空狀態（畫在父視窗會被清單的 stencil 吃掉；pitfalls.md:314-318、規格 1.2）
+-- 方格自己的繪製後面畫空狀態（畫在父視窗會被清單的 stencil 吃掉；pitfalls.md:314-318）
 function W.gridRender(grid)
     local v = grid.target
     v.UI.TileGrid.render(grid)
@@ -2310,7 +2350,7 @@ function W.clearReplace()
     W.refilter(false)
 end
 
--- ===== 整套（設計稿 builder-hardcore-sets-1101 claim 2，使用者 2026-11-01 選 filter）=====
+-- ===== 整套（設計稿，使用者 2026-11-01 選 filter）=====
 
 -- 整套與「同一組」列的種類：牆頁籤的牆類＋門窗頁籤的框。其他種類不能按「整套」
 local SET_KINDS = { "wall", "post", "windowFrame", "doorFrame", "fence", "wallOverlay" }
@@ -2320,14 +2360,14 @@ for _, k in ipairs(SET_KINDS) do IS_SET_KIND[k] = true end
 -- 在目錄裡（Index 那一桶有它）、沒被管理員關掉：回它的種類（Sets.of 對位置）
 local function listedKind(name)
     local e = Entry.resolve(name)
-    local arr = e and not W.blocked(e.tileset) and Index.bucket and Index.bucket[e.kind] and Index.bucket[e.kind][e.tileset]
+    local arr = e and not W.blocked(e.tileset, e.kind) and Index.bucket and Index.bucket[e.kind] and Index.bucket[e.kind][e.tileset]
     for i = 1, arr and arr.n or 0 do
         if arr[i] == name then return e.kind end
     end
     return nil
 end
 
--- 同一個 tileset、牆類的配方項目（這位玩家看得到的，照顯示名）：設計稿 claim 4「整套照主圖的圖塊組，列同一組的配方和
+-- 同一個 tileset、牆類的配方項目（這位玩家看得到的，照顯示名）：設計稿「整套照主圖的圖塊組，列同一組的配方和
 -- 圖塊」，接在圖塊後面（同 listFor）
 local function setRecipes(tileset)
     local out = { n = 0 }
@@ -2364,7 +2404,7 @@ function W.setOf(name)
     end
     local rows, s = {}, Entry.settings()
     for _, k in ipairs(SET_KINDS) do
-        local arr = not W.blocked(ts) and Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][ts]
+        local arr = not W.blocked(ts, k) and Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][ts]
         for i = 1, arr and arr.n or 0 do rows[#rows + 1] = { key = tonumber(arr[i]:match("_(%d+)$")), name = arr[i] } end
     end
     sortByKey(rows)
@@ -2395,7 +2435,7 @@ local function frameIndex()
         local sets, byTs = kindSets[k], bucket[k]
         for j = 1, sets and byTs and Entry.kindOn(k, s) and sets.n or 0 do
             local ts = sets[j]
-            local arr = not W.blocked(ts) and byTs[ts]
+            local arr = not W.blocked(ts, k) and byTs[ts]
             for i = 1, arr and arr.n or 0 do
                 local spr = Entry.sprite(arr[i])
                 local shape = spr and frameOf(spr:getProperties())
@@ -2746,12 +2786,14 @@ function W.nextRecent(playerNum)
     end
 end
 
--- 拆掉剛蓋的（按鍵與視窗按鈕）：最後一次送出的那一批（Queue.undoLast，退料照拆除）；沒有就說一聲
+-- 拆掉剛蓋的（按鍵與視窗按鈕）：最後一次送出的那一批（Queue.undoLast，退料照拆除）；沒有就說一聲（上一批是挖掘時說挖開的拆不回去）
 function W.undoLast(playerNum)
     local Q, p = B.Queue, getSpecificPlayer(playerNum or W.playerNum or 0)
     if not (Q and p) then return 0 end
     local n = Q.last(p) and Q.undoLast(p) or 0
-    if n == 0 then Messages.toast(p, getText("IGUI_MBLD_Undo_None"), getText("IGUI_MBLD_Title")) end
+    if n == 0 then
+        Messages.toast(p, getText(Q.lastDig(p) and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Undo_None"), getText("IGUI_MBLD_Title"))
+    end
     if W.v then W.syncEntry(W.v) end
     return n
 end
@@ -2826,7 +2868,7 @@ function W.syncEntry(v)
         v.planBtn:setActive(on)
     end
     local p = getSpecificPlayer(W.playerNum)
-    local can = Q ~= nil and p ~= nil and Q.last(p) ~= nil
+    local can = Q ~= nil and p ~= nil and (Q.last(p) ~= nil or Q.lastDig(p))
     if can ~= v.undoOn then
         v.undoOn = can
         v.undoBtn:setEnabled(can)
@@ -2850,11 +2892,11 @@ function W.openAdmin()
     if A and A.available() and A.canManage() then A.open(W.playerNum) end
 end
 
--- 詳情的管理員快捷鈕：對所有玩家停用選著那一項的圖塊組或來源（Admin.quick 先跳確認）
+-- 詳情的管理員快捷鈕：對所有玩家停用選著那一項的圖塊組或來源（Admin.quick 先跳確認）。挖地下室只照種類開關，不管
 function W.quickDisable(field)
     local v, A = W.v, B.Admin
     local e = v and v.selName and Entry.resolve(v.selName)
-    if not (e and A and A.available() and A.canManage()) then return end
+    if not (e and e.kind ~= "dig" and A and A.available() and A.canManage()) then return end
     if field == "tileset" then
         A.quick(W.playerNum, "tileset", e.tileset)
         return
@@ -2922,7 +2964,7 @@ function W.onCursorEnd(playerNum)
     if F and F.takeJoypad and not (F.holdsJoypad and F.holdsJoypad(v.win)) then F.takeJoypad(v.win, playerNum or 0) end
 end
 
--- 吸管（設計稿 builder-hardcore-sets-1101 claim 3，使用者 2026-11-01 選 button）：視窗收起，點世界裡一格（Menu.pickAt：
+-- 吸管（設計稿，使用者 2026-11-01 選 button）：視窗收起，點世界裡一格（Menu.pickAt：
 -- 一張能蓋就選到它，好幾張跳出右鍵「挑圖塊」同一份清單），選到或右鍵取消時視窗回來。手把不開（Cursor.startPick 回 nil，
 -- 按鈕也不排出來）
 function W.startPick()
@@ -2950,18 +2992,18 @@ function W.startPick()
 end
 
 -- 方格 onPick：滑鼠點、Enter、Space、手把 A（方向鍵只移游標，不觸發；Widgets/TileGrid.lua:26-31）。同一格再一次＝建造：
--- 手把再按一次 A（設計稿 DD:371）；滑鼠、鍵盤在 DOUBLE_MS 內（使用者 2026-11-03 選雙擊）。第二下按在方格上，放開時
+-- 手把再按一次 A（設計稿）；滑鼠、鍵盤在 DOUBLE_MS 內（使用者 2026-11-03 選雙擊）。第二下按在方格上，放開時
 -- 建造鍵不算按過（Mouse.isButtonDownUICheck，Mouse.java:94-107），不會在視窗收起後的位置蓋下去，同按「建造」鈕。
 -- W.build 照 selName 蓋，selName 要等 pump 才跟上方格的選取：第二下時還沒跟上（兩下在同一幀之間）就只當選取，
--- 不蓋上一個選的（審查 1103 Codex）。換了條件（W.refilter 的 keep＝false）、開關視窗時重新數（W.resetPick）
+-- 不蓋上一個選的。換了條件（W.refilter 的 keep＝false）、開關視窗時重新數（W.resetPick）
 local DOUBLE_MS = 500 -- 照引擎的雙擊間隔（UIManager.getDoubleClickInterval，UIManager.java:1301）
 function W.onPick(v, name)
     if name == nil then return end
     local now, last = getTimestampMs(), v.pickedAt
-    -- 時鐘往回調時差值是負的：照家族 pitfalls「X 毫秒內」的寫法要 now >= last（審查 1103 Claude 第 2 輪）
+    -- 時鐘往回調時差值是負的：照家族 pitfalls「X 毫秒內」的寫法要 now >= last
     local quick = last ~= nil and now >= last and now - last <= DOUBLE_MS
     -- 手把再按一次 A 不限時間；指派了手把卻用滑鼠點的照雙擊算：滑鼠按下時左鍵是按著的（Mouse.update 在 UIManager
-    -- 分派 onMouseDown 之前更新，isMouseButtonDown＝Mouse.isButtonDown，LuaManager.java:7966-7968；審查 1103 Grok 第 2 輪）。
+    -- 分派 onMouseDown 之前更新，isMouseButtonDown＝Mouse.isButtonDown，LuaManager.java:7966-7968）。
     -- 有手把又用鍵盤 Enter 的照手把算
     local pad = W.usingPad() and not isMouseButtonDown(0)
     if W.st.picked == name and v.selName == name and (pad or quick) then
@@ -3292,7 +3334,7 @@ function W.create(UI)
     local font = UIFont.Small
     local tm = getTextManager()
     local fh = tm:getFontHeight(font)
-    local s = fh / 16 -- 字級比例：門檻與尺寸乘它（規格 1.2）
+    local s = fh / 16 -- 字級比例：門檻與尺寸乘它
     local pn = W.playerNum
     -- 用該玩家的畫面範圍，不用 getCore() 全螢幕（分割畫面；LuaManager.java:3925-3951）
     local sx, sy = getPlayerScreenLeft(pn), getPlayerScreenTop(pn)
@@ -3455,7 +3497,7 @@ function W.create(UI)
     v.badge = getText("IGUI_MBLD_Recipe_Badge") -- 方格裡配方項目左下角的標記（W.drawTile 每幀只讀這兩個）
     v.badgeW = tm:MeasureStringX(font, v.badge) + 6
     -- 「管理」與詳情的管理員快捷鈕：建好先藏著，W.layout 只在管理員時排出來（Admin.lua）。快捷鈕用有框的預設樣式
-    -- （審查 1101 #9：ghost 沒有框，看起來像說明文字）；不 setTitle，W.layout 給的寬度不會被重算
+    -- （ghost 沒有框，看起來像說明文字）；不 setTitle，W.layout 給的寬度不會被重算
     v.adminBtn = UI.Button.new({ x = 0, y = 0, title = getText("IGUI_MBLD_Admin_Button"), icon = "settings", style = "ghost",
         theme = theme, tooltip = getText("IGUI_MBLD_Admin_ButtonTip"),
         onClick = function() MinidoracatBuilder.Window.openAdmin() end })
@@ -3525,7 +3567,7 @@ function W.open(playerNum)
     v.hiddenForBuild = false
     W.plansClosed = nil
     v.sumAt = 0 -- 下一幀就重算材料
-    W.resetPick(v) -- 關了又開：第一下只是選取（審查 1103 Codex）
+    W.resetPick(v) -- 關了又開：第一下只是選取
     W.syncSettings(v)
     v.win:setVisible(true) -- 框架 Window：Focus.onFocus＋takeJoypad（Widgets/Window.lua:336-348）
     v.win:bringToTop()

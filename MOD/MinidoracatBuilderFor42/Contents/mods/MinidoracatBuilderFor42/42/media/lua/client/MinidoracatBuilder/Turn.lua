@@ -37,7 +37,7 @@ function Turn.faces(entry)
     return out
 end
 
--- 北、西兩條邊各用哪一面（主代理 2026-11-01 定案）：cur 優先，再照 0..5 找只佔北邊／只佔西邊的。原版北牆、西牆
+-- 北、西兩條邊各用哪一面（2026-11-01 定案）：cur 優先，再照 0..5 找只佔北邊／只佔西邊的。原版北牆、西牆
 -- 多半是兩個各只有一面的項目（tiledef：walls_exterior_wooden_01 4,5 是西、6,7 是北），另一條邊用 d＝5 配對面。
 -- 都沒有＝nil。回 { n = d, w = d }
 function Turn.sides(entry, cur)

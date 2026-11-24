@@ -1,5 +1,5 @@
 -- 項目：客戶端送來的「項目 ID＋朝向」→ 這次要放的 sprite、種類、佔地。兩端共用：客戶端預覽，伺服器重算後才算數。
--- 項目 ID＝sprite 名稱，多格項目用該面 grid 的原點（bt-catalog §8.1）。伺服器不建目錄，收到請求才重算這一項（§8.2）。
+-- 項目 ID＝sprite 名稱，多格項目用該面 grid 的原點。伺服器不建目錄，收到請求才重算這一項。
 require "MinidoracatBuilder/Rules"
 require "MinidoracatBuilder/Sources"
 
@@ -9,15 +9,15 @@ MinidoracatBuilder.Entry = Entry
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 
 -- 規則版本：伺服器怎麼判斷種類、成本、可放置有變就加一。客戶端版本不同時請求會被拒（STALE），提示重開視窗。
-Entry.VERSION = 21
+Entry.VERSION = 26
 local NO_TILE_ID = 20000000 -- 非 tiledef sprite 的預設 id（IsoSprite.java:129-130）
 local MAX_NAME = 128
 
 -- 能蓋的種類，照建造視窗的頁籤排（沙盒「能蓋的種類」頁與管理面板同一個順序）。車庫門、雙開門歸門（Entry.doorSet）。
--- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）；坡道（1.0.0）
+-- 水井與手壓水泵、植物、水面（使用者 2026-11-13 選新增）；坡道（1.0.0）；挖地下室（使用者 2026-11-25）
 Entry.KINDS = { "floor", "floorOverlay", "water", "wall", "fence", "post", "wallOverlay", "door", "window", "doorFrame",
-    "windowFrame", "windowObject", "curtain", "roof", "stairs", "ramp", "furniture", "container", "solid", "well", "light",
-    "wallObject", "attached", "overlay", "plant" }
+    "windowFrame", "windowObject", "curtain", "roof", "stairs", "ramp", "dig", "furniture", "container", "solid", "well",
+    "light", "wallObject", "attached", "overlay", "plant" }
 Entry.BUILDABLE = {}
 -- 種類開關（沙盒每種一個勾選框，使用者 2026-10-31 選）：鍵＝Kind＋種類 ID 字首大寫，例 KindFloorOverlay。鍵名上線後不能改
 Entry.KIND_KEY = {}
@@ -29,6 +29,21 @@ end
 -- 樓梯頂端平台的地板（原版 buildRecipeCode.lua:258-261）
 Entry.STAIR_FLOOR = "carpentry_02_57"
 
+-- 挖地下室的三個項目 ID（使用者 2026-11-25 先照建議用原版引擎內部圖名；蓋出來的不是這張圖，佔地見 Entry.cells）。
+-- 項目 ID 只在這裡定義，別處一律用這三個常數：入口（樓梯往南下、往東下，互為配對面）、挖這一格
+Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL = "underground_01_0", "underground_01_1", "invisible_01_0"
+Rules.DIG[Entry.DIG_S], Rules.DIG[Entry.DIG_E], Rules.DIG[Entry.DIG_CELL] = true, true, true
+-- 入口的木樓梯（頂、中、底片；原版木樓梯建造配方的圖，entity_carpentry_stairs.txt:21,28-30）：往南下是 N 型、往東下是 W 型
+local DIG_STAIRS = { [Entry.DIG_S] = { "carpentry_02_98", "carpentry_02_97", "carpentry_02_96" },
+    [Entry.DIG_E] = { "carpentry_02_90", "carpentry_02_89", "carpentry_02_88" } }
+-- 入口樓梯的片（拆除認種類，Dismantle.kindOf）。這六張是原版木樓梯建造配方的圖（entity_carpentry_stairs.txt），引擎替它們
+-- 加 EntityScript（SpriteConfigManager.java:134-140），Rules.classify 回 ENTITY、不列進目錄
+local DIG_STAIR_PART = {}
+for _, list in pairs(DIG_STAIRS) do
+    for _, n in ipairs(list) do DIG_STAIR_PART[n] = true end
+end
+function Entry.digStair(name) return DIG_STAIR_PART[name] == true end
+
 -- 佔一條格邊的種類：要對齊牆線、檢查那條邊空著。柱子不佔邊（NORTH／WEST 是空的；擋邊的圖 Rules 不列），
 -- 走 Place.check 的柱子分支
 Entry.EDGE = { wall = true, windowFrame = true, doorFrame = true, fence = true, door = true, window = true, post = true }
@@ -39,17 +54,24 @@ function Entry.settings()
 end
 
 -- 預設關的種類：沙盒沒有這個鍵、或值不是 true 都當關（使用者 2026-11-13 選預設關：水井與手壓水泵蓋一格就有永遠用不完的
--- 乾淨水；水面會改地形、擋路）。中途加入本版、伺服器的沙盒檔還沒有這個鍵時也是關
-Entry.KIND_OFF = { well = true, water = true }
+-- 乾淨水；水面會改地形、擋路。挖地下室 2026-11-25 先照建議預設關：改地形、新的多人路徑）。中途加入本版、伺服器的沙盒檔
+-- 還沒有這個鍵時也是關
+Entry.KIND_OFF = { well = true, water = true, dig = true }
 
--- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
-function Entry.kindOn(kind, ...)
-    local s = ...
+-- 沙盒把這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。管理面板畫開關用這支：顯示的是沙盒值
+function Entry.kindSet(kind, s)
     local key = Entry.KIND_KEY[kind]
     if key == nil then return true end
     local v = (s or Entry.settings())[key]
     if Entry.KIND_OFF[kind] then return v == true end
     return v ~= false
+end
+
+-- 這個種類能蓋。s＝Entry.settings()，呼叫端已經拿到的就傳。挖地下室另要土牆的圖塊補丁生效（Basement.patched）：
+-- 沒生效時兩端都照沙盒關掉處理，走同一條拒絕路徑與訊息
+function Entry.kindOn(kind, ...)
+    local s = ...
+    return Entry.kindSet(kind, s) and (kind ~= "dig" or MinidoracatBuilder.Basement.patched())
 end
 
 -- 「a;b;c」→ 集合。只快取上一次的字串：管理員改了才重切。
@@ -97,7 +119,8 @@ function Entry.sprite(name)
     return named:get(name)
 end
 
--- 回 entry＝{ name, spr, kind, tileset, num, mod }，或 nil＋原因碼（UNKNOWN／UNSUPPORTED／DISABLED）
+-- 回 entry＝{ name, spr, kind, tileset, num, mod }，或 nil＋原因碼（UNKNOWN／UNSUPPORTED／DISABLED；挖掘開著、土牆圖塊補丁
+-- 沒生效時 DIG_PATCH，Basement.patched：說真正的原因，不說「管理員關掉了」）
 function Entry.resolve(name)
     local spr = Entry.sprite(name)
     if not spr then return nil, "UNKNOWN" end
@@ -123,10 +146,12 @@ function Entry.resolve(name)
     local file = Sources.fileOf(id)
     local mod = Sources.isModFile(file) and Sources.map()[file] or nil
     local s = Entry.settings()
-    if (mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset]
-        or not Entry.kindOn(kind, s) then
+    -- 挖地下室的三個項目借用原版的圖名，圖塊組、來源對它們沒有意義：只照種類開關（沙盒 KindDig）
+    if kind ~= "dig" and ((mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset])
+        or not Entry.kindSet(kind, s) then
         return nil, "DISABLED"
     end
+    if kind == "dig" and not MinidoracatBuilder.Basement.patched() then return nil, "DIG_PATCH" end
     return { name = name, spr = spr, kind = kind, tileset = tileset, num = tonumber(num), mod = mod }
 end
 
@@ -248,8 +273,8 @@ function Entry.alternate(spr, x, y)
     if not pair then return spr end
     local alt = Entry.sprite(pair[(x + y) % 2 + 1])
     if not alt or alt == spr then return spr end
-    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋（審查 1107 Codex）。
-    -- 48–51、88–91 帶牆的屬性，目錄歸在牆；兩張要同一個種類（Check.item 換圖後照原本那張的種類蓋，審查 1112 Claude）
+    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋。
+    -- 48–51、88–91 帶牆的屬性，目錄歸在牆；兩張要同一個種類（Check.item 換圖後照原本那張的種類蓋）
     local other, mine = Entry.resolve(alt:getName()), Entry.resolve(spr:getName())
     return other and mine and other.kind == mine.kind and (other.kind == "fence" or other.kind == "wall") and alt or spr
 end
@@ -268,7 +293,8 @@ end
 -- 這個名稱為什麼不能蓋、該改找哪一張（建造視窗搜完整圖塊名、右鍵挑圖塊用）。回 code, arg, alt：
 --   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 不能蓋的種類、
 --     PART 多格的其他格（車庫門、雙開門、坡道的其他片也是）、STAIRS_SET 湊不成三格的樓梯片、DOOR_SET 湊不成整組的車庫門、
---     雙開門、RAMP_SET 湊不成整組的坡道片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
+--     雙開門、RAMP_SET 湊不成整組的坡道片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的、
+--     DIG_PATCH 土牆圖塊補丁沒生效
 --   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
 --   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、車庫門頭片與雙開門
 --     第 1 片、坡道的頭片），能蓋才給。
@@ -292,10 +318,12 @@ function Entry.why(name, ...)
         alt = offset(name, 4)
     elseif code == "STACK" then
         alt = offset(name, tonumber(p:get("StackReplaceTileOffset")) or 0)
+    elseif res == "DIG_PATCH" then
+        code = "DIG_PATCH"
     elseif res == "DISABLED" then -- resolve 最後才查開關：走到這裡的種類、樓梯組、原點都沒問題
         local s = Entry.settings()
         local tileset = name:match("^(.*)_%d+$")
-        if not Entry.kindOn(kind, s) then
+        if not Entry.kindSet(kind, s) then
             code, arg = "DISABLED_KIND", kind
         elseif disabledTilesets(s.DisabledTilesets)[tileset] then
             code, arg = "DISABLED_TILESET", tileset
@@ -416,6 +444,10 @@ local pairCache = {}
 local function opposite(entry)
     local kind = entry.kind
     if kind == "stairs" then return stairsOpposite(entry) end
+    if kind == "dig" then -- 兩個入口互為配對面；挖這一格沒有
+        local o = entry.name == Entry.DIG_S and Entry.DIG_E or entry.name == Entry.DIG_E and Entry.DIG_S
+        return o and Entry.sprite(o) or nil
+    end
     if kind == "door" or kind == "window" then return doorOpposite(entry) end
     if not Entry.EDGE[kind] then return nil end
     local n, w = Entry.edges(kind, entry.spr)
@@ -528,7 +560,7 @@ end
 -- 片 i（0 起）在頭片格＋i×上坡方向；上坡方向就是 SlopedSurfaceDirection（引擎算高度時那一邊是 Max，
 -- IsoGridSquare.java:10248-10257）。方向字串引擎用 IsoDirections.fromString（去頭尾空白、轉大寫再 valueOf，
 -- PropertyContainer.java:270-271、IsoDirections.java:32-34）讀，這裡同一種寫法，只收 N／E／S／W。
--- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98（見 builder-dev placement.md「坡道」）
+-- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98
 Entry.RAMP_DECK = 1
 local RAMP_DIR = { N = { 0, -1, 1 }, E = { 1, 0, 2 }, S = { 0, 1, 3 }, W = { -1, 0, 4 } } -- dx, dy, Entry.face 的 d
 local function slope(spr)
@@ -711,7 +743,7 @@ function Entry.face(entry, d)
     if not spr then return nil end
     if spr == entry.spr then return spr end
     -- 另一面也要自己能蓋、同一種類：來源、圖塊組、種類開關照 Entry.resolve 重算（同一個 tileset 的圖可能來自不同
-    -- tiledef 檔，那個來源被停用時要擋，審查 1103 Codex；配對面也一樣，Claude 第 2 輪）。開關執行中會變，所以不快取
+    -- tiledef 檔，那個來源被停用時要擋；配對面也一樣）。開關執行中會變，所以不快取
     -- 這一步。樓梯的另一面是另一組，resolve 也驗它湊得成三格
     local other = Entry.resolve(spr:getName())
     if not other or other.kind ~= entry.kind then return nil end
@@ -724,7 +756,30 @@ end
 -- 往西爬的（W 型）沿 +x 排、平台在 x−1；往北爬的（N 型）沿 +y 排、平台在 y−1（buildRecipeCode.lua:196-206,263-289）。
 -- 車庫門頭片照最短的 2 格（Entry.groupCells；拖一排的寬度由 Check.item 照請求另算），雙開門 4 格。
 -- 坡道（項目＝頭片）：原點是頭片，沿上坡方向一片一格，最後是坡頂往前、上一層的平台（角色 platform，Entry.RAMP_DECK 格）。
+-- 挖地下室：挖這一格＝自己一格（角色 dig）。入口的原點＝頂片正上方（z＝0），d＝下樓方向（往南 0,1、往東 1,0）：
+-- 地下一層沿 d 排頂、中、底片（top／mid／bottom），原點往 −d 一格是落腳處（platform，已有地板），樓梯正上方三格開洞
+-- （hole），樓梯底再往前兩格、左右各一格挖成 2×3 的室（dig）。樓梯三格也算挖好的，所以新開的入口記 9 格
+local STAIR_ROLES = { "top", "mid", "bottom" }
 function Entry.cells(spr)
+    local name = spr:getName()
+    if Rules.DIG[name] then
+        local named = IsoSpriteManager.instance:getNamedMap()
+        local dirt = named:get(MinidoracatBuilder.Place.DIRT) or spr
+        local stairs = DIG_STAIRS[name]
+        if not stairs then return { { 0, 0, 0, dirt, "dig" } } end
+        local dx, dy = 0, 1
+        if name == Entry.DIG_E then dx, dy = 1, 0 end
+        local px, py = dy, dx
+        local hole = named:get(Entry.DIG_CELL) or spr
+        local out = {}
+        for i = 0, 2 do out[i + 1] = { i * dx, i * dy, -1, named:get(stairs[i + 1]) or spr, STAIR_ROLES[i + 1] } end
+        out[4] = { -dx, -dy, 0, named:get(Entry.STAIR_FLOOR) or spr, "platform" }
+        for i = 0, 2 do out[#out + 1] = { i * dx, i * dy, 0, hole, "hole" } end
+        for a = 3, 4 do
+            for b = -1, 1 do out[#out + 1] = { a * dx + b * px, a * dy + b * py, -1, dirt, "dig" } end
+        end
+        return out
+    end
     if Rules.grouped(spr:getProperties()) then
         local set = Entry.doorSet(spr)
         if set then return Entry.groupCells(set, 2) end
@@ -796,11 +851,24 @@ function Entry.north(kind, spr)
     return f == "N" or f == "S"
 end
 
+-- 在一條格邊上動手的：佔格邊的種類（Entry.EDGE）與貼在北／西邊上的（Rules.wallSide）。回那條邊是不是北邊，其他回 nil。
+-- 這些從那條邊的任一側都能動手：伺服器不查走不走得到（Check.near 的 edge；距離、樓層差、安全屋照查），客戶端站在
+-- 那條邊的任一側（Client 的 walkNear）
+function Entry.edgeNorth(kind, spr)
+    if Entry.EDGE[kind] then return Entry.north(kind, spr) end
+    local side = Rules.wallSide(kind, spr)
+    if side then return side == "N" end
+    return nil
+end
+
 -- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
--- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍
+-- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍。挖地下室不看技能：挖一格 5 秒、入口 30 秒
+-- （第三個參數＝項目 ID，只有 dig 要傳；用 ... 接，其他種類的呼叫端不必補 nil）
 local TIME = { floor = 120, wall = 200, windowFrame = 200, doorFrame = 200, fence = 150, door = 150, window = 100,
     stairs = 200, ramp = 400, roof = 120, post = 200 }
-function Entry.duration(kind, player)
+function Entry.duration(kind, player, ...)
+    local name = ...
+    if kind == "dig" then return name and DIG_STAIRS[name] and 1500 or 250 end
     local level = player and player:getPerkLevel(Perks.Woodwork) or 0
     return math.max(20, (TIME[kind] or 100) - level * 5)
 end

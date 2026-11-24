@@ -25,7 +25,9 @@ local HOME_RANGE = 100                -- 離原位置這麼近才給「放回原
 local SHOW_MAX = 256                  -- 框選時最多標幾格（每格一個地框）
 PM.BIND_UNDO, PM.BIND_REDO = "MinidoracatBuilder_PlanUndo", "MinidoracatBuilder_PlanRedo"
 PM.BIND_HIDE, PM.BIND_DELETE = "MinidoracatBuilder_PlanHide", "MinidoracatBuilder_PlanDelete"
-local WHY = { FULL = "IGUI_MBLD_PlanFull", TOO_WIDE = "IGUI_MBLD_PlanTooWide", TOO_HIGH = "IGUI_MBLD_PlanTooHigh" }
+-- DIG：挖地下室的三個項目不進藍圖（藍圖檔讀檔、擷取也不收）
+local WHY = { FULL = "IGUI_MBLD_PlanFull", TOO_WIDE = "IGUI_MBLD_PlanTooWide", TOO_HIGH = "IGUI_MBLD_PlanTooHigh",
+    DIG = "IGUI_MBLD_PlanNoDig" }
 
 -- plan、mode、hidden、level、tool（draw｜select｜erase）、sel（選到的片）、selSet、drag（本模組的拖曳物件）、
 -- home（放回原位置）、prev（搬的時候原本在哪，取消用）
@@ -130,8 +132,10 @@ local function limitWhy(n, x0, y0, z0, x1, y1, z1)
     return nil
 end
 
--- 這幾格（世界座標 { x, y, z, d }）加進藍圖會不會超出上限：回 nil 或 FULL／TOO_WIDE／TOO_HIGH。重複的片不算
+-- 這幾格（世界座標 { x, y, z, d }）能不能加進藍圖：回 nil，或 DIG（挖地下室的項目不進藍圖）／FULL／TOO_WIDE／TOO_HIGH
+-- （超出上限）。重複的片不算
 function PM.overflow(plan, cells, id, o)
+    if B.Rules.DIG[id] then return "DIG" end
     local x0, y0, z0, x1, y1, z1 = Plan.bounds(plan)
     return limitWhy(tally(plan, cells, id, o, plan.n, x0, y0, z0, x1, y1, z1))
 end
@@ -232,8 +236,10 @@ function hook.label(c, src)
     local last = #src
     if c.hint and src[last - 1] == c.hint then last = last - 2 end
     for i = 3, last do out[#out + 1] = src[i] end
+    -- 挖掘項目永遠記不進藍圖（DIG）：不教「拖曳加進藍圖」，左鍵也不會蓋，只留取消。
+    -- 其他原因（超出範圍、太多片）換位置或少拖幾格就加得進去，按鍵說明照舊
     if c.hint then
-        out[#out + 1] = getText("IGUI_MBLD_PlanHint")
+        out[#out + 1] = getText(c.planWhy == "DIG" and "IGUI_MBLD_HintCancel" or "IGUI_MBLD_PlanHint")
         out[#out + 1] = col.textMuted
     end
     return out

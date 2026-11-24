@@ -1,10 +1,10 @@
--- 顯示名（規格 1.8）：視窗、游標、提示框共用。字串只在快取沒有時組，畫面每幀只讀結果。
+-- 顯示名：視窗、游標、提示框共用。字串只在快取沒有時組，畫面每幀只讀結果。
 --   1. 原版移動物件翻譯：「GroupName CustomName」先去掉 "."（Translator.getMoveableDisplayName 的 replace
---      不吃 regex，名稱有點就查不到；Translator.java:681-689，bt-catalog §4.1），用 getMoveableDisplayNameOrNull。
+--      不吃 regex，名稱有點就查不到；Translator.java:681-689），用 getMoveableDisplayNameOrNull。
 --   2. 沒有就組「種類名 · tileset 顯示名 · 編號」；tileset 顯示名先查 IGUI_MBLD_Family_<組>，沒有就把底線換空白。
 --      方格用的短名（Names.short）不帶種類（頁籤已經寫了種類；使用者 2026-10-29），分兩段「tileset 顯示名」換行「編號」：
 --      方格第一行放圖塊組、第二行放編號，各自截短，編號一定看得到（照字斷行時，窄格子會把編號截掉：builder-ui-1029c ui-door）。
---   3. 多格項目接「（n 格）」。4. 都不行就用 sprite 名稱。不顯示 Tooltip_ 鍵（BC 痛點 P1）。
+--   3. 多格項目接「（n 格）」。4. 都不行就用 sprite 名稱。不顯示 Tooltip_ 鍵。
 --   建造配方項目（ID 是 recipe: 開頭，Recipes.lua）用原版的顯示名稱，方格也一樣。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Rules"
@@ -15,7 +15,7 @@ local Names = MinidoracatBuilder.Names or {}
 MinidoracatBuilder.Names = Names
 local Entry, Rules, Recipes = MinidoracatBuilder.Entry, MinidoracatBuilder.Rules, MinidoracatBuilder.Recipes
 
--- 最近 256 項（設計稿 DD:720-726），完整名與短名共用。ponytail：滿了整張清掉，不做 LRU；捲動時看得到的不到百格，清掉只多組一輪。
+-- 最近 256 項（設計稿），完整名與短名共用。ponytail：滿了整張清掉，不做 LRU；捲動時看得到的不到百格，清掉只多組一輪。
 local MAX = 256
 local cache, shortCache, count = {}, {}, 0
 
@@ -33,7 +33,7 @@ function Names.family(fam)
     return getTextOrNull("IGUI_MBLD_Family_" .. fam) or (fam:gsub("_", " "))
 end
 
--- tileset 顯示名：組有譯名時「譯名 01」，沒有就「walls exterior house 01」（DD:251）
+-- tileset 顯示名：組有譯名時「譯名 01」，沒有就「walls exterior house 01」
 function Names.tileset(ts)
     local fam, num = ts:match("^(.-)_(%d+)$")
     local shown = fam and getTextOrNull("IGUI_MBLD_Family_" .. fam)
@@ -47,7 +47,13 @@ end
 local SWITCH = {}
 for i = 0, 7 do SWITCH["lighting_indoor_01_" .. i] = i end
 
+-- 挖地下室的三個項目：ID 借用原版的圖名（引擎的隱形地板 invisible_01_0、地圖的地下土塊 underground_01_0／1，原版 tiledef
+-- 帶 solid、cutW），原本的名稱不對，照用途叫（完整名與方格短名同一個；快取只照名稱記，所以不看 kind）
+local DIG_NAME = { [Entry.DIG_S] = "IGUI_MBLD_Dig_EntranceS", [Entry.DIG_E] = "IGUI_MBLD_Dig_EntranceE",
+    [Entry.DIG_CELL] = "IGUI_MBLD_Dig_Cell" }
+
 local function compose(name, kind, short)
+    if DIG_NAME[name] then return getText(DIG_NAME[name]) end
     local r = Recipes.get(name)
     if r then return r.name end
     local spr = Entry.sprite(name)

@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "オンにすると、プレイヤーが井戸と手押しポンプを建築できます。水は尽きず清潔で、断水後も使えます。初期設定はオフです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
     "Sandbox_MinidoracatBuilder_KindPlant": "植物",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "観賞植物、草、野花。飾りのみです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。",
+    "Sandbox_MinidoracatBuilder_KindDig": "地下室",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "オンにすると、プレイヤーが地下室を掘れます。地上に木の階段付きの入口を開け、掘った所から 1 マスずつ広げます。掘るのに必要なのはシャベルだけで、掘るたびにシャベルが傷みます。スキルは不要です。入口には木の階段 1 組分の材料も必要です。Basement Building を導入している場合はそちらで掘ってください。初期設定はオフです。\nオフにすると、プレイヤーには表示されず掘れません。掘った場所は埋め戻せず、掘った地下室はそのまま残ります。",
     "Sandbox_MinidoracatBuilder_KindWater": "水面",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "オンにすると、プレイヤーが 1 階の草地や土など自然の地面を掘って水面を作れます。必要なのはシャベルだけで、材料もスキルも不要です。水面は人もゾンビも通れず、汚れた水をくめ、釣りもできます。取り壊すと元の地面に戻ります。初期設定はオフです。\nオフにすると、プレイヤーには表示されず建築もできません。建築済みのものは残り、取り壊すこともできます。"
 }

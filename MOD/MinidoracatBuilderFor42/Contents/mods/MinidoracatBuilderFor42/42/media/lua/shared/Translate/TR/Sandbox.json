@@ -83,6 +83,8 @@
     "Sandbox_MinidoracatBuilder_KindWell_tooltip": "Açıkken oyuncular kuyu ve el pompası inşa edebilir: sonsuz temiz su, şebeke suyu kesildikten sonra da çalışır. Varsayılan olarak kapalı.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
     "Sandbox_MinidoracatBuilder_KindPlant": "Bitkiler",
     "Sandbox_MinidoracatBuilder_KindPlant_tooltip": "Süs bitkileri, çimen ve kır çiçekleri. Yalnızca süs.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir.",
+    "Sandbox_MinidoracatBuilder_KindDig": "Bodrumlar",
+    "Sandbox_MinidoracatBuilder_KindDig_tooltip": "Açıkken oyuncular bodrum kazabilir: zemin katta ahşap merdivenli bir giriş açıp bodrumu kare kare genişletir. Kazmak için yalnızca kürek gerekir, kürek kazdıkça aşınır; beceri gerekmez. Giriş için ayrıca bir ahşap merdivenin malzemeleri gerekir. Basement Building kuruluysa onunla kazın. Varsayılan olarak kapalı.\nKapalıyken oyuncular kazmayı göremez ve kullanamaz. Kazılan yer geri doldurulamaz; var olan bodrumlar olduğu gibi kalır.",
     "Sandbox_MinidoracatBuilder_KindWater": "Su",
     "Sandbox_MinidoracatBuilder_KindWater_tooltip": "Açıkken oyuncular zemin katta çim veya toprak gibi doğal zemini kazarak su oluşturabilir. Yalnızca kürek gerekir: malzeme ve beceri gerekmez. Su insanları ve zombileri geçirmez, kirlenmiş su verir ve içinde balık tutulabilir. Sökünce eski zemine geri döner. Varsayılan olarak kapalı.\nKapalıyken oyuncular bunu göremez ve inşa edemez. Önceden inşa edilenler yerinde kalır ve hâlâ sökülebilir."
 }

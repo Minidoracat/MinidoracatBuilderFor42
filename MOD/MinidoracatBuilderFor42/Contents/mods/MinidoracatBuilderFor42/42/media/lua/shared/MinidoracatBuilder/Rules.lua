@@ -1,6 +1,6 @@
 -- 圖塊分類規則：客戶端目錄與伺服器重算共用這一份。
 -- 只看 tile 屬性與型別，不看貼圖（專用伺服器的 sprite 沒有貼圖，hasNoTextures() 一律 true）。
--- 順序照設計稿 Rules.classify（bt-catalog §3.2、§6；bt-newkinds §1.1）：排除先跑，第一條成立的規則決定種類。
+-- 順序照設計稿 Rules.classify：排除先跑，第一條成立的規則決定種類。
 -- 目錄每個有貼圖的 sprite 都會跑一次（約 5.7 萬次），所以盡量少呼叫 Java：
 --   型別查表一次（不逐一比較：兩個不同的 Java 物件比 == 要查兩次 metatable，KahluaThread.java:545-560）、
 --   列舉值與 MoveType 各取一次。
@@ -67,6 +67,8 @@ addRange("constructedobjects_01", 16, 19)
 addRange("solarmod_tileset_01", 0, 39)
 -- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4821-4831）
 unlist({ "invisible_01_0", "underground_01_0", "underground_01_1" })
+-- 地下室外凸轉角的牆角柱（Basement.POST）：挖出來時自己長的，補丁給了 WallSE，不列成柱子
+unlist({ "underground_01_11" })
 -- 照原版圖塊名稱給功能的 MOD（Workshop 路徑 content/108600/<ID>）：{ tileset, 起, 迄, ... }
 local BY_MOD = {
     -- 丙烷補充站：右鍵就能補丙烷，第一次用時照沙盒給初始量（3786849936 ArcadiaRefillablePropane_Shared.lua:55-194、
@@ -238,7 +240,7 @@ function Rules.typeCode(t)
     return TYPE[t]
 end
 
--- 名稱前綴（bt-catalog §6.3）：侵蝕疊圖 e_（積雪屋頂、草）、植物 vegetation_、樹叢 f_bushes、巨樹 jumbo_。回 true＝不列（PREFIX）；
+-- 名稱前綴：侵蝕疊圖 e_（積雪屋頂、草）、植物 vegetation_、樹叢 f_bushes、巨樹 jumbo_。回 true＝不列（PREFIX）；
 -- 只收植物的前綴（使用者 2026-11-13 選新種類「植物」，見 Rules.kindOf）回 "e"（只收草）、"bush"（只收能搬的觀賞植物）、
 -- PLANT_SET 的值（vegetation_ 的觀賞植物組：植物照收，能搬卻不是植物的往下照一般屬性分）；其他回 nil。
 -- 農作物（vegetation_farming／gardening／farm）、晾架、樹、積雪圖照舊不列。先看第一個字元再比字串：避免多數名稱建子字串。
@@ -340,6 +342,9 @@ end
 -- （IsoObject.java:2664-2676 getInfiniteWaterType），其他無限水的圖給髒水、照舊不列（WATER）。camping_01_16 帶 EntityScript
 -- （原版 entity_well.txt，沒有建造配方）也照列：本工具蓋成 IsoThumpable，水是引擎照圖名給的（isWaterInfinite 看 waterAmount）
 local WELL = { camping_01_16 = true, camping_01_64 = true, camping_01_65 = true, camping_01_66 = true, camping_01_67 = true }
+-- 挖地下室的三個項目（種類 dig，使用者 2026-11-25）：名稱只在 Entry（Entry.DIG_S 等）定義，Entry 載入時填進來。
+-- 照名稱認，要排在 UNLISTED 前面（:69 把同三張當引擎內部圖不列）
+Rules.DIG = {}
 
 -- 無限水（waterAmount ≥ 9999）不列（使用者 2026-10-27 決定；水井與手壓水泵另列，見 WELL）：引擎只看這個值，不看停水與房間
 -- （IsoObject.java:2639-2644），放一格就有永遠用不完的水。離線讀 314 個 tiledef 檔（187 萬格）有 535 格，
@@ -350,7 +355,7 @@ local function infiniteWater(p)
     return w ~= nil and (tonumber(w) or 0) >= 9999
 end
 
--- 判斷成植物的圖照樣過後面那幾關（審查 1113）：專用物件、集水、無限水、疊放圖不因為帶植物鍵就列成植物。
+-- 判斷成植物的圖照樣過後面那幾關：專用物件、集水、無限水、疊放圖不因為帶植物鍵就列成植物。
 -- 只有植物候選才多這幾次 Java 呼叫
 local function plantKind(p)
     if objectKeys(p) then return nil, "PLANT" end
@@ -478,12 +483,13 @@ end
 -- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。水井（WELL）例外，在前面就回。
 -- 帶 solidfloor 的地面覆蓋（實心地毯 FloorRug、半格地板）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當
 -- 地面覆蓋；多格或沒有 FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：
--- 照 0.5.0 當地板（審查 1107 Claude；正式服組合 0 張）
+-- 照 0.5.0 當地板（正式服組合 0 張）
 local function solidRug(kind, p, spr) -- spr 必填：漏傳時目錄和伺服器會分得不一樣
     return kind == "floorOverlay" and p:has(solidfloor) and not (p:has(FloorOverlay) and spr:getSpriteGrid() == nil)
 end
 function Rules.kindOf(name, p, t, spr)
     if not name then return nil, "NO_KIND" end
+    if Rules.DIG[name] then return "dig" end
     if UNLISTED[name] then return nil, "LUA" end
     if WELL[name] then return "well" end
     if WINDOW_STATE[name] then return nil, "WINDOW_STATE" end
@@ -553,6 +559,20 @@ function Rules.onWall(kind, spr)
     return nil
 end
 
+-- 貼在格子北邊或西邊那條邊上的（不佔邊）：照地圖掛在那條邊牆上的牆面疊圖（Rules.onWall 的 "N"／"W"），以及帶 cutN 或
+-- cutW 的牆面裝飾（wallOverlay）。回那條邊（"N"／"W"），其他回 nil：掛在東南角的、兩條邊都佔的，貼牆放在自己那格的
+-- 家具（attached、能搬的掛牆物）也不算。這些和佔格邊的種類一樣從那條邊的任一側動手（Entry.edgeNorth）：牆的另一側
+-- 常是沒挖的土或屋外，要走到目標格本身旁邊就得繞路，或根本到不了
+function Rules.wallSide(kind, spr)
+    local side = Rules.onWall(kind, spr)
+    if side == "N" or side == "W" then return side end
+    if kind ~= "wallOverlay" then return nil end
+    local p = spr:getProperties()
+    local n, w = p:has(cutN), p:has(cutW)
+    if n == w then return nil end
+    return n and "N" or "W"
+end
+
 -- 牆型窗：窗和窗框畫在同一張（tiledef 寫 wall 型別、也自己寫 WindowN/W，例 walls_commercial_01_96）。地圖照 IsoWindow
 -- 建、不另放窗框（CellLoader.java:128-137），所以不用先有窗框，成本照窗框＋窗收。一般的窗型別是 MAX（引擎替帶
 -- windowN/W 的補 WindowN/W 旗標，IsoWorld.java:919-926，不能看旗標分）。t＝getType()
@@ -593,7 +613,7 @@ function Rules.frameOf(p)
     return nil
 end
 
--- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減；bt-newkinds §2.1）。中片、頂片也要照 kindOf
+-- 樓梯一個項目＝同一 tileset 連號三格（B、M、T 同方向，遞增或遞減）。中片、頂片也要照 kindOf
 -- 是樓梯：實體腳本、無限水、能搬或能拆成零件、不列清單只寫在某一片時整組不收（目錄只分類底片）。
 -- named＝getNamedMap()；只用 get，不用全域 getSprite（查不到會新增空 sprite）。湊不成組回 nil。
 function Rules.stairsSet(named, bName)
