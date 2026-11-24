@@ -15615,7 +15615,7 @@ end)()
             boxes[#boxes + 1] = fake({ y = o.y, height = 20, label = o.label, o = o })
             return boxes[#boxes]
         end },
-        TextField = { new = function() return fake({}) end },
+        TextField = { new = function(o) return fake({ o = o }) end },
         Button = { new = function(o) return fake({ width = o.width or 60 }) end } }
     local realUI = { B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight }
@@ -15636,6 +15636,18 @@ end)()
     check(shown and nBox == 4 and boxes[1].y > 24 and n1 == 12 and en1 == true and sum1 >= 1 and pnl.out.plan.n == 0
         and pnl.saveBtn.enabled == false and shownOne and #boxes == nBox,
         "結果框勾層：四層有東西列 4 個勾選框；取消第 1 層剩 12 片、存檔鈕可按；全不勾 0 片、存檔鈕停用；只有一層有東西時不列勾選框")
+    -- 超過 4,096 片、全勾時沒有不收的：取消第 1 層後多出「不收」與「原點在框外」兩行，不能壓到名稱那一行
+    -- （植入：版面只照全勾時排，多出的那行疊在名稱上）
+    local ov = Cap.scan(600, 600, 663, 663, 0)
+    ov.res.pieces, ov.res.n = lr.pieces, lr.n
+    local nb = #boxes
+    Cap.show(0, Cap.build(ov, "ov"), 64, 64, "ov")
+    local op, ob = Cap.panel, boxes[nb + 1]
+    local ovSum = #op.sum
+    ob.o.onChange(ob.o.target, false)
+    local ovLast, ovName = op.sum[#op.sum].y + 16, op.field.o.y - (ob.y - ob.o.y) - 16
+    check(ovSum == 2 and #op.sum == 3 and ovLast <= ovName,
+        "結果框勾層：超過上限又沒有不收的，取消第 1 層多出的不收兩行不壓到名稱那一行（" .. ovLast .. " ≤ " .. ovName .. "）")
     Cap.panel = nil
     B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight = realUI[1], realUI[2], realUI[3], realUI[4], realUI[5], realUI[6], realUI[7], realUI[8]

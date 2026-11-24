@@ -366,9 +366,11 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
         end
     end
     if #boxes > 0 then y = y + GAP end
-    -- 版面照全勾時排：勾得少，那幾行只會更短
+    -- 版面照全勾時排：勾得少，那幾行只會更短。超過上限時例外：沒收進去的片勾少後會真的去收，原點在框外的多出「不收」與
+    -- 「框外」兩行，先留位置
     self.sumY = y
     self.sum, y = summary(self)
+    if out.over > 0 then y = y + ((out.skipped > 0 and 0 or 1) + (out.skip.OUTSIDE and 0 or 1)) * fh end
     y = para(self, rows, y + GAP, getText("IGUI_MBLD_Cap_Name"), c.text)
     local plan = out.plan
     local fieldY = y
