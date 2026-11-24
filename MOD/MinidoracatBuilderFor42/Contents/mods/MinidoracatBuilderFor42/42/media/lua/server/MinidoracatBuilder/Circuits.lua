@@ -501,7 +501,8 @@ function Circuits.press(player, obj, id, ...)
         return false
     end
     if useDenied(player, x, y, z) then return false end
-    if B.Basement.growNow(x, y, z) and rid then rid = roomOf(x, y, z, false) end
+    B.Basement.growNow(x, y, z)
+    if rid then rid = roomOf(x, y, z, false) end
     if rid and not obj:canSwitchLight() then return false end
     local k = id or rid or Ledger.key(obj)
     local t = now()

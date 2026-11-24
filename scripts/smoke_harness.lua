@@ -4446,7 +4446,8 @@ local function circuitScenario()
             .. "與 401 格的塊 NOT_ENCLOSED（" .. table.concat(codes, ",") .. "）")
         -- 牆把塊隔成兩間（(111,100) 西邊一面牆；伺服器分好的房間，Basement.setRooms）：開關只接自己那間的燈
         fire("OnObjectAboutToBeRemoved", US)
-        local ML = down(111, 100, lampS, { cutW = true })
+        local w = { cutW = true }
+        local ML = down(111, 100, lampS, w)
         Bm.setRooms({ { { 110, 100 } }, { { 111, 100 }, { 112, 100 } } })
         local US2 = down(112, 100, swS)
         sent = {}
@@ -4476,8 +4477,32 @@ local function circuitScenario()
         check(late.code == nil and nL(late) == 1 and wired(late, ML) and not wired(late, UL) and not joined,
             "c15 牆剛蓋好、分房還沒重算就放開關或燈：先重算那一塊，開關只接同一間的燈、牆另一邊新放的燈不接進它的線路（"
             .. tostring(late.code) .. " " .. nL(late) .. " " .. tostring(joined) .. "）")
-        getOnlinePlayers = keepOnline
         fire("OnObjectAboutToBeRemoved", US3)
+        -- 沒接燈的牆上開關，牆剛蓋好就按：重算後照新的房號找同一間的開關，牆另一邊緊鄰的那個不跟著切。兩邊各按一次：
+        -- 重算後哪一邊是 1 號看走訪順序，拿舊房號（一間時的 1 號）去找的話，按到 2 號那邊的會切到隔壁
+        local SA, SB = down(110, 100, swS), down(111, 100, swS, w)
+        SA.canSwitchLight, SB.canSwitchLight = function() return true end, function() return true end
+        local function pressStale(o)
+            w.cutW = nil
+            Bm.dirty(111, 100, -1)
+            Bm.growNow(111, 100, -1) -- 還沒有牆：一間
+            w.cutW = true
+            Bm.dirty(111, 100, -1) -- 牆蓋好、還沒重算
+            nowMs = nowMs + 2000
+            return act(P, o)
+        end
+        P.pos.x, P.pos.y, P.pos.z = 110.5, 100.5, -1
+        local pa = pressStale(SA)
+        local onlyA = pa == true and SA.on == false and SB.on == true
+        SA.on = true -- 兩個都開著再按另一邊：被誤切的那個才看得出來
+        local pb = pressStale(SB)
+        local onlyB = pb == true and SB.on == false and SA.on == true
+        P.pos.x, P.pos.y, P.pos.z = 101.5, 101.5, 0
+        check(onlyA and onlyB, "c15 牆剛蓋好就按沒接燈的牆上開關：只切自己那一間的，牆另一邊的開關不跟著切（" .. tostring(pa)
+            .. tostring(onlyA) .. " " .. tostring(pb) .. tostring(onlyB) .. "）")
+        fire("OnObjectAboutToBeRemoved", SA)
+        fire("OnObjectAboutToBeRemoved", SB)
+        getOnlinePlayers = keepOnline
         fire("OnObjectAboutToBeRemoved", FS)
         Bm.reset({}, 0, 0)
         getWorld = realWorld
