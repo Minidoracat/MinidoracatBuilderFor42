@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "材料：原木",
   "IGUI_MBLD_Material_other": "材料：其他",
   "IGUI_MBLD_Material_Tip": "只列出成本用到这种材料的项目，不管你身上有没有。钉子、螺丝这类五金不算。",
-  "IGUI_MBLD_Empty_Material": "这里没有用到这种材料的项目。材料改选「材料：全部」可查看全部。"
+  "IGUI_MBLD_Empty_Material": "这里没有用到这种材料的项目。材料改选「材料：全部」可查看全部。",
+  "IGUI_MBLD_Kind_dig": "地下室",
+  "IGUI_MBLD_Note_dig": "入口放在一楼的地面上：会开出一座往下的木楼梯，和楼梯下去前方一块 3×2 格的空间。之后站在地下一层，用「挖这一格」往外挖（可以拖一片）；挖开的地方四周会长出土墙，算室内。新入口不能贴着别的地下室，要连起来请用「挖这一格」挖过去。",
+  "IGUI_MBLD_Dig_EntranceS": "地下室入口（楼梯往南下）",
+  "IGUI_MBLD_Dig_EntranceE": "地下室入口（楼梯往东下）",
+  "IGUI_MBLD_Dig_Cell": "挖这一格",
+  "IGUI_MBLD_Refund_dig": "拆除：挖开的地方不能填回，不退材料",
+  "IGUI_MBLD_RefundShort_dig": "不能填回",
+  "IGUI_MBLD_Admin_Ledger_basements": "地下室",
+  "IGUI_MBLD_Refuse_DIG_BD": "已经装了 Basement Building，地下室请用它来挖。",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "入口要放在一楼的地面上；「挖这一格」要在地下一层用。",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "离别的地下室或地图原有的地下空间太近。要连起来请用「挖这一格」挖过去。",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "要贴着已经挖开的格子。从挖好的地方往外挖。",
+  "IGUI_MBLD_Refuse_DIG_FULL": "一个地下室最多 %1 格，这里已经到上限了。",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "楼梯开洞的地方有东西。先清空再放。"
 }

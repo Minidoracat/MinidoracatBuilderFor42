@@ -13119,8 +13119,8 @@ print("情境五十：管理面板的伺服器紀錄（2026-11-14）：伺服器
     local s0 = Admin.ledgerState(nowMs)
     local okAsk = Admin.askLedgers(0)
     local again = Admin.askLedgers(0)
-    check(s0 == "none" and okAsk == true and again == false and Admin.ledgerState(nowMs) == "rows" and #Admin.ledger.rows == 4,
-        "單機：面板一要就經 Client 交給 Admin、四行；3 秒內再要不送")
+    check(s0 == "none" and okAsk == true and again == false and Admin.ledgerState(nowMs) == "rows" and #Admin.ledger.rows == 5,
+        "單機：面板一要就經 Client 交給 Admin、五行（含地下室）；3 秒內再要不送")
     isServer, isClient = realIsServer, function() return true end
     sendClientCommand = function(p, module, cmd, args) cmds[#cmds + 1] = { p = p, module = module, cmd = cmd } end
     Admin.ledger.asked, Admin.ledger.rows = nil, nil
@@ -25102,6 +25102,166 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
     W.v, W.ui, Entry.rampSet, B.RoofPanel = real.v, real.wui, real.rampSet, real.roofPanel
     SandboxVars.MinidoracatBuilder.KindLight = real.kindLight
     W.st.tab, W.st.cat, W.st.query, W.st.source = real.tab, real.sel, real.query, real.source
+end)()
+
+-- 放在最後：擷取、藍圖檔、客戶端、介面這些模組到這裡都已經由前面的情境載入（提早 require 會改變它們的載入時機）
+print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒絕訊息與翻譯、同步、拖框排序；plan.md §4.1 c16–c18）")
+;(function()
+    local B = MinidoracatBuilder
+    for _, m in ipairs({ "Capture", "PlanFile", "Plan", "Messages", "Client", "Cursor", "Runner", "Names", "Window", "Admin" }) do
+        require("MinidoracatBuilder/" .. m)
+    end
+    local Cap, PF, Plan, Messages, C, Cur, BM = B.Capture, B.PlanFile, B.Plan, B.Messages, B.Client, B.Cursor, B.Basement
+    local keepMap, keepOrder, keepDig = spriteMap, spriteOrder, sb.KindDig
+    local S, E, CELL, D = Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL, B.Place.DIRT
+    world({ sprite(S, 5201, { flags = { "cutW", "solid" } }), sprite(E, 5202, { flags = { "cutW", "solid" } }),
+        sprite(CELL, 5203, { flags = { "solidfloor", "attachedFloor" } }),
+        sprite("carpentry_02_96", 5204, { type = T.stairsBN }), sprite("carpentry_02_97", 5205, { type = T.stairsMN }),
+        sprite("carpentry_02_98", 5206, { type = T.stairsTN }), sprite("carpentry_02_88", 5207, { type = T.stairsBW }),
+        sprite("carpentry_02_89", 5208, { type = T.stairsMW }), sprite("carpentry_02_90", 5209, { type = T.stairsTW }),
+        sprite(Entry.STAIR_FLOOR, 5210, { flags = { "solidfloor" } }), sprite(D, 5211, { flags = { "solidfloor" } }),
+        sprite("pcf_01_0", 5212, { flags = { "solidfloor" } }) })
+    sb.KindDig = true
+
+    -- c16 擷取不收挖掘項目（格上有 invisible_01_0 也不收、不算不收的那一類）；一般地板照收
+    local job = Cap.scan(300, 300, 303, 303, 0)
+    local res = job.res
+    for i, n in ipairs({ CELL, S, E }) do Cap.tile(res, n, 300 + i, 300, 0, 0) end
+    local digN, digSkip = res.n, res.skipped
+    Cap.tile(res, "pcf_01_0", 300, 301, 0, 0)
+    check(Entry.resolve(CELL) and digN == 0 and digSkip == 0 and res.n == 1,
+        "c16 擷取：挖這一格、兩個入口都不收（也不記成不收），一般地板照收")
+
+    -- c16 讀檔：含挖掘項目的藍圖丟掉那幾片，其他片與項目照讀
+    local pl = Plan.new("dig")
+    local a, b, c = Plan.item(pl, "pcf_01_0"), Plan.item(pl, CELL), Plan.item(pl, S)
+    Plan.add(pl, 0, 0, 0, 0, 0, a)
+    Plan.add(pl, 1, 0, 0, 0, 0, b)
+    Plan.add(pl, 2, 0, 0, 0, 0, c)
+    Plan.add(pl, 0, 1, 0, 0, 0, a)
+    local back, why = PF.decode(PF.encode(pl))
+    local ids = {}
+    if back then Plan.each(back, function(p) ids[#ids + 1] = back.items[p.it].id end) end
+    check(back and back.n == 2 and table.concat(ids, ",") == "pcf_01_0,pcf_01_0" and back.nItems == 1,
+        "c16 讀檔：挖一格、入口那兩片丟掉，地板兩片照讀（" .. tostring(why) .. "）")
+
+    -- c17 六個新碼都在訊息表；上限退回 Basement.MAX；16 語都有新鍵，上限那句帶 %1
+    local realGetText = getText
+    getText = function(k, ...) return k .. "(" .. table.concat({ ... }, ",") .. ")" end
+    local codes = true
+    for _, code in ipairs({ "DIG_BD", "DIG_LEVEL", "DIG_ROOM", "DIG_EDGE", "DIG_FULL", "DIG_CLEAR" }) do
+        codes = codes and Messages.CODES[code] == true
+    end
+    check(codes and Messages.refusal("DIG_FULL", {}) == "IGUI_MBLD_Refuse_DIG_FULL(" .. BM.MAX .. ")"
+        and Messages.refusal("DIG_FULL", { max = 7 }) == "IGUI_MBLD_Refuse_DIG_FULL(7)",
+        "c17 六個挖掘碼都在 Messages.CODES；DIG_FULL 照伺服器帶的上限，沒帶退回 Basement.MAX")
+    B.Names.reset()
+    local named = B.Names.of(CELL, "dig") == "IGUI_MBLD_Dig_Cell()" and B.Names.short(S) == "IGUI_MBLD_Dig_EntranceS()"
+    B.Names.reset()
+    getText = realGetText
+    local KEYS = { "Kind_dig", "Note_dig", "Dig_EntranceS", "Dig_EntranceE", "Dig_Cell", "Refund_dig", "RefundShort_dig",
+        "Admin_Ledger_basements" }
+    for code in pairs({ DIG_BD = 1, DIG_LEVEL = 1, DIG_ROOM = 1, DIG_EDGE = 1, DIG_FULL = 1, DIG_CLEAR = 1 }) do
+        KEYS[#KEYS + 1] = "Refuse_" .. code
+    end
+    local missing = {}
+    for _, lang in ipairs({ "AR", "CH", "CN", "DE", "EN", "ES", "ES_CL", "ES_MX", "FR", "JP", "KO", "PL", "PT", "PTBR", "RU", "TR" }) do
+        local f = assert(io.open(MEDIA .. "/shared/Translate/" .. lang .. "/IG_UI.json", "rb"))
+        local text = f:read("*a")
+        f:close()
+        local have = {}
+        for k, v in text:gmatch('"IGUI_MBLD_([%w_]+)"%s*:%s*"(.-)",?%s*\n') do have[k] = v end
+        for _, k in ipairs(KEYS) do
+            if not have[k] or have[k] == "" then missing[#missing + 1] = lang .. ":" .. k end
+        end
+        if have.Refuse_DIG_FULL and not have.Refuse_DIG_FULL:find("%1", 1, true) then
+            missing[#missing + 1] = lang .. ":Refuse_DIG_FULL 沒有 %1"
+        end
+    end
+    check(#missing == 0 and named, "c17 16 語都有挖掘的 14 個新鍵（上限那句帶 %1）；三個項目照用途命名 " .. table.concat(missing, " "))
+
+    -- c18 每個種類都有排程段、設定摘要含挖掘開關、頁籤與帳本清單有新項目、MOD 樹沒有自我檢查或示範檔
+    local seg = true
+    for _, k in ipairs(Entry.KINDS) do seg = seg and B.Runner.SEGMENT[k] ~= nil end
+    sb.KindDig = nil
+    local d0 = Entry.digest()
+    sb.KindDig = true
+    local ledger, tab = false, false
+    for _, id in ipairs(B.Admin.LEDGERS) do ledger = ledger or id == "basements" end
+    for _, k in ipairs(B.Window.TAB_KINDS.stairs) do tab = tab or k == "dig" end
+    local stray = {}
+    local win = package.config:sub(1, 1) == "\\"
+    local cmd = win and ('dir /s /b "' .. MEDIA:gsub("/", "\\") .. '"') or ("find '" .. MEDIA .. "' -type f")
+    local pipe = io.popen(cmd)
+    local listed = 0
+    if pipe then
+        for line in pipe:lines() do
+            listed = listed + 1
+            local low = line:lower()
+            if low:find("self[%-_]?check") or low:find("self[%-_]?test") or low:find("demo") then stray[#stray + 1] = line end
+        end
+        pipe:close()
+    end
+    check(seg and B.Runner.SEGMENT.dig == 3 and Entry.digest() ~= d0 and ledger and tab and listed > 0 and #stray == 0,
+        "c18 Runner.SEGMENT 每種都有（dig＝3）、KindDig 改變設定摘要、樓梯頁與帳本清單有挖掘、MOD 樹沒有 self-check "
+        .. table.concat(stray, " "))
+
+    -- 拖框：挖這一格才能拖、入口只有一個錨點；照離已挖區近的先排，接不上的放最後
+    BM.add({ { 90100, 90100 } })
+    local order = Cur.nearFirst({ { 90103, 90100, -1 }, { 90105, 90105, -1 }, { 90101, 90100, -1 }, { 90102, 90100, -1 } })
+    local got = {}
+    for i, o in ipairs(order) do got[i] = o[1] .. "," .. o[2] end
+    check(table.concat(got, " ") == "90101,90100 90102,90100 90103,90100 90105,90105" and Cur.DRAG.dig == "fill",
+        "挖這一格的拖框：鋪滿；從貼著已挖格子的那格一圈圈往外排，接不上的照原順序放最後 " .. table.concat(got, " "))
+    BM.reset({}, math.floor(90100 / BM.AREA), math.floor(90100 / BM.AREA))
+
+    -- 同步：多人收 dug／basements 驗資料、更新集合、登錄、重算高度；壞資料整則丟；單機只重算高度
+    local realIsClient, realGrow, realAll, realZ = isClient, BM.grow, BM.registerAll, BM.recalcZ
+    local calls = {}
+    BM.grow = function(t) calls[#calls + 1] = "grow" .. #t end
+    BM.registerAll = function() calls[#calls + 1] = "all" end
+    BM.recalcZ = function() calls[#calls + 1] = "z" end
+    isClient = function() return true end
+    local A = math.floor(90000 / BM.AREA)
+    C.onServerCommand("dug", { t = { 90000, 90000, 90001, 90000 } })
+    local dugOk = BM.has(90000, 90000, -1) and BM.has(90001, 90000, -1) and table.concat(calls, ",") == "grow2,z"
+    calls = {}
+    C.onServerCommand("dug", { t = { 90002, 90000.5 } })
+    C.onServerCommand("dug", { t = { 90002, 90000, 90003 } })
+    C.onServerCommand("dug", { t = { 90002, -1 } })
+    local badDug = #calls == 0 and not BM.has(90002, 90000, -1)
+    C.onServerCommand("basements", { ax = A, ay = A, b = { { 90010, 90010, 2, 1 } } })
+    local area = table.concat(calls, ",") == "all,z" and BM.has(90010, 90010, -1) and BM.has(90011, 90010, -1)
+        and not BM.has(90000, 90000, -1)
+    calls = {}
+    C.onServerCommand("basements", { ax = A, ay = A, b = { { 90020, 90020, 21, 20 } } })
+    C.onServerCommand("basements", { ax = A, ay = A, b = { { 90020, 90020, 1, 1, 90030 } } })
+    C.onServerCommand("basements", { ax = A, ay = A, b = { { 1, 1, 1, 1 } } })
+    C.onServerCommand("basements", { ax = A + 0.5, ay = A, b = {} })
+    local badArea = #calls == 0 and BM.has(90010, 90010, -1) and not BM.has(90020, 90020, -1)
+    isClient = function() return false end
+    C.onServerCommand("dug", { t = { 90040, 90040 } })
+    local sp = table.concat(calls, ",") == "z" and not BM.has(90040, 90040, -1)
+    check(dugOk and badDug and area and badArea and sp,
+        "多人 dug：加進集合→登錄→重算高度；basements：換掉那一區→全部登錄→重算；非整數、奇數長度、超過 400 格、出了範圍整則丟；單機只重算高度")
+
+    -- 多人進場 60 tick 要一次地下室，之後沒換大區不再要
+    isClient = function() return true end
+    local realSend, realGet = sendClientCommand, getSpecificPlayer
+    local sent = {}
+    sendClientCommand = function(_, module, cmd) sent[#sent + 1] = module .. ":" .. cmd end
+    getSpecificPlayer = function() return { getX = function() return 90000 end, getY = function() return 90000 end } end
+    for _ = 1, 59 do C.askOnStart() end
+    local early = #sent
+    C.askOnStart()
+    check(early == 0 and table.concat(sent, ",") == "MinidoracatBuilder:basements",
+        "多人：進場第 60 tick 才向伺服器要一次 basements")
+    sendClientCommand, getSpecificPlayer = realSend, realGet
+
+    BM.reset({}, A, A)
+    isClient, BM.grow, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
+    sb.KindDig = keepDig
+    spriteMap, spriteOrder = keepMap, keepOrder
 end)()
 
 print()

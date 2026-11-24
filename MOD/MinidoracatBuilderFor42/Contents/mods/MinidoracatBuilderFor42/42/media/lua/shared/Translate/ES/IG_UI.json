@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "Material: troncos",
   "IGUI_MBLD_Material_other": "Material: otros",
   "IGUI_MBLD_Material_Tip": "Muestra solo los objetos cuyo costo incluye este material, lo tengas o no. Los herrajes como clavos y tornillos no cuentan.",
-  "IGUI_MBLD_Empty_Material": "Nada aquí usa este material. Pon el material en Material: todos para verlo todo."
+  "IGUI_MBLD_Empty_Material": "Nada aquí usa este material. Pon el material en Material: todos para verlo todo.",
+  "IGUI_MBLD_Kind_dig": "Sótanos",
+  "IGUI_MBLD_Note_dig": "Coloca la entrada sobre el suelo de la planta baja: abre una escalera de madera hacia abajo y un espacio de 3×2 casillas al pie de la escalera. Luego, desde el nivel de abajo, usa \"Cavar esta casilla\" para cavar hacia fuera (puedes arrastrar una zona). Alrededor de lo cavado se forman paredes de tierra, y cuenta como interior. Una entrada nueva no puede tocar otro sótano; para unirlos, cava con \"Cavar esta casilla\".",
+  "IGUI_MBLD_Dig_EntranceS": "Entrada de sótano (escalera que baja hacia el sur)",
+  "IGUI_MBLD_Dig_EntranceE": "Entrada de sótano (escalera que baja hacia el este)",
+  "IGUI_MBLD_Dig_Cell": "Cavar esta casilla",
+  "IGUI_MBLD_Refund_dig": "Para quitarlo: lo cavado no se puede volver a rellenar. No devuelve materiales.",
+  "IGUI_MBLD_RefundShort_dig": "no se puede rellenar",
+  "IGUI_MBLD_Admin_Ledger_basements": "Sótanos",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building está instalado. Usa ese mod para cavar sótanos.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "Coloca la entrada sobre el suelo de la planta baja; usa \"Cavar esta casilla\" en el nivel de abajo.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "Demasiado cerca de otro sótano o de un espacio subterráneo del mapa. Para unirlos, cava con \"Cavar esta casilla\".",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "Tiene que tocar una casilla ya cavada. Cava hacia fuera desde la zona cavada.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "Un sótano tiene como máximo %1 casillas, y este ya está lleno.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "Hay algo donde se abre la escalera. Despéjalo primero."
 }

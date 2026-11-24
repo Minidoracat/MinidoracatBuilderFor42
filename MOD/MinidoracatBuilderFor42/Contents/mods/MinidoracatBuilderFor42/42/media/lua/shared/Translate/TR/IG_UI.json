@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "Malzeme: kütük",
   "IGUI_MBLD_Material_other": "Malzeme: diğer",
   "IGUI_MBLD_Material_Tip": "Yalnızca maliyetinde bu malzeme olan öğeleri gösterir, sende olsun olmasın. Çivi ve vida gibi hırdavat sayılmaz.",
-  "IGUI_MBLD_Empty_Material": "Burada bu malzemeyi kullanan bir şey yok. Hepsini görmek için malzemeyi Malzeme: hepsi yap."
+  "IGUI_MBLD_Empty_Material": "Burada bu malzemeyi kullanan bir şey yok. Hepsini görmek için malzemeyi Malzeme: hepsi yap.",
+  "IGUI_MBLD_Kind_dig": "Bodrumlar",
+  "IGUI_MBLD_Note_dig": "Girişi zemin kattaki toprağa koy: aşağı inen ahşap bir merdiven ve merdivenin dibinde 3×2 karelik bir alan açar. Sonra alt katta durup \"Bu Kareyi Kaz\" ile dışarı doğru kaz (bir alanı sürükleyebilirsin). Kazılan yerin çevresinde toprak duvarlar oluşur ve iç mekân sayılır. Yeni giriş başka bir bodruma değemez; birleştirmek için \"Bu Kareyi Kaz\" ile kazarak geç.",
+  "IGUI_MBLD_Dig_EntranceS": "Bodrum Girişi (merdiven güneye iner)",
+  "IGUI_MBLD_Dig_EntranceE": "Bodrum Girişi (merdiven doğuya iner)",
+  "IGUI_MBLD_Dig_Cell": "Bu Kareyi Kaz",
+  "IGUI_MBLD_Refund_dig": "Kaldırma: kazılan yer geri doldurulamaz. Malzeme geri gelmez.",
+  "IGUI_MBLD_RefundShort_dig": "geri doldurulamaz",
+  "IGUI_MBLD_Admin_Ledger_basements": "Bodrumlar",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building yüklü. Bodrumları onunla kaz.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "Girişi zemin kattaki toprağa koy; \"Bu Kareyi Kaz\" alt katta kullanılır.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "Başka bir bodruma ya da haritadaki bir yeraltı alanına çok yakın. Birleştirmek için \"Bu Kareyi Kaz\" ile kazarak geç.",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "Zaten kazılmış bir kareye değmeli. Kazılmış alandan dışarı doğru kaz.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "Bir bodrum en fazla %1 kare olabilir ve bu dolu.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "Merdivenin açıldığı yerde bir şey var. Önce orayı boşalt."
 }

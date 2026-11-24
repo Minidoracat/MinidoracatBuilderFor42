@@ -268,9 +268,9 @@ function Admin.quick(playerNum, field, id)
     return true
 end
 
--- ===== 伺服器紀錄：四本帳本的筆數、檔數、大小（伺服器指令 ledgers，Server.ledgers；伺服器只限速、不查權限） =====
+-- ===== 伺服器紀錄：五本帳本的筆數、檔數、大小（伺服器指令 ledgers，Server.ledgers；伺服器只限速、不查權限） =====
 
-Admin.LEDGERS = { "floors", "overlays", "ledger", "circuits" } -- 認得的 id；名稱 IGUI_MBLD_Admin_Ledger_<id>
+Admin.LEDGERS = { "floors", "overlays", "ledger", "circuits", "basements" } -- 認得的 id；名稱 IGUI_MBLD_Admin_Ledger_<id>
 Admin.LEDGER_GAP_MS, Admin.LEDGER_WAIT_MS = 3000, 5000
 -- asked＝上次向伺服器要的時間；rows＝收到的那份組好的行（nil＝這次還沒收到）
 Admin.ledger = Admin.ledger or { asked = nil, rows = nil }

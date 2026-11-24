@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "材料：丸太",
   "IGUI_MBLD_Material_other": "材料：その他",
   "IGUI_MBLD_Material_Tip": "コストにこの材料を使う項目だけを表示します。持っているかどうかは関係ありません。釘やネジなどの金具は数えません。",
-  "IGUI_MBLD_Empty_Material": "ここにはこの材料を使う項目がありません。材料を「材料：すべて」にするとすべて表示されます。"
+  "IGUI_MBLD_Empty_Material": "ここにはこの材料を使う項目がありません。材料を「材料：すべて」にするとすべて表示されます。",
+  "IGUI_MBLD_Kind_dig": "地下室",
+  "IGUI_MBLD_Note_dig": "入口は 1 階の地面に置きます。下りの木の階段と、階段の先に 3×2 タイルの空間が開きます。そのあと地下 1 階に立って「このタイルを掘る」で外へ掘り広げます（ドラッグで範囲指定もできます）。掘った場所の周りには土の壁ができ、屋内扱いになります。新しい入口は別の地下室に接して置けません。つなげるときは「このタイルを掘る」で掘り進めてください。",
+  "IGUI_MBLD_Dig_EntranceS": "地下室の入口（階段は南へ下る）",
+  "IGUI_MBLD_Dig_EntranceE": "地下室の入口（階段は東へ下る）",
+  "IGUI_MBLD_Dig_Cell": "このタイルを掘る",
+  "IGUI_MBLD_Refund_dig": "撤去：掘った場所は埋め戻せません。材料は戻りません。",
+  "IGUI_MBLD_RefundShort_dig": "埋め戻せません",
+  "IGUI_MBLD_Admin_Ledger_basements": "地下室",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building が入っています。地下室はそちらで掘ってください。",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "入口は 1 階の地面に置きます。「このタイルを掘る」は地下 1 階で使います。",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "別の地下室か、マップにもともとある地下空間に近すぎます。つなげるときは「このタイルを掘る」で掘り進めてください。",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "掘ってあるタイルに接している必要があります。掘った場所から外へ掘ってください。",
+  "IGUI_MBLD_Refuse_DIG_FULL": "地下室は 1 つにつき最大 %1 タイルで、ここは上限に達しています。",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "階段の穴を開ける場所に物があります。先に片付けてください。"
 }

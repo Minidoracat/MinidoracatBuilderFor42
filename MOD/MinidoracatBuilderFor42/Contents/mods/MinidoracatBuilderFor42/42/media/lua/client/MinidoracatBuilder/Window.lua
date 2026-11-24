@@ -54,7 +54,7 @@ W.TAB_KINDS = {
     wall = { "wall", "fence", "post", "wallOverlay" },
     doorWindow = { "door", "window", "doorFrame", "windowFrame", "windowObject", "curtain" },
     roof = { "roof" },
-    stairs = { "stairs", "ramp" },
+    stairs = { "stairs", "ramp", "dig" },
     furniture = { "furniture", "container", "solid", "well" },
     light = { "light" },
     decor = { "wallObject", "attached", "overlay", "plant" },
@@ -854,6 +854,12 @@ local function texOf(v, name)
         local tex
         if r then
             tex = Recipes.icon(r) -- 原版建造視窗的圖示
+        elseif B.Rules.DIG[name] then -- 挖地下室：圖是借來的（看不見的格子、BD 的圖），改畫挖一格的泥土地板、入口的樓梯底片
+            local spr = Entry.sprite(name)
+            local cells = spr and Entry.cells(spr)
+            local part = cells and (cells[3] or cells[1])[4]
+            tex = part and getTexture(part:getName())
+            if tex then tex = tex:splitIcon() end
         else
             tex = getTexture(name) -- 世界圖塊的貼圖；splitIcon 裁掉透明邊，引擎自己快取（Texture.java:1193-1215）
             if tex then tex = tex:splitIcon() end
@@ -1636,8 +1642,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     end
     -- 拆除方式放在材料前面：只能砸、不退料的照樣能蓋，不捲動就要看得到（設計稿 DD:596-606）
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
-    if refund == "none" then
-        y = warnLines(v, ops, getText("IGUI_MBLD_Refund_none"), y, dw)
+    if refund == "none" then -- 挖掉的地不能填回，另寫一句（砸也砸不回去）
+        y = warnLines(v, ops, getText(e.kind == "dig" and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Refund_none"), y, dw)
     elseif refund and e.kind ~= "water" then -- 水面不收料、填平是換回原本的地面，種類說明已經寫了
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
@@ -1752,7 +1758,7 @@ local function detailRow(v, ops, e, total, missing, tools)
     -- 只能砸、不退料的在名稱那行右邊標出來（窄版沒有完整詳情）
     local nameW = dw - x
     if Cost.refund and Cost.refund(e.kind, e.spr) == "none" then
-        local s = getText("IGUI_MBLD_RefundShort_none")
+        local s = getText(e.kind == "dig" and "IGUI_MBLD_RefundShort_dig" or "IGUI_MBLD_RefundShort_none")
         add(ops, { t = "textR", s = s, x = dw, y = y, c = c.warning, f = v.font })
         nameW = nameW - getTextManager():MeasureStringX(v.font, s) - GAP
     end

@@ -9,12 +9,14 @@ require "MinidoracatBuilder/Materials"
 require "MinidoracatBuilder/Queue"
 require "MinidoracatBuilder/Turn"
 require "MinidoracatBuilder/Messages"
+require "MinidoracatBuilder/Basement"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local B = MinidoracatBuilder
 local Cursor = B.Cursor or {}
 B.Cursor = Cursor
 local Entry, Check, Materials, Queue, Turn, Messages = B.Entry, B.Check, B.Materials, B.Queue, B.Turn, B.Messages
+local Basement = B.Basement
 
 -- 給其他模組在游標的固定時機插手（規劃模式從自己的檔案設欄位，不改這個檔；不要整張換掉，Class 建立時複製了這張表的參照）。
 -- 欄位都可以是 nil：valid(cursor) 回 true＝沒有一格可蓋也照樣在放開時呼叫 tryBuild，回 false＝這次不能放（地框變紅）；commit(cursor) 在 tryBuild 算完
@@ -49,9 +51,10 @@ end
 local Class, Marks, Panel
 -- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
--- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘
-local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", water = "fill", wall = "ring", fence = "ring",
-    post = "edge" }
+-- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘。挖地下室（plan.md §1.4）只有
+-- 「挖這一格」能拖（Cursor.new 把入口的 canDrag 關掉：入口一次一個錨點，伺服器拒絕多錨點）
+local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", water = "fill", dig = "fill", wall = "ring",
+    fence = "ring", post = "edge" }
 Cursor.DRAG = DRAG
 -- 能換層的種類（換層鍵預設 PgUp／PgDn，可在按鍵設定改；手把 X）：屋頂預設上一層；地板預設這一層，站在下面也能往上一層鋪（使用者 2026-11-09 選）。
 -- 同一排前面可蓋的格子算後面格子的支撐（Cursor.preview 的 planned）；這一項只有屋頂、地板
@@ -73,7 +76,8 @@ local ICON, PAD = 16, 6
 -- 指出某一格的拒絕碼：只標那一格；其他碼整個項目的格子都標
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true,
-    NOT_NATURAL = true, NO_UPPER = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true }
+    NOT_NATURAL = true, NO_UPPER = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true, DIG_ROOM = true,
+    DIG_CLEAR = true }
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 
 -- 從按下那格 (ax, ay) 拉到 (ex, ey) 的一排：同一列或同一欄（取位移大的那一軸），最多 max 格。回 { { x, y, z }, ... }
@@ -234,7 +238,8 @@ function Cursor.preview(player, name, d, anchors, S, ...)
                     Materials.take(work, info.total)
                 end
             end
-            if info and info.entry and LAYERED[info.entry.kind] then
+            -- 挖這一格：同一次前面可挖的格子算已挖（Basement.pre 的 DIG_EDGE 看 planned）
+            if info and info.entry and (LAYERED[info.entry.kind] or info.entry.kind == "dig") then
                 for _, c in ipairs(info.cells) do planned[B.Place.key(c.x, c.y, c.z)] = true end
             end
             -- 預覽提醒（Place.caution：全高窗的框不合、坡頂出口）只提醒不擋：丟錯時照樣可蓋。不放進 Check.item：
@@ -318,6 +323,7 @@ function Cursor.new(player, entry, d, overlap)
     -- 欄位不能叫 mirror：實例查不到欄位時會拿到 Cursor.mirror 這個函式，判斷永遠成立（roof1 實踩）
     o.mirrorName = o.states.n == 1 and Cursor.mirror(entry) or nil
     o.canDrag = DRAG[entry.kind] ~= nil and not o.joypad -- 手把只做單格（使用者 10-29、11-01 裁定）
+        and (entry.kind ~= "dig" or entry.name == Entry.DIG_CELL)
     -- 屋頂預設蓋在上一層：站在下面那層往上蓋。能換層的種類（layerable）都能用 PgUp／PgDn、手把 X 切換（isValid 照它換算）
     o.up = entry.kind == "roof"
     -- 一次送幾格（MaxCellsPerDrag）：拖得更多的放開後分批接著送（Queue.push 照同一個沙盒值切）
@@ -656,6 +662,38 @@ function Cursor.farFirst(list, px, py)
     return out
 end
 
+-- 挖這一格：離已挖區近的先（Basement.pre 要四鄰有已挖、或同一次前面可挖的格子；伺服器也照送出的順序一格一格挖）。
+-- 從貼著已挖格子的那幾格起，照四鄰一圈一圈往外排（廣度優先）；接不上的照原順序放最後（預覽標 DIG_EDGE）
+local DIRS4 = { { 0, -1 }, { -1, 0 }, { 1, 0 }, { 0, 1 } }
+function Cursor.nearFirst(list)
+    local at, out, used = {}, {}, {}
+    for _, a in ipairs(list) do at[B.Place.key(a[1], a[2], a[3])] = a end
+    local function take(a)
+        if used[a] then return end
+        used[a] = true
+        out[#out + 1] = a
+    end
+    for _, a in ipairs(list) do
+        for _, d in ipairs(DIRS4) do
+            if Basement.has(a[1] + d[1], a[2] + d[2], a[3]) then
+                take(a)
+                break
+            end
+        end
+    end
+    local i = 1
+    while i <= #out do
+        local a = out[i]
+        for _, d in ipairs(DIRS4) do
+            local b = at[B.Place.key(a[1] + d[1], a[2] + d[2], a[3])]
+            if b then take(b) end
+        end
+        i = i + 1
+    end
+    for _, a in ipairs(list) do take(a) end
+    return out
+end
+
 -- 這次要預覽的錨點 { x, y, z, d }：不能拖的只有按下那格；拖成一直線照目前朝向；兩邊都 ≥2 格照 DRAG 拉長方形
 -- （圍一圈時每格的 d 照 self.sides）。照目前朝向的格子移 self.dx, self.dy（Turn 的東邊、南邊）。沒有那一面的格子帶
 -- code＝NO_FACE。有 self.max 的（配方拖一排，Recipes.lua）排在上限之後的帶 OVER_MAX（照畫、不送）；圖塊游標不設，
@@ -675,7 +713,11 @@ function Cursor:anchors(ax, ay, az, ex, ey)
     else
         list = Cursor.line(ax, ay, az, ex, ey, DRAW_MAX)
     end
-    if self.entry.kind == "water" then list = Cursor.farFirst(list, self.character:getX(), self.character:getY()) end
+    if self.entry.kind == "water" then
+        list = Cursor.farFirst(list, self.character:getX(), self.character:getY())
+    elseif self.entry.kind == "dig" then
+        list = Cursor.nearFirst(list)
+    end
     for i, a in ipairs(list) do
         if a.side then
             a[4] = self.sides[a.side]
@@ -697,6 +739,19 @@ function Cursor:anchors(ax, ay, az, ex, ey)
     return list
 end
 
+-- 虛影畫哪一張：地下室入口的洞（圖是看不見的 Entry.DIG_CELL）畫正下方那片樓梯；地下一層的樓梯三片不畫（nil，只畫地框）
+local DIG_STAIR = { top = true, mid = true, bottom = true }
+local function partSprite(offs, o, x, y)
+    if o[5] == "hole" then
+        for _, s in ipairs(offs) do
+            if s[1] == o[1] and s[2] == o[2] and s[3] == o[3] - 1 then return s[4] end
+        end
+    elseif DIG_STAIR[o[5]] and o[3] < 0 then
+        return nil
+    end
+    return Entry.alternate(o[4], x, y)
+end
+
 -- 重算預覽與要畫的東西（只在 isValid 判斷有變時）。每格攤平成陣列，render 只照陣列畫。
 -- ponytail：拖曳時每換一格整片重算（最多 DRAW_MAX 次 Check.item）；量到卡頓再改成只算新增的格子。
 function Cursor:refresh(ax, ay, az, ex, ey)
@@ -713,9 +768,10 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         -- 替換格（契約 C7）：黃色虛影與地框＋替換記號，不只靠顏色
         local swap = code == nil and r.info ~= nil and r.info.replace ~= nil
         if swap then swapN = swapN + 1 end
-        for j, o in ipairs(self:offsFor(a) or NO_OFFS) do
+        local offs = self:offsFor(a) or NO_OFFS
+        for j, o in ipairs(offs) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
-            local spr = Entry.alternate(o[4], x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
+            local spr = partSprite(offs, o, x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
             -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:564-571）。沒算到那一格的畫在地上。
             local c = r.cells and r.cells[j]
@@ -1200,10 +1256,12 @@ function Cursor:tryBuild(x, y, z)
     for _, r in ipairs(self.res) do
         if r.code == nil then
             local a, ps = r.a, {}
-            for j, o in ipairs(self:offsFor(a)) do
+            local offs = self:offsFor(a)
+            for j, o in ipairs(offs) do
                 local c = r.cells and r.cells[j]
                 local x, y = a[1] + o[1], a[2] + o[2]
-                ps[j] = { x, y, a[3] + o[3], Entry.alternate(o[4], x, y), (c and c.yoff or 0) * scale }
+                local spr = partSprite(offs, o, x, y)
+                if spr then ps[#ps + 1] = { x, y, a[3] + o[3], spr, (c and c.yoff or 0) * scale } end
             end
             anchors[#anchors + 1] = { a[1], a[2], a[3], a[4], a[5] } -- a[5]：車庫門的寬度（Client.build 送 w）
             parts[#anchors] = ps

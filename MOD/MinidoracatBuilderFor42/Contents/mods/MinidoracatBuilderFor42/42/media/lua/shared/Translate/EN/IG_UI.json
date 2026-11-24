@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "Material: logs",
   "IGUI_MBLD_Material_other": "Material: other",
   "IGUI_MBLD_Material_Tip": "Show only items whose cost includes this material, whether or not you have it. Hardware such as nails and screws doesn't count.",
-  "IGUI_MBLD_Empty_Material": "Nothing here uses this material. Set the material to Material: all to see everything."
+  "IGUI_MBLD_Empty_Material": "Nothing here uses this material. Set the material to Material: all to see everything.",
+  "IGUI_MBLD_Kind_dig": "Basements",
+  "IGUI_MBLD_Note_dig": "Place the entrance on the ground floor: it opens a wooden staircase down and a 3×2 space beyond the foot of the stairs. Then, standing on the level below, use \"Dig This Tile\" to dig outward (you can drag an area). Dirt walls form around what you dig, and it counts as indoors. A new entrance can't touch another basement; to connect them, dig through with \"Dig This Tile\".",
+  "IGUI_MBLD_Dig_EntranceS": "Basement Entrance (stairs down to the south)",
+  "IGUI_MBLD_Dig_EntranceE": "Basement Entrance (stairs down to the east)",
+  "IGUI_MBLD_Dig_Cell": "Dig This Tile",
+  "IGUI_MBLD_Refund_dig": "Removal: dug ground can't be filled back in. No materials back.",
+  "IGUI_MBLD_RefundShort_dig": "can't be filled back",
+  "IGUI_MBLD_Admin_Ledger_basements": "Basements",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building is installed. Use it to dig basements.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "Place the entrance on the ground floor; use \"Dig This Tile\" on the level below.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "Too close to another basement or an underground space from the map. To connect them, dig through with \"Dig This Tile\".",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "This must touch a tile that's already dug. Dig outward from the dug area.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "A basement can have at most %1 tiles, and this one is full.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "Something is where the stairs open up. Clear it first."
 }

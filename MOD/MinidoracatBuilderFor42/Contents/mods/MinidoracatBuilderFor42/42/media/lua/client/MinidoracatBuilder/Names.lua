@@ -47,7 +47,13 @@ end
 local SWITCH = {}
 for i = 0, 7 do SWITCH["lighting_indoor_01_" .. i] = i end
 
+-- 挖地下室的三個項目：圖是借來的（看不見的格子、BD 的入口圖），原本的名稱不對，照用途叫（完整名與方格短名同一個；
+-- 快取只照名稱記，所以不看 kind）
+local DIG_NAME = { [Entry.DIG_S] = "IGUI_MBLD_Dig_EntranceS", [Entry.DIG_E] = "IGUI_MBLD_Dig_EntranceE",
+    [Entry.DIG_CELL] = "IGUI_MBLD_Dig_Cell" }
+
 local function compose(name, kind, short)
+    if DIG_NAME[name] then return getText(DIG_NAME[name]) end
     local r = Recipes.get(name)
     if r then return r.name end
     local spr = Entry.sprite(name)

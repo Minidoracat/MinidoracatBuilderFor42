@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "Material: Baumstämme",
   "IGUI_MBLD_Material_other": "Material: Sonstiges",
   "IGUI_MBLD_Material_Tip": "Zeigt nur, was dieses Material in den Kosten hat, egal ob du es dabeihast. Kleinteile wie Nägel und Schrauben zählen nicht.",
-  "IGUI_MBLD_Empty_Material": "Hier verwendet nichts dieses Material. Stell das Material auf „Material: alle“, um alles zu sehen."
+  "IGUI_MBLD_Empty_Material": "Hier verwendet nichts dieses Material. Stell das Material auf „Material: alle“, um alles zu sehen.",
+  "IGUI_MBLD_Kind_dig": "Keller",
+  "IGUI_MBLD_Note_dig": "Den Eingang auf den Boden im Erdgeschoss setzen: Er öffnet eine Holztreppe nach unten und hinter dem Treppenende einen Raum von 3×2 Kacheln. Danach unten stehen und mit „Diese Kachel graben“ nach außen graben (Ziehen geht auch). Um das Gegrabene entstehen Erdwände, es zählt als Innenraum. Ein neuer Eingang darf keinen anderen Keller berühren; zum Verbinden mit „Diese Kachel graben“ durchgraben.",
+  "IGUI_MBLD_Dig_EntranceS": "Kellereingang (Treppe nach Süden hinab)",
+  "IGUI_MBLD_Dig_EntranceE": "Kellereingang (Treppe nach Osten hinab)",
+  "IGUI_MBLD_Dig_Cell": "Diese Kachel graben",
+  "IGUI_MBLD_Refund_dig": "Entfernen: Gegrabenes lässt sich nicht wieder zuschütten. Kein Material zurück.",
+  "IGUI_MBLD_RefundShort_dig": "nicht zuschüttbar",
+  "IGUI_MBLD_Admin_Ledger_basements": "Keller",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building ist installiert. Grabe Keller damit.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "Den Eingang auf den Boden im Erdgeschoss setzen; „Diese Kachel graben“ eine Ebene darunter benutzen.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "Zu nah an einem anderen Keller oder einem unterirdischen Raum der Karte. Zum Verbinden mit „Diese Kachel graben“ durchgraben.",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "Muss an eine bereits gegrabene Kachel grenzen. Grabe vom gegrabenen Bereich aus nach außen.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "Ein Keller hat höchstens %1 Kacheln, und dieser ist voll.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "Wo sich die Treppe öffnet, steht etwas. Räum es zuerst weg."
 }

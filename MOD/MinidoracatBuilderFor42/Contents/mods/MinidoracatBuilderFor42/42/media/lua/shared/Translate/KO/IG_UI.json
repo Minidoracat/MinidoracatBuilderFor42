@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "재료: 통나무",
   "IGUI_MBLD_Material_other": "재료: 기타",
   "IGUI_MBLD_Material_Tip": "비용에 이 재료가 들어가는 항목만 표시합니다. 가지고 있는지는 상관없습니다. 못, 나사못 같은 철물은 세지 않습니다.",
-  "IGUI_MBLD_Empty_Material": "여기에는 이 재료를 쓰는 항목이 없습니다. 재료를 '재료: 전체'로 바꾸면 전부 보입니다."
+  "IGUI_MBLD_Empty_Material": "여기에는 이 재료를 쓰는 항목이 없습니다. 재료를 '재료: 전체'로 바꾸면 전부 보입니다.",
+  "IGUI_MBLD_Kind_dig": "지하실",
+  "IGUI_MBLD_Note_dig": "입구는 1층 지면에 놓습니다. 아래로 내려가는 나무 계단과 계단 끝 앞쪽에 3×2칸 공간이 열립니다. 그다음 지하 1층에 서서 \"이 칸 파기\"로 바깥쪽으로 파 나갑니다(드래그로 범위 지정 가능). 판 곳 둘레에는 흙벽이 생기고 실내로 취급됩니다. 새 입구는 다른 지하실에 붙여 놓을 수 없습니다. 연결하려면 \"이 칸 파기\"로 파서 이으세요.",
+  "IGUI_MBLD_Dig_EntranceS": "지하실 입구(계단이 남쪽으로 내려감)",
+  "IGUI_MBLD_Dig_EntranceE": "지하실 입구(계단이 동쪽으로 내려감)",
+  "IGUI_MBLD_Dig_Cell": "이 칸 파기",
+  "IGUI_MBLD_Refund_dig": "철거: 판 곳은 다시 메울 수 없습니다. 재료를 돌려받지 못합니다.",
+  "IGUI_MBLD_RefundShort_dig": "다시 메울 수 없음",
+  "IGUI_MBLD_Admin_Ledger_basements": "지하실",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building이 설치되어 있습니다. 지하실은 그 모드로 파세요.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "입구는 1층 지면에 놓습니다. \"이 칸 파기\"는 지하 1층에서 씁니다.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "다른 지하실이나 지도에 원래 있던 지하 공간과 너무 가깝습니다. 연결하려면 \"이 칸 파기\"로 파서 이으세요.",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "이미 판 칸에 붙어 있어야 합니다. 판 곳에서 바깥쪽으로 파세요.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "지하실 하나는 최대 %1칸이며, 여기는 이미 가득 찼습니다.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "계단 구멍이 날 자리에 무언가 있습니다. 먼저 치우세요."
 }

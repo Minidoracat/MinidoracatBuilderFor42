@@ -877,5 +877,19 @@
   "IGUI_MBLD_Material_log": "Material: toros",
   "IGUI_MBLD_Material_other": "Material: outros",
   "IGUI_MBLD_Material_Tip": "Mostra só os itens cujo custo inclui este material, tendo você ou não. Ferragens como pregos e parafusos não contam.",
-  "IGUI_MBLD_Empty_Material": "Nada aqui usa este material. Mude o material para Material: todos para ver tudo."
+  "IGUI_MBLD_Empty_Material": "Nada aqui usa este material. Mude o material para Material: todos para ver tudo.",
+  "IGUI_MBLD_Kind_dig": "Porões",
+  "IGUI_MBLD_Note_dig": "Coloque a entrada sobre o chão do térreo: ela abre uma escada de madeira para baixo e um espaço de 3×2 quadrados ao pé da escada. Depois, no nível de baixo, use \"Cavar este quadrado\" para cavar para fora (dá para arrastar uma área). Paredes de terra se formam em volta do que foi cavado, e conta como interior. Uma entrada nova não pode encostar em outro porão; para ligá-los, cave com \"Cavar este quadrado\".",
+  "IGUI_MBLD_Dig_EntranceS": "Entrada de porão (escada descendo para o sul)",
+  "IGUI_MBLD_Dig_EntranceE": "Entrada de porão (escada descendo para o leste)",
+  "IGUI_MBLD_Dig_Cell": "Cavar este quadrado",
+  "IGUI_MBLD_Refund_dig": "Remoção: o que foi cavado não pode ser aterrado de volta. Nenhum material de volta.",
+  "IGUI_MBLD_RefundShort_dig": "não dá para aterrar",
+  "IGUI_MBLD_Admin_Ledger_basements": "Porões",
+  "IGUI_MBLD_Refuse_DIG_BD": "Basement Building está instalado. Use esse mod para cavar porões.",
+  "IGUI_MBLD_Refuse_DIG_LEVEL": "Coloque a entrada sobre o chão do térreo; use \"Cavar este quadrado\" no nível de baixo.",
+  "IGUI_MBLD_Refuse_DIG_ROOM": "Perto demais de outro porão ou de um espaço subterrâneo do mapa. Para ligá-los, cave com \"Cavar este quadrado\".",
+  "IGUI_MBLD_Refuse_DIG_EDGE": "Precisa encostar em um quadrado já cavado. Cave para fora a partir da área cavada.",
+  "IGUI_MBLD_Refuse_DIG_FULL": "Um porão tem no máximo %1 quadrados, e este já está cheio.",
+  "IGUI_MBLD_Refuse_DIG_CLEAR": "Há algo onde a escada se abre. Libere o local primeiro."
 }

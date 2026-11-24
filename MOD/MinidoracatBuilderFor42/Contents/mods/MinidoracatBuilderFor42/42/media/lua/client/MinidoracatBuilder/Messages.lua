@@ -2,6 +2,7 @@
 -- 伺服器的語言不是玩家的語言（pz-family-docs pitfalls「伺服器組好的文字是伺服器的語言」）。
 require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Materials"
+require "MinidoracatBuilder/Basement"
 
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Messages = MinidoracatBuilder.Messages or {}
@@ -14,6 +15,9 @@ local Entry, USE = MinidoracatBuilder.Entry, MinidoracatBuilder.Materials.USE
 -- WALK（一格都還沒蓋就停下）、NO_ROOM（第 i 格旁邊沒有空位可站，Client.lua 的 queue）、游標的 OVER_MAX（超過一次拖曳
 -- 最多幾項，extra.max）、NO_FACE（長方形那一邊這款沒有對應的朝向）與 STAND_OUTSIDE（拖一片水面時自己站在範圍裡），
 -- 以及藍圖檢查的 DOOR_WIDE（車庫門比這裡一次能蓋的寬）、COVER（牆面油漆這類不能照圖蓋）、DARK（太暗）。
+-- 挖地下室（Basement.pre）的 DIG_BD（裝了 Basement Building）、DIG_LEVEL（入口不在一樓地面、挖這一格不在地下一層）、
+-- DIG_ROOM（貼著別的地下室或地圖原有的地下空間）、DIG_EDGE（沒貼著已挖的格子）、DIG_FULL（一塊到上限，extra.max）、
+-- DIG_CLEAR（入口開洞的地方有東西）。
 -- 不在表裡的碼退回 IGUI_MBLD_Refuse_Other 並附上碼，玩家回報時看得到。
 Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, RATE_LIMITED = true,
     BAD_REQUEST = true, NO_INTENT = true, UNKNOWN = true, UNSUPPORTED = true, DISABLED = true, BAD_FACE = true,
@@ -21,7 +25,8 @@ Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, R
     OUTSIDE_SAFEHOUSE = true, BLOCKED = true, NO_MATERIAL = true, NO_TOOL = true, INTERNAL = true, WALK = true,
     NO_ROOM = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true, OVER_MAX = true,
     NO_FACE = true, NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true, SKILL = true, SQUARE_FULL = true, NOT_NATURAL = true,
-    NO_UPPER = true, STAND_OUTSIDE = true, DOOR_WIDE = true, COVER = true, DARK = true }
+    NO_UPPER = true, STAND_OUTSIDE = true, DOOR_WIDE = true, COVER = true, DARK = true, DIG_BD = true, DIG_LEVEL = true,
+    DIG_ROOM = true, DIG_EDGE = true, DIG_FULL = true, DIG_CLEAR = true }
 
 -- 耗材鍵（Cost 的 uses）→ 名稱：tag:base:concrete 照標籤收（黏土漿、混凝土的桶子都算），寫通稱；其他是 fullType
 function Messages.useName(key)
@@ -72,6 +77,8 @@ function Messages.refusal(code, ...)
     if code == "NO_TOOL" then return getText(key, Messages.tools(extra and extra.tools)) end
     if code == "TOO_FAR" then return getText(key, tostring(Entry.settings().MaxDistance or 3)) end
     if code == "OVER_MAX" then return getText(key, tostring(extra and extra.max or "")) end
+    -- 一塊地下室的上限：伺服器的拒絕不一定帶 max，退回這台的 Basement.MAX（兩端同一份常數）
+    if code == "DIG_FULL" then return getText(key, tostring(extra and extra.max or MinidoracatBuilder.Basement.MAX)) end
     if code == "SKILL" then -- Check.item 的 { perk, level, have }
         local perk = extra and extra.perk
         return getText(key, perk and getText("IGUI_perks_" .. perk) or "?", tostring(extra and extra.level or ""),

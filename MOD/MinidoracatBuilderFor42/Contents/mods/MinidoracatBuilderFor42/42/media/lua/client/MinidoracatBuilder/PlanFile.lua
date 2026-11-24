@@ -213,7 +213,9 @@ local function parse(nextLine, headOnly)
 
     local plan = Plan.new(name)
     Plan.begin(plan)
-    for _, item in ipairs(items) do Plan.item(plan, item.id, item) end
+    -- 檔案的項目序號 → 藍圖裡的序號。挖地下室的項目不讀（藍圖不認挖掘，地下室方案 §1.4）：那幾片丟掉，片數照檔案驗
+    local map, DIG = {}, B.Rules.DIG
+    for idx, item in ipairs(items) do map[idx] = not DIG[item.id] and Plan.item(plan, item.id, item) or nil end
     local seen, pc = {}, 0
     while f[1] == "p" do
         if n ~= 7 and n ~= 8 then return nil, "FORMAT", ln end
@@ -237,8 +239,10 @@ local function parse(nextLine, headOnly)
         pc = pc + 1
         if pc > count then return nil, "COUNT", ln end
         local ok
-        ok, why = Plan.add(plan, x, y, z, d, o, it, pw)
-        if not ok then return nil, why, ln end
+        if map[it] then
+            ok, why = Plan.add(plan, x, y, z, d, o, map[it], pw)
+            if not ok then return nil, why, ln end
+        end
         seen[it] = (seen[it] or 0) + 1
         if not row() then return stop() end
     end
