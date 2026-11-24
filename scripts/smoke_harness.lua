@@ -2601,7 +2601,8 @@ local function newKinds()
         stM[1], stM[2], stM[3], stS[1], stS[2], stS[3], stI[1], stI[2], stI[3], fireplace, fireplace2, floorUp,
         curtain("cur_01_0", 2120, "E", true), curtain("cur_01_4", 2121, "E"), curtain("cur_01_1", 2122, "W", true),
         curtain("cur_01_5", 2123, "W"), curtain("cur2_01_0", 2124, "E", true), curtain("cur2_01_4", 2125, "E"),
-        curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N") }
+        curtain("curx_01_4", 2126, "E"), curtain("cur_01_2", 2127, "N", true), curtain("cur_01_6", 2128, "N"),
+        sprite("fixtures_escalators_01_48", 2129, { flags = { "solid" } }), sprite("fixtures_escalators_01_52", 2119, { flags = { "solid" } }) }
     for i = 1, 6 do
         list[#list + 1] = stF[i]
         list[#list + 1] = stG[i]
@@ -2882,6 +2883,27 @@ local function newKinds()
     square(54, 55, 0)
     square(54, 56, 0, { owner = "e2e_other" })
     check(cur("cur_01_6", 54, 55) == "SAFEHOUSE", "面向 N 的窗簾：南邊窗框那格是別人的安全屋，擋下（窗簾那格不是）")
+    -- 電梯門（Elevators 認的圖名）：門四周 5 格內有別人的安全屋，預覽與伺服器都擋；6 格外、自己的安全屋照常；同屬性別的圖不查周圍
+    local EP = player({ id = 2106, x = 47.5, y = 56.5 })
+    local function elv(name)
+        return (Check.item(EP, name, 0, { 46, 56, 0 }, { preview = true })), (Check.item(EP, name, 0, { 46, 56, 0 }))
+    end
+    local E, X = "fixtures_escalators_01_48", "fixtures_escalators_01_52"
+    local pFree, sFree = elv(E)
+    square(51, 56, 0, { owner = "someone" })
+    local pIn, sIn = elv(E)
+    local pOther, sOther = elv(X)
+    square(51, 56, 0, { owner = "tester" })
+    local pOwn, sOwn = elv(E)
+    square(51, 56, 0)
+    square(52, 56, 0, { owner = "someone" })
+    local pFar, sFar = elv(E)
+    square(52, 56, 0)
+    check(pFree == nil and sFree == nil and pIn == "SAFEHOUSE" and sIn == "SAFEHOUSE" and pOther == nil and sOther == nil
+        and pOwn == nil and sOwn == nil and pFar == nil and sFar == nil,
+        "電梯門：別人的安全屋在 5 格內預覽與伺服器都 SAFEHOUSE；6 格外、自己的安全屋、不是電梯門的圖照常（"
+        .. table.concat({ tostring(pFree), tostring(sFree), tostring(pIn), tostring(sIn), tostring(pOther), tostring(sOther),
+            tostring(pOwn), tostring(sOwn), tostring(pFar), tostring(sFar) }, "／") .. "）")
     IsoCurtain = { new = function(_, sq, name, north)
         local o = { name = name, north = north, md = {} }
         function o:getModData() return self.md end

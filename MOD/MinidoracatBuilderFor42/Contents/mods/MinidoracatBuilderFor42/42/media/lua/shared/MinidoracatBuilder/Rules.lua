@@ -92,6 +92,13 @@ function Rules.unlistedByName(name)
     return UNLISTED[name] == true
 end
 
+-- Elevators 認的電梯門（3780306632 ELV_Core.lua:31-36 的 ELV.DOORS）：Check.item 不准蓋在別人的安全屋旁邊
+local ELEVATOR_DOOR = { fixtures_escalators_01_48 = true, fixtures_escalators_01_49 = true,
+    fixtures_escalators_01_50 = true, fixtures_escalators_01_51 = true }
+function Rules.elevatorDoor(name)
+    return ELEVATOR_DOOR[name] == true
+end
+
 -- 窗開著、破了、拆了玻璃的三種狀態圖不列。引擎建 IsoWindow 時把關著那張的屬性與型別整份加到這三張
 -- （IsoWindow.java:106-128），所以它們像不像窗，要看這次開服載入過哪些窗：同一份 MOD 兩次開服，目錄差 8 項、
 -- 20 張在窗與附著物之間換（E2E ui-mp 1027f／g），客戶端與伺服器也可能不同。圖塊定義剛載入、還沒載入任何
