@@ -462,6 +462,16 @@ function Plan.copyTo(plan, pieces, to)
     return relocate(plan, pieces, to, true)
 end
 
+-- copyTo 會略過幾片：to[i] 已經有和 pieces[i] 一模一樣的片（只看一份，to 對應 pieces 的順序）
+function Plan.dupes(plan, pieces, to)
+    local n = 0
+    for i, p in ipairs(pieces) do
+        local t = to[i]
+        if t and same(plan, t[1], t[2], t[3], t[4], p.o, p.it, nil) then n = n + 1 end
+    end
+    return n
+end
+
 -- 「全部換成…」：項目編號 it 的片改指到項目 id（src 同 Plan.item，可省略）。換完和別片重複的拿掉。回換了幾片
 function Plan.replace(plan, it, id, ...)
     local to = Plan.item(plan, id, opt(...))

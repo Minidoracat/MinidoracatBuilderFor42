@@ -978,9 +978,18 @@ local function measure(o)
     o.bw, o.bh, o.rx, o.ry = fx1 - fx0 + 1, fy1 - fy0 + 1, nil, nil
 end
 
+-- 拖出來那一列每片的最終位置（preview[i] 對應 sel[i]，第 g 份接在 to[g * #preview + i]）
+local function rowTo(o, reps, sx, sy)
+    local to, n = {}, #o.preview
+    for g = 0, reps - 1 do
+        for i, p in ipairs(o.preview) do to[g * n + i] = { p.x + o.dx + g * sx, p.y + o.dy + g * sy, p.z, p.d } end
+    end
+    return to
+end
+
 -- 複製中按住左鍵拖：沿主軸排成一列。原版按住期間每幀把滑鼠那格傳給 rotateMouse，
 -- 放下的格子停在按下那格 o.square（ISBuildingObject.lua:114-139）。份數先夾到放得下（片數、主軸每邊 64 格），放下時不會整個不做。
--- 片數只算會新增的：沒轉、在原位按下時第 0 份和原片一模一樣，放下時略過（Plan.copyTo），不佔額度
+-- 片數只算會新增的：第 0 份和既有片一模一樣的放下時略過（Plan.copyTo），不佔額度（原位按下，或轉了也不變的無方向地板）
 function PM.dragRow(o, x, y)
     local plan, at = S.plan, o.square
     if o.joypad or not plan or not at or not o.bw or #S.sel == 0 then return end
@@ -993,8 +1002,7 @@ function PM.dragRow(o, x, y)
     else
         reps, sx, sy = 1 + math.floor(math.abs(dy) / o.bh), 0, dy < 0 and -o.bh or o.bh
     end
-    local onSelf = o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0
-    reps = math.min(reps, math.floor((Plan.MAX_PIECES - plan.n) / #S.sel) + (onSelf and 1 or 0))
+    reps = math.min(reps, math.floor((Plan.MAX_PIECES - plan.n + Plan.dupes(plan, S.sel, rowTo(o, 1, 0, 0))) / #S.sel))
     local x0, y0, _, x1, y1 = Plan.bounds(plan)
     local lo, hi, a0, a1, step = x0, x1, o.px0 + o.dx, o.px1 + o.dx, sx
     if sx == 0 then lo, hi, a0, a1, step = y0, y1, o.py0 + o.dy, o.py1 + o.dy, sy end
@@ -1083,12 +1091,8 @@ function PM.dragDrop(o, x, y, z)
     PM.dragMoved(o, x, y, z)
     endDrag(o)
     if o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0 and reps == 1 then return fire() end
-    -- 照預覽的最終位置一次做完（preview[i] 對應 sel[i]，第 g 份接在 to[g * #preview + i]）：搬（或複製）和轉、
-    -- 拖出來的每一份算同一步，上一步一次拿掉；上限與重複都照最終位置算
-    local to, n = {}, #o.preview
-    for g = 0, reps - 1 do
-        for i, p in ipairs(o.preview) do to[g * n + i] = { p.x + o.dx + g * sx, p.y + o.dy + g * sy, p.z, p.d } end
-    end
+    -- 照預覽的最終位置一次做完：搬（或複製）和轉、拖出來的每一份算同一步，上一步一次拿掉；上限與重複都照最終位置算
+    local to = rowTo(o, reps, sx, sy)
     local res, why
     if o.kind == "copy" then
         res, why = Plan.copyTo(S.plan, S.sel, to)
@@ -1096,7 +1100,8 @@ function PM.dragDrop(o, x, y, z)
         res, why = Plan.moveTo(S.plan, S.sel, to)
     end
     if not res then say(whyText(why)) end
-    if o.kind == "copy" and res then setSel(res) end
+    -- 全部和既有片重複、一片都沒加時，選取留著原片
+    if o.kind == "copy" and res and #res > 0 then setSel(res) end
     fire()
 end
 

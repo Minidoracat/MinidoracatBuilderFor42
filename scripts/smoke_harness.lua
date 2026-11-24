@@ -16249,6 +16249,42 @@ end)()
         d:tryBuild(56, 56, 0)
         check(plan.n == nRow + 10 and PM.undo() and plan.n == nRow, "G：轉完直接放開：放下 5 份 10 片，和預覽同一組，一步拿掉")
 
+        -- 審查 1124 第 2 輪：額度看第 0 份會不會真的被略過，不看有沒有轉過。有方向的牆轉了就不在原位，照舊計入
+        Plan.MAX_PIECES = plan.n + 2
+        d = press(nil, nil)
+        d:rotateKey(19)
+        d:rotateMouse(57, 56)
+        Plan.MAX_PIECES = keep
+        check((d.reps or 1) == 1, "G：剩 2 片、兩片牆轉了往東拖一格：第 0 份換了方向要新增，夾到 1 份（" .. tostring(d.reps) .. "）")
+        getCell():setDrag(nil, 0)
+        local fx, fy = PM.origin()
+        PM.addCells(0, "pm_floor_01_0", { { 56, 63, 0, 0 } })
+        local nF, fl = plan.n, Plan.at(plan, 56 - fx, 63 - fy, 0)[1]
+        local function pressFloor()
+            PM.selectRect(56, 63, 56, 63)
+            PM.moveSel(true)
+            local f = drags[0]
+            f:isValid(sq(56, 63, 0))
+            f.square, f.isLeftDown = sq(56, 63, 0), true
+            f:rotateKey(19)
+            return f
+        end
+        Plan.MAX_PIECES = nF + 1
+        d = pressFloor()
+        d:rotateMouse(57, 63)
+        local fr = d.reps
+        d.isLeftDown = false
+        d:tryBuild(56, 63, 0)
+        Plan.MAX_PIECES = keep
+        check(fr == 2 and plan.n == nF + 1 and #Plan.at(plan, 57 - fx, 63 - fy, 0) == 1,
+            "G：剩 1 片、無方向地板轉了還疊在原片上，往東拖一格：第 0 份不佔額度，排 2 份、新增 1 片（" .. tostring(fr) .. "）")
+        check(PM.undo() and plan.n == nF, "G：那一片一次上一步拿掉")
+        d = pressFloor()
+        d.isLeftDown = false
+        d:tryBuild(56, 63, 0)
+        check(plan.n == nF and #PM.selected() == 1 and PM.isSelected(fl), "G：轉了也和原片一樣、一片都沒加：選取留著原片")
+        PM.undo()
+
         -- 審查 1124 Codex 第 2 條：間距量實際佔地。三格寬的車庫門（北向沿 +x、西向沿 −y，Entry.groupCells）緊貼著拖不重疊
         local E = B.Entry
         local resolve0, face0, doorSet0 = E.resolve, E.face, E.doorSet
