@@ -25830,6 +25830,55 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
 
     BM.reset({}, A, A)
     isClient, BM.grow, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
+
+    -- F7 挖這一格的站位：只站四個正交鄰格裡已挖的（伺服器 Check.item 照同一條驗，不符回 UNREACHABLE）；斜角、沒挖的不站；
+    -- 已經站在已挖的鄰格就不走；沒有這種鄰格不原地挖（記 noRoom）；排第 2 格起的站位要等前一格進了地下室集合
+    local TX, TY = 90500, 90500
+    local keepQ, keepWalk = ISTimedActionQueue, ISWalkToTimedAction
+    local q7 = {}
+    ISTimedActionQueue = { add = function(a) q7[#q7 + 1] = a end }
+    ISWalkToTimedAction = { new = function(_, _, sq) return { walk = sq } end }
+    local made = {}
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local k = (TX + dx) .. "," .. (TY + dy) .. ",-1"
+            squares[k] = square(TX + dx, TY + dy, -1, { flags = { solidfloor = true } })
+            made[#made + 1] = k
+        end
+    end
+    local function sqAt(x, y) return squares[x .. "," .. y .. ",-1"] end
+    local AT = math.floor(TX / AR)
+    BM.reset({ { TX - 1, TY }, { TX + 1, TY + 1 } }, AT, AT)
+    local P7 = player({ x = TX + 5.5, y = TY + 0.5, z = -1 })
+    local entry7 = Entry.resolve(CELL)
+    local function pend(cells, last)
+        C.pending = { n = 7707, e = CELL, entry = entry7, kind = "dig", cells = cells, player = P7, last = last }
+        return C.pending
+    end
+    pend({ { TX, TY, -1, 0 } }, nil)
+    local s1 = C.stand(7707, 1)
+    local walk1 = #q7 == 1 and q7[1].walk == sqAt(TX - 1, TY)
+    q7 = {}
+    local here = player({ x = TX - 0.5, y = TY + 0.5, z = -1, here = sqAt(TX - 1, TY) })
+    C.pending.player = here
+    local s2 = C.stand(7707, 1)
+    local stay = s2 == true and #q7 == 0
+    BM.reset({ { TX + 1, TY + 1 } }, AT, AT)
+    local b3 = pend({ { TX, TY, -1, 0 } }, nil)
+    b3.player = player({ x = TX + 1.5, y = TY + 0.5, z = -1 })
+    local s3 = C.stand(7707, 1)
+    local none = s3 == false and b3.noRoom == 1 and #q7 == 0
+    pend({ { TX, TY - 1, -1, 0 }, { TX, TY, -1, 0 } }, 1)
+    local notYet = C.standReady(7707, 2) == false
+    BM.add({ { TX, TY - 1 } })
+    local ready = C.standReady(7707, 2) == true
+    check(s1 == true and walk1 and stay and none and notYet and ready,
+        "F7 挖這一格的站位：只走到已挖的正交鄰格（斜角、沒挖的不站）；站在已挖鄰格上不走；沒有就不原地挖、記 noRoom；"
+        .. "第 2 格起等前一格進了地下室集合才找站位")
+    C.pending = nil
+    for _, k in ipairs(made) do squares[k] = nil end
+    BM.reset({}, AT, AT)
+    ISTimedActionQueue, ISWalkToTimedAction = keepQ, keepWalk
     sb.KindDig = keepDig
     spriteMap, spriteOrder = keepMap, keepOrder
 end)()

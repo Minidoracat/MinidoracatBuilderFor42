@@ -78,8 +78,8 @@ local function walkNear(player, kind, north, x, y, z, ...)
 end
 
 -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
--- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。挖這一格照格邊種類：站在已挖的那一側（四鄰有地板的格子，
--- standBeside；隔著土牆動手，plan.md §1.4），沒挖的鄰格沒有地板站不了
+-- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。挖這一格照格邊種類：站在已挖的那一側（四個正交鄰格裡
+-- 已挖的，standBeside；隔著土牆動手，plan.md §1.4），沒挖的鄰格沒有地板站不了
 local standBeside
 local function walkTo(player, kind, spr, c)
     if Entry.EDGE[kind] then return walkNear(player, kind, Entry.north(kind, spr), c[1], c[2], c[3]) end
@@ -188,7 +188,8 @@ end
 
 -- 站位動作（MinidoracatBuilderStandAction）開始前：地板、屋頂要等前一格回了 placed（b.last）；前一格建造動作的 perform
 -- 當場就開始下一個動作，complete（真正蓋）在後（IsoGameCharacter 的動作迴圈）。地板還要等前一格的地板出現在客戶端
--- （站位靠它；多人要等同步）。其他種類不靠前一格、請求換掉了都不等
+-- （站位靠它；多人要等同步）；挖這一格還要等前一格進了客戶端的地下室集合（standBeside 只站已挖的格子；多人靠 dug）。
+-- 其他種類不靠前一格、請求換掉了都不等
 function Client.standReady(n, i)
     local b = Client.pending
     if not (b and b.n == n) or not DEFER[b.kind] then return true end
@@ -196,17 +197,21 @@ function Client.standReady(n, i)
     if b.kind ~= "floor" and b.kind ~= "dig" then return true end
     local p = b.cells[i - 1]
     local sq = p and getCell():getGridSquare(p[1], p[2], p[3])
-    return sq ~= nil and sq:has(IsoFlagType.solidfloor)
+    if not (sq ~= nil and sq:has(IsoFlagType.solidfloor)) then return false end
+    return b.e ~= Entry.DIG_CELL or MinidoracatBuilder.Basement.has(p[1], p[2], p[3])
 end
 
 -- 樓上往外還沒蓋的那一格沒有格子（walkNear 回 nil；2026-11-24 實機）：站到它四周已有、能站的格子（通常是剛蓋好的前一格），
--- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）。orth＝只看四個正交鄰格
-standBeside = function(player, x, y, z, orth)
+-- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）。
+-- dug＝挖這一格：只看四個正交、已挖（Basement.has）的鄰格；伺服器 Check.item 照同一條驗站的位置，不符回 UNREACHABLE
+standBeside = function(player, x, y, z, dug)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local cell, here, best, far = getCell(), player:getCurrentSquare(), nil, math.huge
+    local BM = MinidoracatBuilder.Basement
     for dy = -1, 1 do
         for dx = -1, 1 do
-            local sq = (dx ~= 0 or dy ~= 0) and (not orth or dx == 0 or dy == 0) and cell:getGridSquare(x + dx, y + dy, z)
+            local ok = (dx ~= 0 or dy ~= 0) and (not dug or (dx == 0 or dy == 0) and BM.has(x + dx, y + dy, z))
+            local sq = ok and cell:getGridSquare(x + dx, y + dy, z)
             if sq and sq == here then return true end
             if sq and sq:isFree(false) then
                 local d = math.abs(x + dx + 0.5 - player:getX()) + math.abs(y + dy + 0.5 - player:getY())
@@ -220,7 +225,8 @@ standBeside = function(player, x, y, z, orth)
 end
 
 -- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
--- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。都不行時記 noRoom、回 false
+-- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。挖這一格不原地挖：伺服器要站在已挖的鄰格（回 UNREACHABLE）。
+-- 都不行時記 noRoom、回 false
 function Client.stand(n, i)
     local b = Client.pending
     if not (b and b.n == n) then return false end
@@ -228,7 +234,9 @@ function Client.stand(n, i)
     local r = walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
     if r == nil then r = standBeside(b.player, c[1], c[2], c[3], false) end
     if r then return true end
-    if Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then return true end
+    if b.e ~= Entry.DIG_CELL and Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then
+        return true
+    end
     print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped at " .. i)
     b.noRoom = i
     return false
