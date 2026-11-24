@@ -15668,7 +15668,8 @@ end)()
     local M = { getY = function(s) return s.y end, setY = function(s, y) s.y = y end, getX = function() return 0 end,
         contentTop = function() return 24 end, setEnabled = function(s, on) s.enabled = on end,
         addChild = function(s, c) s.kids[#s.kids + 1] = c end, setHeight = function(s, h) s.h = h end,
-        getHeight = function(s) return s.h end, getText = function(s) return s.text end, setText = function(s, t) s.text = t end }
+        getHeight = function(s) return s.h end, getText = function(s) return s.text end, setText = function(s, t) s.text = t end,
+        contentWidth = function(s) return s.width - 12 end }
     local function fake(o)
         o.kids = {}
         return setmetatable(o, { __index = function(_, k) return M[k] or function() end end })
@@ -15682,7 +15683,8 @@ end)()
             return boxes[#boxes]
         end },
         TextField = { new = function(o) return fake({ o = o, y = o.y, text = o.text }) end },
-        Button = { new = function(o) return fake({ width = o.width or 60, y = o.y }) end } }
+        Button = { new = function(o) return fake({ width = o.width or 60, y = o.y }) end },
+        ScrollPanel = { new = function(o) return fake({ x = o.x, y = o.y, width = o.width, h = o.height }) end } }
     local realUI = { B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight }
     B.Window, UIFont, ISPanel = { ui = function() return fw end }, { Small = 0 }, { new = function() return fake({}) end }
@@ -15699,9 +15701,19 @@ end)()
     local one = Cap.scan(700, 700, 701, 701, 0)
     one.res.pieces[1], one.res.n = { id = "pcf_01_0", x = 700, y = 700, z = 1, d = 0 }, 1
     local shownOne = Cap.show(0, Cap.build(one, "one"), 2, 2, "one")
-    check(shown and nBox == 4 and boxes[1].y > 24 and n1 == 12 and en1 == true and sum1 >= 1 and pnl.out.plan.n == 0
+    check(shown and nBox == 4 and boxes[1].y > 0 and n1 == 12 and en1 == true and sum1 >= 1 and pnl.out.plan.n == 0
         and pnl.saveBtn.enabled == false and shownOne and #boxes == nBox,
         "結果框勾層：四層有東西列 4 個勾選框；取消第 1 層剩 12 片、存檔鈕可按；全不勾 0 片、存檔鈕停用；只有一層有東西時不列勾選框")
+    -- 結果框在視窗座標由上而下：摘要捲動區、名稱、名稱欄、按鈕，互不重疊、都在視窗裡、視窗不超過上限；
+    -- 回 ok、捲動區放得下整段摘要（不用捲）、說明
+    local function capLayout(p, maxH)
+        local h, fy, by, box = p.win:getHeight(), p.field:getY(), p.saveBtn:getY(), p.box
+        local sumEnd = p.sum[#p.sum].y + 16
+        local ok = fy + 26 <= by and by + 26 <= h and h <= maxH and box ~= nil and box:getY() >= 24
+            and box:getY() + box:getHeight() <= p.foot:getY() and p.foot:getY() + p.nameH <= fy and p.body:getHeight() >= sumEnd
+        return ok, box ~= nil and box:getHeight() >= sumEnd, "捲動區 " .. (box and box:getY() .. "+" .. box:getHeight() or "無")
+            .. "／摘要 " .. sumEnd .. "，名稱欄 " .. fy .. "，按鈕 " .. by .. "，高 " .. tostring(h)
+    end
     -- 超過 4,096 片、全勾時沒有不收的：取消第 1 層後多出「不收」與「原點在框外」兩行，不能壓到名稱那一行
     -- （植入：版面只照全勾時排，多出的那行疊在名稱上）
     local ov = Cap.scan(600, 600, 663, 663, 0)
@@ -15711,9 +15723,9 @@ end)()
     local op, ob = Cap.panel, boxes[nb + 1]
     local ovSum = #op.sum
     ob.o.onChange(ob.o.target, false)
-    local ovLast, ovName = op.sum[#op.sum].y + 16, op.field:getY() - (ob.y - ob.o.y) - 16
-    check(ovSum == 2 and #op.sum == 3 and ovLast <= ovName,
-        "結果框勾層：超過上限又沒有不收的，取消第 1 層多出的不收兩行不壓到名稱那一行（" .. ovLast .. " ≤ " .. ovName .. "）")
+    local ovOk, ovFits, ovWhy = capLayout(op, 1040)
+    check(ovSum == 2 and #op.sum == 3 and ovOk and ovFits,
+        "結果框勾層：超過上限又沒有不收的，取消第 1 層多出的不收兩行不壓到名稱那一行（" .. ovWhy .. "）")
     -- 勾少後警告也會變多（二樓也超過上限、最先收進的是一扇超過寬度上限的車庫門和一片原點在框外的）：名稱、名稱欄、按鈕
     -- 跟著往下排、視窗變高，名稱欄還是同一個、打好的名稱還在（植入：只照全勾時排、或只先留兩行，多的行疊在名稱上）
     local wv = Cap.scan(600, 600, 663, 663, 0)
@@ -15732,13 +15744,23 @@ end)()
     local wField, wSum, wH = wp.field, #wp.sum, wp.win:getHeight()
     wField:setText("我的房子")
     wb.o.onChange(wb.o.target, false)
-    local wTop = wb.y - wb.o.y
-    local wLast, wName = wp.sum[#wp.sum].y + 16, wp.field:getY() - wTop - 16
-    local wBtn = wp.saveBtn:getY()
-    check(wSum == 2 and #wp.sum == 5 and wp.out.wide == 1 and wLast <= wName and wp.field == wField
-        and wField:getText() == "我的房子" and wp.win:getHeight() > wH and wBtn >= wp.field:getY() + 26,
+    local wOk, wFits, wWhy = capLayout(wp, 1040)
+    check(wSum == 2 and #wp.sum == 5 and wp.out.wide == 1 and wOk and wFits and wp.field == wField
+        and wField:getText() == "我的房子" and wp.win:getHeight() > wH,
         "結果框勾層：勾少後多出上限、車庫門、不收、框外的行，名稱、名稱欄、按鈕往下排、視窗變高，打好的名稱還在（"
-        .. wLast .. " ≤ " .. wName .. "，高 " .. tostring(wH) .. "→" .. tostring(wp.win:getHeight()) .. "）")
+        .. wWhy .. "，原本高 " .. tostring(wH) .. "）")
+    -- 960x540 分割成上下兩半（一人 270 高）：放不下時摘要區捲動，名稱欄與按鈕一直在視窗裡、不重疊
+    -- （植入：只把視窗夾在上限、內容不捲，按鈕蓋住名稱欄）
+    getPlayerScreenWidth, getPlayerScreenHeight = function() return 960 end, function() return 270 end
+    local sb0 = #boxes
+    Cap.show(0, Cap.build(wv, "sv"), 64, 64, "sv")
+    local sp, sb = Cap.panel, boxes[sb0 + 1]
+    sp.field:setText("我的房子")
+    local sOk0 = capLayout(sp, 230)
+    sb.o.onChange(sb.o.target, false)
+    local sOk, sFits, sWhy = capLayout(sp, 230)
+    check(sOk0 and sOk and not sFits and sp.field:getText() == "我的房子",
+        "結果框勾層：半個 960x540 畫面放不下時摘要區捲動，名稱、名稱欄、按鈕都在視窗裡不重疊，名稱還在（" .. sWhy .. "）")
     Cap.panel = nil
     B.Window, UIFont, getTextManager, ISPanel, getPlayerScreenLeft, getPlayerScreenTop, getPlayerScreenWidth,
         getPlayerScreenHeight = realUI[1], realUI[2], realUI[3], realUI[4], realUI[5], realUI[6], realUI[7], realUI[8]

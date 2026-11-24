@@ -299,17 +299,19 @@ local function summary(p)
     return rows, y
 end
 
--- 摘要以下照摘要的結束位置排：名稱、名稱欄、按鈕，視窗跟著變高或變矮（勾少時原本超過上限沒收的片會真的去收，警告與不收
--- 的行可能變多）。名稱欄只挪位置，打好的名稱與焦點都留著；回視窗高度
+-- 照摘要的結束位置排：摘要捲動區、名稱、名稱欄、按鈕，視窗跟著變高或變矮（勾少時原本超過上限沒收的片會真的去收，警告與
+-- 不收的行可能變多）。放不下時（分割畫面、大字、小解析度）摘要區改成捲動，名稱欄與按鈕一直在視窗裡；名稱欄只挪位置，
+-- 打好的名稱與焦點都留著。回視窗高度
 local function place(p)
     local y
     p.sum, y = summary(p)
-    p.name = {}
-    y = para(p, p.name, y + GAP, getText("IGUI_MBLD_Cap_Name"), p.c.text)
-    p.field:setY(p.top + y)
-    y = y + p.fieldH + GAP
     p.body:setHeight(y)
-    local h = math.min(p.maxH, p.top + y + p.btnH + PAD)
+    local below = GAP + p.nameH + p.fieldH + GAP + p.btnH + PAD
+    local view = math.max(p.fh, math.min(y, p.maxH - p.top - below))
+    local h = p.top + view + below
+    p.box:setHeight(view)
+    p.foot:setY(p.top + view + GAP)
+    p.field:setY(p.top + view + GAP + p.nameH)
     p.win:setHeight(h)
     p.saveBtn:setY(h - PAD - p.btnH)
     p.cancel:setY(h - PAD - p.btnH)
@@ -355,9 +357,11 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     local sx, sy = getPlayerScreenLeft(playerNum), getPlayerScreenTop(playerNum)
     local sw, sh = getPlayerScreenWidth(playerNum), getPlayerScreenHeight(playerNum)
     local w = math.min(sw - 40, math.floor(380 * s))
-    local innerW = w - 2 * PAD
+    -- 開頭、勾選框、摘要放在捲動區（右邊留捲軸槽），名稱與名稱欄、按鈕排在它下面
+    local box = UI.ScrollPanel.new({ x = 0, y = 0, width = w, height = fh, theme = theme })
+    local innerW = box:contentWidth() - PAD
     local self = setmetatable({ UI = UI, playerNum = playerNum, out = out, fallback = fallback, c = c, font = font, fh = fh,
-        innerW = innerW, on = {} }, Panel)
+        innerW = innerW, box = box, on = {} }, Panel)
     local rows = {}
     local y = para(self, rows, 0, getText("IGUI_MBLD_Cap_Intro", tostring(cw), tostring(ch), tostring(Capture.LEVELS)),
         c.textMuted) + GAP
@@ -386,6 +390,8 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     if #boxes > 0 then y = y + GAP end
     self.sumY = y
     self.fieldH, self.btnH, self.maxH, self.bottom = fh + 10, fh + 10, sh - 40, sy + sh - 20
+    self.name = {}
+    self.nameH = para(self, self.name, 0, getText("IGUI_MBLD_Cap_Name"), c.text)
     local saveTitle = getText("IGUI_MBLD_Cap_Save")
     local saveW = tm:MeasureStringX(font, saveTitle) + 20
     local win = UI.Window.new({ x = 0, y = 0, width = w, height = 100, title = getText("IGUI_MBLD_Cap_Title"),
@@ -399,22 +405,26 @@ function Panel.new(UI, playerNum, out, cw, ch, fallback)
     local top = win:contentTop() + GAP
     self.top = top
     win:setX(sx + math.floor((sw - w) / 2))
-    local body = ISPanel:new(0, top, w, 100) -- 先加：畫在勾選框底下
+    box:setY(top)
+    win:addChild(box)
+    local body = ISPanel:new(0, 0, box:contentWidth(), 100) -- 先加：畫在勾選框底下；不蓋到捲軸槽（滑鼠先問子元件）
     body:initialise()
     body.background = false
     body.render = function(el)
         draw(el, rows, font)
         draw(el, self.sum, font)
-        draw(el, self.name, font)
     end
     self.body = body
-    win:addChild(body)
+    box:addChild(body)
     -- 焦點順序照畫面由上而下：各層勾選框、名稱欄、取消、存（框架 Focus 照位置排：方向鍵與手把在控制項之間移動）
-    for _, box in ipairs(boxes) do
-        box:setY(top + box:getY())
-        win:addChild(box)
-    end
-    self.field = UI.TextField.new({ x = PAD, y = top, width = innerW, height = self.fieldH, text = out.plan.name,
+    for _, cb in ipairs(boxes) do box:addChild(cb) end
+    local foot = ISPanel:new(0, top, w, self.nameH)
+    foot:initialise()
+    foot.background = false
+    foot.render = function(el) draw(el, self.name, font) end
+    self.foot = foot
+    win:addChild(foot)
+    self.field = UI.TextField.new({ x = PAD, y = top, width = w - 2 * PAD, height = self.fieldH, text = out.plan.name,
         maxLength = Plan.MAX_NAME, theme = theme, font = font })
     win:addChild(self.field)
     self.saveBtn = UI.Button.new({ x = w - PAD - saveW, y = 0, width = saveW, height = self.btnH, title = saveTitle,
@@ -439,7 +449,7 @@ function Capture.show(playerNum, out, cw, ch, fallback)
         return false
     end
     local W = B.Window
-    local UI = W and W.ui and W.ui({ "window", "controls", "textWrap" })
+    local UI = W and W.ui and W.ui({ "window", "controls", "textWrap", "scrollPanel" })
     if UI == nil then
         Messages.toast(player, getText("IGUI_MBLD_NeedFramework"), getText("IGUI_MBLD_Title"))
         return false
