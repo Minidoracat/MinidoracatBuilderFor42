@@ -23,7 +23,7 @@ local waterFlag, diamondFloor = F.water, F.diamondFloor
 local TYPE = {}
 for _, k in ipairs({ "stairsTW", "stairsMW", "stairsBW", "stairsTN", "stairsMN", "stairsBN" }) do TYPE[T[k]] = "stairs" end
 for _, k in ipairs({ "curtainN", "curtainS", "curtainW", "curtainE" }) do TYPE[T[k]] = "curtain" end
-for _, k in ipairs({ "WestRoofB", "WestRoofM", "WestRoofT" }) do TYPE[T[k]] = "roof" end
+for _, k in ipairs({ "WestRoofB", "WestRoofM", "WestRoofT", "UNUSED9", "UNUSED10", "UNUSED24" }) do TYPE[T[k]] = "roof" end -- UNUSED*：RoofShow 渲染時的替身
 TYPE[T.tree] = "tree"
 TYPE[T.lightswitch] = "light"
 -- 往西爬的樓梯片（W 型：沿 +x 排、平台在 x−1；原版叫 north，ISBuildIsoEntity.lua:18-20）

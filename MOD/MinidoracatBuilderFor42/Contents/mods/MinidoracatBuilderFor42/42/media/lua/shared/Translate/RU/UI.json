@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Показывать кнопку на панели",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Кнопка Build Anything на панели модов Minidoracat. Если она выключена, открывайте окно клавишей из «Назначение клавиш > Minidoracat Build Anything».",
+  "UI_MinidoracatBuilder_ShowRoofs": "Показывать крыши своего этажа при строительстве",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Пока у вас в руках курсор Build Anything, карнизы и крыши веранд на вашем этаже не становятся прозрачными. Только ваш этаж: когда вы внизу, верхние этажи по-прежнему скрыты.",
   "UI_MinidoracatBuilder_Opacity": "Непрозрачность окна",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Непрозрачность фона окна Build Anything. Бледнеет только фон.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

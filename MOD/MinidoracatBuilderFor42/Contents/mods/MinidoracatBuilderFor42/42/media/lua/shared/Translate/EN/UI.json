@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Show toolbar button",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "The Build Anything button on the family toolbar. When it is off, open the window with the key set in Key bindings > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_ShowRoofs": "Show roofs on your level while building",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "While you hold a Build Anything cursor, eaves and porch roofs on your level stay solid instead of fading out. Only your own level: when you stand downstairs, the floors above are still hidden.",
   "UI_MinidoracatBuilder_Opacity": "Window opacity",
   "UI_MinidoracatBuilder_Opacity_tooltip": "How solid the Build Anything window background is. Only the background fades.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

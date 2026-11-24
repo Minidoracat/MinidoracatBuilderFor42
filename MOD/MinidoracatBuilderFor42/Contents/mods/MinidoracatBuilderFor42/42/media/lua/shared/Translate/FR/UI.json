@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Afficher le bouton dans la barre",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Le bouton Build Anything de la barre de la famille de mods. Désactivé, ouvrez la fenêtre avec la touche définie dans Configuration des touches > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_ShowRoofs": "Afficher les toits de votre étage pendant la construction",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Tant que vous tenez un curseur Build Anything, les avant-toits et toits de porche de votre étage ne deviennent plus transparents. Seulement votre étage : quand vous êtes en bas, les étages supérieurs restent masqués.",
   "UI_MinidoracatBuilder_Opacity": "Opacité de la fenêtre",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Opacité du fond de la fenêtre Build Anything. Seul le fond s'estompe.",
   "UI_MinidoracatBuilder_Opacity_100": "100 %%",

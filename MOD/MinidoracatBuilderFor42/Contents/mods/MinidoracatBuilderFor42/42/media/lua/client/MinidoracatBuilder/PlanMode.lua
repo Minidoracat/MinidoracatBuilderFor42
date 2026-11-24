@@ -1153,6 +1153,7 @@ local function dragClass()
         if self.kind ~= "rect" then return getText("IGUI_MBLD_PlanRotate") end
         return nil
     end
+    function Drag:beforeWorldRender() local R = B.RoofShow if R then R.before(self.player) end end
     return Drag
 end
 

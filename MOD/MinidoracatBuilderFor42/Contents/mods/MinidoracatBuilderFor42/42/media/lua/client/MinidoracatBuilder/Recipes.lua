@@ -1170,6 +1170,7 @@ function Recipes.build(pn, id)
     local C = MinidoracatBuilder.Cursor
     local old = Recipes.cursor(pn) or (C and C.get and C.get(pn))
     if old then old.replaced = true end
+    o.beforeWorldRender = C and C.beforeWorldRender -- 建造時顯示同層屋頂（RoofShow）
     getCell():setDrag(o, pn)
     return o
 end

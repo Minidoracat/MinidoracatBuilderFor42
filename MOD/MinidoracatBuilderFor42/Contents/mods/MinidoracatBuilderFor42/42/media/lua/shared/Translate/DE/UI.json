@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Knopf in der Toolbar anzeigen",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Der Build-Anything-Knopf in der Familien-Toolbar. Wenn aus, öffnest du das Fenster mit der Taste unter Tastaturbelegung > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_ShowRoofs": "Dächer deiner Etage beim Bauen zeigen",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Solange du einen Build-Anything-Cursor hältst, werden Vordächer und Verandadächer auf deiner Etage nicht durchsichtig. Nur deine Etage: Stehst du unten, bleiben die oberen Etagen ausgeblendet.",
   "UI_MinidoracatBuilder_Opacity": "Fenster-Deckkraft",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Wie deckend der Hintergrund des Build-Anything-Fensters ist. Nur der Hintergrund wird blasser.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

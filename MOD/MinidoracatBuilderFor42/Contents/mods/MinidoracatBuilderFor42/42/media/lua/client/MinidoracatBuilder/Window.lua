@@ -3641,6 +3641,7 @@ if first then
     if PZAPI and PZAPI.ModOptions then
         local o = PZAPI.ModOptions:create("MinidoracatBuilderFor42", "UI_MinidoracatBuilder_Options")
         o:addTickBox("ShowDock", "UI_MinidoracatBuilder_ShowDock", true, "UI_MinidoracatBuilder_ShowDock_tooltip")
+        o:addTickBox("ShowRoofs", "UI_MinidoracatBuilder_ShowRoofs", false, "UI_MinidoracatBuilder_ShowRoofs_tooltip")
         local op = o:addComboBox("WindowOpacity", "UI_MinidoracatBuilder_Opacity")
         -- addItem 會 getText，getText 對回傳的字做 formatted；字面的 "100%" 格式不合法，引擎印錯誤時又把帶著這個字的訊息
         -- 拿去套格式，例外直接丟出來、整個檔停在這裡，不分開發模式（PZAPI/ModOptions.lua:132；Translator.java:509-531；

@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Pokaż przycisk na pasku narzędzi",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Przycisk Build Anything na wspólnym pasku narzędzi modów Minidoracat. Gdy jest wyłączony, otwieraj okno klawiszem ustawionym w Przypisanie klawiszy > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_ShowRoofs": "Pokazuj dachy na twoim piętrze podczas budowania",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Gdy trzymasz kursor Build Anything, okapy i daszki ganków na twoim piętrze nie stają się przezroczyste. Tylko twoje piętro: gdy stoisz niżej, wyższe piętra nadal są ukryte.",
   "UI_MinidoracatBuilder_Opacity": "Nieprzezroczystość okna",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Nieprzezroczystość tła okna Build Anything. Blednie tylko tło.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "自由建造",
   "UI_MinidoracatBuilder_ShowDock": "顯示工具列按鈕",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "家族工具列上的「建造工坊」按鈕。關掉後仍可用「按鍵綁定 > Minidoracat 自由建造」裡綁的鍵開啟。",
+  "UI_MinidoracatBuilder_ShowRoofs": "建造時顯示同層屋頂",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "拿著建造工坊的游標時，你這一層的屋簷、門廊屋頂不會變透明。只管同一層：站在樓下時，樓上照舊整層隱藏。",
   "UI_MinidoracatBuilder_Opacity": "視窗不透明度",
   "UI_MinidoracatBuilder_Opacity_tooltip": "建造工坊視窗背景的不透明度。只有背景變淡，文字和圖示不變。",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

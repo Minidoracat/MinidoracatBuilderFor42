@@ -21202,6 +21202,85 @@ end)()
     for i = #spriteOrder, 1, -1 do if gone[spriteOrder[i].name] then table.remove(spriteOrder, i) end end
 end)()
 
+-- ===== 建造時顯示同層屋頂（RoofShow） =====
+;(function()
+    print("建造時顯示同層屋頂（RoofShow：游標渲染前換替身、世界畫完換回、選項關著不換；替身照樣分成屋頂）")
+    local B = MinidoracatBuilder
+    require "MinidoracatBuilder/Rules"
+    require "MinidoracatBuilder/RoofShow"
+    local RS, Rules = B.RoofShow, B.Rules
+    local function roof(name, id, t)
+        local o = { type = t } -- 不帶 RoofGroup：分類只能靠型別
+        local s = sprite(name, id, o)
+        function s:setTileType(v) o.type = v end
+        return s
+    end
+    local sB, sM, sT = roof("rs_01_0", 41000, T.WestRoofB), roof("rs_01_1", 41001, T.WestRoofM), roof("rs_01_2", 41002, T.WestRoofT)
+    local flat = roof("rs_01_3", 41003, T.WestRoofB) -- 擺在不是斜屋頂的格子：不掃
+    local stuck = roof("rs_01_4", 41004, T.UNUSED10) -- 上次沒換回的替身：掃到時先換回 WestRoofM
+    local function obj(s) return { getSprite = function() return s end } end
+    local function sq(slope, list)
+        local objs = {}
+        for i, s in ipairs(list) do objs[i] = obj(s) end
+        return { HasSlopedRoof = function() return slope end, getObjects = function() return javaList(objs) end }
+    end
+    local sqs = { ["10,10,1"] = sq(true, { sprite("rs_02_0", 41010, {}), sB, sM }), ["14,12,1"] = sq(true, { sT }),
+        ["11,10,1"] = sq(false, { flat }), ["12,9,0"] = sq(true, { flat }) }
+    local real = { cell = getCell, spec = getSpecificPlayer, clock = getTimestampMs, opts = B.Window and B.Window.options }
+    local px, now, tick = 10, 1000, { v = false, getValue = function(t) return t.v end }
+    local p = { getX = function() return px + 0.5 end, getY = function() return 10.5 end, getZ = function() return 1 end }
+    getCell = function() return { getGridSquare = function(_, x, y, z) return sqs[x .. "," .. y .. "," .. z] end } end
+    getSpecificPlayer = function(pn) return pn == 0 and p or nil end
+    getTimestampMs = function() return now end
+    B.Window = B.Window or {}
+    B.Window.options = { getOption = function(_, id) return id == "ShowRoofs" and tick or nil end }
+    local cur = { player = 0 }
+    local function types() return { sB:getType(), sM:getType(), sT:getType(), flat:getType() } end
+    local function same(a, b) return a[1] == b[1] and a[2] == b[2] and a[3] == b[3] and a[4] == b[4] end
+    local orig = { T.WestRoofB, T.WestRoofM, T.WestRoofT, T.WestRoofB }
+
+    check(type(B.Cursor.beforeWorldRender) == "function", "建造游標掛了 beforeWorldRender（Cursor.lua 的 base 會複製過去）")
+    B.Cursor.beforeWorldRender(cur)
+    check(same(types(), orig), "選項關著：渲染前不換型別")
+
+    tick.v = true
+    B.Cursor.beforeWorldRender(cur)
+    check(same(types(), { T.UNUSED9, T.UNUSED10, T.UNUSED24, T.WestRoofB }),
+        "選項開著：同層斜屋頂格的 WestRoofB/M/T 換成替身，不是斜屋頂的格子、別層不動")
+    check(Rules.classify(sB) == "roof" and Rules.classify(sM) == "roof" and Rules.classify(sT) == "roof"
+        and Rules.typeCode(T.UNUSED9) == "roof" and Rules.typeCode(T.UNUSED10) == "roof" and Rules.typeCode(T.UNUSED24) == "roof",
+        "換成替身的期間（游標 render 在這段裡）屋頂照樣分成屋頂")
+    B.Cursor.beforeWorldRender(cur)
+    check(sB:getType() == T.UNUSED9, "同一幀再叫一次不重複換")
+    -- 不 fire：同一事件上別的模組掛著的處理也會跑；只確認掛上了，再直接叫
+    local function hooked(name)
+        for _, f in ipairs(handlers[name] or {}) do if f == RS.restore then return true end end
+        return false
+    end
+    check(hooked("OnPostRender") and hooked("OnTickEvenPaused"), "換回掛在世界畫完（OnPostRender）與世界更新前（OnTickEvenPaused）")
+    RS.restore()
+    check(same(types(), orig), "換回原型別")
+    check(Rules.classify(sB) == "roof", "換回後照樣是屋頂")
+
+    B.Cursor.beforeWorldRender(cur)
+    check(sM:getType() == T.UNUSED10, "下一幀沿用清單再換")
+    RS.restore()
+    RS.restore()
+    check(same(types(), orig), "連叫兩次換回不出錯、還是原型別")
+
+    sqs["13,10,1"] = sq(true, { stuck })
+    px = 11
+    B.Cursor.beforeWorldRender(cur)
+    check(stuck:getType() == T.UNUSED10, "移動了但未滿重掃間隔：不重掃")
+    RS.restore()
+    now = now + 500
+    B.Cursor.beforeWorldRender(cur)
+    RS.restore()
+    check(stuck:getType() == T.WestRoofM and same(types(), orig), "重掃時認得卡在替身的 sprite、記下原型別，換回後全都是原型別")
+
+    getCell, getSpecificPlayer, getTimestampMs, B.Window.options = real.cell, real.spec, real.clock, real.opts
+end)()
+
 -- ===== 藍圖檢查分幀（PlanPerf） =====
 ;(function()
     print("藍圖檢查分幀（PlanCheck 重排分幀、busy、sweep；Runner 重排中不誤判沒得蓋、坡道一批一片）")

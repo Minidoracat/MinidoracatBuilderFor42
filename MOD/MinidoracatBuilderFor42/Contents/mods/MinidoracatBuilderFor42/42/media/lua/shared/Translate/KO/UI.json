@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "자유 건축",
   "UI_MinidoracatBuilder_ShowDock": "툴바 버튼 표시",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "패밀리 툴바의 자유 건축 버튼입니다. 끄면 키 설정 > Minidoracat 자유 건축에서 지정한 키로 창을 여세요.",
+  "UI_MinidoracatBuilder_ShowRoofs": "건축 중 같은 층 지붕 표시",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "자유 건축 커서를 들고 있는 동안 내가 있는 층의 처마와 현관 지붕이 투명해지지 않습니다. 같은 층만 해당합니다. 아래층에 있으면 위층은 그대로 숨겨집니다.",
   "UI_MinidoracatBuilder_Opacity": "창 불투명도",
   "UI_MinidoracatBuilder_Opacity_tooltip": "자유 건축 창 배경의 불투명도입니다. 배경만 옅어집니다.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",

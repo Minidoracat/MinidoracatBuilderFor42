@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Araç çubuğu düğmesini göster",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "Minidoracat araç çubuğundaki Build Anything düğmesi. Kapalıyken pencereyi Tuş ayarları > Minidoracat Build Anything altında atanan tuşla aç.",
+  "UI_MinidoracatBuilder_ShowRoofs": "İnşa ederken katındaki çatıları göster",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Build Anything imleci elindeyken bulunduğun kattaki saçaklar ve veranda çatıları saydamlaşmaz. Yalnızca kendi katın: aşağıdayken üst katlar yine gizli kalır.",
   "UI_MinidoracatBuilder_Opacity": "Pencere opaklığı",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Build Anything penceresinin arka planının opaklığı. Yalnızca arka plan soluklaşır.",
   "UI_MinidoracatBuilder_Opacity_100": "%%100",

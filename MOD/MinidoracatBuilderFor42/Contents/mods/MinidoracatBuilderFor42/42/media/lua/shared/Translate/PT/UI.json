@@ -10,6 +10,8 @@
   "UI_MinidoracatBuilder_Options": "Build Anything",
   "UI_MinidoracatBuilder_ShowDock": "Mostrar botão na barra de ferramentas",
   "UI_MinidoracatBuilder_ShowDock_tooltip": "O botão do Build Anything na barra de ferramentas da família. Quando desativado, abra a janela com a tecla definida em Atribuição de teclas > Minidoracat Build Anything.",
+  "UI_MinidoracatBuilder_ShowRoofs": "Mostrar telhados do seu andar ao construir",
+  "UI_MinidoracatBuilder_ShowRoofs_tooltip": "Enquanto usa um cursor do Build Anything, os beirais e telhados de alpendre do seu andar não ficam transparentes. Só o seu andar: quando está em baixo, os andares de cima continuam ocultos.",
   "UI_MinidoracatBuilder_Opacity": "Opacidade da janela",
   "UI_MinidoracatBuilder_Opacity_tooltip": "Opacidade do fundo da janela do Build Anything. Só o fundo fica mais transparente.",
   "UI_MinidoracatBuilder_Opacity_100": "100%%",
