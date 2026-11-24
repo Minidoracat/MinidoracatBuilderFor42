@@ -51,14 +51,20 @@ end
 -- 還沒有這個鍵時也是關
 Entry.KIND_OFF = { well = true, water = true, dig = true }
 
--- 這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。s＝Entry.settings()，呼叫端已經拿到的就傳
-function Entry.kindOn(kind, ...)
-    local s = ...
+-- 沙盒把這個種類開著（沙盒沒有這個鍵時當開著，KIND_OFF 的當關）。管理面板畫開關用這支：顯示的是沙盒值
+function Entry.kindSet(kind, s)
     local key = Entry.KIND_KEY[kind]
     if key == nil then return true end
     local v = (s or Entry.settings())[key]
     if Entry.KIND_OFF[kind] then return v == true end
     return v ~= false
+end
+
+-- 這個種類能蓋。s＝Entry.settings()，呼叫端已經拿到的就傳。挖地下室另要土牆的圖塊補丁生效（Basement.patched）：
+-- 沒生效時兩端都照沙盒關掉處理，走同一條拒絕路徑與訊息
+function Entry.kindOn(kind, ...)
+    local s = ...
+    return Entry.kindSet(kind, s) and (kind ~= "dig" or MinidoracatBuilder.Basement.patched())
 end
 
 -- 「a;b;c」→ 集合。只快取上一次的字串：管理員改了才重切。

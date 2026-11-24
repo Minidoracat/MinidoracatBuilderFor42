@@ -5,3 +5,4 @@ poster=poster.png
 require=MinidoracatUIFor42
 modversion=42.22.2-1.3.0
 versionMin=42.21.0
+tiledef=mdcbuilder_basement.patch 5886

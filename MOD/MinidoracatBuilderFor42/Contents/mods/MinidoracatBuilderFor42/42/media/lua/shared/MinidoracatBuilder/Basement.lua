@@ -16,8 +16,9 @@ local LOG = "[MinidoracatBuilderFor42] basement "
 
 Basement.ROOM = "mdcbuilderbasement" -- 房間名：只在 Basement.pre 認「是不是本 MOD 的房間」時用
 Basement.MAX = 400                   -- 一塊最多幾格（＝Circuits.ROOM_MAX）
--- 外邊土牆的圖：判斷「是不是土牆」一律查這張表（使用者可能換成 underground_01_8／9／10，只改這裡）
-Basement.DIRT = { W = "walls_exterior_house_02_96", N = "walls_exterior_house_02_97", NW = "walls_exterior_house_02_98" }
+-- 外邊土牆的圖：判斷「是不是土牆」一律查這張表。原版的土牆圖沒有屬性，牆屬性來自本 MOD 的圖塊補丁檔
+-- media/mdcbuilder_basement.patch.tiles（scripts/gen_basement_tiles.py 寫出，和 Basement Building 的那三格相同）
+Basement.DIRT = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10" }
 Basement.AREA = 256                  -- 同步用的大區邊長
 local Z = -1
 local BIG = 1e15
@@ -149,6 +150,32 @@ function Basement.bd()
     return false
 end
 
+-- 圖塊補丁檔生效了：三張土牆圖都帶它那條邊的牆旗標。沒生效（mod.info 的檔號和別的 MOD 重複時引擎跳過後載入的那個，
+-- ZomboidFileSystem.java:1000-1002）土牆擋不住人，Entry.kindOn 把挖掘當成種類關掉；已經挖好的照常登錄成室內。
+-- 圖塊定義還沒載入（主選單）回 false、不記結果。nil＝還沒查
+local WALL_FLAG = { W = F.WallW, N = F.WallN, NW = F.WallNW }
+function Basement.checkPatch()
+    local named = IsoSpriteManager.instance:getNamedMap()
+    if not named:containsKey(Basement.DIRT.W) then return false end
+    local ok = true
+    for k, name in pairs(Basement.DIRT) do
+        local spr = named:containsKey(name) and named:get(name)
+        if not (spr and spr:getProperties():has(WALL_FLAG[k])) then ok = false end
+    end
+    if not ok and Basement.patchOk ~= false then
+        print(LOG .. "digging is off: the dirt wall tiles have no wall properties because the tile patch "
+            .. "mdcbuilder_basement.patch (tiledef 5886) did not load; another mod may use tiledef file number 5886")
+    end
+    Basement.patchOk = ok
+    return ok
+end
+
+function Basement.patched()
+    if Basement.patchOk == nil then return Basement.checkPatch() end
+    return Basement.patchOk
+end
+Events.OnLoadedTileDefinitions.Add(function() MinidoracatBuilder.Basement.checkPatch() end)
+
 -- 格子 → 不重疊的矩形 { { x, y, w, h }, ... }，照 BD aparosa_BD_Rooms.mergeTiles：由北往南、由西往東，先往東延伸、
 -- 再整條往南延伸。第一個矩形是最北那一列最西的格子＝calculateMetaID 取的角（BuildingDef.java:319-348）。
 -- 不排序（Kahlua 的 table.sort 會溢位）：照列走 y 的範圍。shortcut: 走 y 與每列 x 的整個範圍，格子散得很開時多走空格，
@@ -210,15 +237,25 @@ local function propsOf(name)
     return spr and spr:getProperties() or nil
 end
 
--- 本 MOD 放的土牆：圖在 Basement.DIRT、不是 IsoThumpable（同一張圖的 IsoThumpable 是玩家蓋的牆）。回 "N"／"W"／"NW" 或 nil
+local function covers(kind, k) return kind == k or kind == "NW" end
+
+-- 這格的這條邊貼著集合（邊的兩側有一格在）
+local function mine(x, y, k)
+    local d = EDGE[k]
+    return has(x, y, Z) or has(x + d[1], y + d[2], Z)
+end
+
+-- 本 MOD 放的土牆：圖在 Basement.DIRT、不是 IsoThumpable（同一張圖的 IsoThumpable 是玩家蓋的牆），而且佔的邊有一條貼著集合。
+-- Basement Building 的土牆是同一組圖：邊不貼著本 MOD 格子的是它的，照實牆算（fix 不會拆掉它）。回 "N"／"W"／"NW" 或 nil
 local function dirtOf(o)
     local spr = o:getSprite()
     local k = spr and dirtKind(spr:getName())
-    if k and not instanceof(o, "IsoThumpable") then return k end
+    local sq = k and not instanceof(o, "IsoThumpable") and o:getSquare()
+    if not sq or sq:getZ() ~= Z then return nil end
+    local x, y = sq:getX(), sq:getY()
+    if (covers(k, "N") and mine(x, y, "N")) or (covers(k, "W") and mine(x, y, "W")) then return k end
     return nil
 end
-
-local function covers(kind, k) return kind == k or kind == "NW" end
 
 function Basement.isOuterEdge(x, y, z, k)
     local d = EDGE[k]

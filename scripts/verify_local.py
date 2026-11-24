@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Builder 專屬的靜態檢查：scripts/verify_mod.py 第 19 項會呼叫；單獨跑 `python scripts/verify_local.py`。
-兩項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）。
+三項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）、
+地下室土牆的圖塊補丁檔與 scripts/gen_basement_tiles.py 的輸出相同（check_tiles）。
 
 管理面板規則頁的選項名稱放得下（client/MinidoracatBuilder/Admin.lua 的 Panel:buildRules，字型 UIFont.Small）：
   數字列（SliderRow）標籤寬 floor(cw*0.45)；下拉列 cw - floor(cw*0.45) - GAP；勾選列照 E2E admin-mp 的估計 cw - 28。
@@ -367,6 +368,22 @@ def check_args(rebase):
     return 0
 
 
+TILES_TITLE = "地下室土牆的圖塊補丁檔＝scripts/gen_basement_tiles.py 的輸出"
+
+
+def check_tiles():
+    spec = importlib.util.spec_from_file_location("gen_basement_tiles", os.path.join(REPO, "scripts", "gen_basement_tiles.py"))
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    with open(gen.OUT, "rb") as fh:
+        same = fh.read() == gen.build()
+    if not same:
+        print(f"  FAIL  {TILES_TITLE}\n        改圖塊屬性要改腳本，再跑 python scripts/gen_basement_tiles.py")
+        return 1
+    print(f"  PASS  {TILES_TITLE}")
+    return 0
+
+
 def check_rules():
     if not os.path.isfile(WIDTH):
         print(f"  SKIP  {TITLE} — 找不到 {WIDTH}")
@@ -432,4 +449,4 @@ if __name__ == "__main__":
                 print(where)
         print(f"另有 {sum(1 for h in found if not h[2])} 處是這些檔自己的函式被少傳（沒列）")
         sys.exit(0)
-    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv))
+    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv) | check_tiles())

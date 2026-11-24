@@ -9926,6 +9926,55 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 "登錄時一棟不合法：跳過那一棟、其他照登錄、回 false；下一次補上、沒有重疊")
         end)()
 
+        -- 土牆的圖塊補丁沒生效（三張圖沒有牆屬性）：挖掘照種類關掉處理、log 只印一次、已經挖好的照常登錄
+        ;(function()
+            local p, realPrint, keepOk = H.digger, print, Basement.patchOk
+            local keepMap2, keepOrder2 = spriteMap, spriteOrder
+            local list = {}
+            for _, s in ipairs(spriteOrder) do
+                list[#list + 1] = (s.name == D.W or s.name == D.N or s.name == D.NW) and sprite(s.name, 0) or s
+            end
+            world(list)
+            local logs = 0
+            print = function(msg, ...)
+                if tostring(msg):find("digging is off", 1, true) then logs = logs + 1 end
+                return realPrint(msg, ...)
+            end
+            Basement.patchOk = nil
+            sent = {}
+            Server.intent(p, { n = 41, e = Entry.DIG_CELL, c = { X0 + 2, Y0 + 5, Z, 0 }, v = Entry.digest() })
+            local code = sent[1] and sent[1].cmd == "refused" and sent[1].args.code
+            local why, kind = Entry.why(Entry.DIG_CELL)
+            fire("OnLoadedTileDefinitions", IsoSpriteManager.instance)
+            Server.intent(p, { n = 42, e = Entry.DIG_CELL, c = { X0 + 2, Y0 + 5, Z, 0 }, v = Entry.digest() })
+            local raw = Entry.kindSet("dig", nil)
+            Basement.add({ { 4000, 3800 } })
+            local reg = Basement.registerAll()
+            print = realPrint
+            check(code == "DISABLED" and why == "DISABLED_KIND" and kind == "dig" and logs == 1 and raw == true
+                and reg == true and eng.tile[tk(4000, 3800)] ~= nil,
+                "✗ 土牆的圖塊補丁沒生效：挖這一格回 DISABLED（說明是種類關掉）、log 只印一次、管理面板照沙盒值、"
+                .. "已經挖好的照常登錄（" .. tostring(code) .. " " .. tostring(why) .. " logs=" .. logs .. "）")
+            spriteMap, spriteOrder = keepMap2, keepOrder2
+            Basement.patchOk = nil
+            check(Basement.patched() == true and keepOk ~= false, "補丁生效：三張土牆圖都有牆旗標")
+        end)()
+
+        -- Basement Building 的土牆是同一組圖：邊不貼著本 MOD 格子的是它的，補拆土牆時不拆、照實牆算
+        ;(function()
+            local sq = at(X0 + 2, Y0 + 3)
+            local before = dirtAt(X0 + 2, Y0 + 3)
+            sq.objects[#sq.objects + 1] = obj(sq, D.N)
+            Basement.fixEdges(X0 + 2, Y0 + 3, Z)
+            local mid = dirtAt(X0 + 2, Y0 + 3)
+            local far = at(X0 + 3, Y0 + 5)
+            far.objects[#far.objects + 1] = obj(far, D.NW)
+            Basement.fixEdges(X0 + 3, Y0 + 5, Z)
+            check(before == "W" and mid == "N,W" and dirtAt(X0 + 3, Y0 + 5) == "NW",
+                "✗ 外邊旁的格子上有它的土牆（北邊不貼著集合）：補本 MOD 西邊土牆時不拆它；不貼著集合的格子也不拆（"
+                .. before .. " → " .. mid .. "）")
+        end)()
+
         sb.KindDig, ItemTag.DIG_GRAVE = keepDig, keepTag
         spriteMap, spriteOrder = keepMap, keepOrder
     end)()

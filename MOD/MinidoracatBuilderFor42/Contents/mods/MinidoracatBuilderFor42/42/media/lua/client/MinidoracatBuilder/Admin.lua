@@ -684,7 +684,7 @@ function Panel:reload(...)
     local s, old = Entry.settings(), keep and self.edit
     local b = { kinds = {}, srcOff = parseSet(s.DisabledSources), tsOff = parseSet(s.DisabledTilesets), rules = {},
         rawSrc = s.DisabledSources or "", rawTs = s.DisabledTilesets or "" }
-    for _, k in ipairs(Entry.KINDS or EMPTY) do b.kinds[k] = Entry.kindOn(k, s) ~= false end
+    for _, k in ipairs(Entry.KINDS or EMPTY) do b.kinds[k] = Entry.kindSet(k, s) ~= false end
     for _, r in ipairs(Admin.RULES) do
         local v = s[r.key]
         if v == nil then v = r.default end
@@ -724,7 +724,7 @@ function Panel:stale()
     local s, b = Entry.settings(), self.base
     if (s.DisabledSources or "") ~= b.rawSrc or (s.DisabledTilesets or "") ~= b.rawTs then return true end
     for k, on in pairs(b.kinds) do
-        if (Entry.kindOn(k, s) ~= false) ~= on then return true end
+        if (Entry.kindSet(k, s) ~= false) ~= on then return true end
     end
     for _, r in ipairs(Admin.RULES) do
         local v = s[r.key]
