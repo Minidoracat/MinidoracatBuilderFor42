@@ -945,19 +945,42 @@ function PM.dragMoved(o, x, y, z)
     o.lines = dragLines(o)
 end
 
--- 跟著游標那份（轉過的預覽）的包圍盒，拖一排的間距與夾上限用；轉了就重算
+-- 一片佔的格子（相對錨點的 { dx, dy, … }）：多格物件、車庫門整組照 footprint，配方照那一面整塊（Recipes.span）；查不到算錨點
+local ANCHOR = { { 0, 0 } }
+local function cellsOf(p)
+    local item = S.plan.items[p.it]
+    local id = item and item.id
+    if type(id) ~= "string" then return ANCHOR end
+    if id:sub(1, 7) == "recipe:" then
+        local R, w, h = B.Recipes, nil, nil
+        if R and R.span then w, h = R.span(id, p.d) end
+        return w and { { 0, 0 }, { w - 1, h - 1 } } or ANCHOR
+    end
+    local entry = Entry.resolve(id)
+    local spr = entry and Entry.face(entry, p.d)
+    return spr and footprint(entry, spr, p.w) or ANCHOR
+end
+
+-- 跟著游標那份（轉過的預覽）的範圍；轉了就重算。錨點的包圍盒給每邊 64 格的上限（藍圖照錨點算），
+-- 實際佔地的包圍盒給拖一排的間距：三格寬的車庫門只量錨點會被當成一格寬，相鄰兩份疊在一起、照圖只蓋得了一扇
 local function measure(o)
-    local x0, y0, x1, y1
+    local x0, y0, x1, y1, fx0, fy0, fx1, fy1
     for _, p in ipairs(o.preview) do
         x0, y0 = math.min(x0 or p.x, p.x), math.min(y0 or p.y, p.y)
         x1, y1 = math.max(x1 or p.x, p.x), math.max(y1 or p.y, p.y)
+        for _, c in ipairs(cellsOf(p)) do
+            local cx, cy = p.x + c[1], p.y + c[2]
+            fx0, fy0 = math.min(fx0 or cx, cx), math.min(fy0 or cy, cy)
+            fx1, fy1 = math.max(fx1 or cx, cx), math.max(fy1 or cy, cy)
+        end
     end
     o.px0, o.py0, o.px1, o.py1 = x0, y0, x1, y1
-    o.bw, o.bh, o.rx, o.ry = x1 - x0 + 1, y1 - y0 + 1, nil, nil
+    o.bw, o.bh, o.rx, o.ry = fx1 - fx0 + 1, fy1 - fy0 + 1, nil, nil
 end
 
 -- 複製中按住左鍵拖：沿主軸排成一列。原版按住期間每幀把滑鼠那格傳給 rotateMouse，
--- 放下的格子停在按下那格 o.square（ISBuildingObject.lua:114-139）。份數先夾到放得下（片數、主軸每邊 64 格），放下時不會整個不做
+-- 放下的格子停在按下那格 o.square（ISBuildingObject.lua:114-139）。份數先夾到放得下（片數、主軸每邊 64 格），放下時不會整個不做。
+-- 片數只算會新增的：沒轉、在原位按下時第 0 份和原片一模一樣，放下時略過（Plan.copyTo），不佔額度
 function PM.dragRow(o, x, y)
     local plan, at = S.plan, o.square
     if o.joypad or not plan or not at or not o.bw or #S.sel == 0 then return end
@@ -970,7 +993,8 @@ function PM.dragRow(o, x, y)
     else
         reps, sx, sy = 1 + math.floor(math.abs(dy) / o.bh), 0, dy < 0 and -o.bh or o.bh
     end
-    reps = math.min(reps, math.floor((Plan.MAX_PIECES - plan.n) / #S.sel))
+    local onSelf = o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0
+    reps = math.min(reps, math.floor((Plan.MAX_PIECES - plan.n) / #S.sel) + (onSelf and 1 or 0))
     local x0, y0, _, x1, y1 = Plan.bounds(plan)
     local lo, hi, a0, a1, step = x0, x1, o.px0 + o.dx, o.px1 + o.dx, sx
     if sx == 0 then lo, hi, a0, a1, step = y0, y1, o.py0 + o.dy, o.py1 + o.dy, sy end
@@ -1086,9 +1110,12 @@ function PM.dragRotate(o)
             if o.kx then PM.dragMoved(o, o.kx, o.ky, o.kz) end
         end
     elseif (o.kind == "move" or o.kind == "copy") and #S.sel > 0 then
+        local rx, ry = o.rx, o.ry
         o.preview = turnedCopy(o.preview or S.sel)
         o.turns = (o.turns or 0) + 1
         measure(o)
+        -- 按住拖排中轉：照同一個位移馬上重排。轉完直接放開時中間沒有 rotateMouse，放下才不會用轉之前的份數與間距
+        if rx and o.square then PM.dragRow(o, o.square:getX() + rx, o.square:getY() + ry) end
     end
 end
 

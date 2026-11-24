@@ -16078,8 +16078,70 @@ end)()
         Plan.MAX_PIECES = plan.n + 5
         d = press(66, 56)
         Plan.MAX_PIECES = keep
-        check(d.reps == 2, "G：片數上限：剩 5 片、每份 2 片，夾到 2 份")
+        check(d.reps == 3, "G：片數上限：剩 5 片、每份 2 片，在原位按下（第 0 份不佔額度）夾到 3 份")
         getCell():setDrag(nil, 0)
+
+        -- 審查 1124 Codex 第 6 條：在原位按下時第 0 份疊在原片上、放下會略過，不算進片數額度；上限還生效時放下
+        Plan.MAX_PIECES = plan.n + 2
+        d = press(58, 56)
+        local cap = d.reps
+        d.isLeftDown = false
+        d:tryBuild(56, 56, 0)
+        local full = plan.n == Plan.MAX_PIECES and wallD(58, 56, 0) and wallD(59, 56, 0)
+        Plan.MAX_PIECES = keep
+        check(cap == 2 and full, "G：剩 2 片、在原位按下拖一個間距：第 0 份不佔額度，排 2 份、放下剛好到上限（" .. tostring(cap) .. "）")
+        check(PM.undo() and plan.n == nRow, "G：到上限的那一排一次上一步拿掉")
+
+        -- 審查 1124 Codex 第 7 條：拖排中轉了直接放開（中間沒有 rotateMouse），放下照轉過的尺寸重排
+        d = press(60, 56)
+        d:rotateKey(19)
+        check(d.reps == 5 and d.sx == 1 and d.sy == 0,
+            "G：拖 4 格（間距 2、3 份）時轉 90 度：兩片橫排變直的，照同一個位移馬上重排成間距 1、5 份（" .. tostring(d.reps) .. "）")
+        d.isLeftDown = false
+        d:tryBuild(56, 56, 0)
+        check(plan.n == nRow + 10 and PM.undo() and plan.n == nRow, "G：轉完直接放開：放下 5 份 10 片，和預覽同一組，一步拿掉")
+
+        -- 審查 1124 Codex 第 2 條：間距量實際佔地。三格寬的車庫門（北向沿 +x、西向沿 −y，Entry.groupCells）緊貼著拖不重疊
+        local E = B.Entry
+        local resolve0, face0, doorSet0 = E.resolve, E.face, E.doorSet
+        local gN, gW = E.sprite("pm_wall_01_1"), E.sprite("pm_wall_01_0")
+        local gd = { kind = "door", name = "pm_gd", spr = gN }
+        E.resolve = function(id) if id == "pm_gd" then return gd end return resolve0(id) end
+        E.face = function(e, f) if e == gd then return f == 5 and gW or gN end return face0(e, f) end
+        E.doorSet = function(s)
+            if s == gN or s == gW then return { garage = true, north = s == gN, parts = { s, s, s } } end
+            return doorSet0(s)
+        end
+        local function gate(x, y, f)
+            local gx, gy = PM.origin()
+            for _, p in ipairs(Plan.at(plan, x - gx, y - gy, 0)) do
+                if plan.items[p.it].id == "pm_gd" and p.d == f then return p end
+            end
+            return nil
+        end
+        local function gateRow(x, y, f, mx, my)
+            PM.addCells(0, "pm_gd", { { x, y, 0, f, 3 } })
+            local n1 = plan.n
+            PM.selectRect(x, y, x, y)
+            PM.moveSel(true)
+            local g = drags[0]
+            g:isValid(sq(x, y, 0))
+            g.square, g.isLeftDown = sq(x, y, 0), true
+            g:rotateMouse(mx, my)
+            local reps, sx, sy = g.reps, g.sx, g.sy
+            g.isLeftDown = false
+            g:tryBuild(x, y, 0)
+            return reps, sx, sy, plan.n - n1
+        end
+        local r1, s1, _, a1 = gateRow(56, 59, 0, 62, 59)
+        local northOk = r1 == 3 and s1 == 3 and a1 == 2 and gate(59, 59, 0) and gate(62, 59, 0) and not gate(57, 59, 0)
+        local r2, _, s2, a2 = gateRow(62, 62, 5, 62, 68)
+        local westOk = r2 == 3 and s2 == 3 and a2 == 2 and gate(62, 65, 5) and gate(62, 68, 5) and not gate(62, 63, 5)
+        E.resolve, E.face, E.doorSet = resolve0, face0, doorSet0
+        check(northOk, "G：北向三格車庫門往東拖 6 格：間距 3、3 份，相鄰兩扇不重疊（" .. tostring(r1) .. "×" .. tostring(s1) .. "）")
+        check(westOk, "G：西向三格車庫門往南拖 6 格：間距 3、3 份，相鄰兩扇不重疊（" .. tostring(r2) .. "×" .. tostring(s2) .. "）")
+        for _ = 1, 4 do PM.undo() end
+        check(plan.n == nRow, "G：上一步拿掉兩排車庫門與兩扇原門")
 
         JoypadState.players[1] = {}
         d = press(61, 56)
