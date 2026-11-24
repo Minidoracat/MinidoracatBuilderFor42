@@ -17,7 +17,7 @@ local attachedFloor, cutN, cutW, solid, solidtrans = F.attachedFloor, F.cutN, F.
 local attachedN, attachedS, attachedE, attachedW = F.attachedN, F.attachedS, F.attachedE, F.attachedW
 local attachedNW, attachedSE, attachedCeiling = F.attachedNW, F.attachedSE, F.attachedCeiling
 local invincible, doorOpen, collideN, collideW = F.makeWindowInvincible, F.open, F.collideN, F.collideW
-local waterFlag = F.water
+local waterFlag, diamondFloor = F.water, F.diamondFloor
 
 -- IsoObjectType → 分類代碼；其餘型別（normal、wall、isMoveAbleObject…）查不到＝nil
 local TYPE = {}
@@ -416,9 +416,11 @@ local function kindOfProps(name, p, t)
         return "post"
     end
     -- 地毯（MoveType=FloorRug）照原版搬動放在地板上面、不換掉地板（ISMoveableSpriteProps.lua:2508-2516）。圖塊包的地毯
-    -- 也有帶 solidfloor 的（UMCTP、Constown 53 張，2026-11-07 Workshop keke），不當地板：往下照能不能搬分到家具或地面覆蓋
+    -- 也有帶 solidfloor 的（UMCTP、Constown 53 張，2026-11-07 Workshop keke），不當地板：往下照能不能搬分到家具或地面覆蓋。
+    -- 帶 FloorOverlay、不帶 diamondFloor 的半格地板（原版 76 張）也不當地板：地圖只把帶 diamondFloor 的換成地板
+    -- （CellLoader.java:71），其他掛到原本的地板上（:256-264）；當地板蓋會換掉整格地板，另一半變黑
     local mt = p:get("MoveType")
-    if p:has(solidfloor) and mt ~= "FloorRug" then -- 平屋頂地板也在這
+    if p:has(solidfloor) and mt ~= "FloorRug" and not (p:has(FloorOverlay) and not p:has(diamondFloor)) then -- 平屋頂地板也在這
         -- 坡道（帶斜面屬性的地板片，原版 ramps_01；引擎照圖塊屬性算斜面，IsoGridSquare.java:10202-10268）。照屬性認，
         -- 不寫死名稱；同一組裡沒有斜面屬性的平片照舊是地板。目錄只收湊得成整組的頭片（Entry.rampSet）
         if p:has("SlopedSurfaceDirection") then return "ramp" end
@@ -474,9 +476,9 @@ end
 -- 建造配方的圖（原版或 MOD 的 entity 腳本替它加 EntityScript 旗標與 EntityScriptName，SpriteConfigManager.java:134-140）
 -- 只收地板與地面覆蓋（使用者 2026-10-31 選）：放下的是本工具的物件，不是配方的 entity——地圖物件只有讀地圖時才建
 -- entity（CellLoader.java:529,539），本工具照種類建 IsoThumpable。其他種類走原版建造。水井（WELL）例外，在前面就回。
--- 實心地毯（帶 solidfloor 的 FloorRug）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當地面覆蓋；多格或沒有
--- FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：照 0.5.0 當地板
--- （審查 1107 Claude；正式服組合 0 張）
+-- 帶 solidfloor 的地面覆蓋（實心地毯 FloorRug、半格地板）只有掛得上地板的（單格、帶 FloorOverlay，同 Rules.onFloor）才當
+-- 地面覆蓋；多格或沒有 FloorOverlay 的要建成物件，一樓帶 solidfloor 的物件又不能記退料（Place.groundFloor），付了拆不回：
+-- 照 0.5.0 當地板（審查 1107 Claude；正式服組合 0 張）
 local function solidRug(kind, p, spr) -- spr 必填：漏傳時目錄和伺服器會分得不一樣
     return kind == "floorOverlay" and p:has(solidfloor) and not (p:has(FloorOverlay) and spr:getSpriteGrid() == nil)
 end

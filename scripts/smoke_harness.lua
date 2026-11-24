@@ -8129,6 +8129,17 @@ print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊�
     check(kind({ flags = { "solidfloor" }, keys = { MoveType = "FloorRug" } }) == "floor" and Rules.classify(g1) == "floor"
         and Rules.classify(g2) == "floor",
         "掛不上地板的實心地毯（沒有 FloorOverlay、多格）：照 0.5.0 當地板，免得建成物件又記不了退料（審查 1107 Claude）")
+    -- 2026-11-24 回饋：帶 FloorOverlay、不帶 diamondFloor 的半格地板（原版 76 張）掛在原本的地板上，不換掉地板
+    local half = { flags = { "solidfloor", "FloorOverlay" } }
+    local halfS = sprite("halftest_01_0", 9110, half)
+    local h1, h2 = sprite("halftest_01_1", 9111, half), sprite("halftest_01_2", 9112, half)
+    fakeGrid(2, 1, { { h1, h2 } })
+    check(Rules.classify(halfS) == "floorOverlay" and Rules.onFloor("floorOverlay", halfS)
+        and MinidoracatBuilder.Cost.refund("floorOverlay", halfS) == "builder",
+        "半格地板（solidfloor＋FloorOverlay、沒有 diamondFloor）：地面覆蓋，掛在原本的地板上")
+    check(kind({ flags = { "solidfloor", "FloorOverlay", "diamondFloor" } }) == "floor",
+        "帶 diamondFloor 的（地圖照地板換掉）：照舊是地板")
+    check(Rules.classify(h1) == "floor" and Rules.classify(h2) == "floor", "多格的半格地板（掛不上地板）：照 0.5.0 當地板")
     local function code(o) return select(2, Rules.classify(sprite("test_01_0", 5, o))) end
     local bed = { flags = { "bed", "solidtrans" }, keys = { IsMoveAble = "", BedType = "averageBed" } }
     local function with(item) bed.keys.CustomItem = item return kind(bed) end
@@ -8178,9 +8189,11 @@ print("情境三十七：2026-11-07 Workshop 回饋：帶 solidfloor 的圖塊�
     local moveS = sprite("rugpack_01_38", 9105, rugMove)
     local kOver, kMove = Dismantle.kindOf(oldFloor(overS)), Dismantle.kindOf(oldFloor(moveS))
     local _, routeMove = Dismantle.classOf(moveS)
+    local kHalf = Dismantle.kindOf(oldFloor(halfS))
     instanceof = realInst
     check(kOver == "floor" and kMove == nil and routeMove == "pickup",
         "0.5.0 蓋成地板的地毯：不能搬的照地板走本工具拆（不當地面覆蓋），能搬的照舊歸原版拿起來")
+    check(kHalf == "floor", "1.3.0 以前蓋成地板的半格地板：照地板走本工具拆（照地板帳本退）")
 end)()
 
 print("情境三十八：2026-11-07 Workshop 回饋：牆型窗（窗和窗框同一張）不用先有窗框、不疊兩層框；一般窗照舊要窗框")
@@ -8383,7 +8396,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r20:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r21:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
