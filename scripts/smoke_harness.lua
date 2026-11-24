@@ -25946,8 +25946,8 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         .. "第 2 格起等前一格進了地下室集合才找站位")
 
     -- 框選地下一層擷取：入口樓梯六張圖（carpentry_02_88–90、96–98）在遊戲裡帶 EntityScript（原版 Wood_Stairs 的圖，
-    -- SpriteConfigManager.java:134-140），圖塊分類回 ENTITY，擷取交給配方：照原版 Wood_Stairs 配方收一件（那一面的
-    -- 第一格那張記錨點，其他兩張不另記）；沒有那個配方時三張都記成不收（ENTITY）
+    -- SpriteConfigManager.java:134-140），圖塊分類回 ENTITY、會交給配方。在地下室集合裡的照挖掘不收（LUA）；集合外的
+    -- 同款樓梯照原版 Wood_Stairs 配方收一件（那一面的第一格那張記錨點，其他兩張不另記），沒有那個配方時三張記成不收（ENTITY）
     ;(function()
         local R = B.Recipes
         local STAIR = { "carpentry_02_96", "carpentry_02_97", "carpentry_02_98" }
@@ -25965,20 +25965,23 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         local keepL, keepId, keepBy = R.list, R.byId, R.bySprite
         R.list, R.byId, R.bySprite = { n = 1, r }, { [r.id] = r }, {}
         for _, n in ipairs(STAIR) do R.bySprite[n] = r end
-        local function grab()
-            local res = Cap.scan(320, 300, 322, 304, -1).res
-            for i, n in ipairs(STAIR) do Cap.tile(res, n, 321, 300 + i, -1, -1) end
+        local IN, OUT = TX + 10, TX + 20
+        BM.add({ { IN, TY + 1 }, { IN, TY + 2 }, { IN, TY + 3 } })
+        local function grab(x)
+            local res = Cap.scan(x - 1, TY, x + 1, TY + 4, -1).res
+            for i, n in ipairs(STAIR) do Cap.tile(res, n, x, TY + i, -1, -1) end
             return res
         end
-        local withR = grab()
+        local inside, withR = grab(IN), grab(OUT)
         R.list, R.byId, R.bySprite = { n = 0 }, {}, {}
-        local noR = grab()
+        local noR = grab(OUT)
         R.list, R.byId, R.bySprite = keepL, keepId, keepBy
         local p1 = withR.pieces[1]
-        check(Entry.resolve("carpentry_02_98") == nil and withR.n == 1 and p1.id == r.id and p1.y == 303 and p1.z == -1
+        check(BM.has(IN, TY + 1, -1) and not BM.has(OUT, TY + 1, -1) and inside.n == 0 and inside.skipped == 3
+            and (inside.skipZ[-1] or {}).LUA == 3 and withR.n == 1 and p1.id == r.id and p1.y == TY + 3 and p1.z == -1
             and withR.skipped == 0 and noR.n == 0 and noR.skipped == 3 and (noR.skipZ[-1] or {}).ENTITY == 3,
-            "擷取地下一層的入口樓梯（帶 EntityScript）：照原版 Wood_Stairs 配方收一件；沒有那個配方時三張記成不收（ENTITY）（"
-            .. withR.n .. "／" .. noR.skipped .. "）")
+            "擷取地下一層的入口樓梯（帶 EntityScript）：在地下室集合裡的三張照挖掘不收（LUA）；集合外的照原版 Wood_Stairs 配方"
+            .. "收一件，沒有那個配方時三張記成不收（ENTITY）（" .. inside.n .. "／" .. withR.n .. "／" .. noR.skipped .. "）")
     end)()
     C.pending = nil
     for _, k in ipairs(made) do squares[k] = nil end
