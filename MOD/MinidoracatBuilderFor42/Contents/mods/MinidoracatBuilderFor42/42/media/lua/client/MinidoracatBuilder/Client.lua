@@ -14,7 +14,7 @@ MinidoracatBuilder = MinidoracatBuilder or {}
 local Client = MinidoracatBuilder.Client or {}
 MinidoracatBuilder.Client = Client
 local Entry, Messages, Materials = MinidoracatBuilder.Entry, MinidoracatBuilder.Messages, MinidoracatBuilder.Materials
-local Place, Check = MinidoracatBuilder.Place, MinidoracatBuilder.Check
+local Check = MinidoracatBuilder.Check
 
 local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
@@ -158,16 +158,20 @@ end
 
 -- 伺服器收下請求後才走路、排動作：請求與動作走不同通道，先到的動作會被當成沒有請求
 -- 旁邊沒有空位可站的那一格起就不排：原地做動作只會被伺服器以太遠拒絕，訊息會誤導。記下是第幾格（b.noRoom），
--- 佇列空了以後 Queue.tick 照它提示。地板、屋頂的第 2 格起排隊當下沒找到站位的，先排站位動作，輪到時（前一格已蓋好）
--- 才找（Client.stand）。建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，Check.near）
+-- 佇列空了以後 Queue.tick 照它提示。第 2 格起排隊當下沒排進走路的（地板、屋頂找不到站位或沒有格子；任何種類「現在就在旁邊」，
+-- luautils.lua:136-142，走完前面幾格就不在旁邊了），先排站位動作，輪到時才找（Client.stand）。
+-- 建造作弊照原版不走過去、原地蓋（ISBuildingObject.lua:212；伺服器也不限距離，Check.near）
 local DEFER = { floor = true, roof = true }
 local function queue(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
     if walk and b.kind == "water" and #b.cells > 1 then return queueDig(b) end
+    local actions = walk and #b.cells > 1 and ISTimedActionQueue.getTimedActionQueue(b.player).queue
     for i, c in ipairs(b.cells) do
+        local before = actions and #actions
         local r = walk and walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
-        if walk and r ~= true and i > 1 and DEFER[b.kind] then
+        local late = walk and i > 1 and (r == true and #actions == before or r ~= true and DEFER[b.kind])
+        if late then
             ISTimedActionQueue.add(MinidoracatBuilderStandAction:new(b.player, b.n, i))
         elseif walk and r == false then
             print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped queuing at " .. i)
@@ -178,13 +182,37 @@ local function queue(b)
     end
 end
 
--- 站位動作（MinidoracatBuilderStandAction）開始前：單機、請求已換掉，或多人時前一格已同步到客戶端（這一格有地板或屋頂撐著）
+-- 站位動作（MinidoracatBuilderStandAction）開始前：地板、屋頂要等前一格回了 placed（b.last）；前一格建造動作的 perform
+-- 當場就開始下一個動作，complete（真正蓋）在後（IsoGameCharacter 的動作迴圈）。地板還要等前一格的地板出現在客戶端
+-- （站位靠它；多人要等同步）。其他種類不靠前一格、請求換掉了都不等
 function Client.standReady(n, i)
     local b = Client.pending
-    if not isClient() or not (b and b.n == n) then return true end
-    local c = b.cells[i]
-    if b.kind == "roof" then return Place.roofAt(c[1], c[2], c[3]) end
-    return Place.floorAt(c[1], c[2], c[3])
+    if not (b and b.n == n) or not DEFER[b.kind] then return true end
+    if (b.last or 0) < i - 1 then return false end
+    if b.kind ~= "floor" then return true end
+    local p = b.cells[i - 1]
+    local sq = p and getCell():getGridSquare(p[1], p[2], p[3])
+    return sq ~= nil and sq:has(IsoFlagType.solidfloor)
+end
+
+-- 樓上往外還沒蓋的那一格沒有格子（walkNear 回 nil；2026-11-24 實機）：站到它四周已有、能站的格子（通常是剛蓋好的前一格），
+-- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）
+local function standBeside(player, x, y, z)
+    if z > math.floor(player:getZ()) then z = z - 1 end
+    local cell, here, best, far = getCell(), player:getCurrentSquare(), nil, math.huge
+    for dy = -1, 1 do
+        for dx = -1, 1 do
+            local sq = (dx ~= 0 or dy ~= 0) and cell:getGridSquare(x + dx, y + dy, z)
+            if sq and sq == here then return true end
+            if sq and sq:isFree(false) then
+                local d = math.abs(x + dx + 0.5 - player:getX()) + math.abs(y + dy + 0.5 - player:getY())
+                if d < far then best, far = sq, d end
+            end
+        end
+    end
+    if not best then return false end
+    ISTimedActionQueue.add(ISWalkToTimedAction:new(player, best))
+    return true
 end
 
 -- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
@@ -193,7 +221,9 @@ function Client.stand(n, i)
     local b = Client.pending
     if not (b and b.n == n) then return false end
     local c = b.cells[i]
-    if walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c) ~= false then return true end
+    local r = walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
+    if r == nil then r = standBeside(b.player, c[1], c[2], c[3]) end
+    if r then return true end
     if Check.near(b.player, { { x = c[1], y = c[2], z = c[3] } }, false, true) == nil then return true end
     print(LOG .. "no free square next to " .. c[1] .. "," .. c[2] .. "," .. c[3] .. "; stopped at " .. i)
     b.noRoom = i
@@ -550,6 +580,7 @@ function Client.onServerCommand(cmd, args)
         print(LOG .. "refused n=" .. tostring(args.n) .. " i=" .. tostring(args.i) .. " code=" .. tostring(args.code))
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
     end
+    if cmd == "placed" and b and b.n == args.n then b.last = math.max(b.last or 0, args.i or 0) end
     if Client.onResult then Client.onResult(cmd, args) end
 end
 

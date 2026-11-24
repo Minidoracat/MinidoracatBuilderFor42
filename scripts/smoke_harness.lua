@@ -314,6 +314,7 @@ square = function(x, y, z, o)
     function sq:isSomethingTo() return false end
     function sq:getMovingObjects() return { isEmpty = function() return #sq.moving == 0 end } end
     function sq:isSolid() return o.solid == true end
+    function sq:isFree() return flags.solidfloor == true and o.solid ~= true end
     function sq:isSolidTrans() return false end
     function sq:AddSpecialObject(obj, index) -- failAdd：加進去之後才出錯（驗拆回）；index 照引擎插在那個位置
         if index and index >= 0 and index < #self.objects then
@@ -1629,7 +1630,8 @@ ISBaseTimedAction = {
     forceStop = function(self) self.ended = "stop" end,
 }
 local cleared, added = {}, 0
-ISTimedActionQueue = { clear = function(p) cleared[#cleared + 1] = p end, add = function() added = added + 1 end }
+ISTimedActionQueue = { clear = function(p) cleared[#cleared + 1] = p end, add = function() added = added + 1 end,
+    getTimedActionQueue = function() return { queue = {} } end }
 require "MinidoracatBuilder/Client"
 local Client = MinidoracatBuilder.Client
 Client.pending = { n = 42, player = "PA" }
@@ -7533,7 +7535,8 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
             else
                 queued[#queued + 1] = x
             end
-        end }
+        end,
+        getTimedActionQueue = function() return { queue = queued } end }
     local function walked() walks = walks + 1 return true end
     luautils = { walkAdjWall = walked, walkAdj = walked }
     local far2, near2 = square(160, 130, 0), square(131, 130, 0)
@@ -7589,10 +7592,12 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     -- 每個字：W＝走路、P<i>＝建造第 i 項、S<i>＝第 i 項的站位動作
     local C, keepPos = MinidoracatBuilder.Client, P.pos
     P.pos = { x = 130.5, y = 130.5, z = 1 }
-    local stands = {} -- walkAdj／walkAdjWall 看到的格子 → 能不能站（能時照原版排一個走路）
+    -- walkAdj／walkAdjWall 看到的格子 → true：能站，照原版排一個走路；"here"：照原版「現在就在旁邊」回 true、不排走路
+    -- （luautils.lua:136-142）；其他：沒地方站
+    local stands = {}
     local function stand(_, sq)
-        if stands[sq] then ISTimedActionQueue.add({ walk = sq }) end
-        return stands[sq] == true
+        if stands[sq] == true then ISTimedActionQueue.add({ walk = sq }) end
+        return stands[sq] == true or stands[sq] == "here"
     end
     luautils = { walkAdj = stand, walkAdjWall = stand }
     local function shape()
@@ -7609,15 +7614,17 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         C.onServerCommand("accepted", { n = n })
         return shape()
     end
-    -- 前一格蓋好了：拿掉第 1 格的走路與建造，輪到佇列第一個（沒排站位動作時換一個不在佇列裡的，斷言照樣比對、不丟錯）
+    -- 前一格蓋好了：拿掉第 1 格的走路與建造、收到前一格的 placed，輪到佇列第一個（沒排站位動作時換一個不在佇列裡的，
+    -- 斷言照樣比對、不丟錯）
     local function turn(n, i)
         table.remove(queued, 1)
         table.remove(queued, 1)
+        C.onServerCommand("placed", { n = n, i = i - 1 })
         local a = queued[1]
         if a and a.Type == "MinidoracatBuilderStandAction" then return a end
         return MinidoracatBuilderStandAction:new(P, n, i)
     end
-    local f1, f2 = square(140, 140, 1), square(141, 140, 1) -- (142,140,1) 還沒有格子
+    local f1, f2 = square(140, 140, 1, { flags = { solidfloor = true } }), square(141, 140, 1) -- (142,140,1) 還沒有格子
     stands = { [f1] = true, [f2] = false }
     local row = { { 140, 140, 1, 0 }, { 141, 140, 1, 0 }, { 142, 140, 1, 0 } }
     local got = drag(3480, "floor", row)
@@ -7629,12 +7636,46 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     got = shape()
     check(waited == false and st.ended == "complete" and st._isAddingActions == nil and got == "S2 W P2 S3 P3",
         "輪到站位動作（前一格已蓋好）：單機不等，找到站位，走路插在它後面、建造前面，自己結束（" .. got .. "）")
+    -- 單機的順序（IsoGameCharacter 的動作迴圈）：前一格建造動作 perform 當場 begin 站位動作，complete（真正蓋、回 placed）
+    -- 在後。前一格的結果回來前等，回來了才找站位
+    drag(3493, "floor", { { 140, 140, 1, 0 }, { 143, 140, 1, 0 } })
+    local early = MinidoracatBuilderStandAction:new(P, 3493, 2)
+    local sp = { early:waitToStart() }
+    C.onServerCommand("placed", { n = 3493, i = 1 })
+    sp[2] = early:waitToStart()
+    check(sp[1] == true and sp[2] == false, "單機：前一格的 complete 還沒跑（perform 當場就開始下一個動作）時等，蓋好了才找站位（"
+        .. tostring(sp[1]) .. "," .. tostring(sp[2]) .. "）")
     local far = square(150, 140, 1)
     stands[far] = false
     drag(3481, "floor", { { 140, 140, 1, 0 }, { 150, 140, 1, 0 } })
     st = turn(3481, 2)
     st:start()
     check(st.ended == "stop" and C.pending.noRoom == 2, "輪到時還是找不到站位、原地也太遠：記第 2 格沒有空位，動作停下（原版清整個佇列）")
+    -- 實機：往外還沒蓋的那一格沒有格子（walkNear 回 nil）。站到它旁邊剛蓋好的前一格（沒地板的格子不站）；
+    -- 四周沒有能站的、原地又太遠就停
+    local realWalk = ISWalkToTimedAction
+    ISWalkToTimedAction = { new = function(_, _, sq) return { walk = sq } end }
+    local prev = square(181, 140, 1, { flags = { solidfloor = true } })
+    square(182, 141, 1)
+    stands = { [prev] = true }
+    got = drag(3488, "floor", { { 181, 140, 1, 0 }, { 182, 140, 1, 0 } })
+    st = turn(3488, 2)
+    st:start()
+    local onPrev = queued[2] and queued[2].walk == prev
+    got = got .. " / " .. shape()
+    drag(3489, "floor", { { 181, 140, 1, 0 }, { 190, 140, 1, 0 } })
+    local st2 = turn(3489, 2)
+    st2:start()
+    ISWalkToTimedAction = realWalk
+    check(got == "W P1 S2 P2 / S2 W P2" and onPrev and st.ended == "complete" and st2.ended == "stop" and C.pending.noRoom == 2,
+        "還沒有格子的那一格：走到旁邊剛蓋好的前一格再蓋；四周沒有能站的、原地太遠就停在那一格（" .. got .. "）")
+    -- 還沒有格子、四周也沒有能站的，但伺服器的距離檢查原地就過：原地蓋
+    stands = { [upSq] = true }
+    drag(3490, "floor", { { 131, 130, 1, 0 }, { 133, 130, 1, 0 } })
+    st = turn(3490, 2)
+    st:start()
+    check(st.ended == "complete" and C.pending.noRoom == nil and shape() == "S2 P2",
+        "還沒有格子、四周沒有能站的但在距離內：原地蓋（" .. shape() .. "）")
     -- 屋頂站位算在下一層，前面蓋好的屋頂片變不出站位：伺服器的距離檢查原地就過時原地蓋
     local r1, r2 = square(131, 130, 1), square(132, 130, 1)
     stands = { [r1] = true, [r2] = false }
@@ -7643,23 +7684,37 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     st:start()
     check(got == "W P1 S2 P2" and st.ended == "complete" and C.pending.noRoom == nil and shape() == "S2 P2",
         "樓上手拖一排屋頂：同樣延後；輪到時沒有站位但在距離內，原地蓋（" .. got .. "）")
-    -- 多人：前一格要等伺服器同步到客戶端（這一格有東西撐著）才開始，最多等 2 秒；請求換掉了就不等
+    -- 多人：前一格回了 placed、地板也同步到客戶端才開始，最多等 2 秒；這一格另有支撐（正下方有牆）也要等；請求換掉了不等
     isClient = function() return true end
-    C.pending = { n = 3483, kind = "floor", cells = { { 160, 160, 1, 0 }, { 171, 160, 1, 0 } }, player = P }
-    local w1, w2 = MinidoracatBuilderStandAction:new(P, 3483, 1), MinidoracatBuilderStandAction:new(P, 3483, 2)
-    local mp = { w1:waitToStart() }
+    square(160, 160, 2)
+    square(161, 160, 1, { wallN = {} })
+    C.pending = { n = 3483, kind = "floor", cells = { { 160, 160, 2, 0 }, { 161, 160, 2, 0 } }, player = P }
+    local w2 = MinidoracatBuilderStandAction:new(P, 3483, 2)
+    local mp = { w2:waitToStart() }
+    C.onServerCommand("placed", { n = 3483, i = 1 })
+    mp[2] = w2:waitToStart()
     nowMs = nowMs + 1999
-    mp[2] = w1:waitToStart()
+    mp[3] = w2:waitToStart()
     nowMs = nowMs + 1
-    mp[3] = w1:waitToStart()
     mp[4] = w2:waitToStart()
-    square(170, 160, 1, { flags = { solidfloor = true } })
-    mp[5] = w2:waitToStart()
+    square(160, 160, 2, { flags = { solidfloor = true } })
+    mp[5] = MinidoracatBuilderStandAction:new(P, 3483, 2):waitToStart()
     C.pending.n = 3484
-    mp[6] = MinidoracatBuilderStandAction:new(P, 3483, 1):waitToStart()
+    mp[6] = MinidoracatBuilderStandAction:new(P, 3483, 2):waitToStart()
     got = table.concat({ tostring(mp[1]), tostring(mp[2]), tostring(mp[3]), tostring(mp[4]), tostring(mp[5]), tostring(mp[6]) }, ",")
-    check(got == "true,true,false,true,false,false",
-        "多人：前一格還沒同步時等待，滿 2 秒照樣開始；旁邊的地板同步到了就開始；請求換掉了不等（" .. got .. "）")
+    check(got == "true,true,true,false,false,false",
+        "多人：前一格的結果或地板還沒到時等（這一格正下方有牆也等），滿 2 秒照樣開始；地板同步到了就開始；請求換掉了不等（" .. got .. "）")
+    -- 不是地板、屋頂的站位動作不等同步；standReady 丟錯時照樣開始，錯誤印一次（帶 n、i）
+    C.pending = { n = 3491, kind = "wall", cells = { { 160, 160, 1, 0 }, { 175, 160, 1, 0 } }, player = P }
+    local wallGo = MinidoracatBuilderStandAction:new(P, 3491, 2):waitToStart()
+    local realReady, realPrint, logs = C.standReady, print, {}
+    C.standReady = function() error("boom") end
+    print = function(s) logs[#logs + 1] = tostring(s) end
+    local sw = MinidoracatBuilderStandAction:new(P, 3491, 2)
+    local e1, e2 = sw:waitToStart(), sw:waitToStart()
+    C.standReady, print = realReady, realPrint
+    check(wallGo == false and e1 == false and e2 == false and #logs == 1 and logs[1]:find("n=3491 i=2", 1, true) ~= nil,
+        "多人：牆的站位動作不等；standReady 丟錯照樣開始、錯誤只印一次（" .. tostring(logs[1]) .. "）")
     isClient = function() return false end
     -- 建造作弊（不走過去）、每格都找得到站位的（照圖蓋的批）不排站位動作；牆照舊停在找不到站位的那一格
     ISBuildMenu.cheat = true
@@ -7671,6 +7726,13 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     local wallRow = drag(3487, "wall", { { 140, 140, 1, 0 }, { 141, 140, 1, 0 } })
     check(cheatRow == "P1 P2 P3" and planRow == "W P1 W P2" and wallRow == "W P1" and C.pending.noRoom == 2,
         "作弊不排站位動作、每格都有站位不排、牆照舊停在第 2 格（" .. cheatRow .. " / " .. planRow .. " / " .. wallRow .. "）")
+    -- 任何種類第 2 格起「現在就在旁邊」（walkAdj 回 true 但沒排走路）：走完前面幾格就不在旁邊了，延後到輪到時重判
+    stands = { [f1] = true, [f2] = "here" }
+    local nearRow = drag(3492, "wall", { { 140, 140, 1, 0 }, { 141, 140, 1, 0 } })
+    st = turn(3492, 2)
+    st:start()
+    check(nearRow == "W P1 S2 P2" and st.ended == "complete" and shape() == "S2 P2",
+        "第 2 格起「現在就在旁邊」沒排走路的（牆也算）：先排站位動作，輪到時重判（" .. nearRow .. "）")
     P.pos = keepPos
     MinidoracatBuilder.Client.pending, MinidoracatBuilder.Client.pendingUnbuild = nil, nil
     isServer, isClient, ISBuildMenu, ISTimedActionQueue, luautils = realS, realC, realMenu, realQ, realLu
