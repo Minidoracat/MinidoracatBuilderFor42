@@ -515,7 +515,7 @@ end
 function HARNESS_DRIFT()
     local Store = MinidoracatBuilder.Store
     local LEDGER_FILES = { floors = "MinidoracatBuilderFloors", overlays = "MinidoracatBuilderOverlays",
-        ledger = "MinidoracatBuilder", circuits = "MinidoracatBuilderCircuits" }
+        ledger = "MinidoracatBuilder", circuits = "MinidoracatBuilderCircuits", basements = "MinidoracatBuilderBasements" }
     local bad = {}
     for _, r in ipairs(Store.report()) do
         local n, bytes, ok = 0, 0, true
@@ -9190,6 +9190,485 @@ print("情境三十九：地下室 MOD（Basement Building）外邊土牆：可�
     isServer, isClient = realS, realC
 end)()
 
+print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basement、BasementLedger；plan.md §4.1 c1–c7）")
+;(function()
+    local B = MinidoracatBuilder
+    local Store = B.Store
+    local realWorld, realS, realInst, realMods, realCell = getWorld, isServer, instanceof, getActivatedMods, getCell
+    local realSpecific, realIsoObject = getSpecificPlayer, IsoObject
+    local oldMap, oldOrder = spriteMap, spriteOrder
+    local Z = -1
+    require "MinidoracatBuilder/BasementLedger"
+    local Basement, Ledger = B.Basement, B.BasementLedger
+    for _ = 1, 60 do fire("OnTick") end -- 開服那一次 registerAll（帳本還是空的）跑掉
+    local D = Basement.DIRT
+    local function sp(name, flags, t) return sprite(name, 0, { flags = flags, type = t }) end
+    world({ sp(D.W, { "WallW" }), sp(D.N, { "WallN" }), sp(D.NW, { "WallNW" }), sp("t_winN", { "WindowN" }),
+        sp("t_frameN", { "WallNTrans" }), sp("t_wallN", { "WallN" }) })
+    -- 格上物件：圖照 namedMap（flags 有給就自己做一張）；thump＝IsoThumpable、light＝IsoLightSwitch
+    local function obj(sq, name, thump, flags)
+        local s = flags and sp(name, flags) or IsoSpriteManager.instance:getNamedMap():get(name) or sp(name, {})
+        local o = { thump = thump }
+        function o:getSprite() return s end
+        function o:getProperties() return s:getProperties() end
+        function o:getTextureName() return name end
+        function o:getType() return s:getType() end
+        function o:getSquare() return sq end
+        function o:isFloor() return s:getProperties():has(F.solidfloor) end
+        function o:getBuildMaterials() return nil end
+        function o:hasModData() return false end
+        function o:transmitCompleteItemToClients() self.sent = true end
+        return o
+    end
+    IsoObject = { new = function(_, sq, name) return obj(sq, name) end }
+    instanceof = function(o, cls)
+        if cls == "IsoThumpable" then return type(o) == "table" and o.thump == true end
+        if cls == "IsoLightSwitch" then return type(o) == "table" and o.light == true end
+        return realInst(o, cls)
+    end
+    -- 地下的格子（引擎的 setRoomID／setRoom／屍體清單）
+    local function ug(x, y, z, o)
+        local sq = square(x, y, z or Z, o)
+        function sq:setRoomID(id) self.roomID = id end
+        function sq:setRoom(r) self.room = r end
+        function sq:getStaticMovingObjects() return { isEmpty = function() return #(self.bodies or {}) == 0 end } end
+        return sq
+    end
+    -- 假引擎：metaGrid 的 getRoomAt、BuildingRoomsEditor（applyChanges 照 calculateMetaID 取角，同角換掉舊的）、殭屍補充
+    local eng = { tile = {}, live = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0 }
+    local function tk(x, y) return x .. "," .. y end
+    local grid = { getRoomAt = function(_, x, y, z)
+        if z ~= Z then return nil end
+        return eng.foreign[tk(x, y)] or eng.tile[tk(x, y)]
+    end }
+    getWorld = function()
+        local w = realWorld()
+        w.getMetaGrid = function() return grid end
+        return w
+    end
+    local function newDef(name)
+        eng.ids = eng.ids + 1
+        local def = { id = eng.ids, name = name, n = 0, switches = {} }
+        function def:getID() return self.id end
+        function def:getName() return self.name end
+        function def:setName(n) self.name = n end
+        local b = { setUserDefined = function(_, v) def.user = v end, setAllExplored = function(_, v) def.explored = v end }
+        function def:getBuilding() return b end
+        local room = { def = def }
+        function room:getLightSwitches()
+            return { contains = function(_, o)
+                for _, v in ipairs(def.switches) do if v == o then return true end end
+                return false
+            end, add = function(_, o) def.switches[#def.switches + 1] = o end }
+        end
+        function def:getIsoRoom() return room end
+        return def
+    end
+    eng.newDef = newDef
+    local ed
+    local function newEditor()
+        local e = { list = {} }
+        function e:setCurrentBuilding() end
+        function e:createBuilding()
+            local b = { rooms = {} }
+            function b:createRoom(z)
+                local r = { z = z, rects = {} }
+                function r:setName(n) self.name = n end
+                function r:addRectangle(x, y, w, h) self.rects[#self.rects + 1] = { x, y, w, h } end
+                self.rooms[#self.rooms + 1] = r
+                return r
+            end
+            function b:isValid() return #self.rooms > 0 and #self.rooms[1].rects > 0 end
+            self.list[#self.list + 1] = b
+            return b
+        end
+        function e:removeBuilding(b)
+            for i, v in ipairs(self.list) do if v == b then table.remove(self.list, i) return end end
+        end
+        function e:applyChanges()
+            for _, b in ipairs(self.list) do
+                local r = b.rooms[1]
+                local cx, cy = math.huge, math.huge
+                for _, q in ipairs(r.rects) do if q[1] <= cx and q[2] < cy then cx, cy = q[1], q[2] end end
+                local old = eng.live[tk(cx, cy)]
+                if old then for k, d in pairs(eng.tile) do if d == old then eng.tile[k] = nil end end end
+                local def = newDef(r.name)
+                eng.live[tk(cx, cy)] = def
+                for _, q in ipairs(r.rects) do
+                    for x = q[1], q[1] + q[3] - 1 do
+                        for y = q[2], q[2] + q[4] - 1 do
+                            if eng.tile[tk(x, y)] then eng.overlap = eng.overlap + 1 end
+                            eng.tile[tk(x, y)], def.n = def, def.n + 1
+                        end
+                    end
+                end
+            end
+        end
+        return e
+    end
+    BuildingRoomsEditor = { Reset = function() ed = newEditor() end, getInstance = function() return ed end }
+    VirtualZombieManager = { instance = { addIndoorZombiesToChunk = function(_, chunk, room)
+        eng.zombie[#eng.zombie + 1] = room.def.name
+    end } }
+    local function liveCount()
+        local n = 0
+        for _, d in pairs(eng.live) do if d.n > 0 then n = n + 1 end end
+        return n
+    end
+    -- 一個 3×3 的入口（東西向）：樓梯 (x..x+2, y)、兩旁挖 (x..x+2, y±1)、平台 (x−1, y, 0)、洞 (x..x+2, y, 0)
+    local function entrance(x, y)
+        local c = { { x = x, y = y, z = Z, role = "top" }, { x = x + 1, y = y, z = Z, role = "mid" },
+            { x = x + 2, y = y, z = Z, role = "bottom" } }
+        for dx = 0, 2 do
+            c[#c + 1] = { x = x + dx, y = y - 1, z = Z, role = "dig" }
+            c[#c + 1] = { x = x + dx, y = y + 1, z = Z, role = "dig" }
+        end
+        c[#c + 1] = { x = x - 1, y = y, z = 0, role = "platform" }
+        for dx = 0, 2 do c[#c + 1] = { x = x + dx, y = y, z = 0, role = "hole" } end
+        return c
+    end
+    local function dirtAt(x, y)
+        local sq, out = realCell():getGridSquare(x, y, Z), {}
+        for _, o in ipairs(sq and sq.objects or {}) do
+            local s = o.getSprite and o:getSprite()
+            for k, v in pairs(D) do
+                if s and s:getName() == v and not o.thump then out[#out + 1] = k end
+            end
+        end
+        table.sort(out)
+        return table.concat(out, ",")
+    end
+    local H = {} -- 段內各小段之間傳的東西
+
+    -- c1 Store.unpos 是 Store.pos 的反函式
+    ;(function()
+        local ok = true
+        for _, v in ipairs({ { 0, 0, 0, 0 }, { -5, 7, -1, 0 }, { 12345, -678, -1, 2 }, { -2097152, 2097151, -32, 3 },
+            { 2097151, -2097152, 31, 1 } }) do
+            local k = Store.pos(v[1], v[2], v[3], v[4])
+            local x, y, z, e = Store.unpos(k)
+            ok = ok and k ~= nil and x == v[1] and y == v[2] and z == v[3] and e == v[4]
+        end
+        check(ok, "c1 Store.unpos(Store.pos(…)) 來回一樣：負的 z、座標上下限、有邊與沒邊")
+    end)()
+
+    -- c2 集合與連通塊
+    ;(function()
+        Basement.add({ { 1000, 1000 } })
+        Basement.add({ { 1002, 1000 } })
+        local a, b = Basement.blockOf(1000, 1000, Z), Basement.blockOf(1002, 1000, Z)
+        local added = Basement.add({ { 1001, 1000 } })
+        local id, n = Basement.blockOf(1002, 1000, Z)
+        check(a ~= b and #added == 1 and id == Basement.blockOf(1000, 1000, Z) and n == 3,
+            "c2 中間挖通：兩塊併成一塊，格數 3")
+        local again = Basement.add({ { 1001, 1000 }, { 1000, 1000 } })
+        check(#again == 0 and select(2, Basement.blockOf(1000, 1000, Z)) == 3, "c2 重複加：不變")
+        Basement.add({ { 5000, 5000 } })
+        local got = Basement.reset({ { 1000, 1000 }, { 1001, 1000 }, { 700, 700 }, { 3000, 3000 } }, 3, 3)
+        check(#got == 1 and got[1][1] == 700 and not Basement.has(1002, 1000, Z) and Basement.has(700, 700, Z)
+            and Basement.has(5000, 5000, Z) and not Basement.has(3000, 3000, Z)
+            and select(2, Basement.blockOf(1000, 1000, Z)) == 2,
+            "c2 reset：大區 (3,3) 周圍 3×3 內整份換掉（1002 拿掉、700 加進來），範圍外的格子不動、範圍外的新格不收")
+        check(Basement.has(700, 700, Z) and not Basement.has(700, 700, 0) and Basement.blockOf(700, 700, 0) == nil,
+            "c2 只認 z = -1")
+    end)()
+
+    -- c3 矩形
+    ;(function()
+        local function sound(tiles)
+            local set, covered, area = {}, {}, 0
+            for _, t in ipairs(tiles) do set[tk(t[1], t[2])] = true end
+            local rs = Basement.rects(tiles)
+            for _, r in ipairs(rs) do
+                area = area + r[3] * r[4]
+                for x = r[1], r[1] + r[3] - 1 do
+                    for y = r[2], r[2] + r[4] - 1 do
+                        if not set[tk(x, y)] or covered[tk(x, y)] then return false end
+                        covered[tk(x, y)] = true
+                    end
+                end
+            end
+            -- 第一個矩形＝calculateMetaID 取的角
+            local cx, cy = math.huge, math.huge
+            for _, r in ipairs(rs) do if r[1] <= cx and r[2] < cy then cx, cy = r[1], r[2] end end
+            return area == #tiles and cx == rs[1][1] and cy == rs[1][2], #rs
+        end
+        local L = { { 0, 0 }, { 0, 1 }, { 0, 2 }, { 1, 2 }, { 2, 2 } }
+        local ring = {}
+        for x = -1, 1 do for y = -1, 1 do if x ~= 0 or y ~= 0 then ring[#ring + 1] = { x, y } end end end
+        local okL, nL = sound(L)
+        local okR = sound(ring)
+        local okS, nS = sound({ { -7, 3 } })
+        local okX = sound({ { 5, 0 }, { 6, 0 }, { 4, 1 }, { 5, 1 }, { 6, 1 }, { 3, 2 } }) -- 角不在最西那一列
+        check(okL and nL == 2 and okR and okS and nS == 1 and okX,
+            "c3 矩形：L 形、中間有洞的環形、單格、階梯形都不重疊、面積和＝格數，第一個矩形是 metaID 的角")
+    end)()
+
+    -- c4 登錄：角與 annex、併塊
+    ;(function()
+        local t = {}
+        for x = 2000, 2002 do for y = 2000, 2001 do t[#t + 1] = { x, y } end end
+        Basement.add(t)
+        local ok = Basement.registerAll()
+        local def = eng.tile[tk(2001, 2001)]
+        check(ok and def ~= nil and def == eng.live[tk(2000, 2000)] and def.n == 6 and def.name == Basement.ROOM
+            and def.user == false and def.explored == true and eng.zombie[#eng.zombie] == "emptyoutside",
+            "c4 一塊 6 格登錄成一棟：角 (2000,2000)、名稱、不是自訂建物、全部探索過、殭屍補充時暫時叫 emptyoutside")
+        Basement.grow(Basement.add({ { 2003, 2000 } }))
+        check(eng.live[tk(2000, 2000)].n == 7 and eng.tile[tk(2003, 2000)] == eng.live[tk(2000, 2000)] and liveCount() >= 1,
+            "c4 往東加一格：併進主建物（同一個角重登錄、換掉舊的）")
+        Basement.grow(Basement.add({ { 2000, 1999 } }))
+        local annex = eng.tile[tk(2000, 1999)]
+        check(annex ~= nil and annex.n == 1 and eng.live[tk(2000, 2000)].n == 7,
+            "c4 往更北而且不更東加一格：登錄成 1 格的 annex，主建物的角不變")
+        Basement.grow(Basement.add({ { 2001, 1999 } }))
+        check(eng.tile[tk(2001, 1999)] == eng.live[tk(2000, 2000)] and eng.live[tk(2000, 2000)].n == 8 and eng.overlap == 0,
+            "c4 更北但更東的一格：併進主建物；沒有一格登錄進兩棟")
+        -- 兩塊挖通：小的那塊併進大的，新格進大的那塊的主建物；小的那塊的建物留著
+        local a = {}
+        for x = 2100, 2104 do a[#a + 1] = { x, 2100 } end
+        Basement.grow(Basement.add(a))
+        Basement.grow(Basement.add({ { 2106, 2100 }, { 2107, 2100 } }))
+        Basement.grow(Basement.add({ { 2105, 2100 } }))
+        local id, n = Basement.blockOf(2107, 2100, Z)
+        check(id == Basement.blockOf(2100, 2100, Z) and n == 8 and eng.tile[tk(2105, 2100)] == eng.live[tk(2100, 2100)]
+            and eng.live[tk(2100, 2100)].n == 6 and eng.live[tk(2106, 2100)].n == 2 and eng.overlap == 0,
+            "c4 兩塊挖通：併成 8 格一塊；新格進大的那塊的主建物，小的那塊的建物留到重開，沒有重疊")
+        -- 編輯器沒有了（遊戲更新改掉）：回失敗、不記成已登錄
+        local realEditor = BuildingRoomsEditor
+        BuildingRoomsEditor = nil
+        local bad = Basement.grow(Basement.add({ { 2108, 2100 } }))
+        BuildingRoomsEditor = realEditor
+        local retry = Basement.registerAll()
+        check(bad == false and retry and eng.tile[tk(2108, 2100)] == eng.live[tk(2100, 2100)],
+            "c4 沒有 BuildingRoomsEditor：回失敗不丟錯，那一格之後 registerAll 補登錄")
+    end)()
+
+    -- c5 帳本 commit、外邊土牆
+    ;(function()
+        for x = 2998, 3006 do for y = 2998, 3005 do ug(x, y) end end
+        local lamp = { light = true, getSprite = function() return nil end, getProperties = function() return nil end }
+        table.insert(realCell():getGridSquare(3000, 3000, Z).objects, lamp)
+        ug(2999, 3001, 0, { floor = {} })
+        for x = 3000, 3002 do
+            local sq = ug(x, 3001, 0)
+            sq.objects[#sq.objects + 1] = obj(sq, "t_floor", false, { "solidfloor" })
+            sq.objects[#sq.objects + 1] = obj(sq, "t_grass", false, { "canBeRemoved" })
+        end
+        local near, far = player({ id = 6001, x = 3000.5, y = 3000.5 }), player({ id = 6002, x = 10000.5, y = 10000.5 })
+        getOnlinePlayers = function() return javaList({ near, far }) end
+        local n0 = #sent
+        local holes = Ledger.commit(near, entrance(3000, 3001), { 3000, 3001, 0 })
+        local inLedger = 0
+        for x = 3000, 3002 do
+            for y = 3000, 3002 do
+                if HARNESS_LEDGER("MinidoracatBuilderBasements", Store.pos(x, y, Z)) then inLedger = inLedger + 1 end
+            end
+        end
+        check(type(holes) == "table" and inLedger == 9 and Ledger.stats().n == 9 and HARNESS_DRIFT() == "",
+            "c5 新開入口：帳本 9 筆（值是空表），帳本大小對得上")
+        local want = { [tk(3000, 3000)] = "NW", [tk(3001, 3000)] = "N", [tk(3002, 3000)] = "N", [tk(3000, 3001)] = "W",
+            [tk(3000, 3002)] = "W", [tk(3003, 3000)] = "W", [tk(3003, 3001)] = "W", [tk(3003, 3002)] = "W",
+            [tk(3000, 3003)] = "N", [tk(3001, 3003)] = "N", [tk(3002, 3003)] = "N" }
+        local same = true
+        for x = 2998, 3006 do
+            for y = 2998, 3005 do same = same and dirtAt(x, y) == (want[tk(x, y)] or "") end
+        end
+        check(same, "c5 新開 9 格：12 條外邊各一面土牆（西北角一張 NW），裡面沒有")
+        local cleared = true
+        for x = 3000, 3002 do
+            for _, o in ipairs(realCell():getGridSquare(x, 3001, 0).objects) do cleared = false end
+        end
+        check(cleared, "c5 樓梯上方 3 格開洞：地板、草拿掉")
+        local def = eng.tile[tk(3001, 3001)]
+        local sq = realCell():getGridSquare(3001, 3001, Z)
+        local lampOk = false
+        for _, o in ipairs(def and def.switches or {}) do if o == lamp then lampOk = true end end
+        check(def ~= nil and def.n == 9 and sq.roomID == def.id and sq.room == def:getIsoRoom() and lampOk,
+            "c5 登錄成一棟 9 格；伺服器上已載入的格子掛上房間、燈開關收進房間")
+        local toNear, toFar
+        for i = n0 + 1, #sent do
+            if sent[i].cmd == "dug" and sent[i].player == near then toNear = sent[i].args end
+            if sent[i].player == far then toFar = true end
+        end
+        check(toNear ~= nil and #toNear.t == 18 and not toFar, "c5 dug 送給同一個大區的玩家（9 格的座標），不送給遠處的")
+        -- 單機：挖通往東一格；不送 dug、重算畫面高度
+        local cm = { n = 0 }
+        function cm:calculateZExtentsForChunkMap() self.n = self.n + 1 end
+        isServer = function() return false end
+        getCell = function()
+            local c = realCell()
+            c.getChunkMap = function(_, i) return i == 0 and cm or nil end
+            return c
+        end
+        getNumActivePlayers = function() return 1 end
+        getSpecificPlayer = function(i) return i == 0 and near or nil end
+        local n1 = #sent
+        Ledger.commit(near, { { x = 3003, y = 3001, z = Z, role = "dig" } }, { 3003, 3001, Z })
+        getCell, isServer = realCell, realS
+        check(#sent == n1 and cm.n == 1 and dirtAt(3003, 3001) == "N" and dirtAt(3004, 3001) == "W"
+            and dirtAt(3003, 3002) == "NW" and dirtAt(3003, 3000) == "W" and Ledger.stats().n == 10,
+            "c5 單機往東挖一格：兩格之間的土牆拆掉、新外邊補上（南鄰換成西北角那張），不送 dug、重算畫面高度")
+        -- 玩家的牆
+        local s3 = realCell():getGridSquare(3001, 3003, Z)
+        local pw = obj(s3, "t_wallN", true)
+        s3.objects[#s3.objects + 1] = pw
+        Basement.clearDirt(s3, "N")
+        Basement.fixEdges(3001, 3003, Z)
+        local kept = false
+        for _, o in ipairs(s3.objects) do if o == pw then kept = true end end
+        check(kept and dirtAt(3001, 3003) == "", "c5 外邊蓋上玩家的牆：土牆拆掉、玩家的牆留著，再跑 fixEdges 也不補")
+        s3.removeHere(pw)
+        local h0 = count("OnTick")
+        Basement.touch(3001, 3003, Z)
+        Basement.touch(3001, 3003, Z)
+        local hooked = count("OnTick")
+        fire("OnTick")
+        check(hooked == h0 + 1 and count("OnTick") == h0 and dirtAt(3001, 3003) == "N",
+            "c5 拆掉玩家的牆 → touch → 下一個 tick 補回土牆（同一格排兩次只掛一次 OnTick，跑完摘掉）")
+        local s0 = realCell():getGridSquare(3000, 3000, Z)
+        s0.objects[#s0.objects + 1] = obj(s0, "t_wallN", true)
+        Basement.clearDirt(s0, "N")
+        check(dirtAt(3000, 3000) == "W", "c5 西北角那張拆北邊：換成單邊的西牆")
+        -- 外邊土牆層的 6 支
+        local s1 = realCell():getGridSquare(3001, 3000, Z)
+        local dirtN
+        for _, o in ipairs(s1.objects) do if not o.thump then dirtN = o end end
+        local fake = obj(s1, D.N, true)
+        local inner = realCell():getGridSquare(3001, 3001, Z)
+        check(Basement.isOuterEdge(3000, 3000, Z, "N") and not Basement.isOuterEdge(3001, 3001, Z, "N")
+            and not Basement.isOuterEdge(3000, 3000, 0, "N") and Basement.isOuterEdge(3003, 3000, Z, "W")
+            and Basement.isDirtOnOuterEdge(dirtN) and not Basement.isDirtOnOuterEdge(fake)
+            and Basement.isOpeningOnOuterEdge(s1, "t_winN") and not Basement.isOpeningOnOuterEdge(inner, "t_winN")
+            and Basement.isFrameOnDirt(s1, "t_frameN") and not Basement.isFrameOnDirt(s1, "t_wallN")
+            and Basement.isDirtLookOnOuterEdge(s1, D.N) and not Basement.isDirtLookOnOuterEdge(s1, D.W)
+            and Basement.near(realCell():getGridSquare(3003, 3002, Z)) and not Basement.near(realCell():getGridSquare(3005, 3005, Z)),
+            "c5 外邊土牆層：外邊只看集合、IsoThumpable 的同圖不算土牆、外邊的窗與牆框擋、同圖只擋外邊、near 含東南鄰格")
+        -- 帳本寫到一半失敗：拿掉這次寫的、丟錯、洞不開
+        local realPos, calls = Store.pos, 0
+        Store.pos = function(...)
+            calls = calls + 1
+            if calls == 3 then return nil end
+            return realPos(...)
+        end
+        local hs = ug(3300, 3301, 0)
+        hs:addFloor("floors_exterior_natural_01_0")
+        local ok = pcall(Ledger.commit, near, entrance(3300, 3301), { 3300, 3301, 0 })
+        Store.pos = realPos
+        check(not ok and Ledger.stats().n == 10 and not Basement.has(3300, 3301, Z) and #hs.objects == 1
+            and HARNESS_LEDGER("MinidoracatBuilderBasements", realPos(3300, 3301, Z)) == nil and HARNESS_DRIFT() == "",
+            "c5 帳本第 3 格寫不進去：已寫的 2 筆拿掉、丟錯、集合不變、洞沒開")
+        -- 同步：玩家所在大區周圍 3×3 的地下室，一塊一組矩形
+        local n2 = #sent
+        Ledger.send(near)
+        Ledger.send(far)
+        local mine, theirs = sent[n2 + 1] and sent[n2 + 1].args, sent[n2 + 2] and sent[n2 + 2].args
+        local area = 0
+        for _, b in ipairs(mine and mine.b or {}) do
+            for i = 1, #b, 4 do area = area + b[i + 2] * b[i + 3] end
+        end
+        check(mine and mine.ax == 11 and mine.ay == 11 and #mine.b == 1 and area == 10 and theirs and #theirs.b == 0,
+            "c5 basements：大區 (11,11) 周圍只有那一塊 10 格；遠處的玩家拿到空的")
+        getOnlinePlayers, getNumActivePlayers, getSpecificPlayer = nil, nil, realSpecific
+        H.near = near
+    end)()
+
+    -- c6 Basement.pre 每個碼
+    ;(function()
+        local p = H.near
+        local function pre(cells, anchor, planned) return Basement.pre(p, nil, cells, anchor, planned, false) end
+        local function one(x, y, z) return { { x = x, y = y, z = z or Z, role = "dig" } }, { x, y, z or Z } end
+        getActivatedMods = function() return javaList({ "aparosa_BasementDig" }) end
+        local bd = pre(one(3004, 3001))
+        getActivatedMods = realMods
+        check(bd == "DIG_BD" and pre(one(3004, 3001)) == nil, "c6 DIG_BD：裝了 Basement Building 就拒絕；沒裝照常")
+        local c1, a1 = one(3004, 3001, 0)
+        local lv2 = pre(entrance(3200, 3201), { 3200, 3201, Z })
+        check(pre(c1, a1) == "DIG_LEVEL" and lv2 == "DIG_LEVEL" and pre(entrance(3200, 3201), { 3200, 3201, 0 }) ~= "DIG_LEVEL",
+            "c6 DIG_LEVEL：挖一格只在地下一層、入口只在地面層")
+        eng.foreign[tk(3005, 3002)] = eng.newDef("bedroom")
+        local room = pre(one(3004, 3001))
+        eng.foreign[tk(3005, 3002)] = nil
+        check(room == "DIG_ROOM" and pre(one(3004, 3001)) == nil, "c6 DIG_ROOM：外來房間在 3×3 內拒絕；拿掉就過")
+        local touching = pre(entrance(3004, 3001), { 3004, 3001, 0 })
+        local alone, _, skip0 = pre(entrance(3200, 3201), { 3200, 3201, 0 })
+        check(touching == "DIG_ROOM" and alone == nil and skip0 == false,
+            "c6 新開入口貼著別塊 → DIG_ROOM；四周空的 → 過、不是加開")
+        local mixed = pre(entrance(3002, 3001), { 3002, 3001, 0 })
+        check(pre(one(3001, 3001)) == "BLOCKED" and mixed == "BLOCKED" and pre(one(3001, 2999)) == nil,
+            "c6 BLOCKED：已挖的格子、入口樓梯一部分已挖；旁邊的新格照常")
+        local again, _, skip = pre(entrance(3000, 3001), { 3000, 3001, 0 })
+        check(again == nil and skip == true, "c6 加開：樓梯 3 格都在同一塊 → 過、skip")
+        local edge, edgeAt = one(3100, 3100)
+        check(pre(edge, edgeAt) == "DIG_EDGE" and pre(edge, edgeAt, { [B.Place.key(3101, 3100, Z)] = true }) == nil,
+            "c6 DIG_EDGE：四鄰都沒挖拒絕；同一排前面的格子算鄰格")
+        local big, small = {}, {}
+        for x = 4000, 4019 do for y = 4000, 4019 do big[#big + 1] = { x, y } end end
+        for x = 4100, 4119 do for y = 4100, 4119 do if x ~= 4119 or y ~= 4119 then small[#small + 1] = { x, y } end end end
+        Basement.add(big)
+        Basement.add(small)
+        local full, extra = pre(one(4020, 4000))
+        check(full == "DIG_FULL" and extra.max == Basement.MAX and pre(one(4120, 4100)) == nil,
+            "c6 DIG_FULL：第 401 格拒絕（extra.max＝400）；第 400 格過")
+        local owned = realCell():getGridSquare(3003, 3001, Z)
+        owned.owner = "someone"
+        local sh = pre(one(3003, 3000))
+        owned.owner = nil
+        check(sh == "SAFEHOUSE" and pre(one(3003, 3000)) == nil, "c6 已挖的鄰格在別人的安全屋裡：拒絕；不是就過")
+    end)()
+
+    -- c7 Basement.checkCell
+    ;(function()
+        local function hole(o, setup)
+            local sq = ug(5000, 5000, 0, o)
+            if setup then setup(sq) end
+            return Basement.checkCell(sq, "hole")
+        end
+        local function put(flags, name) return function(sq) sq.objects[#sq.objects + 1] = obj(sq, name or "t_x", false, flags) end end
+        local _, chair = hole(nil, put({}))
+        local wallOk = hole(nil, function(sq)
+            put({ "solidfloor" })(sq)
+            put({ "WallN" })(sq)
+            put({ "attachedN" })(sq)
+            put({ "canBeRemoved" })(sq)
+        end)
+        local _, water = hole(nil, put({ "solidfloor", "water" }))
+        local _, tree = hole(nil, put({ "vegitation" }, nil))
+        local _, moving = hole({ moving = { 1 } })
+        local _, item = hole(nil, function(sq) sq.world[1] = {} end)
+        local _, body = hole(nil, function(sq) sq.bodies = { 1 } end)
+        local _, stairs = hole({ stairs = true })
+        check(chair == "DIG_CLEAR" and wallOk == true and water == "DIG_CLEAR" and tree == nil and hole() == true
+            and moving == "OCCUPIED" and item == "DIG_CLEAR" and body == "DIG_CLEAR" and stairs == "DIG_CLEAR",
+            "c7 洞：家具、水面、地上物品、屍體、樓梯 → DIG_CLEAR；有人 → OCCUPIED；地板、牆、掛件、草、植物放行；沒有地板放行")
+        local _, noFloor = Basement.checkCell(ug(5001, 5000, 0), "platform")
+        local _, onStairs = Basement.checkCell(ug(5002, 5000, Z, { stairs = true }), "mid")
+        check(noFloor == "BLOCKED" and Basement.checkCell(ug(5003, 5000, 0, { floor = {} }), "platform") == true
+            and onStairs == "BLOCKED" and Basement.checkCell(ug(5004, 5000, Z), "bottom") == true
+            and Basement.checkCell(ug(5005, 5000, Z, { floor = {}, solid = true }), "dig") == true,
+            "c7 平台要有地板；地下的樓梯格不准已有樓梯；挖一格一律過")
+    end)()
+
+    -- 重開服：集合從帳本重建（只有帳本裡的格子），60 tick 後整塊登錄成一棟
+    ;(function()
+        eng.tile, eng.live = {}, {}
+        local chunk = assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))
+        chunk()
+        HARNESS_REOPEN(Ledger)
+        local before = liveCount()
+        for _ = 1, 60 do fire("OnTick") end
+        local def = eng.tile[tk(3001, 3001)]
+        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and before == 0 and liveCount() == 1
+            and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10,
+            "c4 重開服：集合照帳本重建，60 tick 後整塊（10 格）登錄成一棟")
+    end)()
+
+    getWorld, instanceof, getActivatedMods, getCell, isServer = realWorld, realInst, realMods, realCell, realS
+    getSpecificPlayer, IsoObject = realSpecific, realIsoObject
+    BuildingRoomsEditor, VirtualZombieManager = nil, nil
+    spriteMap, spriteOrder = oldMap, oldOrder
+end)()
+
 print("情境四十二：建造配方項目（2026-11-09 設計稿 4dy0caYOlmPY 選 all／mix／kinds／tile）：清單與篩法、頁籤、搜尋、最愛、整套、開原版游標")
 ;(function()
     local B = MinidoracatBuilder
@@ -12181,9 +12660,9 @@ print("情境四十九：掛上去的圖、燈與平台、線路三本帳本也�
         and HARNESS_LEDGER(LN, landKey) ~= nil and Circuits.data().c[900] ~= nil and Ledger.get(fresh) ~= nil,
         "下一次開服：搬過的燈、平台、線路從舊表清掉，分片照樣讀得到；讀不懂的與 0.3.0 以前的燈留著")
     local rep = Store.report()
-    check(#rep == 4 and rep[1].id == "floors" and rep[2].id == "overlays" and rep[3].id == "ledger" and rep[4].id == "circuits"
-        and rep[4].n == Ledger.circuits:stats().n and rep[3].shards == 1 and rep[3].bytes > 0,
-        "四本帳本的筆數、片數、大小照固定順序回報（管理面板）")
+    check(#rep == 5 and rep[1].id == "floors" and rep[2].id == "overlays" and rep[3].id == "ledger" and rep[4].id == "circuits"
+        and rep[5].id == "basements" and rep[4].n == Ledger.circuits:stats().n and rep[3].shards == 1 and rep[3].bytes > 0,
+        "五本帳本的筆數、片數、大小照固定順序回報（管理面板）")
     -- 沒有對照表的帳本讀檔：和前面的片同一個鍵的、不是帳本格式的不收
     HARNESS_GOS_SHARDS[LN .. "_2"] = { v = 1, data = { [fresh.keyId] = { p = K(1, 1, 0), s = "kl_dup", i = {} },
         [top + 39] = { p = K(331, 300, 0), s = "kl_z", i = {}, extra = 1 },
@@ -12314,9 +12793,9 @@ print("情境五十：管理面板的伺服器紀錄（2026-11-14）：伺服器
         local x, y = want[i], same and a1.list[i] or {}
         same = same and x.id == y.id and x.n == y.n and x.shards == y.shards and x.bytes == y.bytes
     end
-    check(#want == 4 and same, "管理員：拿到四本帳本，id、筆數、檔數、大小和 Store.report() 一樣")
+    check(#want == 5 and same, "管理員：拿到五本帳本，id、筆數、檔數、大小和 Store.report() 一樣")
     local p1 = asked(plain)
-    check(p1 ~= nil and #p1.list == 4,
+    check(p1 ~= nil and #p1.list == 5,
         "沒有沙盒權限的玩家也拿得到（只有筆數與大小；合作模式主機伺服器端認不出來，所以不查權限）")
     local a2, n2 = asked(admin)
     nowMs = nowMs + 1001
