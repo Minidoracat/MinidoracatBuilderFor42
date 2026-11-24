@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "The blueprint is full (4,096 pieces max). Erase some, or save part of it as another blueprint",
   "IGUI_MBLD_PlanTooWide": "Out of blueprint bounds (64 tiles per side max). Draw closer to the other pieces",
   "IGUI_MBLD_PlanTooHigh": "Out of blueprint bounds (4 floors max). Switch to a floor within range",
+  "IGUI_MBLD_PlanNoDig": "Basements can't go into a blueprint. Leave planning, then dig directly",
   "IGUI_MBLD_PlanBarTitle": "Plan Blueprint",
   "IGUI_MBLD_PlanDraw": "Draw",
   "IGUI_MBLD_PlanSelect": "Select",

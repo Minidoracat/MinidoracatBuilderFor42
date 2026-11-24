@@ -568,10 +568,12 @@ end
 Events.OnTick.Add(Client.tickUnbuild)
 
 -- ---------------------------------------------------------------- 地下室同步（伺服器 BasementLedger）
--- dug＝{ t = { x1, y1, x2, y2, ... } }：剛挖好的格子；basements＝{ ax, ay, b = { { x, y, w, h, x, y, w, h, ... }, ... } }：
--- 大區 (ax, ay) 周圍 3×3 範圍內的全部連通塊（一塊一個長方形清單）。座標都在地下一層。
+-- dug＝{ t = { x1, y1, x2, y2, ... } }：剛挖好的格子。basements＝大區 (ax, ay) 周圍 3×3 範圍內全部連通塊的快照，
+-- 分 n 段送：每段 { ax, ay, i, n, b = { { x, y, w, h, x, y, w, h, ... }, ... } }（一塊一個長方形清單，一塊不拆開；
+-- 一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。座標都在地下一層。
 -- 收到的數字逐個驗（整數、範圍；一塊最多 Basement.MAX 格），有一個不合整則丟掉
 local COORD_MAX = 99999 -- Place.key 每軸只留 5 位數
+local SEG_RECTS, SEG_MAX = 500, 1000
 local function int(v, lo, hi)
     return type(v) == "number" and v == math.floor(v) and v >= lo and v <= hi
 end
@@ -585,14 +587,17 @@ local function dugTiles(t)
     end
     return out
 end
-local function areaTiles(args)
+-- 一段快照的格子加進 out；回 out，或 nil（壞資料）
+local function areaTiles(args, out)
     local BM = MinidoracatBuilder.Basement
     local A, ax, ay, list = BM.AREA, args.ax, args.ay, args.b
     if not (int(ax, 0, COORD_MAX / A) and int(ay, 0, COORD_MAX / A) and type(list) == "table") then return nil end
     local x0, y0, x1, y1 = (ax - 1) * A, (ay - 1) * A, (ax + 2) * A - 1, (ay + 2) * A - 1
-    local out = {}
+    local rects = 0
     for _, r in ipairs(list) do
         if type(r) ~= "table" or #r == 0 or #r % 4 ~= 0 then return nil end
+        rects = rects + #r / 4
+        if rects > SEG_RECTS then return nil end
         local n = 0
         for i = 1, #r, 4 do
             local x, y, w, h = r[i], r[i + 1], r[i + 2], r[i + 3]
@@ -607,6 +612,40 @@ local function areaTiles(args)
     return out
 end
 
+-- synced＝已經收齊快照的大區（之後 dug 只收這個 3×3 範圍內的）；part＝收到一半的快照（ax, ay, i, n, tiles）
+local synced, part = nil, nil
+function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
+
+-- 快照收到前的 dug 不登錄：先登錄會以新格當主建物的角，快照到了其餘的格子變成一格一棟（快照本來就含它）
+local function inSynced(t)
+    if not synced then return false end
+    local A = MinidoracatBuilder.Basement.AREA
+    return t[1] >= (synced.ax - 1) * A and t[1] < (synced.ax + 2) * A and t[2] >= (synced.ay - 1) * A
+        and t[2] < (synced.ay + 2) * A
+end
+
+-- 一段快照：i＝1 開新的暫存；不是下一段、或 ax／ay／n 和暫存不同就丟掉暫存（當成沒收到，EveryOneMinute 會再要）；
+-- 收到最後一段才換掉那一區、全部登錄，並記成已收到。回 true＝收齊了
+local function onSegment(args)
+    local i, n = args.i, args.n
+    if not (int(n, 1, SEG_MAX) and int(i, 1, n)) then part = nil return print(LOG .. "basements: bad data, dropped") end
+    if i == 1 then
+        part = { ax = args.ax, ay = args.ay, n = n, i = 0, tiles = {} }
+    elseif not (part and part.i == i - 1 and part.ax == args.ax and part.ay == args.ay and part.n == n) then
+        part = nil
+        return print(LOG .. "basements: segment out of order, dropped")
+    end
+    if not areaTiles(args, part.tiles) then part = nil return print(LOG .. "basements: bad data, dropped") end
+    part.i = i
+    if i < n then return false end
+    local BM, done = MinidoracatBuilder.Basement, part
+    part = nil
+    BM.reset(done.tiles, done.ax, done.ay)
+    BM.registerAll()
+    synced = { ax = done.ax, ay = done.ay }
+    return true
+end
+
 -- 單機：集合與登錄伺服器那一半已經做了（同一個 Lua），只重算畫面高度範圍
 function Client.onBasement(cmd, args)
     local BM = MinidoracatBuilder.Basement
@@ -614,39 +653,42 @@ function Client.onBasement(cmd, args)
     if cmd == "dug" then
         local tiles = dugTiles(args.t)
         if not tiles then return print(LOG .. "dug: bad data, dropped") end
-        BM.grow(BM.add(tiles))
-    else
-        local tiles = areaTiles(args)
-        if not tiles then return print(LOG .. "basements: bad data, dropped") end
-        BM.reset(tiles, args.ax, args.ay)
-        BM.registerAll()
+        local keep = {}
+        for _, t in ipairs(tiles) do
+            if inSynced(t) then keep[#keep + 1] = t end
+        end
+        if #keep == 0 then return end
+        BM.grow(BM.add(keep))
+    elseif not onSegment(args) then
+        return
     end
     BM.recalcZ()
 end
 
--- 多人：進場後 60 tick 要一次玩家所在大區的地下室（伺服器每人 5 秒限一次）；之後每分鐘看換了大區才再要
+-- 多人：進場後 60 tick 要一次玩家所在大區的地下室；之後每分鐘看所在大區不是已收到快照的那一區就再要
+-- （伺服器每人 5 秒限一次、限速時不回：被丟掉的下一分鐘再要）
 local ASK_TICKS = 60
-local askTicks, askX, askY = 0, nil, nil
-local function askBasements(force)
+local askTicks = 0
+local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return false end
     local A = MinidoracatBuilder.Basement.AREA
     local ax, ay = math.floor(p:getX() / A), math.floor(p:getY() / A)
-    if not force and ax == askX and ay == askY then return true end
-    askX, askY = ax, ay
+    if synced and ax == synced.ax and ay == synced.ay then return true end
     sendClientCommand(p, MODULE, "basements", {})
     return true
 end
 function Client.askOnStart()
     askTicks = askTicks + 1
-    if askTicks >= ASK_TICKS and askBasements(true) then Events.OnTick.Remove(Client.askOnStart) end
+    if askTicks >= ASK_TICKS and askBasements() then Events.OnTick.Remove(Client.askOnStart) end
 end
 Events.OnGameStart.Add(function()
     if isClient() then Events.OnTick.Add(Client.askOnStart) end
 end)
-Events.EveryOneMinute.Add(function()
-    if isClient() and askX then askBasements(false) end
-end)
+function Client.askEveryMinute()
+    if isClient() and askTicks >= ASK_TICKS then askBasements() end
+end
+Events.EveryOneMinute.Add(Client.askEveryMinute)
 
 -- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
 -- placed：{ n, i, replaced（原地替換了舊的那件時 true）}

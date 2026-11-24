@@ -878,10 +878,10 @@ function L.store(plan)
     return file, asNew
 end
 
--- 「把缺的換成…」：這款（項目編號 it）的片全部改指到這裡有的 id。回 換了幾片，或 nil, 句子
+-- 「把缺的換成…」：這款（項目編號 it）的片全部改指到這裡有的 id（挖地下室的項目不進藍圖）。回 換了幾片，或 nil, 句子
 function L.swap(plan, it, id)
     local st = L.itemState(id)
-    if st ~= "ok" then return nil, getText("IGUI_MBLD_Imp_SwapBad") end
+    if st ~= "ok" or B.Rules.DIG[id] then return nil, getText("IGUI_MBLD_Imp_SwapBad") end
     return Plan.replace(plan, it, id, PlanFile.source(id))
 end
 
@@ -1656,8 +1656,8 @@ function Pick.new(UI, pn, plan, it, onDone)
     local y = win:contentTop() + GAP
     local Entry, Names = B.Entry, B.Names
     local opts = {}
-    for _, k in ipairs(Entry.KINDS) do
-        if Entry.BUILDABLE[k] then opts[#opts + 1] = { id = k, label = Names and Names.kind(k) or k } end
+    for _, k in ipairs(Entry.KINDS) do -- 挖地下室不進藍圖（L.swap 也擋）
+        if Entry.BUILDABLE[k] and k ~= "dig" then opts[#opts + 1] = { id = k, label = Names and Names.kind(k) or k } end
     end
     self.kind = L.guessKind(item.id)
     self.kindDD = UI.Dropdown.new({ x = PAD, y = y, options = opts, selected = self.kind, theme = theme, target = self,

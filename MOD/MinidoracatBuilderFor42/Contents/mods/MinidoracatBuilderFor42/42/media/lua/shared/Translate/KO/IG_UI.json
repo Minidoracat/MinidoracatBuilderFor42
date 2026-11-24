@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "청사진이 가득 찼습니다(최대 4,096조각). 일부를 지우거나 일부를 다른 청사진으로 저장하세요",
   "IGUI_MBLD_PlanTooWide": "청사진 범위를 벗어났습니다(한 변 최대 64칸). 다른 조각에 더 가깝게 그리세요",
   "IGUI_MBLD_PlanTooHigh": "청사진 범위를 벗어났습니다(최대 4층). 범위 안의 층으로 바꾸세요",
+  "IGUI_MBLD_PlanNoDig": "지하실은 청사진에 넣을 수 없습니다. 계획을 끝낸 뒤 직접 파세요",
   "IGUI_MBLD_PlanBarTitle": "청사진 계획",
   "IGUI_MBLD_PlanDraw": "그리기",
   "IGUI_MBLD_PlanSelect": "선택",

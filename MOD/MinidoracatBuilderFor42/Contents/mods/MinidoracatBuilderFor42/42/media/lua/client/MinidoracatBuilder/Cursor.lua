@@ -752,6 +752,22 @@ local function partSprite(offs, o, x, y)
     return Entry.alternate(o[4], x, y)
 end
 
+-- 這次實際會蓋的格子：Check.item 通過時修剪過（加開地下室入口不挖已挖的那幾格）就照它的 info.cells，
+-- 回 { [Place.key] = 那一格 }；沒修剪（格數和 Entry.cells 一樣）回 nil＝照 Entry.cells 全畫，info.cells[j] 對第 j 片
+local function keptOf(r, offs)
+    local cells = r.code == nil and r.cells
+    if not cells or #cells == #offs then return nil end
+    local kept = {}
+    for _, c in ipairs(cells) do kept[B.Place.key(c.x, c.y, c.z)] = c end
+    return kept
+end
+-- 第 j 片（世界座標 x, y, z）對到的 info.cells 那一格；修剪掉的回 nil, true
+local function cellOf(r, kept, j, x, y, z)
+    if not kept then return r.cells and r.cells[j], false end
+    local c = kept[B.Place.key(x, y, z)]
+    return c, c == nil
+end
+
 -- 重算預覽與要畫的東西（只在 isValid 判斷有變時）。每格攤平成陣列，render 只照陣列畫。
 -- ponytail：拖曳時每換一格整片重算（最多 DRAW_MAX 次 Check.item）；量到卡頓再改成只算新增的格子。
 function Cursor:refresh(ax, ay, az, ex, ey)
@@ -769,14 +785,17 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         local swap = code == nil and r.info ~= nil and r.info.replace ~= nil
         if swap then swapN = swapN + 1 end
         local offs = self:offsFor(a) or NO_OFFS
+        local kept = keptOf(r, offs)
         for j, o in ipairs(offs) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
             local spr = partSprite(offs, o, x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
             -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:564-571）。沒算到那一格的畫在地上。
-            local c = r.cells and r.cells[j]
+            local c, cut = cellOf(r, kept, j, x, y, z)
             local yoff = (c and c.yoff or 0) * scale
-            if code == nil then
+            if cut then
+                -- Check.item 修剪掉的格子不會蓋：不畫
+            elseif code == nil then
                 ghost(g, x, y, z, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
             elseif not at or (e.x == x and e.y == y and e.z == z) then
                 ghost(g, x, y, z, spr, yoff, RED, bad, MARK_BAD)
@@ -1257,11 +1276,12 @@ function Cursor:tryBuild(x, y, z)
         if r.code == nil then
             local a, ps = r.a, {}
             local offs = self:offsFor(a)
+            local kept = keptOf(r, offs)
             for j, o in ipairs(offs) do
-                local c = r.cells and r.cells[j]
-                local x, y = a[1] + o[1], a[2] + o[2]
-                local spr = partSprite(offs, o, x, y)
-                if spr then ps[#ps + 1] = { x, y, a[3] + o[3], spr, (c and c.yoff or 0) * scale } end
+                local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
+                local c, cut = cellOf(r, kept, j, x, y, z)
+                local spr = not cut and partSprite(offs, o, x, y)
+                if spr then ps[#ps + 1] = { x, y, z, spr, (c and c.yoff or 0) * scale } end
             end
             anchors[#anchors + 1] = { a[1], a[2], a[3], a[4], a[5] } -- a[5]：車庫門的寬度（Client.build 送 w）
             parts[#anchors] = ps

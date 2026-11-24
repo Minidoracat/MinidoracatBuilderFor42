@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "藍圖滿了（最多 4,096 片）：先擦掉一些，或把一部分存成另一張",
   "IGUI_MBLD_PlanTooWide": "超出藍圖範圍（每邊最多 64 格）：畫在離其他片近一點的地方",
   "IGUI_MBLD_PlanTooHigh": "超出藍圖範圍（最多 4 層）：換到範圍內的樓層再畫",
+  "IGUI_MBLD_PlanNoDig": "地下室不能記進藍圖：離開規劃後直接挖",
   "IGUI_MBLD_PlanBarTitle": "規劃藍圖",
   "IGUI_MBLD_PlanDraw": "畫",
   "IGUI_MBLD_PlanSelect": "選取",

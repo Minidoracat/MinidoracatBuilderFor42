@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "Plan dolu (en fazla 4.096 parça). Bir kısmını sil ya da bir kısmını başka bir plan olarak kaydet",
   "IGUI_MBLD_PlanTooWide": "Plan sınırı dışında (kenar başına en fazla 64 kare). Diğer parçalara daha yakın çiz",
   "IGUI_MBLD_PlanTooHigh": "Plan sınırı dışında (en fazla 4 kat). Sınır içindeki bir kata geç",
+  "IGUI_MBLD_PlanNoDig": "Bodrumlar plana eklenemez. Planlamadan çık, sonra doğrudan kaz",
   "IGUI_MBLD_PlanBarTitle": "Planlama",
   "IGUI_MBLD_PlanDraw": "Çiz",
   "IGUI_MBLD_PlanSelect": "Seç",

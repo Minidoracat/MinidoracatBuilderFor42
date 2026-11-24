@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "蓝图满了（最多 4,096 块）：先擦掉一些，或把一部分存成另一张",
   "IGUI_MBLD_PlanTooWide": "超出蓝图范围（每边最多 64 格）：画在离其他块近一点的地方",
   "IGUI_MBLD_PlanTooHigh": "超出蓝图范围（最多 4 层）：换到范围内的楼层再画",
+  "IGUI_MBLD_PlanNoDig": "地下室不能记进蓝图：退出规划后直接挖",
   "IGUI_MBLD_PlanBarTitle": "规划蓝图",
   "IGUI_MBLD_PlanDraw": "画",
   "IGUI_MBLD_PlanSelect": "选取",

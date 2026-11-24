@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "Projekt jest pełny (maks. 4096 elementów). Zmaż część albo zapisz część jako inny projekt",
   "IGUI_MBLD_PlanTooWide": "Poza granicami projektu (maks. 64 pola na bok). Rysuj bliżej pozostałych elementów",
   "IGUI_MBLD_PlanTooHigh": "Poza granicami projektu (maks. 4 piętra). Przejdź na piętro w zasięgu",
+  "IGUI_MBLD_PlanNoDig": "Piwnic nie można dodać do projektu. Zakończ planowanie i kop bezpośrednio",
   "IGUI_MBLD_PlanBarTitle": "Planowanie",
   "IGUI_MBLD_PlanDraw": "Rysuj",
   "IGUI_MBLD_PlanSelect": "Zaznacz",

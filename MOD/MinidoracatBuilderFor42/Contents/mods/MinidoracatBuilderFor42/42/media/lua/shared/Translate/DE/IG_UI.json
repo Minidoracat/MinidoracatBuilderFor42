@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "Der Bauplan ist voll (max. 4096 Teile). Lösch einige oder speichere einen Teil als anderen Bauplan",
   "IGUI_MBLD_PlanTooWide": "Außerhalb des Bauplans (max. 64 Kacheln pro Seite). Zeichne näher an den anderen Teilen",
   "IGUI_MBLD_PlanTooHigh": "Außerhalb des Bauplans (max. 4 Etagen). Wechsle auf eine Etage im Bereich",
+  "IGUI_MBLD_PlanNoDig": "Keller können nicht in einen Bauplan. Beende die Planung und grabe direkt",
   "IGUI_MBLD_PlanBarTitle": "Bauplan planen",
   "IGUI_MBLD_PlanDraw": "Zeichnen",
   "IGUI_MBLD_PlanSelect": "Wählen",

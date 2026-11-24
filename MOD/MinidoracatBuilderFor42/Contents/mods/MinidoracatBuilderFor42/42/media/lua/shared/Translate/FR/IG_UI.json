@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "Le plan est plein (4096 pièces max.). Effacez-en, ou enregistrez une partie comme autre plan",
   "IGUI_MBLD_PlanTooWide": "Hors des limites du plan (64 cases par côté max.). Tracez plus près des autres pièces",
   "IGUI_MBLD_PlanTooHigh": "Hors des limites du plan (4 étages max.). Passez à un étage dans les limites",
+  "IGUI_MBLD_PlanNoDig": "Les sous-sols ne peuvent pas aller dans un plan. Quittez la planification, puis creusez directement",
   "IGUI_MBLD_PlanBarTitle": "Planification",
   "IGUI_MBLD_PlanDraw": "Tracer",
   "IGUI_MBLD_PlanSelect": "Choisir",

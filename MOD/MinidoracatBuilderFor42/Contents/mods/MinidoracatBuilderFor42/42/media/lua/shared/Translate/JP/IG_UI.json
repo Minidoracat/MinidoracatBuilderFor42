@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "設計図がいっぱいです（最大 4,096 個）。一部を消すか、一部を別の設計図として保存してください",
   "IGUI_MBLD_PlanTooWide": "設計図の範囲外です（1 辺最大 64 タイル）。他のパーツの近くに描いてください",
   "IGUI_MBLD_PlanTooHigh": "設計図の範囲外です（最大 4 階）。範囲内の階に切り替えてください",
+  "IGUI_MBLD_PlanNoDig": "地下室は設計図に入れられません。計画を終えてから直接掘ってください",
   "IGUI_MBLD_PlanBarTitle": "設計図の計画",
   "IGUI_MBLD_PlanDraw": "描く",
   "IGUI_MBLD_PlanSelect": "選択",

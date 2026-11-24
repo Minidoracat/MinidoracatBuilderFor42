@@ -277,6 +277,7 @@
   "IGUI_MBLD_PlanFull": "El plano está lleno (máximo 4096 piezas). Borra algunas, o guarda una parte como otro plano",
   "IGUI_MBLD_PlanTooWide": "Fuera de los límites del plano (máximo 64 casillas por lado). Dibuja más cerca de las otras piezas",
   "IGUI_MBLD_PlanTooHigh": "Fuera de los límites del plano (máximo 4 niveles). Cambia a un nivel dentro del rango",
+  "IGUI_MBLD_PlanNoDig": "Los sótanos no se pueden añadir al plano. Sal del trazado y excava directamente",
   "IGUI_MBLD_PlanBarTitle": "Trazar plano",
   "IGUI_MBLD_PlanDraw": "Dibujar",
   "IGUI_MBLD_PlanSelect": "Elegir",
