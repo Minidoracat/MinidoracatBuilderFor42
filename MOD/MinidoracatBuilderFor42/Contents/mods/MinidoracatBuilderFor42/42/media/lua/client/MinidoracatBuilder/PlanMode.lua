@@ -908,7 +908,16 @@ local function dragLines(o)
         if S.home then t[2] = getText(o.joypad and "IGUI_MBLD_PlanHomePad" or "IGUI_MBLD_PlanHomeHint") end
         return t
     elseif k == "move" or k == "copy" then
-        return { getText(k == "copy" and "IGUI_MBLD_PlanCopyHint" or "IGUI_MBLD_PlanMoveHint", tostring(#S.sel)) }
+        local t = { getText(k == "copy" and "IGUI_MBLD_PlanCopyHint" or "IGUI_MBLD_PlanMoveHint", tostring(#S.sel)) }
+        if k == "copy" then
+            local reps = o.reps or 1
+            if reps > 1 then
+                t[2] = getText("IGUI_MBLD_PlanCopyRow", tostring(reps), tostring(reps * #S.sel))
+            elseif not o.joypad then
+                t[2] = getText("IGUI_MBLD_PlanCopyDragHint")
+            end
+        end
+        return t
     end
     return { getText(o.ax and "IGUI_MBLD_PlanRectPad2" or "IGUI_MBLD_PlanRectPad1"),
         getText(o.tool == "erase" and "IGUI_MBLD_PlanEraseN" or "IGUI_MBLD_PlanSelectN", tostring(o.n or 0)) }
@@ -929,9 +938,51 @@ function PM.dragMoved(o, x, y, z)
             if o.ax then o.n = #inRect(o.ax, o.ay, lx, ly, false) end
         else
             o.dx, o.dy = lx - o.cx, ly - o.cy
+            -- 沒按住時游標跟著滑鼠走：上一次拖的份數不留到下一次按下
+            if not o.isLeftDown then o.reps, o.rx, o.ry = nil, nil, nil end
         end
     end
     o.lines = dragLines(o)
+end
+
+-- 跟著游標那份（轉過的預覽）的包圍盒，拖一排的間距與夾上限用；轉了就重算
+local function measure(o)
+    local x0, y0, x1, y1
+    for _, p in ipairs(o.preview) do
+        x0, y0 = math.min(x0 or p.x, p.x), math.min(y0 or p.y, p.y)
+        x1, y1 = math.max(x1 or p.x, p.x), math.max(y1 or p.y, p.y)
+    end
+    o.px0, o.py0, o.px1, o.py1 = x0, y0, x1, y1
+    o.bw, o.bh, o.rx, o.ry = x1 - x0 + 1, y1 - y0 + 1, nil, nil
+end
+
+-- 複製中按住左鍵拖：沿主軸排成一列。原版按住期間每幀把滑鼠那格傳給 rotateMouse，
+-- 放下的格子停在按下那格 o.square（ISBuildingObject.lua:114-139）。份數先夾到放得下（片數、主軸每邊 64 格），放下時不會整個不做
+function PM.dragRow(o, x, y)
+    local plan, at = S.plan, o.square
+    if o.joypad or not plan or not at or not o.bw or #S.sel == 0 then return end
+    local dx, dy = x - at:getX(), y - at:getY()
+    if dx == o.rx and dy == o.ry then return end
+    o.rx, o.ry = dx, dy
+    local reps, sx, sy
+    if math.abs(dx) >= math.abs(dy) then
+        reps, sx, sy = 1 + math.floor(math.abs(dx) / o.bw), dx < 0 and -o.bw or o.bw, 0
+    else
+        reps, sx, sy = 1 + math.floor(math.abs(dy) / o.bh), 0, dy < 0 and -o.bh or o.bh
+    end
+    reps = math.min(reps, math.floor((Plan.MAX_PIECES - plan.n) / #S.sel))
+    local x0, y0, _, x1, y1 = Plan.bounds(plan)
+    local lo, hi, a0, a1, step = x0, x1, o.px0 + o.dx, o.px1 + o.dx, sx
+    if sx == 0 then lo, hi, a0, a1, step = y0, y1, o.py0 + o.dy, o.py1 + o.dy, sy end
+    while reps > 1 and math.max(hi, a1, a1 + (reps - 1) * step) - math.min(lo, a0, a0 + (reps - 1) * step) >= Plan.MAX_SIDE do
+        reps = reps - 1
+    end
+    reps = math.max(reps, 1)
+    o.sx, o.sy = sx, sy
+    if reps ~= (o.reps or 1) then
+        o.reps = reps
+        o.lines = dragLines(o)
+    end
 end
 
 local function endDrag(o)
@@ -1003,13 +1054,17 @@ function PM.dragDrop(o, x, y, z)
         endDrag(o)
         return rectDone(o.tool, o.ax, o.ay, lx, ly, false)
     end
+    -- 放開那一幀 isLeftDown 已經是 false，dragMoved 會把份數歸零：先記下拖出來的那一列
+    local reps, sx, sy = o.reps or 1, o.sx or 0, o.sy or 0
     PM.dragMoved(o, x, y, z)
     endDrag(o)
-    if o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0 then return fire() end
-    -- 照預覽的最終位置一次做完（preview[i] 對應 sel[i]）：搬（或複製）和轉算同一步，上一步一次拿掉；
-    -- 上限與重複都照最終位置算
-    local to = {}
-    for i, p in ipairs(o.preview) do to[i] = { p.x + o.dx, p.y + o.dy, p.z, p.d } end
+    if o.dx == 0 and o.dy == 0 and (o.turns or 0) == 0 and reps == 1 then return fire() end
+    -- 照預覽的最終位置一次做完（preview[i] 對應 sel[i]，第 g 份接在 to[g * #preview + i]）：搬（或複製）和轉、
+    -- 拖出來的每一份算同一步，上一步一次拿掉；上限與重複都照最終位置算
+    local to, n = {}, #o.preview
+    for g = 0, reps - 1 do
+        for i, p in ipairs(o.preview) do to[g * n + i] = { p.x + o.dx + g * sx, p.y + o.dy + g * sy, p.z, p.d } end
+    end
     local res, why
     if o.kind == "copy" then
         res, why = Plan.copyTo(S.plan, S.sel, to)
@@ -1033,6 +1088,7 @@ function PM.dragRotate(o)
     elseif (o.kind == "move" or o.kind == "copy") and #S.sel > 0 then
         o.preview = turnedCopy(o.preview or S.sel)
         o.turns = (o.turns or 0) + 1
+        measure(o)
     end
 end
 
@@ -1074,7 +1130,9 @@ local function dragClass()
     end
     function Drag:render() end -- PlanGhost 畫
     function Drag:getSprite() return nil end
-    function Drag:rotateMouse() end
+    function Drag:rotateMouse(x, y)
+        if self.kind == "copy" then PM.dragRow(self, x, y) end
+    end
     function Drag:rotateKey(key)
         if getCore():isKey(KeybindId.ROTATE_BUILDING, key) then PM.dragRotate(self) end
     end
@@ -1174,6 +1232,7 @@ function PM.moveSel(copy)
     if not o then return false end
     o.cx, o.cy = selCenter()
     o.dx, o.dy, o.preview, o.turns = 0, 0, S.sel, 0
+    measure(o)
     o.lines = dragLines(o)
     return true
 end

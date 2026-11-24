@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X：元の場所に戻す",
   "IGUI_MBLD_PlanMoveHint": "%1 個を移動：クリックで置く · R 回転 · 右クリックでキャンセル",
   "IGUI_MBLD_PlanCopyHint": "%1 個をコピー：クリックで置く · R 回転 · 右クリックでキャンセル",
+  "IGUI_MBLD_PlanCopyDragHint": "押したままドラッグ：1 列に並べる",
+  "IGUI_MBLD_PlanCopyRow": "%1 回分を並べる（計 %2 個）",
   "IGUI_MBLD_PlanSelectN": "範囲内 %1 個",
   "IGUI_MBLD_PlanEraseN": "%1 個を消去",
   "IGUI_MBLD_PlanRectHint": "離して確定 · Shift を押したままで全階 · 右クリックで終了",

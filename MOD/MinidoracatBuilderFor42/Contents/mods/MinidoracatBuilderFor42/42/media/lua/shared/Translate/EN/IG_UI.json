@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: back to original spot",
   "IGUI_MBLD_PlanMoveHint": "Move %1 pieces: click to drop · R rotate · Right-click cancel",
   "IGUI_MBLD_PlanCopyHint": "Copy %1 pieces: click to drop · R rotate · Right-click cancel",
+  "IGUI_MBLD_PlanCopyDragHint": "Hold and drag: copy in a row",
+  "IGUI_MBLD_PlanCopyRow": "Row of %1 copies (%2 pieces)",
   "IGUI_MBLD_PlanSelectN": "%1 pieces in the box",
   "IGUI_MBLD_PlanEraseN": "Erases %1 pieces",
   "IGUI_MBLD_PlanRectHint": "Release to confirm · Hold Shift for all floors · Right-click to stop",

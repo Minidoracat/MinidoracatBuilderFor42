@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: на исходное место",
   "IGUI_MBLD_PlanMoveHint": "Сдвиг деталей (%1): щёлкните, чтобы поставить · R поворот · ПКМ отмена",
   "IGUI_MBLD_PlanCopyHint": "Копия деталей (%1): щёлкните, чтобы поставить · R поворот · ПКМ отмена",
+  "IGUI_MBLD_PlanCopyDragHint": "Зажмите и тяните: копировать в ряд",
+  "IGUI_MBLD_PlanCopyRow": "Ряд копий: %1 (деталей: %2)",
   "IGUI_MBLD_PlanSelectN": "В рамке деталей: %1",
   "IGUI_MBLD_PlanEraseN": "Стереть: %1",
   "IGUI_MBLD_PlanRectHint": "Отпустите для подтверждения · Shift — все этажи · ПКМ — выход",

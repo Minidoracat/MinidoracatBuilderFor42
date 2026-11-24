@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: na pierwotne miejsce",
   "IGUI_MBLD_PlanMoveHint": "Przesuń elementy (%1): kliknij, by upuścić · R obrót · PPM anuluj",
   "IGUI_MBLD_PlanCopyHint": "Kopiuj elementy (%1): kliknij, by upuścić · R obrót · PPM anuluj",
+  "IGUI_MBLD_PlanCopyDragHint": "Przytrzymaj i przeciągnij: kopiuj w rzędzie",
+  "IGUI_MBLD_PlanCopyRow": "Rząd kopii: %1 (elementy: %2)",
   "IGUI_MBLD_PlanSelectN": "Elementy w ramce: %1",
   "IGUI_MBLD_PlanEraseN": "Do zmazania: %1",
   "IGUI_MBLD_PlanRectHint": "Puść, by potwierdzić · Shift: wszystkie piętra · PPM: zakończ",

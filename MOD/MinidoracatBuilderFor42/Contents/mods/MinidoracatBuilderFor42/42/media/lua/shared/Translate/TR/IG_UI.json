@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: asıl yerine dön",
   "IGUI_MBLD_PlanMoveHint": "%1 parça taşı: bırakmak için tıkla · R döndür · Sağ tık iptal",
   "IGUI_MBLD_PlanCopyHint": "%1 parça kopyala: bırakmak için tıkla · R döndür · Sağ tık iptal",
+  "IGUI_MBLD_PlanCopyDragHint": "Basılı tut ve sürükle: sıra halinde kopyala",
+  "IGUI_MBLD_PlanCopyRow": "%1 kopyalık sıra (%2 parça)",
   "IGUI_MBLD_PlanSelectN": "Kutuda %1 parça",
   "IGUI_MBLD_PlanEraseN": "%1 parça silinir",
   "IGUI_MBLD_PlanRectHint": "Onaylamak için bırak · Tüm katlar için Shift'i basılı tut · Durmak için sağ tık",

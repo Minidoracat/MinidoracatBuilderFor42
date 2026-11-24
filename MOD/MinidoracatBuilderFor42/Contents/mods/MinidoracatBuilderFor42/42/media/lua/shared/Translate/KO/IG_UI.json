@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: 원래 자리로",
   "IGUI_MBLD_PlanMoveHint": "%1조각 이동: 클릭해 내려놓기 · R 회전 · 우클릭 취소",
   "IGUI_MBLD_PlanCopyHint": "%1조각 복사: 클릭해 내려놓기 · R 회전 · 우클릭 취소",
+  "IGUI_MBLD_PlanCopyDragHint": "누른 채 드래그: 한 줄로 복사",
+  "IGUI_MBLD_PlanCopyRow": "%1번 복사 (총 %2조각)",
   "IGUI_MBLD_PlanSelectN": "범위 안 %1조각",
   "IGUI_MBLD_PlanEraseN": "%1조각 지움",
   "IGUI_MBLD_PlanRectHint": "놓으면 확정 · Shift를 누르고 있으면 모든 층 · 우클릭 종료",

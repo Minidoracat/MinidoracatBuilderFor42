@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X : position d'origine",
   "IGUI_MBLD_PlanMoveHint": "Déplacer %1 pièces : cliquer pour poser · R pivoter · Clic droit annuler",
   "IGUI_MBLD_PlanCopyHint": "Copier %1 pièces : cliquer pour poser · R pivoter · Clic droit annuler",
+  "IGUI_MBLD_PlanCopyDragHint": "Maintenir et glisser : copier en rangée",
+  "IGUI_MBLD_PlanCopyRow": "Rangée de %1 copies (%2 pièces)",
   "IGUI_MBLD_PlanSelectN": "%1 pièces dans le cadre",
   "IGUI_MBLD_PlanEraseN": "Efface %1 pièces",
   "IGUI_MBLD_PlanRectHint": "Relâcher pour confirmer · Maintenir Maj pour tous les étages · Clic droit pour arrêter",

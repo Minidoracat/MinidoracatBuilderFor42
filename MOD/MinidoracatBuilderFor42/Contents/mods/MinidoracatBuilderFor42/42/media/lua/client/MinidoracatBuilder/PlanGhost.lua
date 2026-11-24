@@ -229,15 +229,18 @@ function PG.draw()
         return
     end
 
-    -- 搬、複製：跟著游標的那份先畫（PlanMode 轉過的預覽片，沒轉就是選到的片本身）
+    -- 搬、複製：跟著游標的那份先畫（PlanMode 轉過的預覽片，沒轉就是選到的片本身）；按住拖出好幾份時每份都畫
     if moving then
         local pv = drag.preview or PM.selected()
-        local k = math.max(0, math.min(#pv, max - drawn))
-        for i = 1, k do
-            local p = pv[i]
-            drawPiece(plan, p, p.x + ox + drag.dx, p.y + oy + drag.dy, p.z + oz, SEL, 0.6, floorSpr, false)
+        local sx, sy = drag.sx or 0, drag.sy or 0
+        for g = 0, (drag.reps or 1) - 1 do
+            local k = math.max(0, math.min(#pv, max - drawn))
+            for i = 1, k do
+                local p = pv[i]
+                drawPiece(plan, p, p.x + ox + drag.dx + g * sx, p.y + oy + drag.dy + g * sy, p.z + oz, SEL, 0.6, floorSpr, false)
+            end
+            drawn = drawn + k
         end
-        drawn = drawn + k
     end
     local cx, cy
     if placing then

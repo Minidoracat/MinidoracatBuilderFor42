@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: zurück zum Ursprung",
   "IGUI_MBLD_PlanMoveHint": "%1 Teile bewegen: Klicken zum Ablegen · R drehen · Rechtsklick abbrechen",
   "IGUI_MBLD_PlanCopyHint": "%1 Teile kopieren: Klicken zum Ablegen · R drehen · Rechtsklick abbrechen",
+  "IGUI_MBLD_PlanCopyDragHint": "Halten und ziehen: in einer Reihe kopieren",
+  "IGUI_MBLD_PlanCopyRow": "Reihe aus %1 Kopien (%2 Teile)",
   "IGUI_MBLD_PlanSelectN": "%1 Teile im Rahmen",
   "IGUI_MBLD_PlanEraseN": "Löscht %1 Teile",
   "IGUI_MBLD_PlanRectHint": "Loslassen zum Bestätigen · Umschalt halten für alle Etagen · Rechtsklick zum Beenden",

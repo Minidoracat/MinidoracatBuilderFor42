@@ -13950,6 +13950,34 @@ end)()
             "撤銷轉向：全部回原位")
     end
 
+    do -- 2026-11-24 回饋 G：複製一次排好幾份（to 接 g 份），算一步；超過上限整個不做
+        local pl = Plan.new("row")
+        local a = Plan.item(pl, "walls_01_4")
+        local p1, p2 = Plan.add(pl, 0, 0, 0, 1, 0, a), Plan.add(pl, 1, 0, 0, 1, 0, a)
+        local function row(reps, step)
+            local to = {}
+            for g = 0, reps - 1 do
+                to[g * 2 + 1] = { p1.x + (g + 1) * step, p1.y, p1.z, p1.d }
+                to[g * 2 + 2] = { p2.x + (g + 1) * step, p2.y, p2.z, p2.d }
+            end
+            return to
+        end
+        local n0, undo0 = pl.n, #pl._undo
+        local cp = Plan.copyTo(pl, { p1, p2 }, row(3, 2))
+        check(cp and #cp == 6 and pl.n == n0 + 6 and #Plan.at(pl, 6, 0, 0) == 1 and #Plan.at(pl, 7, 0, 0) == 1
+            and #pl._undo == undo0 + 1, "G：3 份×2 片一次複製：6 片新片、每份在自己的位置、只記一步（" .. tostring(cp and #cp) .. "）")
+        check(Plan.undo(pl) and pl.n == n0 and #Plan.at(pl, 6, 0, 0) == 0, "G：撤銷一次，3 份全部拿掉")
+        local rev = pl.rev
+        local bad, why = Plan.copyTo(pl, { p1, p2 }, row(3, 30))
+        check(bad == nil and why == "TOO_WIDE" and pl.n == n0 and pl.rev == rev and #Plan.at(pl, 30, 0, 0) == 0,
+            "G：第 3 份超出每邊 64 格：整個不做（前兩份也不留）、rev 不變")
+        local keep = Plan.MAX_PIECES
+        Plan.MAX_PIECES = n0 + 5
+        bad, why = Plan.copyTo(pl, { p1, p2 }, row(3, 2))
+        Plan.MAX_PIECES = keep
+        check(bad == nil and why == "FULL" and pl.n == n0 and pl.rev == rev, "G：3 份超過片數上限：整個不做、回 FULL")
+    end
+
     do -- 撤銷、重做：50 步、只記差異、begin／commit
         local pl = Plan.new("undo")
         local a = Plan.item(pl, "floor_01_0")
@@ -15943,6 +15971,71 @@ end)()
     PM.undo()
     PM.undo()
     check(plan.n == n0, "上一步拿掉複製與加的牆")
+    -- 2026-11-24 回饋 G：複製中按住左鍵拖排成一列（原版按住期間每幀 rotateMouse(滑鼠那格)，o.square 停在按下那格）
+    do
+        local wx = PM.origin()
+        PM.addCells(0, "pm_wall_01_1", { { 56, 56, 0, 0 }, { 57, 56, 0, 0 } })
+        local nRow = plan.n
+        local function press(x, y)
+            PM.selectRect(56, 56, 57, 56)
+            PM.moveSel(true)
+            local d = drags[0]
+            d:isValid(sq(56, 56, 0))
+            d.square, d.isLeftDown = sq(56, 56, 0), true
+            if x then d:rotateMouse(x, y) end
+            return d
+        end
+        local d = press(nil, nil)
+        check(#PM.selected() == 2 and d.lines[2] == "IGUI_MBLD_PlanCopyDragHint", "G：鍵鼠、1 份：第二行提示可以按住拖")
+        d:rotateMouse(61, 57)
+        check(d.reps == 3 and d.sx == 2 and d.sy == 0 and d.lines[2] == "IGUI_MBLD_PlanCopyRow(3,6)",
+            "G：往東拖 5 格（橫的比縱的多）：走 x 軸、間距是寬 2、3 份，提示換成份數與片數")
+        d:rotateMouse(57, 59)
+        check(d.reps == 4 and d.sx == 0 and d.sy == 1, "G：往南拖 3 格：走 y 軸、間距是深 1、4 份")
+        d:rotateMouse(52, 56)
+        for k in pairs(ghostAt) do ghostAt[k] = nil end
+        PG.draw()
+        check(d.reps == 3 and d.sx == -2 and ghostAt["52,56,0"] and ghostAt["53,56,0"] and ghostAt["54,56,0"],
+            "G：往西拖 4 格：往負的方向排 3 份，虛影每份都畫")
+        d:rotateMouse(61, 57)
+        d.isLeftDown = false
+        d:tryBuild(56, 56, 0)
+        check(plan.n == nRow + 4 and wallD(58, 56, 0) and wallD(61, 56, 0) and #PM.selected() == 4 and PM.isSelected(wallD(60, 56, 0)),
+            "G：在原地按下拖 3 份放開：第 0 份和原片重疊略過，其餘 4 片加上、選取換成新片")
+        check(PM.undo() and plan.n == nRow, "G：拖出來的 3 份算一步，上一步一次清光")
+
+        d = press(61, 56)
+        d.isLeftDown = false
+        d:isValid(sq(40, 40, 0))
+        check((d.reps or 1) == 1 and d.lines[2] == "IGUI_MBLD_PlanCopyDragHint", "G：放開但沒放下（例如在介面上），游標跟著滑鼠走時份數回 1")
+        getCell():setDrag(nil, 0)
+
+        d = press(56 + 200, 56)
+        local x0, _, _, x1 = Plan.bounds(plan)
+        local lo, far = math.min(x0, 56 - wx), 57 - wx + (d.reps - 1) * 2
+        check(d.reps > 1 and math.max(x1, far) - lo < 64 and math.max(x1, far + 2) - lo >= 64,
+            "G：拖過 64 格：夾到每邊 64 格放得下的最多份（" .. tostring(d.reps) .. "）")
+        local reps, said = d.reps, #toasts
+        d.isLeftDown = false
+        d:tryBuild(56, 56, 0)
+        check(#toasts == said and plan.n == nRow + (reps - 1) * 2, "G：夾過的份數放下一定成功，不跳上限提示")
+        PM.undo()
+
+        local keep = Plan.MAX_PIECES
+        Plan.MAX_PIECES = plan.n + 5
+        d = press(66, 56)
+        Plan.MAX_PIECES = keep
+        check(d.reps == 2, "G：片數上限：剩 5 片、每份 2 片，夾到 2 份")
+        getCell():setDrag(nil, 0)
+
+        JoypadState.players[1] = {}
+        d = press(61, 56)
+        check(d.joypad and (d.reps or 1) == 1 and #d.lines == 1, "G：手把：份數恆為 1、沒有按住拖的提示")
+        getCell():setDrag(nil, 0)
+        JoypadState.players[1] = nil
+        PM.undo()
+        check(plan.n == nRow - 2, "上一步拿掉 G 加的兩片牆")
+    end
     check(PM.stopEdit() == true and PM.state() == "fixed", "對照：寫得進去就照常結束規劃")
 
     -- C3／K1：藍圖庫改名、刪除後地上那張跟著改；刪掉後存檔另取檔名，不蓋掉舊檔名

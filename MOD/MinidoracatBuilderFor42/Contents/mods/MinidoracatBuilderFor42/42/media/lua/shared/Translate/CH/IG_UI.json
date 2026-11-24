@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X：放回原位置",
   "IGUI_MBLD_PlanMoveHint": "搬 %1 片：點一下放下 · R 旋轉 · 右鍵取消",
   "IGUI_MBLD_PlanCopyHint": "複製 %1 片：點一下放下 · R 旋轉 · 右鍵取消",
+  "IGUI_MBLD_PlanCopyDragHint": "按住拖曳可排成一列",
+  "IGUI_MBLD_PlanCopyRow": "排 %1 份（共 %2 片）",
   "IGUI_MBLD_PlanSelectN": "框到 %1 片",
   "IGUI_MBLD_PlanEraseN": "會擦掉 %1 片",
   "IGUI_MBLD_PlanRectHint": "放開確定 · 按住 Shift 包含所有樓層 · 右鍵結束",

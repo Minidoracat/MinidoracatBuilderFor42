@@ -307,6 +307,8 @@
   "IGUI_MBLD_PlanHomePad": "X: volver a su lugar",
   "IGUI_MBLD_PlanMoveHint": "Mover %1 piezas: clic para soltar · R rotar · Clic derecho cancelar",
   "IGUI_MBLD_PlanCopyHint": "Copiar %1 piezas: clic para soltar · R rotar · Clic derecho cancelar",
+  "IGUI_MBLD_PlanCopyDragHint": "Mantén y arrastra: copiar en fila",
+  "IGUI_MBLD_PlanCopyRow": "Fila de %1 copias (%2 piezas)",
   "IGUI_MBLD_PlanSelectN": "%1 piezas en el recuadro",
   "IGUI_MBLD_PlanEraseN": "Borra %1 piezas",
   "IGUI_MBLD_PlanRectHint": "Suelta para confirmar · Mantén Shift para todos los niveles · Clic derecho para salir",

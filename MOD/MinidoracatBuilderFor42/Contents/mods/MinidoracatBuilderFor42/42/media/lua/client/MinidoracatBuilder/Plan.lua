@@ -357,30 +357,37 @@ end
 -- 這幾片一次放到各自的最終位置 to[i]＝{ x, y, z, d }（照 pieces 的順序）。copy＝原片不動、在那裡加一份新的
 -- （那裡已經有一模一樣的就略過）；不然搬過去，全部到位後和別片一樣的才拿掉：中間位置不去重，
 -- 先搬再轉時中間位置剛好疊到沒選的同款片，那片也不會被吃掉。
+-- copy 時 to 可以接好幾份：第 g 份（從 0 起）第 i 片是 to[g * #pieces + i]，全部算一步、最後才檢查上限。
 -- 回 true（copy 回新片的陣列）；超出每邊 64、4 層（或格子鍵的範圍）回 nil, 原因（整個不做）
 local function relocate(plan, pieces, to, copy)
-    local list, dest, seen, n = {}, {}, {}, 0
+    local list, idx, seen, n = {}, {}, {}, 0
+    local np = #pieces
+    local reps = copy and np > 0 and math.floor(#to / np) or 1
     for i, p in ipairs(pieces) do
         if not seen[p] and live(plan, p) then
             seen[p] = true
-            local t = to[i]
-            if not inRange(t[1], t[2], 0) then return nil, "TOO_WIDE" end
-            if not inRange(0, 0, t[3]) then return nil, "TOO_HIGH" end
+            for g = 0, reps - 1 do
+                local t = to[g * np + i]
+                if not inRange(t[1], t[2], 0) then return nil, "TOO_WIDE" end
+                if not inRange(0, 0, t[3]) then return nil, "TOO_HIGH" end
+            end
             n = n + 1
-            list[n], dest[n] = p, t
+            list[n], idx[n] = p, i
         end
     end
     open(plan)
     local from = #plan._step + 1
     local out = {}
-    for i, p in ipairs(list) do
-        local t = dest[i]
-        if not copy then
-            modify(plan, p, t[1], t[2], t[3], t[4], p.it)
-        elseif not same(plan, t[1], t[2], t[3], t[4], p.o, p.it, nil) then
-            local q = { x = t[1], y = t[2], z = t[3], d = t[4], o = p.o, it = p.it, w = p.w }
-            addPiece(plan, q)
-            out[#out + 1] = q
+    for g = 0, reps - 1 do
+        for k, p in ipairs(list) do
+            local t = to[g * np + idx[k]]
+            if not copy then
+                modify(plan, p, t[1], t[2], t[3], t[4], p.it)
+            elseif not same(plan, t[1], t[2], t[3], t[4], p.o, p.it, nil) then
+                local q = { x = t[1], y = t[2], z = t[3], d = t[4], o = p.o, it = p.it, w = p.w }
+                addPiece(plan, q)
+                out[#out + 1] = q
+            end
         end
     end
     local ok, why = fits(plan)
@@ -450,7 +457,7 @@ function Plan.copy(plan, pieces, dx, dy, dz)
     return relocate(plan, pieces, shiftedTo(pieces, dx, dy, dz), true)
 end
 
--- 複製到各自的最終位置（複製加轉一次做完）。回新片的陣列；超出上限回 nil, 原因
+-- 複製到各自的最終位置（複製加轉一次做完；to 可以接好幾份，見 relocate）。回新片的陣列；超出上限回 nil, 原因
 function Plan.copyTo(plan, pieces, to)
     return relocate(plan, pieces, to, true)
 end
