@@ -22640,45 +22640,89 @@ end)()
 
     -- 8c. 地面覆蓋等同格的地板先蓋（審查 1124 Codex）：A（500,500）只有半格、B（501,500）是地板＋同款半格，玩家在西北角外，
     --     蛇形從 A 起。假伺服器照 Server.complete 換地圖地板：蓋地板時那格掛著的覆蓋連帳本一起沒了（不是地毯，見「換地圖
-    --     地板（不算替換）」那條）。蓋完 B 的地板、半格與帳本都在（✗ 第一批 A、B 的半格一起送，B 的半格被地板拆掉）
+    --     地板（不算替換）」那條）。蓋完 B 的地板、半格與帳本都在（✗ 第一批 A、B 的半格一起送，B 的半格被地板拆掉）。
+    --     多格地板（審查 1124 第二輪）：兩格地板 pp_a2 錨點在 501、另一格在 502，半格擺在 502（不是錨點格），玩家在東邊外，
+    --     蛇形從 502 起：伺服器逐格換地板，502 的半格要等整組地板蓋好（✗ 只看同格錨點時半格先蓋、被地板拆掉）。
+    --     同一格 1 片地板＋n 張半格挑一次批，問片的次數照 n 線性長（✗ 每張半格各自重走同格所有片，n 張是 n² 次）
     do
-        local realPush8c = Q.push
+        local realPush8c, realCells8c, realResolve8c = Q.push, Entry.cells, B.PlanCheck.resolve
         ENT.pp_o = { kind = "floorOverlay", spr = "pp_o" }
+        ENT.pp_a2 = { kind = "floor", spr = "pp_a2" }
+        Entry.cells = function(spr)
+            if spr.name == "pp_a2" then return { { 0, 0, 0, spr }, { 1, 0, 0, spr } } end
+            return realCells8c(spr)
+        end
         local floorAt, hung = {}, {}
         Q.push = function(_, id, anchors, _, _, opts)
             pushes[#pushes + 1] = { id = id, anchors = anchors }
             for _, a in ipairs(anchors) do
-                local key = a[1] .. "," .. a[2]
-                if id == "pp_a" then floorAt[key], hung[key] = id, nil else hung[key] = id end
+                if ENT[id].kind == "floor" then
+                    for _, f in ipairs(Entry.cells(Entry.face(ENT[id], a[4]))) do
+                        local key = (a[1] + f[1]) .. "," .. (a[2] + f[2])
+                        floorAt[key], hung[key] = id, nil
+                    end
+                else
+                    hung[a[1] .. "," .. a[2]] = id
+                end
             end
             opts.onDone({ owner = "plan", count = #anchors, placed = #anchors, stopped = false })
             return #pushes
         end
         sb.MaxCellsPerDrag = 8
-        R.stop()
-        pl, S = Plan.new("overlayFirst"), {}
-        local fa, ov = Plan.item(pl, "pp_a"), Plan.item(pl, "pp_o")
-        S[Plan.add(pl, 0, 0, 0, 0, 0, ov)] = "ok"
-        S[Plan.add(pl, 1, 0, 0, 0, 0, fa)] = "ok"
-        S[Plan.add(pl, 1, 0, 0, 0, 0, ov)] = "ok"
-        K.pos.x, K.pos.y = 499.5, 499.5
-        pushes = {}
-        R.start(K)
-        for _ = 1, 200 do
-            if R.state() == "done" then break end
-            run(1)
+        -- 擺好藍圖（{ 項目, x } 都在 y＝0）、玩家站 (px, py)，照圖蓋到停：回各批 "項目@x,y+x,y"
+        local function build(name, list, px)
+            R.stop()
+            pl, S, floorAt, hung = Plan.new(name), {}, {}, {}
+            for _, e in ipairs(list) do S[Plan.add(pl, e[2], 0, 0, 0, 0, Plan.item(pl, e[1]))] = "ok" end
+            K.pos.x, K.pos.y = px, 499.5
+            pushes = {}
+            R.start(K)
+            for _ = 1, 200 do
+                if R.state() == "done" then break end
+                run(1)
+            end
+            local seq = {}
+            for _, b in ipairs(pushes) do
+                local cells = {}
+                for _, a in ipairs(b.anchors) do cells[#cells + 1] = a[1] .. "," .. a[2] end
+                seq[#seq + 1] = b.id .. "@" .. table.concat(cells, "+")
+            end
+            return table.concat(seq, " ")
         end
-        local seq = {}
-        for _, b in ipairs(pushes) do
-            local cells = {}
-            for _, a in ipairs(b.anchors) do cells[#cells + 1] = a[1] .. "," .. a[2] end
-            seq[#seq + 1] = b.id .. "@" .. table.concat(cells, "+")
-        end
+        local seq = build("overlayFirst", { { "pp_o", 0 }, { "pp_a", 1 }, { "pp_o", 1 } }, 499.5)
         check(R.state() == "done" and (R.reason()) == "DONE" and floorAt["501,500"] == "pp_a" and hung["501,500"] == "pp_o"
             and hung["500,500"] == "pp_o",
-            "照圖蓋：同格還有地板沒蓋時那格的地面覆蓋不先蓋，蓋完 B 的地板、半格與帳本都在（" .. table.concat(seq, " ") .. "）")
-        R.stop()
-        ENT.pp_o, Q.push, sb.MaxCellsPerDrag, pushes = nil, realPush8c, 8, {}
+            "照圖蓋：同格還有地板沒蓋時那格的地面覆蓋不先蓋，蓋完 B 的地板、半格與帳本都在（" .. seq .. "）")
+        local seq2 = build("overlayWide", { { "pp_a2", 1 }, { "pp_o", 2 } }, 503.5)
+        check(R.state() == "done" and (R.reason()) == "DONE" and floorAt["502,500"] == "pp_a2" and hung["502,500"] == "pp_o",
+            "照圖蓋：兩格地板的非錨點格上的半格等整組地板蓋好才蓋，蓋完那格的地板、半格與帳本都在（" .. seq2 .. "）")
+        local asks
+        B.PlanCheck.resolve = function(p)
+            asks = asks + 1
+            return realResolve8c(p)
+        end
+        -- 同一格同一個項目只能擺一片：n 張半格用 n 個項目；地板最後擺（同格清單裡排在半格後面）
+        for i = 1, 40 do ENT["pp_o" .. i] = { kind = "floorOverlay", spr = "pp_o" .. i } end
+        local function count(n)
+            R.stop()
+            pl, S = Plan.new("overlayPile"), {}
+            for i = 1, n do S[Plan.add(pl, 0, 0, 0, 0, 0, Plan.item(pl, "pp_o" .. i))] = "ok" end
+            S[Plan.add(pl, 0, 0, 0, 0, 0, Plan.item(pl, "pp_a"))] = "ok"
+            K.pos.x, K.pos.y, pushes, asks = 499.5, 499.5, {}, 0
+            R.start(K)
+            for _ = 1, 10 do
+                if pushes[1] then break end
+                run(1)
+            end
+            R.stop()
+            return pushes[1] and asks or 0
+        end
+        local a10, a40 = count(10), count(40)
+        check(a10 > 0 and a40 > 0 and a40 < 6 * a10, "照圖蓋挑批：同格 1 片地板＋n 張半格，送出第一批前問片次數照 n 線性長"
+            .. "（n＝10：" .. a10 .. "，n＝40：" .. a40 .. "）")
+        for i = 1, 40 do ENT["pp_o" .. i] = nil end
+        ENT.pp_o, ENT.pp_a2, Q.push, Entry.cells, B.PlanCheck.resolve = nil, nil, realPush8c, realCells8c, realResolve8c
+        sb.MaxCellsPerDrag, pushes = 8, {}
         K.pos.x, K.pos.y = 532.5, 532.5
     end
 

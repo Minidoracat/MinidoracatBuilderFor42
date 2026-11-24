@@ -632,18 +632,26 @@ local function snakeKey(x, y)
     return r * s.w + k
 end
 
--- 這片（地面覆蓋）那格還有沒蓋好、之後還會蓋的地板：換地板（Place.clearFloor）連掛在舊地板上的覆蓋一起拆，只有地毯掛回
--- （Server.complete 的 rugsOf），先蓋覆蓋的話料和帳本都白費。地毯也一起等，不分兩種規則
-local function floorPending(plan, p)
-    local PC = planCheck()
-    for _, q in ipairs(B.Plan.at(plan, p.x, p.y, p.z)) do
-        local id = not (st.skip[q] or st.placed[q]) and resolve(q)
-        if id and cachedKind(id) == "floor" then
-            local s, code = PC.state(q)
-            if s ~= "done" and (s ~= "blocked" or code == "WAIT" or (PC.RECHECK and PC.RECHECK[code])) then return true end
-        end
+-- 地板實際會換掉的格（照朝向的 Entry.cells：多格地板伺服器逐格換；配方只有錨點那格），照項目、朝向記著（換藍圖時清掉）
+local footCache, ANCHOR_ONLY, NONE = {}, { { 0, 0, 0 } }, {}
+local function footOf(id, d)
+    local byD = footCache[id]
+    if not byD then
+        byD = {}
+        footCache[id] = byD
     end
-    return false
+    local k = d or 0
+    local f = byD[k]
+    if not f then
+        local entry = id:sub(1, #RECIPE) ~= RECIPE and Entry.resolve(id)
+        local spr = entry and Entry.face(entry, d)
+        f = spr and Entry.cells(spr) or ANCHOR_ONLY
+        byD[k] = f
+    end
+    return f
+end
+local function cellKey(x, y, z)
+    return (z + 64) * 1e10 + y * 1e5 + x
 end
 
 -- 整張找下一批：可蓋（或缺料而有材料箱）的片裡段最前、層最低、順序最前（key：地板那一段是蛇形序號，其他段是離玩家的
@@ -652,37 +660,45 @@ end
 -- settled（PlanCheck 掃描中才給）：只挑它說挑得的片（比它近的片都重算過了）。還不能挑的地板（第 1 段）排在挑到的片之前時
 -- 先等（最多 WAIT_MS）：剛擺好就按時先挑掃描剛看過的玩家身邊那幾片，第一批會蓋在藍圖中間；蓋到一半材料變了的重排裡，
 -- 下一片多半是剛算過的身邊那片，不等
+-- 地面覆蓋（地毯也算）那格還有沒蓋好、之後還會蓋的地板會換掉時先不挑：換地板（Place.clearFloor）連掛在舊地板上的覆蓋一起拆，
+-- 只有地毯掛回（Server.complete 的 rugsOf），先蓋的話料和帳本都白費。那些格子在看片時記進 sc.floors，看完整張才篩覆蓋
 -- 回 batch，"again"（還沒看完），"wait"（還有片沒算出狀態），或 nil（沒有能蓋的，或能蓋的都還不能挑）
 local function pickBatch(player, plan, settled)
     local PC = planCheck()
     local sc = st.scan
     if not sc then
-        sc = { i = 1, cand = {}, boxes = #Runner.boxes() > 0, px = player:getX(), py = player:getY() }
+        sc = { i = 1, cand = {}, floors = {}, boxes = #Runner.boxes() > 0, px = player:getX(), py = player:getY() }
         st.scan = sc
     end
-    local pieces, cand, boxes, px, py = st.pieces, sc.cand, sc.boxes, sc.px, sc.py
+    local pieces, cand, floors, boxes, px, py = st.pieces, sc.cand, sc.floors, sc.boxes, sc.px, sc.py
     local best, bk1, bk2, bk3, pendingSeg, hz, hk = sc.best, sc.bk1, sc.bk2, sc.bk3, sc.pendingSeg, sc.hz, sc.hk
+    local recheck = PC.RECHECK or NONE
     local last = math.min(#pieces, sc.i + Runner.PICK_CHUNK - 1)
     for k = sc.i, last do
         local p = pieces[k]
-        -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）
-        if not (st.skip[p] or st.placed[p] or st.later[p]) then
-            local state = PC.state(p)
-            if state == nil or state == "ok" or (state == "short" and boxes) then
-                local id, x, y, z, d, o, w = resolve(p)
-                local seg = id and segmentOf(id)
-                local early = settled and id and not settled(x, y, z)
+        -- 蓋好的片在 PlanCheck 重查之前狀態還是 ok：記著不再送（疊放的項目再送一次會蓋第二個）。蓋好的、蓋不了的不看
+        local state, code
+        if not (st.skip[p] or st.placed[p]) then state, code = PC.state(p) else state = "done" end
+        if state ~= "done" and (state ~= "blocked" or code == "WAIT" or recheck[code]) then
+            local id, x, y, z, d, o, w = resolve(p)
+            if id and x and cachedKind(id) == "floor" then
+                for _, f in ipairs(footOf(id, d)) do floors[cellKey(x + f[1], y + f[2], z + f[3])] = true end
+            end
+            if id and not st.later[p] and (state == nil or state == "ok" or (state == "short" and boxes)) then
+                local seg = segmentOf(id)
+                local early = settled and not settled(x, y, z)
                 if early and seg == 1 then
                     local key = snakeKey(x, y)
                     if not hz or z < hz or (z == hz and key < hk) then hz, hk = z, key end
                 end
                 if state == nil then
-                    if seg and (not pendingSeg or seg < pendingSeg) then pendingSeg = seg end
-                elseif id and not early and not (cachedKind(id) == "floorOverlay" and floorPending(plan, p)) then
-                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = seg }
+                    if not pendingSeg or seg < pendingSeg then pendingSeg = seg end
+                elseif not early then
+                    local c = { p = p, id = id, x = x, y = y, z = z, d = d, o = o, w = w, seg = seg,
+                        overlay = cachedKind(id) == "floorOverlay" }
                     c.key = seg == 1 and snakeKey(x, y) or (x + 0.5 - px) ^ 2 + (y + 0.5 - py) ^ 2
                     cand[#cand + 1] = c
-                    if not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3))) then
+                    if not c.overlay and (not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3)))) then
                         best, bk1, bk2, bk3 = c, c.seg, c.z, c.key
                     end
                 end
@@ -694,6 +710,14 @@ local function pickBatch(player, plan, settled)
         return "again"
     end
     st.scan = nil
+    for _, c in ipairs(cand) do
+        if c.overlay then
+            c.overlay = floors[cellKey(c.x, c.y, c.z)] or false
+            if not c.overlay and (not best or c.seg < bk1 or (c.seg == bk1 and (c.z < bk2 or (c.z == bk2 and c.key < bk3)))) then
+                best, bk1, bk2, bk3 = c, c.seg, c.z, c.key
+            end
+        end
+    end
     local hold = hz and (not best or bk1 > 1 or hz < bk2 or (hz == bk2 and hk < bk3))
     if hold or (pendingSeg and (not best or pendingSeg < bk1)) then
         local t = getTimestampMs()
@@ -726,7 +750,7 @@ local function pickBatch(player, plan, settled)
     local max = one and 1 or perBatch()
     local list = {}
     for _, c in ipairs(cand) do
-        if c.id == best.id and c.z == best.z and c.o == best.o then
+        if c.id == best.id and c.z == best.z and c.o == best.o and not c.overlay then
             local k = #list + 1
             if k <= max or c.key < list[max].key then
                 if k > max then k = max end
@@ -1044,7 +1068,7 @@ function Runner.start(player)
     if not plan or not (PM.origin and PM.origin()) or not (PC and PC.state and PC.resolve) then return nil, "NO_PLAN" end
     if not player or player:isDead() then return nil, "NO_PLAN" end
     if handBusy(player) then return nil, "BUSY" end
-    if st.plan ~= plan then kindCache, segCache = {}, {} end
+    if st.plan ~= plan then kindCache, segCache, footCache = {}, {}, {} end
     st.player, st.plan, st.rev = player, plan, plan.rev
     st.ox, st.oy, st.oz = PM.origin()
     st.skip, st.placed, st.bad, st.badIndex, st.fetch, st.batch, st.checkFor = {}, {}, {}, nil, nil, nil, nil
