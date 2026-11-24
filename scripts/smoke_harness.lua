@@ -21311,7 +21311,7 @@ end)()
 
 -- ===== 建造時顯示同層屋頂（RoofShow） =====
 ;(function()
-    print("建造時顯示同層屋頂（RoofShow：游標渲染前換替身、世界畫完換回、選項關著不換；替身照樣分成屋頂）")
+    print("建造時顯示同層屋頂（RoofShow：游標渲染前換替身、同一段繪製的 DoBuilding 換回、存檔不換、各玩家分開掃、收起後重畫、載入格子修正）")
     local B = MinidoracatBuilder
     require "MinidoracatBuilder/Rules"
     require "MinidoracatBuilder/RoofShow"
@@ -21333,18 +21333,39 @@ end)()
     end
     local sqs = { ["10,10,1"] = sq(true, { sprite("rs_02_0", 41010, {}), sB, sM }), ["14,12,1"] = sq(true, { sT }),
         ["11,10,1"] = sq(false, { flat }), ["12,9,0"] = sq(true, { flat }) }
-    local real = { cell = getCell, spec = getSpecificPlayer, clock = getTimestampMs, opts = B.Window and B.Window.options }
+    local real = { cell = getCell, spec = getSpecificPlayer, clock = getTimestampMs, opts = B.Window and B.Window.options,
+        fbo = FBORenderChunk }
     local px, now, tick = 10, 1000, { v = false, getValue = function(t) return t.v end }
     local p = { getX = function() return px + 0.5 end, getY = function() return 10.5 end, getZ = function() return 1 end }
-    getCell = function() return { getGridSquare = function(_, x, y, z) return sqs[x .. "," .. y .. "," .. z] end } end
-    getSpecificPlayer = function(pn) return pn == 0 and p or nil end
+    local p1 = { getX = function() return 200.5 end, getY = function() return 200.5 end, getZ = function() return 1 end }
+    local inval = {}
+    local cellObj = {
+        getGridSquare = function(_, x, y, z) return sqs[x .. "," .. y .. "," .. z] end,
+        getChunk = function(_, wx, wy)
+            return { invalidateRenderChunkLevel = function(_, z, f) inval[#inval + 1] = wx .. "," .. wy .. "," .. z .. "," .. f end }
+        end,
+    }
+    getCell = function() return cellObj end
+    getSpecificPlayer = function(pn) return (pn == 0 and p) or (pn == 1 and p1) or nil end
     getTimestampMs = function() return now end
+    FBORenderChunk = { DIRTY_REDRAW = 7 }
     B.Window = B.Window or {}
     B.Window.options = { getOption = function(_, id) return id == "ShowRoofs" and tick or nil end }
     local cur = { player = 0 }
     local function types() return { sB:getType(), sM:getType(), sT:getType(), flat:getType() } end
     local function same(a, b) return a[1] == b[1] and a[2] == b[2] and a[3] == b[3] and a[4] == b[4] end
     local orig = { T.WestRoofB, T.WestRoofM, T.WestRoofT, T.WestRoofB }
+    local swappedTypes = { T.UNUSED9, T.UNUSED10, T.UNUSED24, T.WestRoofB }
+    local function hooked(name, fn)
+        for _, f in ipairs(handlers[name] or {}) do if f == fn then return true end end
+        return false
+    end
+    local function mine(name) -- RoofShow.lua 掛的那一個（別的模組也可能掛在同一事件）
+        for _, f in ipairs(handlers[name] or {}) do
+            if debug.getinfo(f, "S").source:find("RoofShow", 1, true) then return f end
+        end
+    end
+    local tickFn, saveFn, loadFn = mine("OnTickEvenPaused"), mine("OnSave"), mine("LoadGridsquare")
 
     check(type(B.Cursor.beforeWorldRender) == "function", "建造游標掛了 beforeWorldRender（Cursor.lua 的 base 會複製過去）")
     B.Cursor.beforeWorldRender(cur)
@@ -21352,22 +21373,19 @@ end)()
 
     tick.v = true
     B.Cursor.beforeWorldRender(cur)
-    check(same(types(), { T.UNUSED9, T.UNUSED10, T.UNUSED24, T.WestRoofB }),
-        "選項開著：同層斜屋頂格的 WestRoofB/M/T 換成替身，不是斜屋頂的格子、別層不動")
-    check(Rules.classify(sB) == "roof" and Rules.classify(sM) == "roof" and Rules.classify(sT) == "roof"
-        and Rules.typeCode(T.UNUSED9) == "roof" and Rules.typeCode(T.UNUSED10) == "roof" and Rules.typeCode(T.UNUSED24) == "roof",
-        "換成替身的期間（游標 render 在這段裡）屋頂照樣分成屋頂")
+    check(same(types(), swappedTypes), "選項開著：同層斜屋頂格的 WestRoofB/M/T 換成替身，不是斜屋頂的格子、別層不動")
+    check(Rules.typeCode(T.UNUSED9) == nil, "Rules 不認替身：游標 render 在換回之後")
     B.Cursor.beforeWorldRender(cur)
-    check(sB:getType() == T.UNUSED9, "同一幀再叫一次不重複換")
-    -- 不 fire：同一事件上別的模組掛著的處理也會跑；只確認掛上了，再直接叫
-    local function hooked(name)
-        for _, f in ipairs(handlers[name] or {}) do if f == RS.restore then return true end end
-        return false
-    end
-    check(hooked("OnPostRender") and hooked("OnTickEvenPaused"), "換回掛在世界畫完（OnPostRender）與世界更新前（OnTickEvenPaused）")
-    RS.restore()
-    check(same(types(), orig), "換回原型別")
-    check(Rules.classify(sB) == "roof", "換回後照樣是屋頂")
+    check(sB:getType() == T.UNUSED9, "同一段繪製再叫一次照樣是換著的")
+    -- 換回要排在原版 DoTileBuilding（server 資料夾，較晚註冊）前面：它會補建游標格子、叫游標 render
+    check(hooked("OnDoTileBuilding2", RS.restore) and hooked("OnDoTileBuilding3", RS.restore)
+        and hooked("OnPostRender", RS.restore), "換回掛在 DoBuilding（滑鼠、手把）與世界畫完（OnPostRender）")
+    local seenInBuild
+    local vanilla = function() seenInBuild = sB:getType() end
+    Events.OnDoTileBuilding2.Add(vanilla)
+    fire("OnDoTileBuilding2", cur, true, 10, 10, 1, nil)
+    Events.OnDoTileBuilding2.Remove(vanilla)
+    check(seenInBuild == T.WestRoofB and same(types(), orig), "DoBuilding 時先換回，之後註冊的處理（原版補建格子、游標 render）讀到原型別")
 
     B.Cursor.beforeWorldRender(cur)
     check(sM:getType() == T.UNUSED10, "下一幀沿用清單再換")
@@ -21375,17 +21393,92 @@ end)()
     RS.restore()
     check(same(types(), orig), "連叫兩次換回不出錯、還是原型別")
 
+    -- 存檔：OnSave 之後畫縮圖（只叫 beforeWorldRender、不發 OnPostRender），到下一次世界更新前都不換
+    check(type(saveFn) == "function" and type(tickFn) == "function" and type(loadFn) == "function", "掛了 OnSave、OnTickEvenPaused、LoadGridsquare")
+    B.Cursor.beforeWorldRender(cur)
+    saveFn()
+    check(same(types(), orig), "存檔先換回")
+    B.Cursor.beforeWorldRender(cur)
+    check(same(types(), orig), "存檔縮圖的那段繪製不換")
+    tickFn()
+    B.Cursor.beforeWorldRender(cur)
+    check(sB:getType() == T.UNUSED9, "下一次世界更新後照常換")
+    RS.restore()
+
+    -- 換回中途出錯：沒換回的下次還要換回
+    local boom = true
+    local realSet = sM.setTileType
+    function sM:setTileType(v) if boom and v == T.WestRoofM then boom = false error("boom") end realSet(self, v) end
+    B.Cursor.beforeWorldRender(cur)
+    check(not pcall(RS.restore), "（植入）換回時 setTileType 出錯")
+    RS.restore()
+    check(same(types(), orig), "換回中途出錯後，下一次換回把剩下的也換回")
+    sM.setTileType = realSet
+
     sqs["13,10,1"] = sq(true, { stuck })
     px = 11
     B.Cursor.beforeWorldRender(cur)
     check(stuck:getType() == T.UNUSED10, "移動了但未滿重掃間隔：不重掃")
     RS.restore()
+    check(stuck:getType() == T.UNUSED10, "不在清單裡的不動：換回只換回自己換的")
     now = now + 500
     B.Cursor.beforeWorldRender(cur)
     RS.restore()
     check(stuck:getType() == T.WestRoofM and same(types(), orig), "重掃時認得卡在替身的 sprite、記下原型別，換回後全都是原型別")
 
-    getCell, getSpecificPlayer, getTimestampMs, B.Window.options = real.cell, real.spec, real.clock, real.opts
+    -- 站著不動：附近新出現的屋頂款式也收進來
+    local fresh = roof("rs_01_5", 41005, T.WestRoofT)
+    sqs["12,11,1"] = sq(true, { fresh })
+    now = now + 500
+    B.Cursor.beforeWorldRender(cur)
+    check(fresh:getType() == T.UNUSED24, "站著不動滿重掃間隔：新出現的屋頂也換")
+    RS.restore()
+
+    -- 分割畫面：玩家 1 的掃描位置與計時器自己一份
+    local far = roof("rs_01_6", 41006, T.WestRoofB)
+    sqs["200,200,1"] = sq(true, { far })
+    B.Cursor.beforeWorldRender(cur)
+    B.Cursor.beforeWorldRender({ player = 1 })
+    check(far:getType() == T.UNUSED9, "玩家 1 剛換手也馬上掃自己附近（不被玩家 0 的計時器擋住）")
+    check(same(types(), orig), "輪到玩家 1 時先換回玩家 0 換的（玩家 0 那段沒走到 DoBuilding）")
+    B.Cursor.beforeWorldRender(cur)
+    check(far:getType() == T.WestRoofB and sB:getType() == T.UNUSED9, "再輪回玩家 0：換回玩家 1 的、換玩家 0 的")
+    RS.restore()
+
+    -- 收起游標後：換著時畫過的 chunk 層標髒重畫
+    tickFn()
+    tickFn()
+    inval = {}
+    px = 10
+    now = now + 500
+    B.Cursor.beforeWorldRender(cur)
+    RS.restore()
+    tickFn()
+    check(#inval == 0, "游標還拿著：不重畫")
+    tickFn()
+    local hit = {}
+    for _, k in ipairs(inval) do hit[k] = true end
+    check(#inval == 49 and hit["1,1,1,7"] and hit["-2,-2,1,7"] and hit["4,4,1,7"],
+        "收起游標後下一次世界更新：玩家所在 chunk 周圍 7x7 的那一層標 DIRTY_REDRAW")
+    inval = {}
+    tickFn()
+    check(#inval == 0, "只重畫一次")
+
+    -- 載入格子：換著時串流執行緒算的型別帶替身，主執行緒載入時重算
+    local recalc = 0
+    local function loadSq(bits)
+        return { has = function(_, t) return bits[t] == true end, RecalcProperties = function() recalc = recalc + 1 end }
+    end
+    loadFn(loadSq({ [T.UNUSED10] = true }))
+    loadFn(loadSq({ [T.WestRoofB] = true }))
+    check(recalc == 1, "最近換過型別：載入的格子帶替身才重算")
+    now = now + 10000
+    tickFn()
+    loadFn(loadSq({ [T.UNUSED10] = true }))
+    check(recalc == 1, "收起游標滿 10 秒後不再檢查")
+
+    for _, s in ipairs({ "10,10,1", "14,12,1", "11,10,1", "12,9,0", "13,10,1", "12,11,1", "200,200,1" }) do sqs[s] = nil end
+    getCell, getSpecificPlayer, getTimestampMs, B.Window.options, FBORenderChunk = real.cell, real.spec, real.clock, real.opts, real.fbo
 end)()
 
 -- ===== 藍圖檢查分幀（PlanPerf） =====
