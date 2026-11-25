@@ -1543,8 +1543,24 @@ local function skillInfo(e)
     return getText("IGUI_MBLD_Detail_SkillShort", name, tostring(level), tostring(have)), false
 end
 
--- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3、坡道沿上坡方向 n 格（上一層的平台都不算）
+-- 佔地（寬×深）：多格照 grid；樓梯照方向是 3×1 或 1×3、坡道沿上坡方向 n 格（上一層的平台都不算）。
+-- 挖地下室照 Entry.cells 挖開的格子：地面的落腳處本來就有地板、樓梯上方的洞和樓梯同一格，都不另算。入口是樓梯三片
+-- 加前方 3×2 的室，往南 3×5、往東 5×3；不是整個長方形時第三個回值是格線要畫的格子 { [列 × 寬 ＋ 欄]＝true }
 local function footprint(spr, kind)
+    if kind == "dig" then
+        local x0, y0, x1, y1, dug = math.huge, math.huge, -math.huge, -math.huge, {}
+        for _, c in ipairs(Entry.cells(spr)) do
+            if c[5] ~= "platform" and c[5] ~= "hole" then
+                dug[#dug + 1] = c
+                x0, y0, x1, y1 = math.min(x0, c[1]), math.min(y0, c[2]), math.max(x1, c[1]), math.max(y1, c[2])
+            end
+        end
+        local w, d = x1 - x0 + 1, y1 - y0 + 1
+        if #dug == w * d then return w, d end
+        local mask = {}
+        for _, c in ipairs(dug) do mask[(c[2] - y0) * w + c[1] - x0] = true end
+        return w, d, mask
+    end
     local t = spr:getType()
     if B.Rules.typeCode(t) == "stairs" then
         if B.Rules.westStairs(t) then return 3, 1 end
@@ -1570,10 +1586,11 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     add(ops, { t = "box", x = 0, y = 0, w = dw, h = boxH, c = c.border or c.textFaint })
     local tex = texOf(v, e.name)
     if tex then add(ops, { t = "tex", tex = tex, x = 6, y = 6, w = dw - 12, h = boxH - 12 }) end
-    local fw, fd = footprint(e.spr, e.kind)
+    local fw, fd, mask = footprint(e.spr, e.kind)
     local cell = math.max(6, math.floor(10 * s))
     if fw * fd > 1 then -- 1×1 不畫佔地格線
-        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted })
+        add(ops, { t = "grid", x = dw - 6 - fw * cell, y = boxH - 6 - fd * cell, cols = fw, rows = fd, cell = cell, c = c.textMuted,
+            mask = mask })
     end
     local y = boxH + GAP
     local fhM = getTextManager():getFontHeight(UIFont.Medium)
@@ -2155,10 +2172,12 @@ function W.drawDetail(panel)
                 v.UI.Icons.draw(panel, o.key, o.x, o.y, o.size, c, 1)
             elseif t == "box" then
                 panel:drawRectBorder(o.x, o.y, o.w, o.h, c.a or 1, c.r, c.g, c.b)
-            elseif t == "grid" then
+            elseif t == "grid" then -- mask：只畫這些格（列 × cols ＋ 欄），沒有就整個長方形
                 for r = 0, o.rows - 1 do
                     for k = 0, o.cols - 1 do
-                        panel:drawRectBorder(o.x + k * o.cell, o.y + r * o.cell, o.cell + 1, o.cell + 1, c.a or 1, c.r, c.g, c.b)
+                        if not o.mask or o.mask[r * o.cols + k] then
+                            panel:drawRectBorder(o.x + k * o.cell, o.y + r * o.cell, o.cell + 1, o.cell + 1, c.a or 1, c.r, c.g, c.b)
+                        end
                     end
                 end
             end

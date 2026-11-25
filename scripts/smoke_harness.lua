@@ -26522,6 +26522,66 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
         W.turnHint = realTurn
         check(okAll and has(slideT, "IGUI_MBLD_Detail_SlidingDoorFrame") and doorT ~= ""
             and not doorT:find("SlidingDoorFrame", 1, true), "詳情：滑門寫出也能裝在牆頂橫條底下；一般的門不寫")
+        -- 挖地下室三項的詳情：佔地照 Entry.cells 挖開的格子（入口往南 3×5、往東 5×3，格線只畫樓梯那一列和前方 3×2 的室，
+        -- 地面的落腳處不算）；入口按旋轉鍵換成另一個方向的入口（配對面，Cursor:turn），所以寫兩個朝向和旋轉提示；
+        -- 挖一格 1×1、一個朝向、不畫格線、不寫旋轉提示
+        do
+            local S, E, C, D = Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL, B.Place.DIRT
+            local dl = {}
+            for i, s in ipairs(wl) do dl[i] = s end
+            for _, s in ipairs({ sprite(S, 9940, { flags = { "cutW", "solid" } }), sprite(E, 9941, { flags = { "cutW", "solid" } }),
+                sprite(C, 9942, { flags = { "solidfloor", "attachedFloor" } }),
+                sprite("carpentry_02_96", 9943, { type = T.stairsBN }), sprite("carpentry_02_97", 9944, { type = T.stairsMN }),
+                sprite("carpentry_02_98", 9945, { type = T.stairsTN }), sprite("carpentry_02_88", 9946, { type = T.stairsBW }),
+                sprite("carpentry_02_89", 9947, { type = T.stairsMW }), sprite("carpentry_02_90", 9948, { type = T.stairsTW }),
+                sprite(Entry.STAIR_FLOOR, 9949, { flags = { "solidfloor" } }), sprite(D, 9950, { flags = { "solidfloor" } }) }) do
+                dl[#dl + 1] = s
+            end
+            world(dl)
+            local realDig, realText = sb.KindDig, getText
+            sb.KindDig = true
+            getText = function(k, ...)
+                local a = { ... }
+                for i = 1, #a do a[i] = tostring(a[i]) end
+                return #a > 0 and k .. "|" .. table.concat(a, ",") or k
+            end
+            W.turnHint = function() return "ROT" end
+            local function dig(name) -- 回：詳情的字、W.drawDetail 實際畫出的佔地格（照列 × cols ＋ 欄由小到大）
+                local txt = detail(name)
+                local g
+                for i = 1, v.ops.n do if v.ops[i].t == "grid" then g = v.ops[i] end end
+                if not g then return txt, "none" end
+                local hit = {}
+                local panel = { height = math.huge, drawRectBorder = function(_, x, y)
+                    hit[(y - g.y) / g.cell * g.cols + (x - g.x) / g.cell] = true
+                end }
+                local keepV, keepOps = W.v, v.ops
+                W.v, v.ops = v, { n = 1, g }
+                W.drawDetail(panel)
+                W.v, v.ops = keepV, keepOps
+                local on = {}
+                for i = 0, g.cols * g.rows - 1 do
+                    if hit[i] then on[#on + 1] = i end
+                end
+                return txt, g.cols .. "x" .. g.rows .. ":" .. table.concat(on, ",")
+            end
+            local okD, sT, sG, eT, eG, cT, cG = pcall(function()
+                local sT, sG = dig(S)
+                local eT, eG = dig(E)
+                local cT, cG = dig(C)
+                return sT, sG, eT, eG, cT, cG
+            end)
+            getText, sb.KindDig, W.turnHint = realText, realDig, realTurn
+            world(wl)
+            local function line(s, want) return okD and s:find(want, 1, true) ~= nil end
+            check(okD and okAll and line(sT, "IGUI_MBLD_Detail_Size|3,5,2") and line(sT, "ROT")
+                and line(eT, "IGUI_MBLD_Detail_Size|5,3,2") and line(eT, "ROT")
+                and sG == "3x5:1,4,7,9,10,11,12,13,14" and eG == "5x3:3,4,5,6,7,8,9,13,14",
+                "詳情：地下室入口的佔地是挖開的範圍（往南 3×5、往東 5×3），格線只畫樓梯一列和前方 3×2 的室；按旋轉鍵換方向，"
+                .. "寫兩個朝向和旋轉提示（" .. tostring(sG) .. " / " .. tostring(eG) .. "）")
+            check(okD and okAll and line(cT, "IGUI_MBLD_Detail_Size|1,1,1") and not line(cT, "ROT") and cG == "none",
+                "詳情：地下室挖一格 1×1、一個朝向、不畫格線、不寫旋轉提示（" .. tostring(cG) .. "）")
+        end
         -- 找可用的框（使用者 2026-11-23 選；Workshop fairytale：橫條在牆面疊圖裡難找）：選著滑門或全高窗時整套鈕換成
         -- 「找可用的框」，清單只列牆面疊圖、門框兩個種類裡形狀合的框；條件鈕 ✕ 回原本的清單並選回那扇門
         do
