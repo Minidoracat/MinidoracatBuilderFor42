@@ -72,7 +72,7 @@ local function reach(player, cells)
 end
 
 -- 同一層：玩家走得到最近那一格嗎。在兩格圍成的範圍外加一圈裡，沿 canReachTo 找路：牆（含透明牆）、關著的門窗都擋
--- （IsoGridSquare.java:934-956；照 pitfalls「伺服器驗證要查可及性」）。格邊種類從哪一側都能蓋，不查。
+-- （IsoGridSquare.java:934-956；照 pitfalls「伺服器驗證要查可及性」）。在格邊上動手的（Entry.edgeNorth）從哪一側都能蓋，不查。
 -- 只讀已有的格子（getGridSquare 不建格子）。ponytail：範圍最大約 (2×MaxDistance＋3)² 格，每次判斷跑一次。
 local function reachable(player, c)
     local pz = math.floor(player:getZ())
@@ -128,8 +128,8 @@ function Check.safehouse(player, c, preview, ...)
 end
 local safehouseCode = Check.safehouse
 
--- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝格邊種類，
--- 從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
+-- 玩家離 cells（{ x, y, z, role }）最近一格不超過 MaxDistance、樓層差 ≤ 1，同一層的還要走得到（edge＝在格邊上動手的，
+-- Entry.edgeNorth 不是 nil：從哪一側都能動手，不查）。預覽時最近那一格還沒有格子就不查走得到（伺服器會補格子再查）。回 code, extra 或 nil。
 -- 建造作弊不查（同 Check.inReach：角色不走過去，原地蓋、原地拆）。
 function Check.near(player, cells, edge, preview)
     if Materials.cheat(player) then return nil end
@@ -209,7 +209,8 @@ function Check.item(player, name, d, anchor, ...)
             return "TOO_FAR", { x = anchor[1], y = anchor[2], z = anchor[3] }, info
         end
     else
-        local why, extra = Check.near(player, cells, Entry.EDGE[entry.kind] or entry.kind == "dig", preview)
+        local edge = Entry.edgeNorth(entry.kind, spr) ~= nil or entry.kind == "dig"
+        local why, extra = Check.near(player, cells, edge, preview)
         if why == "TOO_FAR" then extra = { x = anchor[1], y = anchor[2], z = anchor[3] } end
         if why then return why, extra, info end
     end

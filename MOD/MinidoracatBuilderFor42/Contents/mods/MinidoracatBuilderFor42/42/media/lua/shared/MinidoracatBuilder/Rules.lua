@@ -559,6 +559,20 @@ function Rules.onWall(kind, spr)
     return nil
 end
 
+-- 貼在格子北邊或西邊那條邊上的（不佔邊）：照地圖掛在那條邊牆上的牆面疊圖（Rules.onWall 的 "N"／"W"），以及帶 cutN 或
+-- cutW 的牆面裝飾（wallOverlay）。回那條邊（"N"／"W"），其他回 nil：掛在東南角的、兩條邊都佔的，貼牆放在自己那格的
+-- 家具（attached、能搬的掛牆物）也不算。這些和佔格邊的種類一樣從那條邊的任一側動手（Entry.edgeNorth）：牆的另一側
+-- 常是沒挖的土或屋外，要走到目標格本身旁邊就得繞路，或根本到不了
+function Rules.wallSide(kind, spr)
+    local side = Rules.onWall(kind, spr)
+    if side == "N" or side == "W" then return side end
+    if kind ~= "wallOverlay" then return nil end
+    local p = spr:getProperties()
+    local n, w = p:has(cutN), p:has(cutW)
+    if n == w then return nil end
+    return n and "N" or "W"
+end
+
 -- 牆型窗：窗和窗框畫在同一張（tiledef 寫 wall 型別、也自己寫 WindowN/W，例 walls_commercial_01_96）。地圖照 IsoWindow
 -- 建、不另放窗框（CellLoader.java:128-137），所以不用先有窗框，成本照窗框＋窗收。一般的窗型別是 MAX（引擎替帶
 -- windowN/W 的補 WindowN/W 旗標，IsoWorld.java:919-926，不能看旗標分）。t＝getType()

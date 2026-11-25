@@ -411,6 +411,17 @@ square = function(x, y, z, o)
     squares[x .. "," .. y .. "," .. z] = sq
     return sq
 end
+-- 照原版 luautils.getCorrectSquareForWall（luautils.lua:202-210）：玩家在那格北／西牆（collideN／collideW）的另一側時換成
+-- 牆後那一格，那格不存在就回 nil。全域（主程式的 local 已到 200 上限），各情境的 luautils 替身共用
+function harnessWallSquare(player, sq)
+    if sq:has(IsoFlagType.collideW) and player:getX() < sq:getX() then
+        return getCell():getGridSquare(sq:getX() + 1, sq:getY(), sq:getZ())
+    end
+    if sq:has(IsoFlagType.collideN) and player:getY() < sq:getY() then
+        return getCell():getGridSquare(sq:getX(), sq:getY() + 1, sq:getZ())
+    end
+    return sq
+end
 SafeHouse = {
     isSafeHouse = function(sq, name) if sq.owner and sq.owner ~= name then return {} end return nil end,
     getSafeHouse = function(sq) return sq.owner and {} or nil end,
@@ -7499,7 +7510,8 @@ print("情境三十二：建造請求每格帶朝向、拆除清單（跳過不�
     local queued, busy, told = {}, false, {}
     ISTimedActionQueue = { clear = function() queued = {} end, add = function(a) queued[#queued + 1] = a end,
         isPlayerDoingAction = function() return busy end }
-    luautils = { walkAdjWall = function() return true end, walkAdj = function() return true end }
+    luautils = { walkAdjWall = function() return true end, walkAdj = function() return true end,
+        getCorrectSquareForWall = harnessWallSquare }
     MinidoracatBuilder.Messages.toast = function(_, text, title) told[#told + 1] = { text = text, title = title } end
     local function item3(x, y, name, kind) return { x = x, y = y, z = 0, name = name, kind = kind or "wall", north = true,
         own = {}, route = "builder" } end
@@ -7718,7 +7730,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         end,
         getTimedActionQueue = function() return { queue = queued } end }
     local function walked() walks = walks + 1 return true end
-    luautils = { walkAdjWall = walked, walkAdj = walked }
+    luautils = { walkAdjWall = walked, walkAdj = walked, getCorrectSquareForWall = harnessWallSquare }
     local far2, near2 = square(160, 130, 0), square(131, 130, 0)
     local P = player({ id = 3409, x = 130.5, y = 130.5 })
     MinidoracatBuilder.Client.build(P, "cs_wall_01_1", { { 160, 130, 0, 0 } })
@@ -7743,7 +7755,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
     -- 2026-11-23 回饋（換層蓋牆）：上一層的格邊先走到正下方同一條邊旁邊（樓上那格沒有地板時找不到站位），走不到才照
     -- 上一層找；同一層照舊；上一層那格還沒有、正下方也走不到時照樣送（每筆＝walkAdjWall 看過的樓層／排了幾個動作）
     local seen, reach = {}, {}
-    luautils = { walkAdj = walked, walkAdjWall = function(_, sq)
+    luautils = { walkAdj = walked, getCorrectSquareForWall = harnessWallSquare, walkAdjWall = function(_, sq)
         seen[#seen + 1] = sq:getZ()
         return reach[sq:getZ()] == true
     end }
@@ -7779,7 +7791,7 @@ print("情境三十四：建造作弊照原版不走過去、不限距離（使�
         if stands[sq] == true then ISTimedActionQueue.add({ walk = sq }) end
         return stands[sq] == true or stands[sq] == "here"
     end
-    luautils = { walkAdj = stand, walkAdjWall = stand }
+    luautils = { walkAdj = stand, walkAdjWall = stand, getCorrectSquareForWall = harnessWallSquare }
     AdjacentFreeTileFinder = { Find = function() return nil end } -- 照那一格本身再找也沒有（walkNear 的第二次）
     local function shape()
         local out = {}
@@ -14234,7 +14246,8 @@ print("情境四十七：水面（使用者 2026-11-13 選 pond=do、cost=shovel
     local q, finds, adjWalks = {}, {}, 0
     ISTimedActionQueue = { clear = function() q = {} end, add = function(a) q[#q + 1] = a end,
         isPlayerDoingAction = function() return false end }
-    luautils = { walkAdj = function() adjWalks = adjWalks + 1 return true end, walkAdjWall = function() return true end }
+    luautils = { walkAdj = function() adjWalks = adjWalks + 1 return true end, walkAdjWall = function() return true end,
+        getCorrectSquareForWall = harnessWallSquare }
     AdjacentFreeTileFinder = { Find = function(sq, _, skip)
         finds[#finds + 1] = { sq = sq, n = #skip, first = skip[1] }
         return at(493, 496)
@@ -15779,7 +15792,8 @@ print("情境（排程與轉向）：再拖一排接在後面、超過上限分�
     -- 掛在地板上的圖（審查 Q1）：真的掛（Place.attach）、真的拆（Server.dismantle）。缺工具時紀錄留著，補了再按拆得掉（Q2）
     local oldMap, oldOrder, realInst, realLu = spriteMap, spriteOrder, instanceof, luautils
     instanceof = function(o, cls) return type(o) == "table" and o.class ~= nil and (o.class == cls or cls == "IsoObject") end
-    luautils = { walkAdj = function() return true end, walkAdjWall = function() return true end }
+    luautils = { walkAdj = function() return true end, walkAdjWall = function() return true end,
+        getCorrectSquareForWall = harnessWallSquare }
     local qFloor = sprite("qtfloor_01_0", 3901, { flags = { "solidfloor" } })
     local qLine = sprite("qtlines_01_0", 3902, { flags = { "FloorOverlay" } })
     local qWin = sprite("walls_qtwin_01_96", 3903, { type = T.wall, flags = { "collideW", "windowW", "cutW", "WindowW" },
@@ -28502,6 +28516,130 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     BM.reset({}, AT, AT)
     ISTimedActionQueue, ISWalkToTimedAction = keepQ, keepWalk
     sb.KindDig = keepDig
+    spriteMap, spriteOrder = keepMap, keepOrder
+end)()
+
+print("情境（貼牆疊圖從牆的任一側動手）：從室內掛東牆、南牆與二樓外牆，伺服器不查走不走得到（距離、樓層差照查），客戶端站牆的這一側；"
+    .. "牆後那格不存在時不丟錯；貼牆放在自己那格的照舊")
+;(function()
+    nowMs = nowMs + 180000
+    local C, Dismantle, Area = MinidoracatBuilder.Client, MinidoracatBuilder.Dismantle, MinidoracatBuilder.Area
+    local keepMap, keepOrder, keepMD = spriteMap, spriteOrder, sb.MaxDistance
+    local keepServer, keepClient, keepLu, keepQ = isServer, isClient, luautils, ISTimedActionQueue
+    local keepFind, keepWalk = AdjacentFreeTileFinder, ISWalkToTimedAction
+    local trimW = sprite("hangtrim_01_0", 29001, { flags = { "WallOverlay", "attachedW" } })
+    local trimN = sprite("hangtrim_01_1", 29002, { flags = { "WallOverlay", "attachedN" } })
+    local trimSE = sprite("hangtrim_01_2", 29003, { flags = { "WallOverlay", "attachedSE", "attachedN" } })
+    local cutW = sprite("hangcut_01_0", 29004, { flags = { "cutW" } })
+    local cutNW = sprite("hangcut_01_1", 29005, { flags = { "cutN", "cutW" } })
+    local lamp = sprite("hanglamp_01_0", 29006, { flags = { "attachedW" } })
+    local sign = sprite("hangsign_01_0", 29007, { flags = { "WallOverlay", "attachedW" },
+        keys = { IsMoveAble = "", MoveType = "WallObject" } })
+    local box = sprite("hangbox_01_0", 29008, { flags = { "solid" } })
+    local wallW = sprite("hangwall_01_0", 29009, { flags = { "WallW", "cutW" }, keys = { WallW = "" } })
+    world({ trimW, trimN, trimSE, cutW, cutNW, lamp, sign, box, wallW })
+    sb.MaxDistance = 3
+    check(Rules.classify(cutW) == "wallOverlay" and Rules.classify(lamp) == "attached"
+        and Rules.wallSide("wallObject", trimW) == "W" and Rules.wallSide("wallObject", trimN) == "N"
+        and Rules.wallSide("wallOverlay", cutW) == "W" and Rules.wallSide("wallObject", trimSE) == nil
+        and Rules.wallSide("wallOverlay", cutNW) == nil and Rules.wallSide("attached", lamp) == nil
+        and Rules.wallSide("wallObject", sign) == nil and Entry.edgeNorth("wallObject", trimN) == true
+        and Entry.edgeNorth("wallObject", trimW) == false and Entry.edgeNorth("attached", lamp) == nil,
+        "貼在北／西邊的：照地圖掛牆的疊圖（N、W）與只帶一條 cut 的牆面裝飾；掛東南角的、兩條 cut 都帶的、貼牆放在自己那格的家具、"
+        .. "能搬的掛牆物不算")
+    -- 房間 (9300,9300) 一格：東邊 (9301,9300) 與南邊 (9300,9311) 隔著牆（走不到），再過去那格沒有（土或屋外）。
+    -- 二樓 (9320,9300,1) 的東牆是屋外 (9321,9300,1) 的西牆，那格沒有地板，疊圖掛在牆上
+    local east = square(9301, 9300, 0, { flags = { collideW = true }, noReach = true })
+    square(9300, 9311, 0, { flags = { collideN = true }, noReach = true })
+    local hostUp = { getProperties = function() return wallW:getProperties() end, getSprite = function() return wallW end,
+        getAttachedAnimSprite = function() return javaList({}) end }
+    square(9321, 9300, 1, { flags = { collideW = true, cutW = true }, noReach = true, wallW = hostUp })
+    square(9300, 9300, 0)
+    square(9300, 9310, 0)
+    square(9320, 9300, 1)
+    local PE = player({ id = 29001, x = 9300.5, y = 9300.5 })
+    local PS = player({ id = 29002, x = 9300.5, y = 9310.5 })
+    local PU = player({ id = 29003, x = 9320.5, y = 9300.5, z = 1 })
+    local function srv(p, name, x, y, z)
+        return tostring(Check.item(p, name, 0, { x, y, z }))
+    end
+    local got = table.concat({ srv(PE, "hangtrim_01_0", 9301, 9300, 0), srv(PS, "hangtrim_01_1", 9300, 9311, 0),
+        srv(PE, "hangcut_01_0", 9301, 9300, 0), srv(PU, "hangtrim_01_0", 9321, 9300, 1) }, " ")
+    check(got == "nil nil nil nil",
+        "伺服器：從室內掛東牆、南牆、只帶 cutW 的牆面裝飾、二樓從室內掛外牆，隔著牆也通過（" .. got .. "）")
+    local far = square(9305, 9300, 0, { flags = { collideW = true }, noReach = true })
+    square(9301, 9301, 0, { flags = { collideW = true }, noReach = true, owner = "someone" })
+    got = table.concat({ srv(PE, "hangtrim_01_0", 9305, 9300, 0), srv(PE, "hangtrim_01_0", 9301, 9300, 2),
+        srv(PE, "hangtrim_01_0", 9301, 9301, 0), srv(PE, "hanglamp_01_0", 9301, 9300, 0),
+        srv(PE, "hangbox_01_0", 9301, 9300, 0), srv(PE, "hangtrim_01_2", 9301, 9300, 0) }, " ")
+    check(got == "TOO_FAR TOO_FAR SAFEHOUSE UNREACHABLE UNREACHABLE UNREACHABLE",
+        "伺服器：超過 MaxDistance、差兩層照樣 TOO_FAR；牆後那格是別人的安全屋照樣 SAFEHOUSE；貼牆放在自己那格的家具、實心物件、"
+        .. "掛東南角的疊圖隔著牆照樣 UNREACHABLE（" .. got .. "）")
+    -- 拆：牆的兩側都能拆；貼牆放在自己那格的照舊要走得到
+    PE.inv:add(hammer)
+    local plan = Dismantle.overlayPlan({ sq = east, host = {}, name = "hangtrim_01_0", spr = trimW, kind = "wallObject" })
+    local PO = player({ id = 29004, x = 9302.5, y = 9300.5 })
+    PO.inv:add(hammer)
+    local lampObj = { getSquare = function() return east end, getSprite = function() return lamp end }
+    local d1, d2 = Dismantle.check(PE, "wallObject", plan), Dismantle.check(PO, "wallObject", plan)
+    local d3 = Dismantle.check(PE, "attached", { remove = { lampObj }, refund = {} })
+    local d4 = Dismantle.check(PE, "wallObject", Dismantle.overlayPlan({ sq = far, host = {}, name = "hangtrim_01_0",
+        spr = trimW, kind = "wallObject" }))
+    check(d1 ~= "UNREACHABLE" and d1 ~= "TOO_FAR" and d2 ~= "UNREACHABLE" and d2 ~= "TOO_FAR" and d3 == "UNREACHABLE"
+        and d4 == "TOO_FAR",
+        "拆：掛在牆上的從牆的兩側都能拆（距離照查）；貼牆放在自己那格的隔著牆照樣 UNREACHABLE（"
+        .. table.concat({ tostring(d1), tostring(d2), tostring(d3), tostring(d4) }, " ") .. "）")
+    local itW = Area.item({ overlay = plan.overlay, kind = "wallObject", route = "builder", plan = plan, name = "hangtrim_01_0" })
+    local itL = Area.item({ obj = lampObj, kind = "attached", route = "builder", name = "hanglamp_01_0" })
+    check(itW.north == false and itL.north == nil, "一區拆除的項目：掛在西牆的照格邊走（north＝false），貼牆家具不是格邊（nil）")
+
+    -- 客戶端：照原版的 walkAdj 先換成牆後那格、直接拿去用（luautils.lua:136-138），那格不存在就丟錯
+    isServer, isClient = function() return false end, function() return false end
+    local queued, walls, adjs, finds = {}, {}, 0, 0
+    ISTimedActionQueue = { clear = function() queued = {} end, add = function(a) queued[#queued + 1] = a end,
+        isPlayerDoingAction = function() return false end, getTimedActionQueue = function() return { queue = queued } end }
+    luautils = { getCorrectSquareForWall = harnessWallSquare,
+        walkAdj = function(p, sq)
+            adjs = adjs + 1
+            return harnessWallSquare(p, sq):getX() ~= nil
+        end,
+        walkAdjWall = function(_, sq, north)
+            walls[#walls + 1] = sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() .. "," .. tostring(north)
+            ISTimedActionQueue.add({ walk = sq })
+            return true
+        end }
+    AdjacentFreeTileFinder = { Find = function() finds = finds + 1 return nil end }
+    ISWalkToTimedAction = { new = function(_, _, loc) return { walk = loc } end }
+    local function hang(p, name, x, y, z, n)
+        nowMs = nowMs + 6000
+        queued, walls, adjs, finds = {}, {}, 0, 0
+        C.pending = { n = n, e = name, entry = Entry.resolve(name), kind = Entry.resolve(name).kind, cells = { { x, y, z, 0 } },
+            player = p }
+        local ok, err = pcall(C.onServerCommand, "accepted", { n = n })
+        return ok, ok and table.concat(walls, " ") or tostring(err)
+    end
+    local okE, wE = hang(PE, "hangtrim_01_0", 9301, 9300, 0, 2900101)
+    local nE = #queued
+    local okS, wS = hang(PS, "hangtrim_01_1", 9300, 9311, 0, 2900102)
+    local nS = #queued
+    local okU, wU = hang(PU, "hangtrim_01_0", 9321, 9300, 1, 2900103)
+    local okC, wC = hang(PE, "hangcut_01_0", 9301, 9300, 0, 2900104)
+    check(okE and wE == "9301,9300,0,false" and nE == 2 and okS and wS == "9300,9311,0,true" and nS == 2
+        and okU and wU == "9321,9300,1,false" and okC and wC == "9301,9300,0,false" and adjs == 0,
+        "客戶端：掛東牆、南牆、二樓外牆、只帶 cutW 的牆面裝飾都照牆的走法站在那條邊旁邊，不走原版的 walkAdj、不丟錯（"
+        .. table.concat({ wE, wS, wU, wC }, "／") .. "）")
+    local okL, wL = hang(PE, "hanglamp_01_0", 9301, 9300, 0, 2900105)
+    check(okL and wL == "" and adjs == 0 and finds == 1 and C.pending.noRoom == 1,
+        "客戶端：貼牆家具（不是格邊）在牆後那格不存在時不丟錯，照那一格本身找站位，找不到記第 1 格沒有空位（" .. wL .. "）")
+    local okF = hang(PE, "hanglamp_01_0", 9300, 9300, 0, 2900106)
+    check(okF and adjs == 1, "客戶端：牆後那格存在（或沒有隔牆）時照舊走原版的 walkAdj")
+
+    C.pending = nil
+    for _, k in ipairs({ "9301,9300,0", "9300,9311,0", "9321,9300,1", "9300,9300,0", "9300,9310,0", "9320,9300,1",
+        "9305,9300,0", "9301,9301,0" }) do squares[k] = nil end
+    isServer, isClient, luautils, ISTimedActionQueue = keepServer, keepClient, keepLu, keepQ
+    AdjacentFreeTileFinder, ISWalkToTimedAction = keepFind, keepWalk
+    sb.MaxDistance = keepMD
     spriteMap, spriteOrder = keepMap, keepOrder
 end)()
 

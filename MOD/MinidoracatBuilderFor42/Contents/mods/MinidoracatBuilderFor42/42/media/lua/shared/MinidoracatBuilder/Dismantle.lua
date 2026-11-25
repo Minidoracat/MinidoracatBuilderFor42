@@ -422,7 +422,7 @@ end
 
 -- 能不能拆，回 code, extra 或 nil。順序：
 --   整組門不完整（plan.incomplete：有片沒載入 NOT_LOADED、少了片 NOT_OURS）；同一組有不是本 MOD 蓋的片（plan.foreign）：NOT_OURS。
---   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；格邊種類從哪一側都能拆；建造作弊不查）。
+--   距離：和蓋一樣（Check.near：MaxDistance、上下差一層、同一層要走得到；在格邊上動手的從哪一側都能拆；建造作弊不查）。
 --     preview（右鍵選單）不查：選了會先走過去（建造作弊不走、原地拆）；伺服器完成時照上一行查。
 --   安全屋：每一片的格子都要有 BUILD 權限（原版大錘也是），不看 WhereCanBuild。
 --   原版拆解擋的（canScrapObjectInternal，ISMoveableSpriteProps.lua:3905-3939）：
@@ -446,7 +446,8 @@ function Dismantle.check(player, kind, plan, ...)
     if plan.incomplete then return plan.incomplete, { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if plan.foreign then return "NOT_OURS", { x = cells[1].x, y = cells[1].y, z = cells[1].z } end
     if not preview then
-        local code, extra = Check.near(player, cells, Entry.EDGE[kind], false)
+        local spr = plan.overlay and plan.overlay.spr or plan.remove[1]:getSprite()
+        local code, extra = Check.near(player, cells, Entry.edgeNorth(kind, spr) ~= nil, false)
         if code then return code, extra end
     end
     for _, c in ipairs(cells) do

@@ -57,14 +57,14 @@ function Client.sent()
     sends[#sends + 1] = t
 end
 
--- 走到 (x, y, z) 旁邊。格邊種類照原版牆的寫法（ISBuildingObject:walkTo）；在上一層的先走到正下方同一條邊旁邊
--- （樓上那格沒有地板時 walkAdjWall 找不到站位），走不到才照上一層找。其他不站在 own（同一件的其他格）上，
--- 在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格（luautils.walkAdj／walkAdjWall 沒排走路）；
--- 格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
-local function walkNear(player, kind, north, x, y, z, ...)
+-- 走到 (x, y, z) 旁邊。在格邊上動手的（north＝Entry.edgeNorth 不是 nil）照原版牆的寫法（ISBuildingObject:walkTo）站在
+-- 那條邊的任一側；在上一層的先走到正下方同一條邊旁邊（樓上那格沒有地板時 walkAdjWall 找不到站位），走不到才照上一層找。
+-- 其他不站在 own（同一件的其他格）上，在上一層的（屋頂）走到正下方那格旁邊。回 false＝旁邊沒有站得到的空格
+-- （luautils.walkAdj／walkAdjWall 沒排走路）；格子沒載入回 nil，照樣送，伺服器回 NOT_LOADED
+local function walkNear(player, north, x, y, z, ...)
     local own = ...
     local cell = getCell()
-    if Entry.EDGE[kind] then
+    if north ~= nil then
         local below = z > math.floor(player:getZ()) and cell:getGridSquare(x, y, z - 1)
         if below and luautils.walkAdjWall(player, below, north, true) then return true end
         local sq = cell:getGridSquare(x, y, z)
@@ -74,9 +74,10 @@ local function walkNear(player, kind, north, x, y, z, ...)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local sq = cell:getGridSquare(x, y, z)
     if not sq then return nil end
-    if luautils.walkAdj(player, sq, true, own) then return true end
-    -- 玩家在那格北／西牆的另一側時，原版改找牆後那一格的旁邊（luautils.getCorrectSquareForWall，luautils.lua:202-210）；
-    -- 牆後是土或屋外、和那格之間又隔著牆就找不到。照那一格本身再找一次
+    -- 玩家在那格北／西牆的另一側時，原版改找牆後那一格的旁邊（luautils.getCorrectSquareForWall，luautils.lua:202-210）。
+    -- 牆後那格不存在（二樓以上的屋外、地下室沒挖的土）時它回 nil，walkAdj 拿去就丟錯（luautils.lua:137-138），所以先看；
+    -- 牆後是土或屋外、和那格之間又隔著牆也找不到。都照那一格本身再找一次
+    if luautils.getCorrectSquareForWall(player, sq) and luautils.walkAdj(player, sq, true, own) then return true end
     local adj = AdjacentFreeTileFinder.Find(sq, player, own)
     if not adj then return false end
     ISTimedActionQueue.add(ISWalkToTimedAction:new(player, adj))
@@ -88,7 +89,8 @@ end
 -- 已挖的，standBeside；隔著土牆動手），沒挖的鄰格沒有地板站不了
 local standBeside
 local function walkTo(player, kind, spr, c)
-    if Entry.EDGE[kind] then return walkNear(player, kind, Entry.north(kind, spr), c[1], c[2], c[3]) end
+    local north = Entry.edgeNorth(kind, spr)
+    if north ~= nil then return walkNear(player, north, c[1], c[2], c[3]) end
     if kind == "dig" and spr:getName() == Entry.DIG_CELL then return standBeside(player, c[1], c[2], c[3], true) end
     local cell = getCell()
     local own, x, y = {}, c[1], c[2]
@@ -97,7 +99,7 @@ local function walkTo(player, kind, spr, c)
         if o then own[#own + 1] = o end
         if d[5] == "bottom" then x, y = c[1] + d[1], c[2] + d[2] end
     end
-    return walkNear(player, kind, nil, x, y, c[3], own)
+    return walkNear(player, nil, x, y, c[3], own)
 end
 
 -- 蓋 e（項目 ID），每格 cells[i] = { x, y, z, d } 一項：原點與朝向（0＝項目本身那一面、1..4＝N、E、S、W、5＝配對面，
@@ -272,7 +274,20 @@ local function walkScrap(props, player, sq)
         or o:getType() == IsoObjectType.wall then
         walked = luautils.walkAdjWindowOrDoor(player, sq, o, true)
     else
-        walked = props:walkAdj(player, sq, true)
+        -- 同 walkNear：那格（多格的每一格）北／西牆後那一格不存在時，原版 walkAdj 與 walkAdjSquares 拿去就丟錯
+        -- （luautils.lua:137-138、386-390；ISMoveableSpriteProps.lua:2974-2978,3048-3066），照那一格本身找站位
+        local left, top = props:getSpriteGridTopLeft(sq:getX(), sq:getY())
+        local fine = luautils.getCorrectSquareForWall(player, sq) ~= nil
+        for _, s in ipairs(props:getMultiTileSquares(left, top, sq:getZ()) or {}) do
+            fine = fine and luautils.getCorrectSquareForWall(player, s) ~= nil
+        end
+        if fine then
+            walked = props:walkAdj(player, sq, true)
+        else
+            local adj = AdjacentFreeTileFinder.Find(sq, player)
+            if adj then ISTimedActionQueue.add(ISWalkToTimedAction:new(player, adj)) end
+            walked = adj ~= nil
+        end
     end
     local cheat = ISMoveableDefinitions.cheat
     if not walked and not cheat then return "NO_ROOM" end
@@ -425,7 +440,7 @@ local function queueFill(b, ponds, slope)
             if flat then ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, flat)) end
             stand = flat ~= nil
         else
-            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+            stand = walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {})
         end
         if stand == false then
             for _, f in ipairs(filled) do
@@ -438,7 +453,7 @@ local function queueFill(b, ponds, slope)
             end
         end
         if stand == false and sq then
-            stand = walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {})
+            stand = walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {})
         end
         if stand == false then
             resolve(b, b.index[it], "NO_ROOM", { code = "NO_ROOM" })
@@ -477,7 +492,7 @@ local function queueUnbuild(b)
             else
                 b.scrapping[#b.scrapping + 1] = it
             end
-        elseif walk and walkNear(b.player, it.kind, it.north, it.x, it.y, it.z, it.own or {}) == false then
+        elseif walk and walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {}) == false then
             code = "NO_ROOM"
             resolve(b, b.index[it], code, { code = code })
         else
@@ -489,8 +504,9 @@ local function queueUnbuild(b)
     if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
 end
 
--- 拆一串（一區拆除，或右鍵拆一件）：items[i] = { x, y, z, name（sprite 名稱）, kind, north（格邊種類的方向）, own（同一件
--- 各片所在的格子，走路時不站上去）, route = "builder"（本工具拆）| "scrap"（原版拆解，obj＝物件）, obj }，照拆的順序。
+-- 拆一串（一區拆除，或右鍵拆一件）：items[i] = { x, y, z, name（sprite 名稱）, kind, north（Entry.edgeNorth：在格邊上
+-- 動手的那條邊是不是北邊，其他 nil）, own（同一件各片所在的格子，走路時不站上去）, route = "builder"（本工具拆）
+-- | "scrap"（原版拆解，obj＝物件）, obj }，照拆的順序。
 -- builder 的照順序送一筆拆除請求，伺服器收下後兩種動作照 items 的順序一起排（沒有 builder 的不送請求，直接排）。
 -- 全部輪完、被拒或停下時呼叫 onDone({ done, total, skipped = { [碼] = 件數 }, refund = { [fullType] = 件數 }, stopped,
 -- refused＝整筆被拒的碼或 nil, res = { [items 的那一項] = true（拆好）或跳過的碼；沒輪到的沒有 } })；沒給 onDone 時自己跳通知。
@@ -534,7 +550,7 @@ function Client.dismantle(player, obj, kind, ...)
     local own = ...
     local spr, sq = obj:getSprite(), obj:getSquare()
     return Client.dismantleMany(player, { { x = sq:getX(), y = sq:getY(), z = sq:getZ(), name = spr:getName(), kind = kind,
-        north = Entry.north(kind, spr), own = own, route = "builder", obj = obj } })
+        north = Entry.edgeNorth(kind, spr), own = own, route = "builder", obj = obj } })
 end
 
 -- dismantleAccepted：{ n }；dismantleRefused：{ n, i（0＝請求本身）, code, x, y, z }；

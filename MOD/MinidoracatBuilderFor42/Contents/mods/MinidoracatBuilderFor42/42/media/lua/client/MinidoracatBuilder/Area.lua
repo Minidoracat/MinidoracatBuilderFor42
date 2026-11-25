@@ -193,7 +193,8 @@ function Area.item(t)
     local own = {}
     for i, o in ipairs(t.plan and t.plan.remove or {}) do own[i] = o:getSquare() end
     return { x = sq:getX(), y = sq:getY(), z = sq:getZ(), name = t.name, kind = t.kind,
-        north = t.obj and Entry.north(t.kind, t.obj:getSprite()) or nil, own = own, route = t.route, obj = t.obj }
+        north = Entry.edgeNorth(t.kind, t.overlay and t.overlay.spr or t.obj:getSprite()), own = own, route = t.route,
+        obj = t.obj }
 end
 
 -- ---------------------------------------------------------------- 游標預覽

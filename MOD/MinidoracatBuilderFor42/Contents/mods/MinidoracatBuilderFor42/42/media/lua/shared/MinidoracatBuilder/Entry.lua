@@ -851,6 +851,16 @@ function Entry.north(kind, spr)
     return f == "N" or f == "S"
 end
 
+-- 在一條格邊上動手的：佔格邊的種類（Entry.EDGE）與貼在北／西邊上的（Rules.wallSide）。回那條邊是不是北邊，其他回 nil。
+-- 這些從那條邊的任一側都能動手：伺服器不查走不走得到（Check.near 的 edge；距離、樓層差、安全屋照查），客戶端站在
+-- 那條邊的任一側（Client 的 walkNear）
+function Entry.edgeNorth(kind, spr)
+    if Entry.EDGE[kind] then return Entry.north(kind, spr) end
+    local side = Rules.wallSide(kind, spr)
+    if side then return side == "N" end
+    return nil
+end
+
 -- 一格的施工時間（timed action 的 tick，伺服器每 tick 20 ms）。照原版建造：200 − 木工等級 × 5（BuildAction.java:84-99）。
 -- 樓梯一個動作蓋整組；坡道一組 20 片，一個動作的時間照樓梯的兩倍。挖地下室不看技能：挖一格 5 秒、入口 30 秒
 -- （第三個參數＝項目 ID，只有 dig 要傳；用 ... 接，其他種類的呼叫端不必補 nil）

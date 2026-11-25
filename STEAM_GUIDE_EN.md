@@ -194,7 +194,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Maximum distance[/b]: 3 tiles by default, at most one level up or down, and the admin can change it.
 [*] [b]Your character walks over[/b]: it walks next to each tile before building.
-[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences can be built from either side.
+[*] [b]Things on a square's edge[/b]: walls, doors, windows and fences can be built from either side. So can wall overlays stuck on a wall (baseboards, grime, graffiti and the like): build or dismantle them from either side of the wall.
 [*] [b]Places you can't reach[/b]: through a wall or a closed door or window, furniture and the like can't be placed.
 [*] [b]With the build cheat on[/b]: your character doesn't walk over: it builds and dismantles from where it stands, at any distance, even unreachable places. Actions still take their usual time. Area dismantles that use vanilla Disassemble are still walked to.
 [*] [b]Someone standing there[/b]: things that block movement are not placed on a square where a player or zombie stands.

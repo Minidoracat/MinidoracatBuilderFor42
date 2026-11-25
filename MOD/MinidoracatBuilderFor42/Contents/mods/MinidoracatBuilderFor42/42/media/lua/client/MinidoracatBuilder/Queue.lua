@@ -369,7 +369,7 @@ local function piece(g, a)
     local sq = getCell():getGridSquare(x, y, z)
     local obj = sq and objAt(sq, name)
     local ov = sq and not obj and Dismantle.overlay(sq, name)
-    return { x = x, y = y, z = z, name = name, e = g.name, kind = g.entry.kind, north = Entry.north(g.entry.kind, put),
+    return { x = x, y = y, z = z, name = name, e = g.name, kind = g.entry.kind, north = Entry.edgeNorth(g.entry.kind, put),
         a = a, cells = cells, sq = sq, obj = obj, host = ov and ov.host or nil }
 end
 
