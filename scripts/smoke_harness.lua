@@ -9858,6 +9858,20 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(ghost == nil and done == "DIG_DONE" and Ledger.stats().n == n1 and HARNESS_DRIFT() == ""
             and dirtAt(3401, 3400) == "N",
             "D9 帳本有、地板沒有的格子可以重挖（有地板的回 DIG_DONE），帳本不重複寫、外邊照樣補牆")
+        -- 收編照直接挖那一格的同一套檢查：孤兒格旁邊已挖的格子在別人的安全屋裡、或打開的那條邊上掛著東西 → 不收，土牆照補
+        dig(3404, 3402)
+        local owned = realCell():getGridSquare(3404, 3402, Z)
+        owned.owner = "someone"
+        floored(3403, 3402)
+        dig(3402, 3402)
+        owned.owner = nil
+        floored(3401, 3398)
+        local osq = realCell():getGridSquare(3401, 3398, Z)
+        osq.objects[#osq.objects + 1] = obj(osq, "t_paintW", false, { "attachedW" })
+        dig(3400, 3398)
+        check(not Basement.has(3403, 3402, Z) and dirtAt(3403, 3402) == "W" and not Basement.has(3401, 3398, Z)
+            and HARNESS_DRIFT() == "",
+            "D9 收編照挖掘同一套檢查：旁邊已挖的格子在別人的安全屋裡、或那條邊上掛著東西 → 不收，邊上照補土牆")
         getOnlinePlayers = nil
     end)()
 
@@ -10247,9 +10261,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local def, a1 = eng.tile[tk(3001, 3001)], eng.applies
         for _ = 1, 60 do fire("OnTick") end
         Basement.registerAll()
-        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 4
+        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 7
             and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10 and a1 == a0 + 1 and eng.applies == a1,
-            "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那三塊，一次 applyChanges），之後不再登錄第二次")
+            "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那六塊，一次 applyChanges），之後不再登錄第二次")
     end)()
 
     print("情境三十九之三：地下室的判斷、放置與伺服器（Check、Place、Server；plan.md §4.1 c11–c14）")

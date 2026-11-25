@@ -122,10 +122,11 @@ end
 
 -- 從這次要挖的格子 new 往外找地板有、帳本沒有的格子（當機時 chunk 存了、帳本沒存）：z=-1、格子在、有地板、沒有房間
 -- （地圖的地下室與別的 MOD 登錄的都有房間）。沿著找到的繼續找，併起來那一塊不超過 Basement.MAX。回 { { x, y, z }, ... }。
+-- 每一格照直接挖那一格的同一套檢查（那一格的安全屋、Basement.opens）：不過的不收，也不從它往外找。
 -- 只在玩家挖到旁邊時順手收，不掃描、不載入格子。Basement Building 開著時挖不了（Basement.pre 回 DIG_BD），不會走到這裡
-local function orphans(new)
-    local cell, grid = getCell(), getWorld():getMetaGrid()
-    local seen, ids, size, queue, out = {}, {}, #new, {}, {}
+local function orphans(player, new)
+    local cell, grid, Check = getCell(), getWorld():getMetaGrid(), MinidoracatBuilder.Check
+    local seen, ids, size, queue, out, taken = {}, {}, #new, {}, {}, {}
     -- 併進 (x, y) 四鄰的塊之後多幾格（還沒算過的塊）；mark＝記成算過
     local function blocksNear(x, y, mark)
         local n, got = 0, {}
@@ -139,7 +140,8 @@ local function orphans(new)
         return n
     end
     for _, c in ipairs(new) do
-        seen[Place.key(c.x, c.y, Z)], queue[#queue + 1] = true, c
+        local k = Place.key(c.x, c.y, Z)
+        seen[k], taken[k], queue[#queue + 1] = true, true, c
         size = size + blocksNear(c.x, c.y, true)
     end
     local i = 1
@@ -153,9 +155,11 @@ local function orphans(new)
                 local sq = Basement.inRange(x, y) and not Basement.has(x, y, Z) and cell:getGridSquare(x, y, Z)
                 if sq and sq:getFloor() and not grid:getRoomAt(x, y, Z) then
                     local grow = 1 + blocksNear(x, y, false)
-                    if size + grow <= Basement.MAX then
+                    local c = { x = x, y = y, z = Z, sq = sq }
+                    if size + grow <= Basement.MAX and not Check.safehouse(player, c, nil)
+                        and not Basement.opens(player, c, nil, taken) then
                         blocksNear(x, y, true)
-                        local c = { x = x, y = y, z = Z }
+                        c.sq, taken[k] = nil, true
                         out[#out + 1], queue[#queue + 1], size = c, c, size + grow
                     end
                 end
@@ -180,7 +184,7 @@ function BasementLedger.commit(player, cells, anchor)
             if Basement.has(c.x, c.y, c.z) then again[#again + 1] = { c.x, c.y } else new[#new + 1] = c end
         end
     end
-    local found, more = step("adopt", orphans, new)
+    local found, more = step("adopt", orphans, player, new)
     for _, c in ipairs(found and more or {}) do new[#new + 1] = c end
     local written = {}
     for _, c in ipairs(new) do

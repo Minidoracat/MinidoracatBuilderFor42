@@ -1098,6 +1098,27 @@ end
 
 local function pos(sq) return { x = sq:getX(), y = sq:getY(), z = sq:getZ() } end
 
+-- 挖開 c 會不會打通不該通的地方：周圍有外來房間、已挖的鄰格沒有權限（不然在安全屋外緊貼邊界挖一格，兩格之間的土牆
+-- 消失就打通進去了）、打開的那條邊上有掛件。回 code, extra 或 nil。直接挖（pre）和收編帳本缺的格子（BasementLedger）
+-- 同一套；also＝這一批已經算挖開、還沒進集合的格鍵（Place.key）
+function Basement.opens(player, c, preview, also)
+    if foreignRoomNear(getWorld():getMetaGrid(), c.x, c.y) then return "DIG_ROOM", at(c) end
+    local Check, cell = MinidoracatBuilder.Check, getCell()
+    for _, d in ipairs(DIRS) do
+        local nx, ny = c.x + d[1], c.y + d[2]
+        if has(nx, ny, c.z) or (also and also[Place.key(nx, ny, c.z)]) then
+            local nsq = cell:getGridSquare(nx, ny, c.z)
+            local code = Check.safehouse(player, { x = nx, y = ny, z = c.z, sq = nsq }, preview, "dismantle")
+            if code then return code, { x = nx, y = ny, z = c.z } end
+            -- 這條邊在 c 的北、西（鄰格在北、西）時土牆在 c 那格，否則在鄰格
+            local csq, south = cell:getGridSquare(c.x, c.y, c.z), d[1] + d[2] > 0
+            local hung = hungAt(south and nsq or csq, south and csq or nsq, d[1] ~= 0 and "W" or "N")
+            if hung then return "DIG_HUNG", pos(hung) end
+        end
+    end
+    return nil
+end
+
 -- Check.item 補格子之前跑（只讀座標與已經存在的格子）：回 code, extra, skip（skip＝加開入口，Check.item 把角色 dig 的
 -- 6 格拿掉）。順序就是回報的優先序
 function Basement.pre(player, entry, cells, anchor, planned, preview)
@@ -1155,22 +1176,11 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
             end
         end
     end
-    -- 要挖的格子旁邊已挖的格子也要有權限：不然在安全屋外緊貼邊界挖一格，兩格之間的土牆消失就打通進去了
-    local Check, cell = MinidoracatBuilder.Check, getCell()
     for _, c in ipairs(dig) do
-        for _, d in ipairs(DIRS) do
-            local nx, ny = c.x + d[1], c.y + d[2]
-            if has(nx, ny, c.z) then
-                local nsq = cell:getGridSquare(nx, ny, c.z)
-                local code = Check.safehouse(player, { x = nx, y = ny, z = c.z, sq = nsq }, preview, "dismantle")
-                if code then return code, { x = nx, y = ny, z = c.z } end
-                -- 這條邊在 c 的北、西（鄰格在北、西）時土牆在 c 那格，否則在鄰格
-                local csq, south = cell:getGridSquare(c.x, c.y, c.z), d[1] + d[2] > 0
-                local hung = hungAt(south and nsq or csq, south and csq or nsq, d[1] ~= 0 and "W" or "N")
-                if hung then return "DIG_HUNG", pos(hung) end
-            end
-        end
+        local code, extra = Basement.opens(player, c, preview, nil)
+        if code then return code, extra end
     end
+    local cell = getCell()
     local plat
     for _, c in ipairs(cells) do
         if c.role == "platform" then plat = c end
