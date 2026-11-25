@@ -9800,7 +9800,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(partial and again2 and eng.tile[tk(2301, 2300)] ~= nil and eng.tile[tk(2301, 2300)].bld == eng.tile[tk(2300, 2300)].bld,
             "c4 只建出含角那一間、別的房間沒建出來：回失敗不記成已登錄，之後 registerAll 補登錄")
         -- 單機與客戶端有一棟登錄好了才呼叫 Basement.onApplied（補房間燈）；伺服器、登錄失敗不叫；它丟錯只記 log
-        local calls = 0
+        local calls, realApplied = 0, Basement.onApplied
         Basement.onApplied = function() calls = calls + 1 end
         Basement.grow(Basement.add({ { 2200, 2200 } }))
         local onServer = calls
@@ -9817,7 +9817,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local okAfterBoom = Basement.registerAll()
         print = realPrint
         isServer = realServer
-        Basement.onApplied = nil
+        Basement.onApplied = realApplied -- Client.lua 載入時設的那個（watchNow），後面的測試要用
         local boomLog = false
         for _, s in ipairs(logs2) do boomLog = boomLog or s:find("onApplied failed: ", 1, true) ~= nil end
         check(onServer == 0 and afterOk == 1 and afterFail == 1 and okAfterBoom and boomLog
