@@ -1128,6 +1128,31 @@ function Basement.dirty(x, y, z)
     if hit then later() end
 end
 
+-- 伺服器與單機：(x, y, z) 所在那一塊在延後批次裡排著的新格子與要重算分房的格子當下登錄（同一個呼叫裡），別的塊照舊等。
+-- 按地下室裡的開關或燈時用（Circuits.press）：有市電時開關要自己或四周 3×3 有一格在房間裡才算有電（IsoLightSwitch.java:
+-- 415-466 canSwitchLight、isBuildingSquare），還沒登錄的那一塊沒有房間，按了不會動。這一塊沒有排著的不做事、回 false
+function Basement.growNow(x, y, z)
+    if isClient() or z ~= Z then return false end
+    local id = cells[key(x, y)]
+    if not id then return false end
+    local list, dk, sk = {}, {}, {}
+    for k, v in pairs(due) do
+        if cells[k] == id then
+            dk[#dk + 1] = k
+            if not bof[k] then list[#list + 1] = v end
+        end
+    end
+    for k in pairs(stale) do
+        if cells[k] == id then sk[#sk + 1] = k end
+    end
+    if #dk + #sk == 0 then return false end
+    for _, k in ipairs(dk) do due[k] = nil end
+    for _, k in ipairs(sk) do stale[k] = nil end
+    local ok, done = pcall(refresh, { [id] = true }, list)
+    if not (ok and done) then print(LOG .. "grow failed: " .. tostring(done)) end
+    return ok and done == true
+end
+
 -- 伺服器與單機，每遊戲分鐘（BasementLedger 掛 EveryOneMinute）：每位玩家 PATROL 格內的塊重算分房。原版木工、別的 MOD 蓋牆
 -- 在伺服器沒有事件（OnObjectAdded 只在 AddItemToMapPacket.processClient 觸發，AddItemToMapPacket.java:59,94）。
 -- 沒有地下室時不做事

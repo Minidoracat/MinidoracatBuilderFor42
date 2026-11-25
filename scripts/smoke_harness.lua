@@ -27439,12 +27439,163 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         .. "載入後巡查分法一樣、不推 block，客戶端不再登錄（" .. tostring(saved5) .. tostring(cold) .. tostring(once5)
         .. tostring(quiet5) .. " applies +" .. (EC.applies - a5) .. " block " .. #pushed5 .. "）")
 
+    -- 剛挖好、剛裝上牆上開關就按（延後批次還沒跑，那一塊沒有房間）：按的同一個呼叫裡先登錄那一塊，伺服器照樣切；同時挖的另一塊
+    -- 照舊等下一批。客戶端先收到 block 或先收到開關的同步都一樣：最後房間燈亮、只登錄 1 次。單機同一條規則
+    local SWS = sprite("t_cellarswitch", 0, {})
+    local applied6 = SB.onApplied
+    CB.onApplied = applied6
+    local gone6, inst6 = {}, instanceof
+    instanceof = function(o, cls) -- 假的開關照 IsoLightSwitch 認
+        if cls == "IsoLightSwitch" and type(o) == "table" and o.light == true then return true end
+        return inst6(o, cls)
+    end
+    local function mkSwitch(sq, out)
+        local o = { light = true, on = false, sq = sq }
+        function o:getSquare() return self.sq end
+        function o:getSprite() return SWS end
+        function o:getProperties() return SWS:getProperties() end
+        function o:isActivated() return self.on end
+        function o:setActivated(v) self.on = v end
+        function o:hasLightBulb() return true end
+        function o:getKeyId() return -1 end
+        function o:getObjectIndex() return self.gone and -1 or 0 end
+        function o:hasModData() return true end
+        function o:getModData()
+            self.md = self.md or { builderEntry = "t_cellarswitch" }
+            return self.md
+        end
+        -- 格子有房間就改整間的燈，房間裡的開關跟著（IsoLightSwitch.java:517-524）
+        function o:switchLight(v)
+            local room = self.sq:getRoom()
+            if room then
+                room.def.lightsActive = v
+                for _, s in ipairs(room.def.switches) do s.on = v end
+            end
+        end
+        -- 有市電時：自己或四周 3×3 有一格在房間裡才算有電（IsoLightSwitch.java:415-466）
+        function o:canSwitchLight()
+            local x, y = self.sq:getX(), self.sq:getY()
+            for dx = -1, 1 do
+                for dy = -1, 1 do
+                    local s = getCell():getGridSquare(x + dx, y + dy, Z)
+                    if s and s:getRoom() then return true end
+                end
+            end
+            return false
+        end
+        function o:syncIsoObject(_, v) if out then out[#out + 1] = v end end
+        sq.objects[#sq.objects + 1] = o
+        gone6[#gone6 + 1] = o
+        return o
+    end
+    local function pressFresh(X, blockFirst, far)
+        local sv, cl, digs = {}, {}, {}
+        for x = X, X + 2 do
+            cl[x] = ug(x, X, Z)
+            cl[x].isUserDefinedRoom = function() return false end
+            sv[x] = ug(x, X, Z)
+            digs[#digs + 1] = { x = x, y = X, z = Z, role = "dig" }
+        end
+        for x = X + 20, X + (far and 21 or 19) do
+            ug(x, X, Z)
+            digs[#digs + 1] = { x = x, y = X, z = Z, role = "dig" }
+        end
+        local function side(t) for x = X, X + 2 do squares[x .. "," .. X .. ",-1"] = t[x] end end
+        local function S() enter("s") side(sv) end
+        local function C() enter("c") side(cl) end
+        sp = player({ id = 9600 + X % 1000, x = X + 1.5, y = X + 0.5, z = Z })
+        cx, cy = X + 1, X
+        S()
+        ES.hangLoaded, EC.hangLoaded = true, true
+        take()
+        for _, m in ipairs(snap()) do -- 進場的快照（這一區還沒有地下室）：客戶端的同步範圍換到這一區
+            C()
+            B.Client.onServerCommand(m.cmd, m.args)
+        end
+        S()
+        Ledger.commit(sp, digs, { X, X, Z })
+        local dug = take()
+        C()
+        for _, m in ipairs(dug) do B.Client.onServerCommand(m.cmd, m.args) end
+        S()
+        SB.setSwitchTile(X + 1, X, true) -- 照 Place.newLight：先記開關格再建
+        local syncs = {}
+        local A = mkSwitch(sv[X + 1], syncs)
+        C()
+        local cA = mkSwitch(cl[X + 1])
+        local keepAdd = B.Place.onAdded
+        B.Place.onAdded = function() end -- 這裡只看客戶端登記開關（Client 的 OnObjectAdded）
+        fire("OnObjectAdded", cA)
+        B.Place.onAdded = keepAdd
+        local a0 = EC.applies
+        S()
+        nowMs = nowMs + 1000
+        local ret = B.Circuits.onToggle({ object = A, character = sp })
+        local blocks = {}
+        for _, m in ipairs(take()) do if m.cmd == "block" then blocks[#blocks + 1] = m end end
+        local farWait = not far or ES.tile[tk(X + 20, X)] == nil
+        local function toClient(kind)
+            C()
+            if kind == "block" then
+                for _, m in ipairs(blocks) do B.Client.onServerCommand(m.cmd, m.args) end
+            else -- 客戶端收到開關的同步（IsoLightSwitch.java:662-668）
+                for _, v in ipairs(syncs) do
+                    cA:switchLight(v == 1)
+                    cA.on = v == 1
+                end
+            end
+        end
+        toClient(blockFirst and "block" or "sync")
+        toClient(blockFirst and "sync" or "block")
+        CB.registerNear(nil)
+        local cdef = EC.tile[tk(X, X)]
+        local ok = ret == true and A.on and #blocks == 1 and #syncs >= 1 and ES.tile[tk(X, X)] ~= nil and farWait
+            and cdef ~= nil and cdef.lightsActive == true and cA.on and EC.applies - a0 == 1
+        S()
+        flush()
+        local farDone = not far or ES.tile[tk(X + 20, X)] ~= nil
+        ES.hangLoaded, EC.hangLoaded = nil, nil
+        return ok and farDone, tostring(ret) .. tostring(A.on) .. #blocks .. tostring(farWait) .. tostring(cdef and cdef.lightsActive)
+            .. tostring(farDone) .. "+" .. (EC.applies - a0)
+    end
+    local mp1, why1 = pressFresh(205 * AR + 100, true, true)
+    local mp2, why2 = pressFresh(215 * AR + 100, false, false)
+    -- 單機：一份世界，開關格也在房間裡，開關切整間的燈
+    local X7 = 225 * AR + 100
+    enter("s")
+    isServer = no
+    local keepZ7 = SB.recalcZ
+    SB.recalcZ = function() end
+    ES.hangLoaded = true
+    local digs7 = {}
+    for x = X7, X7 + 2 do
+        ug(x, X7, Z)
+        digs7[#digs7 + 1] = { x = x, y = X7, z = Z, role = "dig" }
+    end
+    sp = player({ id = 9701, x = X7 + 1.5, y = X7 + 0.5, z = Z })
+    cx, cy = X7 + 1, X7
+    Ledger.commit(sp, digs7, { X7, X7, Z })
+    local A7 = mkSwitch(getCell():getGridSquare(X7 + 1, X7, Z))
+    nowMs = nowMs + 1000
+    local ret7 = B.Circuits.onToggle({ object = A7, character = sp })
+    local def7 = ES.tile[tk(X7 + 1, X7)]
+    local sp7 = ret7 == true and A7.on and def7 ~= nil and def7.lightsActive == true
+    ES.hangLoaded, SB.recalcZ, isServer, instanceof = nil, keepZ7, yes, inst6
+    for _, o in ipairs(gone6) do o.gone = true end
+    check(applied6 ~= nil and mp1 and mp2 and sp7,
+        "剛挖好、剛裝上地下室的牆上開關就按：同一個呼叫裡先登錄那一塊再切（同時挖的另一塊照舊等下一批）；客戶端先收到 block "
+        .. "或先收到開關同步，最後房間燈都亮、只登錄 1 次；單機一樣（" .. why1 .. " / " .. why2 .. " / " .. tostring(ret7)
+        .. tostring(def7 and def7.lightsActive) .. "）")
+
     enter("s")
     SB.reset({}, 120, 120)
     SB.reset({}, 180, 180)
     SB.reset({}, 141, 140)
     SB.reset({}, 160, 160)
     SB.reset({}, 200, 200)
+    SB.reset({}, 205, 205)
+    SB.reset({}, 215, 215)
+    SB.reset({}, 225, 225)
     isServer, isClient, getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, sendServerCommand =
         keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
     MinidoracatBuilder.Basement = SB

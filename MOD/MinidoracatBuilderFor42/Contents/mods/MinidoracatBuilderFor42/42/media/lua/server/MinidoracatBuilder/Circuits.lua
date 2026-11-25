@@ -488,7 +488,8 @@ end
 -- 按開關（id＝線路編號）、本工具蓋的燈（id＝nil），或地下室裡沒接燈的牆上開關（id＝nil，第四個參數＝房間編號：
 -- 同一間的這些開關一起切；canSwitchLight 不過就不動，同原版，IsoLightSwitch.java:415-424）。順序：距離（同一層、
 -- PRESS_REACH 格內）→ Safehouse 的 USE（拒絕時它自己推通知；我們的 complete 不呼叫原版，包在內層的 Safehouse 不會跑）
--- → 冷卻 → 切。回 complete 的結果。
+-- → 地下室那一塊還有延後沒登錄的格子就當下登錄（Basement.growNow：沒有房間時有市電也認不到電）→ 冷卻 → 切。
+-- 回 complete 的結果。
 function Circuits.press(player, obj, id, ...)
     local rid = ...
     local sq = obj:getSquare()
@@ -500,6 +501,7 @@ function Circuits.press(player, obj, id, ...)
         return false
     end
     if useDenied(player, x, y, z) then return false end
+    B.Basement.growNow(x, y, z)
     if rid and not obj:canSwitchLight() then return false end
     local k = id or rid or Ledger.key(obj)
     local t = now()
