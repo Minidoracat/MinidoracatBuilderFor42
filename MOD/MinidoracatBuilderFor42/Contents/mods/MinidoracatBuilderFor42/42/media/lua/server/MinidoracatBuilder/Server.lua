@@ -463,6 +463,14 @@ function Server.complete(player, n, i)
                 saved[1][#saved[1] + 1] = { e = e, list = hungOn(oldSq, Overlays.at(oldSq, e), rep.obj, e) }
             end
         end
+        -- 地下的牆邊（Place.clearDirt 會拆掉那條邊的土牆、西北角那件換成另一邊的單邊牆）：拆之前兩條邊上本工具的牆面疊圖
+        -- 照樣記下來，蓋好後掛到那條邊現在的牆上，掛不回去就退料
+        for j, c in ipairs(Entry.EDGE[entry.kind] and not rep and cells or {}) do
+            for _, e in ipairs(c.sq:getZ() < 0 and { "N", "W" } or {}) do
+                local host = Place.wallAt(c.sq, e)
+                if host then saved[j][#saved[j] + 1] = { e = e, list = hungOn(c.sq, Overlays.at(c.sq, e), host, e) } end
+            end
+        end
     end
     local placed = {}
     local ok, err = pcall(Place.build, entry.kind, cells, placed)

@@ -1931,13 +1931,15 @@ local function clearEdge(D, sq, k, both)
     for i = 1, list and #list or 0 do
         local o = list[i]
         if not D.isDirtOnOuterEdge(o) then
-            local keep = not both and rest[o:getSprite():getName()]
+            local keep, obj = not both and rest[o:getSprite():getName()], nil
             if keep then
-                local obj = IsoObject.new(getCell(), sq, keep[k])
+                obj = IsoObject.new(getCell(), sq, keep[k])
                 sq:AddTileObject(obj)
                 obj:transmitCompleteItemToClients()
             end
-            sq:transmitRemoveItemFromSquare(o)
+            -- 西北角那件拆不掉（回 -1）：剛補的單邊牆也拿掉，不然那條邊多一件
+            local r = sq:transmitRemoveItemFromSquare(o)
+            if obj and not (r and r >= 0) then sq:transmitRemoveItemFromSquare(obj) end
         end
     end
 end

@@ -5297,8 +5297,8 @@ print("情境二十六之二：牆上疊圖照地圖掛在牆上（使用者 202
         return table.concat(out, ",")
     end
     -- 格子：getWall／getWallSE 照引擎掃格上物件（IsoGridSquare.java:4590-4610）；移除物件前照引擎觸發 OnObjectAboutToBeRemoved
-    local function edgeSq(x, y, flags)
-        local sq = square(x, y, 0, { flags = flags })
+    local function edgeSq(x, y, flags, z) -- z 給了（地下）就有地板
+        local sq = square(x, y, z or 0, { flags = flags, floor = z and {} or nil })
         sq.dropped = {}
         function sq:AddWorldInventoryItem(ft) self.dropped[ft] = (self.dropped[ft] or 0) + 1 end
         local function find(k, notSE)
@@ -5624,6 +5624,76 @@ print("情境二十六之二：牆上疊圖照地圖掛在牆上（使用者 202
     local okSH, _, aSH = build(Pl, 2730, TN, { 47, 48, 0 })
     check(not okSH and aSH.code == "SAFEHOUSE" and hung(wSH) == "" and Overlays.get(SH, TN, "N") == nil,
         "別人的安全屋：SAFEHOUSE、不掛、不記帳本")
+
+    -- 地下室 MOD（Basement Building）外邊：在土牆那條邊蓋實牆，拆掉的土牆、它的西北角那件上本工具的疊圖掛到那條邊現在的牆，
+    -- 帳本留著、不退料；西北角那件拆不掉時剛補的單邊牆也拿掉
+    local dirtS = sprite("underground_01_9", 2730, { flags = { "WallN", "cutN" }, keys = { WallN = "" } })
+    local nwS = sprite("bd_wood_01_26", 2731, { flags = { "WallNW", "cutN", "cutW" }, keys = { WallNW = "" } })
+    local bdWS = sprite("bd_wood_01_24", 2732, { flags = { "WallW", "cutW" }, keys = { WallW = "" } })
+    world({ wallS, wall2S, wallWS, trimN, trimW, trimSE, signS, gridT, dirtS, nwS, bdWS })
+    local outerE = {}
+    aparosa_BD_DirtLayer = {
+        isOuterEdge = function(x, y, _, k) return outerE[x .. "," .. y .. "," .. k] == true end,
+        isDirtOnOuterEdge = function(o) return o:getSprite() == dirtS end,
+        isOpeningOnOuterEdge = function() return false end,
+        isFrameOnDirt = function() return false end,
+        isDirtLookOnOuterEdge = function(_, name) return name == "underground_01_9" end,
+        clearDirt = function(sq, k)
+            for i = #sq.objects, 1, -1 do
+                if k == "N" and sq.objects[i].spr == dirtS then sq:transmitRemoveItemFromSquare(sq.objects[i]) end
+            end
+        end,
+    }
+    aparosa_BD_Build = { SPRITE = { variant = { wood = { wall = { W = "bd_wood_01_24", N = "bd_wood_01_25", NW = "bd_wood_01_26" } } } } }
+    local realIsoObj = IsoObject
+    IsoObject = { new = function(_, sq, name) -- 補回西北角另一邊的單邊牆：AddTileObject 才放進格子
+        local o = wallOf(sq, spriteMap[name])
+        table.remove(sq.objects)
+        function o:transmitCompleteItemToClients() end
+        return o
+    end }
+    local Pd = player({ id = 2740, x = 49.5, y = 53.5, z = -1, here = here, cheat = true })
+    local function hangOn(sq, w, t, e)
+        w:addAttachedAnimSprite(spriteMap[t])
+        w.md.builderOverlays = w.md.builderOverlays or {}
+        w.md.builderOverlays[t] = true
+        Overlays.put(sq, t, pay, e)
+    end
+    local function newOn(sq, spr)
+        for _, o in ipairs(sq.objects) do if o.spr == spr or o.name == spr:getName() then return o end end
+    end
+    here.dropped = {}
+    IsoThumpable.new = attNew
+    local DA = edgeSq(48, 52, { WallN = true }, -1)
+    outerE["48,52,N"] = true
+    hangOn(DA, wallOf(DA, dirtS), TN, "N")
+    local okDA = build(Pd, 2740, "wo_wall_01_1", { 48, 52, -1 })
+    local wDA = newOn(DA, wallS)
+    local DB = edgeSq(49, 52, { WallNW = true }, -1)
+    outerE["49,52,N"], outerE["49,52,W"] = true, true
+    local nwB = wallOf(DB, nwS)
+    hangOn(DB, nwB, TN, "N")
+    hangOn(DB, nwB, TW, "W")
+    local okDB = build(Pd, 2741, "wo_wall_01_1", { 49, 52, -1 })
+    local wDB, kDB = newOn(DB, wallS), newOn(DB, bdWS)
+    check(okDA and wDA and hung(wDA) == TN and samePay(Overlays.get(DA, TN, "N")) and newOn(DA, dirtS) == nil
+        and okDB and wDB and hung(wDB) == TN and kDB and hung(kDB) == TW and newOn(DB, nwS) == nil
+        and samePay(Overlays.get(DB, TN, "N")) and samePay(Overlays.get(DB, TW, "W"))
+        and next(here.dropped) == nil and next(DA.dropped) == nil and next(DB.dropped) == nil,
+        "地下外邊蓋實牆：拆掉的土牆、它的西北角那件上本工具的疊圖掛到那條邊現在的牆（北面掛新牆、西面掛補回的單邊牆），帳本留著、不退料")
+    local DC = edgeSq(50, 52, { WallNW = true }, -1)
+    outerE["50,52,N"], outerE["50,52,W"] = true, true
+    local nwC = wallOf(DC, nwS)
+    local baseDC = DC.transmitRemoveItemFromSquare
+    function DC:transmitRemoveItemFromSquare(o, safely)
+        if o == nwC then return -1 end -- 移除失敗：物件還在
+        return baseDC(self, o, safely)
+    end
+    local okDC = build(Pd, 2742, "wo_wall_01_1", { 50, 52, -1 })
+    check(okDC and newOn(DC, wallS) and newOn(DC, nwS) == nwC and newOn(DC, bdWS) == nil,
+        "它的西北角那件拆不掉（回 -1）：剛補的西邊單邊牆也拿掉，那條邊不多一件")
+    IsoThumpable.new = realNew
+    IsoObject, aparosa_BD_DirtLayer, aparosa_BD_Build = realIsoObj, nil, nil
     instanceof = realInst
 end)()
 
@@ -8593,7 +8663,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r24:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r25:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -9340,9 +9410,12 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         end
         function o:transmitUpdatedSpriteToClients() end
         function o:transmitModData() end
+        function o:getSpriteConfig() return self.cfg end -- 多格家具（SpriteConfig）：cfg＝{ isValidMultiSquare }
         return o
     end
     IsoObject = { new = function(_, sq, name) return obj(sq, name) end }
+    -- 雙開門、車庫門：o.double／o.garage＝那一扇的序號（引擎不是的回 -1）
+    IsoDoor = { getDoubleDoorIndex = function(o) return o.double or -1 end, getGarageDoorIndex = function(o) return o.garage or -1 end }
     instanceof = function(o, cls)
         if cls == "IsoThumpable" then return type(o) == "table" and o.thump == true end
         if cls == "IsoLightSwitch" then return type(o) == "table" and o.light == true end
@@ -9377,7 +9450,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         function def:getName() return self.name end
         function def:setName(n) self.name = n end
         local b = { setUserDefined = function(_, v) def.user = v end, setAllExplored = function(_, v) def.explored = v end }
-        function def:getBuilding() return b end
+        function def:getBuilding() return self.bld or b end
         local room = { def = def }
         function room:getLightSwitches()
             local list = javaList(def.switches)
@@ -9410,6 +9483,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         end
         function e:applyChanges()
             eng.applies = eng.applies + 1
+            if eng.noop then return end -- 引擎套用了卻沒改世界（eng.noop）
             for _, b in ipairs(self.list) do
                 local cx, cy, x0, y0 = math.huge, math.huge, math.huge, math.huge
                 for _, r in ipairs(b.rooms) do
@@ -9422,9 +9496,12 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 local mk = lx .. "," .. ly .. ":" .. (cx - lx * 256) .. "," .. (cy - ly * 256)
                 local old = eng.meta[mk]
                 if old then for k, d in pairs(eng.tile) do if d.bld == old then eng.tile[k] = nil end end end
-                local bld = { rooms = {} }
+                local bld = { rooms = {} } -- 同一棟的房間共用（getBuilding 回它）
+                function bld.setUserDefined(_, v) for _, d in ipairs(bld.rooms) do d.user = v end end
+                function bld.setAllExplored(_, v) for _, d in ipairs(bld.rooms) do d.explored = v end end
                 eng.meta[mk] = bld
                 for i, r in ipairs(b.rooms) do
+                    if eng.firstOnly and i > 1 then break end -- 引擎只建出含角那一間（eng.firstOnly）
                     local def = newDef(r.name)
                     def.bld, bld.rooms[i] = bld, def
                     if i == 1 then eng.live[tk(cx, cy)] = def end
@@ -9615,8 +9692,22 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local bad = Basement.grow(Basement.add({ { 2108, 2100 } }))
         BuildingRoomsEditor = realEditor
         local retry = Basement.registerAll()
-        check(bad == false and retry and eng.tile[tk(2108, 2100)] == eng.live[tk(2100, 2100)],
+        check(bad == false and retry and eng.tile[tk(2108, 2100)] ~= nil and eng.overlap == 0,
             "c4 沒有 BuildingRoomsEditor：回失敗不丟錯，那一格之後 registerAll 補登錄")
+        -- 套用後角上還是上次登錄的那間（引擎沒換掉）：不算登錄好，之後 registerAll 補
+        eng.noop = true
+        local stale = Basement.grow(Basement.add({ { 2109, 2100 } }))
+        eng.noop = nil
+        local refreshed = Basement.registerAll()
+        check(stale == false and refreshed and eng.tile[tk(2109, 2100)] ~= nil,
+            "c4 applyChanges 沒改世界、角上還是舊的那間：回失敗不記成已登錄，之後 registerAll 補登錄")
+        -- 只建出含角那一間、別的房間沒建出來（那一格還是別棟的舊房間或沒有）：不算登錄好，之後 registerAll 補
+        eng.firstOnly = true
+        local partial = Basement.grow(Basement.add({ { 2110, 2100 } }))
+        eng.firstOnly = nil
+        local again2 = Basement.registerAll()
+        check(partial == false and again2 and eng.tile[tk(2110, 2100)] ~= nil,
+            "c4 只建出含角那一間、別的房間沒建出來：回失敗不記成已登錄，之後 registerAll 補登錄")
         -- 重新登錄的房間燈是關的：有開著的開關就照它把整間切開（switchLight 連動整間），其他開關照原值還原
         local group = {}
         local function sw(on)
@@ -9810,6 +9901,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         dugSq.getFloor = function() return {} end -- 挖好的格子有地板
         check(pre(one(3001, 3001)) == "DIG_DONE" and mixed == "DIG_ENTRY" and pre(one(3001, 2999)) == nil,
             "c6 DIG_DONE：已挖的格子；DIG_ENTRY：入口樓梯一部分已挖；旁邊的新格照常")
+        realCell():getGridSquare(3003, 3001, Z).getFloor = function() return {} end -- 樓梯底前面那格挖好了
         local again, _, skip = pre(entrance(3000, 3001), { 3000, 3001, 0 })
         check(again == nil and skip == true, "c6 加開：樓梯 3 格都在同一塊 → 過、skip")
         local edge, edgeAt = one(3100, 3100)
@@ -9900,6 +9992,16 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local painting = obj(hsq, "t_paintE", false, { "attachedE" })
         hsq.objects[#hsq.objects + 1] = painting
         local code2, at2 = pre1(3501, 3500)
+        -- 那條邊上有玩家自己的實牆（挖開不拆）：牆兩面掛的東西都不會懸空 → 不擋；只有掛件沒有牆照擋
+        local wsq = realCell():getGridSquare(3501, 3500, Z)
+        wsq.objects[#wsq.objects + 1] = obj(wsq, "t_paintW", false, { "attachedW" })
+        local bare5 = pre1(3501, 3500)
+        wsq.objects[#wsq.objects + 1] = obj(wsq, "t_ownW", false, { "WallW" })
+        local onWall = pre1(3501, 3500)
+        table.remove(wsq.objects)
+        table.remove(wsq.objects)
+        check(bare5 == "DIG_HUNG" and onWall == nil,
+            "#5 那條邊上有玩家自己的實牆：牆兩面的掛件不擋；拿掉牆照擋（" .. tostring(bare5) .. " " .. tostring(onWall) .. "）")
         table.remove(hsq.objects)
         check(quietN == nil and code == "DIG_HUNG" and at1 and at1.x == 3501 and at1.y == 3500 and at1.z == Z
             and code2 == "DIG_HUNG" and at2 and at2.x == 3500 and at2.y == 3500 and pre1(3501, 3500) == nil,
@@ -10194,6 +10296,23 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "D6 牆隔開：批次重算分房、整棟重登錄成兩間（含角那間在前）、推 block 給附近玩家；拆牆巡查合回一間、分法沒變不重登錄；拆東西與重推排批次；"
             .. "沒載入不分；巡查只看 16 格內（" .. tostring(two) .. tostring(merged) .. tostring(idle) .. tostring(gone)
             .. tostring(stay) .. tostring(farIdle) .. tostring(nearSplit) .. "）")
+        -- 有一格沒載入時在兩間交界再挖一格：分不了房，兩間照舊各是一間（不先併房號），新格跟著它一個鄰格的那間
+        for x = 7400, 7403 do ug(x, 7400, Z) end
+        Basement.grow(Basement.add({ { 7400, 7400 }, { 7401, 7400 } }))
+        Basement.grow(Basement.add({ { 7403, 7400 } }))
+        local keep3 = squares["7403,7400,-1"]
+        squares["7403,7400,-1"] = nil
+        Basement.growLater(Basement.add({ { 7402, 7400 } }))
+        nowMs = nowMs + Basement.GROW_QUIET
+        fire("OnTick")
+        squares["7403,7400,-1"] = keep3
+        local _, ra = Basement.roomOf(7400, 7400, Z)
+        local _, ra2 = Basement.roomOf(7401, 7400, Z)
+        local _, rb = Basement.roomOf(7403, 7400, Z)
+        local _, rn = Basement.roomOf(7402, 7400, Z)
+        check(ra and rb and ra ~= rb and ra2 == ra and (rn == ra or rn == rb) and eng.overlap == 0,
+            "D6 有一格沒載入時在兩間交界再挖：兩間照舊各一間、不併房號，新格跟著鄰格那間（"
+            .. tostring(ra) .. " " .. tostring(rb) .. " " .. tostring(rn) .. "）")
 
         local calls, keepMods = 0, getActivatedMods
         getActivatedMods = function() calls = calls + 1 return keepMods() end
@@ -10212,6 +10331,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             return select(2, Basement.checkCell(sq, "hole"))
         end
         local function multi(o) o:getSprite().grid = {} end
+        local function config(o) o.cfg = { isValidMultiSquare = function() return true end } end
+        local function double(o) o.double = 1 end
+        local function garage(o) o.garage = 2 end
         local function overlays(t)
             return function(o)
                 o.md = { builderOverlays = t }
@@ -10220,12 +10342,15 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             end
         end
         local bush, floorM = holeWith("t_bush", { "canBeRemoved" }, multi), holeWith("t_floor", { "solidfloor" }, multi)
+        local cfgM, doubleM, garageM = holeWith("t_crate", { "canBeRemoved" }, config), holeWith("t_dd", { "canBeRemoved" }, double),
+            holeWith("t_gd", { "canBeRemoved" }, garage)
         local rug, rug2 = holeWith("floors_rugs_01_0", { "solidfloor" }), holeWith("t_mat", {})
         local hung, bare = holeWith("t_floor", { "solidfloor" }, overlays({ a = 1 })), holeWith("t_floor", { "solidfloor" }, overlays({}))
         check(bush == "DIG_CLEAR" and floorM == "DIG_CLEAR" and rug == "DIG_CLEAR" and rug2 == "DIG_CLEAR"
-            and hung == "DIG_CLEAR" and bare == nil,
-            "F2/F5 洞上不收：多格的一組（植物、地板）、地毯、掛著地面覆蓋的地板；覆蓋表是空的照常（" .. tostring(bush) .. " "
-            .. tostring(floorM) .. " " .. tostring(rug) .. " " .. tostring(hung) .. " " .. tostring(bare) .. "）")
+            and hung == "DIG_CLEAR" and bare == nil and cfgM == "DIG_CLEAR" and doubleM == "DIG_CLEAR" and garageM == "DIG_CLEAR",
+            "F2/F5 洞上不收：多格的一組（植物、地板、SpriteConfig 多格、雙開門、車庫門）、地毯、掛著地面覆蓋的地板；覆蓋表是空的照常（"
+            .. tostring(bush) .. " " .. tostring(floorM) .. " " .. tostring(cfgM) .. " " .. tostring(doubleM) .. " "
+            .. tostring(garageM) .. " " .. tostring(rug) .. " " .. tostring(hung) .. " " .. tostring(bare) .. "）")
 
         local iso = {}
         for i = 0, 24 do for j = 0, 24 do iso[#iso + 1] = { 2600 + 2 * i, 2600 + 2 * j } end end
@@ -10256,6 +10381,13 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         eng.tile, eng.live, eng.meta = {}, {}, {}
         local chunk = assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))
         chunk()
+        -- 還沒有任何地下室：每分鐘巡查不列玩家
+        local listed, keepOnline, keepActive = 0, getOnlinePlayers, getNumActivePlayers
+        getOnlinePlayers = function() listed = listed + 1 return javaList({}) end
+        getNumActivePlayers = function() listed = listed + 1 return 0 end
+        Basement.patrol()
+        getOnlinePlayers, getNumActivePlayers = keepOnline, keepActive
+        check(listed == 0, "沒有地下室時巡查直接返回，不列玩家（" .. listed .. "）")
         local a0 = eng.applies
         HARNESS_REOPEN(Ledger)
         local def, a1 = eng.tile[tk(3001, 3001)], eng.applies
@@ -10388,6 +10520,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 local hsq = ug(x, YA, 0, { floor = {} })
                 hsq.objects[1] = obj(hsq, "t_floor", false, { "solidfloor" })
             end
+            ug(XA + 3, YA, nil, { floor = {} }) -- 樓梯底前面那格挖好了（有地板）
             Basement.add({ { XA, YA }, { XA + 1, YA }, { XA + 2, YA }, { XA + 3, YA } })
             local q = player({ id = 7105, x = XA - 0.5, y = YA + 0.5 })
             local code, _, info = Check.item(q, E, 0, { XA, YA, 0 }, { preview = true })
@@ -10428,6 +10561,21 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             check(drawn == 7 and drawnOk and #ps == 4 and onlyKept(px, py, pz, #ps) and farCode ~= nil and farN == 13,
                 "F14 加開入口：游標虛影只畫留下的 7 格、排隊虛影只送會畫的 4 片（洞 3＋平台）；預檢沒過照 13 格畫（"
                 .. drawn .. " " .. #ps .. " " .. tostring(farCode) .. " " .. farN .. "）")
+            -- 樓梯底前面那格：沒有格子、沒有地板、和樓梯底之間隔著牆 → DIG_ENTRY，指那一格
+            local fk, exits = XA + 3 .. "," .. YA .. "," .. Z, {}
+            local keepF = squares[fk]
+            squares[fk] = nil
+            exits[1] = { Check.item(q, E, 0, { XA, YA, 0 }, { preview = true }) }
+            ug(XA + 3, YA)
+            exits[2] = { Check.item(q, E, 0, { XA, YA, 0 }, { preview = true }) }
+            local ws = ug(XA + 3, YA, nil, { floor = {} })
+            ws.objects[1] = obj(ws, "t_wallW", false, { "WallW" })
+            exits[3] = { Check.item(q, E, 0, { XA, YA, 0 }, { preview = true }) }
+            squares[fk] = keepF
+            local exitOk = Check.item(q, E, 0, { XA, YA, 0 }, { preview = true }) == nil
+            for _, r in ipairs(exits) do exitOk = exitOk and r[1] == "DIG_ENTRY" and r[2].x == XA + 3 and r[2].y == YA end
+            check(exitOk, "加開入口的樓梯底前面那格沒有格子、沒有地板、或隔著牆：DIG_ENTRY，指那一格（"
+                .. tostring(exits[1][1]) .. " " .. tostring(exits[2][1]) .. " " .. tostring(exits[3][1]) .. "）")
         end)()
 
         -- c12 帳本寫不進去：世界撤回、不扣料、回 INTERNAL
@@ -10797,7 +10945,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     end)()
 
     getWorld, instanceof, getActivatedMods, getCell, isServer = realWorld, realInst, realMods, realCell, realS
-    getSpecificPlayer, IsoObject = realSpecific, realIsoObject
+    getSpecificPlayer, IsoObject, IsoDoor = realSpecific, realIsoObject, nil
     BuildingRoomsEditor, VirtualZombieManager = nil, nil
     spriteMap, spriteOrder = oldMap, oldOrder
 end)()

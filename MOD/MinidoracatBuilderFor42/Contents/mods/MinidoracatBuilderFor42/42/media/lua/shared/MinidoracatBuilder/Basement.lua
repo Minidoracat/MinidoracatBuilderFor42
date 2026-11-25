@@ -71,7 +71,7 @@ local function merge(a, b)
 end
 
 -- tiles＝{ { x, y }, ... }（z 固定 -1）：加進集合、併連通塊；回真的新增的那幾格。範圍外的（inRange）不收。
--- 新格和相鄰已挖格的房間併成同一間（挖開之後中間沒有牆；伺服器之後照牆校正，Basement.growLater）
+-- 新格取第一個相鄰已挖格的房號，不改既有格子的房號：中間的牆拆了之後要不要併成一間，等伺服器照牆重算（split）
 function Basement.add(tiles)
     local added = {}
     for _, t in ipairs(tiles) do
@@ -91,14 +91,7 @@ function Basement.add(tiles)
             local b, xy, r = blocks[id], { x, y }, nil
             for _, d in ipairs(DIRS) do
                 local o = key(x + d[1], y + d[2])
-                local q = cells[o] == id and b.room[o]
-                if q and not r then
-                    r = q
-                elseif q and q ~= r then
-                    for k2, v in pairs(b.room) do
-                        if v == q then b.room[k2] = r end
-                    end
-                end
+                r = r or (cells[o] == id and b.room[o])
             end
             cells[k], b.n, b.tiles[k], b.room[k] = id, b.n + 1, xy, r or 1
             local box = b.box
@@ -517,7 +510,8 @@ end
 
 -- 一批建物一次 applyChanges（成本是整張地圖的檢查與重算，BuildingRoomsEditor.java:216-267,269-325，和這批幾棟關係很小）。
 -- plans＝{ rooms, ... }，每棟一組房間、每間一組矩形（rooms[1][1] 是 metaID 的角；一棟叫多次 createRoom，BREBuilding.java:50-58）。
--- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格查得到本 MOD 名稱的房間；引擎沒建出來、角上是別的房間都不算，審查 round1 F10）
+-- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格是新的本 MOD 名稱房間、每一間的第一格都查得到本 MOD 名稱的房間；引擎沒建出來、
+-- 角上是別的房間、原地重登錄時舊的那間還在都不算）
 local function apply(plans)
     local ok = {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
@@ -551,25 +545,33 @@ local function apply(plans)
     local cell = getCell()
     local spotted, err = pcall(function() cell:ProcessSpottedRooms() end)
     if not spotted then print(LOG .. "ProcessSpottedRooms failed: " .. tostring(err)) end
+    -- 套用前角上的房間：套用後還是同一個＝引擎沒換（RoomDef、BuildingDef 都沒有覆寫 equals，Kahlua 的 == 比的是同一個物件）
+    local grid, server, old = getWorld():getMetaGrid(), isServer(), {}
+    for _, i in ipairs(done) do
+        local c = plans[i][1][1]
+        old[i] = grid:getRoomAt(c[1], c[2], Z) or false
+    end
     editor:applyChanges(false)
-    local grid, server = getWorld():getMetaGrid(), isServer()
     local vzm = not isClient() and VirtualZombieManager and VirtualZombieManager.instance or nil
     for _, i in ipairs(done) do
         local c = plans[i][1][1]
         local def = grid:getRoomAt(c[1], c[2], Z)
-        local b = def and def:getName() == Basement.ROOM and def:getBuilding()
+        local b = def and def ~= old[i] and def:getName() == Basement.ROOM and def:getBuilding()
+        local defs = {}
+        for j, rects in ipairs(plans[i]) do -- 每一間的第一格都在這棟新建物裡（別棟留下的舊房間不算）
+            local d = b and grid:getRoomAt(rects[1][1], rects[1][2], Z)
+            if not (d and d:getBuilding() == b) then b = nil end
+            defs[j] = d
+        end
         if b then
             ok[i] = true
             b:setUserDefined(false) -- 漏了多人客戶端會退回主選單（實機紀錄）
             b:setAllExplored(true)
-            for _, rects in ipairs(plans[i]) do
-                local x, y = rects[1][1], rects[1][2]
-                local d = grid:getRoomAt(x, y, Z)
-                if d and d:getName() == Basement.ROOM then
-                    if vzm and not keepEmpty(vzm, d) then print(LOG .. "keepEmpty failed at " .. x .. "," .. y) end
-                    if server then hang(cell, d, rects) end
-                    relight(d:getIsoRoom())
-                end
+            for j, rects in ipairs(plans[i]) do
+                local d = defs[j]
+                if vzm and not keepEmpty(vzm, d) then print(LOG .. "keepEmpty failed at " .. rects[1][1] .. "," .. rects[1][2]) end
+                if server then hang(cell, d, rects) end
+                relight(d:getIsoRoom())
             end
         else
             print(LOG .. "no RoomDef after register at " .. c[1] .. "," .. c[2])
@@ -909,6 +911,9 @@ end
 Basement.PATROL = 16
 function Basement.patrol()
     if isClient() then return end
+    local any = false
+    for _ in pairs(blocks) do any = true break end
+    if not any then return end
     local ok, done = pcall(refresh, nearIds(players(), Basement.PATROL), {})
     if not (ok and done) then print(LOG .. "patrol failed: " .. tostring(done)) end
 end
@@ -1050,10 +1055,11 @@ end
 
 -- 挖開 c 會打開它和已挖鄰格之間那條邊：hsq 的 k 邊，osq＝邊的北或西側那格。邊上有東西回那一格：土牆上的附加圖
 -- （本工具的牆面疊圖掛在土牆上，土牆拆了跟著消失、不退料），或掛在這條邊上的物件（畫、開關這類帶 attached 旗標的，
--- 牆拆了會懸空）。不替玩家搬，請他先拿下來
+-- 牆拆了會懸空；那條邊上有玩家自己的實牆時不拆、不懸空，不算）。不替玩家搬，請他先拿下來
 local BACK = { N = F.attachedS, W = F.attachedE }
 local function hungAt(hsq, osq, k)
     local objects = hsq and hsq:getObjects()
+    local wall, hung = false, nil
     for i = 0, (objects and objects:size() or 0) - 1 do
         local o = objects:get(i)
         local kind = dirtOf(o)
@@ -1066,9 +1072,14 @@ local function hungAt(hsq, osq, k)
             end
         else
             local p = o:getProperties()
-            if p and p:has(k == "N" and F.attachedN or F.attachedW) then return hsq end
+            if p then
+                wall = wall or p:has(SOLID[k]) or p:has(F.WallNW)
+                if p:has(k == "N" and F.attachedN or F.attachedW) then hung = hsq end
+            end
         end
     end
+    if wall then return nil end
+    if hung then return hung end
     objects = osq and osq:getObjects()
     for i = 0, (objects and objects:size() or 0) - 1 do
         local p = objects:get(i):getProperties()
@@ -1146,8 +1157,13 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
     local skip = entrance and inSet == stairs and same
     -- 加開入口：樓梯底端前面那格也要已經挖開（同一塊），不然下了樓梯面對土牆（審查 round1 F6）
     if skip and top and bottom then
-        local fx, fy = bottom.x + (bottom.x - top.x) / 2, bottom.y + (bottom.y - top.y) / 2
-        if Basement.blockOf(fx, fy, Z) ~= blk then return "DIG_ENTRY", { x = fx, y = fy, z = Z } end
+        local east = bottom.x ~= top.x -- 樓梯只往南或往東下
+        local fx, fy = bottom.x + (east and 1 or 0), bottom.y + (east and 0 or 1)
+        -- 那格真的挖開了（格子在、有地板），樓梯底到它那條邊（它的北邊或西邊）走得過
+        local fsq = dug(fx, fy) and getCell():getGridSquare(fx, fy, Z)
+        if Basement.blockOf(fx, fy, Z) ~= blk or not fsq or exitBlocked(fsq, east and "W" or "N") then
+            return "DIG_ENTRY", { x = fx, y = fy, z = Z }
+        end
     end
     local grid = getWorld():getMetaGrid()
     for _, c in ipairs(cells) do
@@ -1220,6 +1236,10 @@ local function holeOk(o)
         return p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW) or p:has(F.WallSE) or p:has(F.attachedN)
             or p:has(F.attachedW)
     end
+    -- 引擎整組拆的條件（同 IsoObjectUtils.isObjectMultiSquare，那個類別沒開放給 Lua）：雙開門、車庫門、SpriteConfig 多格、sprite grid
+    if IsoDoor.getDoubleDoorIndex(o) ~= -1 or IsoDoor.getGarageDoorIndex(o) ~= -1 then return false end
+    local cfg = o:getSpriteConfig()
+    if cfg and cfg:isValidMultiSquare() then return false end
     local spr = o:getSprite()
     if spr and spr:getSpriteGrid() then return false end
     local hung = o:hasModData() and o:getModData().builderOverlays
