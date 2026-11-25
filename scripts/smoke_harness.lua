@@ -2535,13 +2535,13 @@ local function stopNotices()
         C.pending = { n = nonce, cells = cells, player = p }
         return nonce
     end
-    local function run(count, placed, noRoom, none)
+    local function run(count, placed, noRoom, none, name)
         told = nil
         local cells = {}
         for i = 1, count do cells[i] = { i, 0, 0, 0 } end
         -- 假玩家：沒按著取消鍵、方向鍵（動作佇列空著等 placed 時 Queue 會讀）
         local n = Cursor.send({ getPlayerNum = function() return 0 end, pressedMovement = function() return false end,
-            pressedCancelAction = function() return false end }, "x_01_0", cells, nil)
+            pressedCancelAction = function() return false end }, name or "x_01_0", cells, nil)
         C.pending.noRoom, C.pending.noneQueued = noRoom, none
         local Q = B.Queue
         Q.onResult("accepted", { n = n })
@@ -2558,6 +2558,15 @@ local function stopNotices()
     check(run(4, 0, 4, true) == "nil|IGUI_MBLD_Refuse_NO_ROOM(4)",
         "一次挖好幾格水面、第 4 格沒空位所以整批沒排：報第 4 格旁邊沒有空位，不報走不過去")
     check(run(8, 8) == nil and Cursor.queued() == nil, "全部蓋好：不通知")
+    local P0 = { getPlayerNum = function() return 0 end }
+    run(1, 1, nil, nil, "floors_interior_01_0")
+    local had = B.Queue.last(P0) ~= nil
+    check(run(3, 1, 2, nil, B.Entry.DIG_CELL) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Refuse_DIG_STAND"
+        and had and B.Queue.last(P0) == nil and B.Queue.lastDig(P0),
+        "地下室挖一格旁邊沒有已挖的格子可站：報 DIG_STAND（要站在已挖的鄰格），不報一般的旁邊沒空位；"
+        .. "上一批剛蓋的換成這批挖掘（拆不回去，「拆掉剛蓋的」不拆到前一批）")
+    run(2, 2)
+    check(not B.Queue.lastDig(P0), "之後手拖蓋別的東西：清掉「上一批是挖掘」")
     C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText = realBuild, realToast, realGet, realQ, realGetText
     sb.MaxCellsPerDrag = realMax
 end
@@ -10297,9 +10306,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             local side = try(7124, tx, ty, tx, ty - 1, Z)
             local grew = Ledger.stats().n - n0
             local cheat = try(7125, tx - 1, ty, tx - 1, ty - 3, 0, true)
-            check(above == "UNREACHABLE" and diag == "UNREACHABLE" and undug == "UNREACHABLE" and side == "OK" and grew == 1
+            check(above == "DIG_STAND" and diag == "DIG_STAND" and undug == "DIG_STAND" and side == "OK" and grew == 1
                 and Basement.has(tx, ty, Z) and cheat == "OK",
-                "F7 挖這一格：站在正上方、斜角、沒挖的鄰格 → UNREACHABLE；站在已挖的東南西北鄰格 → 挖好；建造作弊不管（"
+                "F7 挖這一格：站在正上方、斜角、沒挖的鄰格 → DIG_STAND；站在已挖的東南西北鄰格 → 挖好；建造作弊不管（"
                 .. above .. " " .. diag .. " " .. undug .. " " .. side .. " " .. cheat .. "）")
         end)()
 
@@ -16543,8 +16552,14 @@ end)()
     getSpecificPlayer = function() return PL end
     Q.last = function() return nil end
     Q.undoLast = function() undos = undos + 1 return 3 end
+    local realLastDig = Q.lastDig
+    Q.lastDig = function() return false end
     check(W.undoLast(0) == 0 and undos == 0 and toasts[#toasts] == "IGUI_MBLD_Undo_None",
         "拆掉剛蓋的：沒有剛蓋的就說一聲，不送拆除請求")
+    Q.lastDig = function() return true end
+    check(W.undoLast(0) == 0 and undos == 0 and toasts[#toasts] == "IGUI_MBLD_Refund_dig",
+        "拆掉剛蓋的：上一批是挖掘（不進紀錄）：說挖開的地不能填回，不說沒有剛蓋的")
+    Q.lastDig = realLastDig
     Q.last = function() return { n = 1 } end
     check(W.undoLast(0) == 3 and undos == 1, "拆掉剛蓋的：有就照 Queue.undoLast 拆最後一批")
 
@@ -25710,23 +25725,26 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(hd and hd.n == 2 and #hd.items == 1 and hd.items[1].id == "pcf_01_0" and hd.items[1].n == 2,
         "c16 檔頭：片數與項目表不算挖一格、入口（" .. tostring(hd and hd.n) .. " 片 " .. tostring(hd and #hd.items) .. " 項）")
 
-    -- c17 六個新碼都在訊息表；上限退回 Basement.MAX；16 語都有新鍵，上限那句帶 %1
+    -- c17 十一個挖掘碼都在訊息表、各對到自己的 Refuse_ 鍵；上限退回 Basement.MAX；16 語都有新鍵，上限那句帶 %1
     local realGetText = getText
     getText = function(k, ...) return k .. "(" .. table.concat({ ... }, ",") .. ")" end
+    local DIG_CODES = { "DIG_BD", "DIG_LEVEL", "DIG_ROOM", "DIG_EDGE", "DIG_FULL", "DIG_CLEAR", "DIG_STAND", "DIG_PATCH",
+        "DIG_DONE", "DIG_ENTRY", "DIG_HUNG" }
     local codes = true
-    for _, code in ipairs({ "DIG_BD", "DIG_LEVEL", "DIG_ROOM", "DIG_EDGE", "DIG_FULL", "DIG_CLEAR" }) do
+    for _, code in ipairs(DIG_CODES) do
         codes = codes and Messages.CODES[code] == true
+            and (code == "DIG_FULL" or Messages.refusal(code, {}) == "IGUI_MBLD_Refuse_" .. code .. "()")
     end
     check(codes and Messages.refusal("DIG_FULL", {}) == "IGUI_MBLD_Refuse_DIG_FULL(" .. BM.MAX .. ")"
         and Messages.refusal("DIG_FULL", { max = 7 }) == "IGUI_MBLD_Refuse_DIG_FULL(7)",
-        "c17 六個挖掘碼都在 Messages.CODES；DIG_FULL 照伺服器帶的上限，沒帶退回 Basement.MAX")
+        "c17 十一個挖掘碼都在 Messages.CODES、各說自己的句子；DIG_FULL 照伺服器帶的上限，沒帶退回 Basement.MAX")
     B.Names.reset()
     local named = B.Names.of(CELL, "dig") == "IGUI_MBLD_Dig_Cell()" and B.Names.short(S) == "IGUI_MBLD_Dig_EntranceS()"
     B.Names.reset()
     getText = realGetText
     local KEYS = { "Kind_dig", "Note_dig", "Dig_EntranceS", "Dig_EntranceE", "Dig_Cell", "Refund_dig", "RefundShort_dig",
-        "Admin_Ledger_basements" }
-    for code in pairs({ DIG_BD = 1, DIG_LEVEL = 1, DIG_ROOM = 1, DIG_EDGE = 1, DIG_FULL = 1, DIG_CLEAR = 1 }) do
+        "Admin_Ledger_basements", "Dig_Warn", "Why_DIG_PATCH" }
+    for _, code in ipairs(DIG_CODES) do
         KEYS[#KEYS + 1] = "Refuse_" .. code
     end
     local missing = {}
@@ -25743,7 +25761,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
             missing[#missing + 1] = lang .. ":Refuse_DIG_FULL 沒有 %1"
         end
     end
-    check(#missing == 0 and named, "c17 16 語都有挖掘的 14 個新鍵（上限那句帶 %1）；三個項目照用途命名 " .. table.concat(missing, " "))
+    check(#missing == 0 and named, "c17 16 語都有挖掘的 " .. #KEYS .. " 個鍵（上限那句帶 %1）；三個項目照用途命名 " .. table.concat(missing, " "))
 
     -- c18 每個種類都有排程段、設定摘要含挖掘開關、頁籤與帳本清單有新項目、MOD 樹沒有自我檢查或示範檔
     local seg = true
@@ -25900,7 +25918,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     BM.reset({}, A, A)
     isClient, BM.growLater, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
 
-    -- F7 挖這一格的站位：只站四個正交鄰格裡已挖的（伺服器 Check.item 照同一條驗，不符回 UNREACHABLE）；斜角、沒挖的不站；
+    -- F7 挖這一格的站位：只站四個正交鄰格裡已挖的（伺服器 Check.item 照同一條驗，不符回 DIG_STAND）；斜角、沒挖的不站；
     -- 已經站在已挖的鄰格就不走；沒有這種鄰格不原地挖（記 noRoom）；排第 2 格起的站位要等前一格進了地下室集合
     local TX, TY = 90500, 90500
     local keepQ, keepWalk = ISTimedActionQueue, ISWalkToTimedAction
@@ -25944,6 +25962,100 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(s1 == true and walk1 and stay and none and notYet and ready,
         "F7 挖這一格的站位：只走到已挖的正交鄰格（斜角、沒挖的不站）；站在已挖鄰格上不走；沒有就不原地挖、記 noRoom；"
         .. "第 2 格起等前一格進了地下室集合才找站位")
+
+    -- 土牆的圖塊補丁沒載入（挖掘開著卻蓋不了）：Check.item 回 DIG_PATCH、詳情說真正的原因，不說「管理員關掉了」；
+    -- 沙盒本來就關著時照舊 DISABLED
+    ;(function()
+        local keepOk, gt, gtn = BM.patchOk, getText, getTextOrNull
+        local p = player({ x = TX + 0.5, y = TY + 0.5, z = -1 })
+        BM.patchOk = false
+        local code = B.Check.item(p, CELL, 0, { TX, TY, -1 }, { preview = true })
+        getText = function(k) return k end
+        getTextOrNull = getText
+        local why = B.Window.whyText("DISABLED_KIND", "dig")
+        sb.KindDig = false
+        local off = B.Check.item(p, CELL, 0, { TX, TY, -1 }, { preview = true })
+        local whyOff = B.Window.whyText("DISABLED_KIND", "dig")
+        getText, getTextOrNull, sb.KindDig, BM.patchOk = gt, gtn, true, keepOk
+        check(code == "DIG_PATCH" and why == "IGUI_MBLD_Why_DIG_PATCH" and off == "DISABLED" and whyOff == "IGUI_MBLD_Why_OFF_DEFAULT",
+            "補丁沒載入：挖這一格回 DIG_PATCH、說明換成補丁那句；沙盒關著照舊 DISABLED、說預設關閉（" .. tostring(code) .. " "
+            .. tostring(why) .. " " .. tostring(off) .. " " .. tostring(whyOff) .. "）")
+    end)()
+
+    -- 游標：規劃模式說不能放時整片畫紅、第一格加警告記號（不只標籤寫原因）；掛鉤丟錯也一樣。
+    -- 挖掘的標籤沒有別的第 3 行時用警告行說拆不回去；標籤框最寬 32 個字高、也不超過畫面寬 4 成
+    ;(function()
+        local realCore, realCoreT, realPreview, realValid = getCore, Core, Cur.preview, Cur.hook.valid
+        local realTM, realSW, realGT, realPrint = getTextManager, getPlayerScreenWidth, getText, print
+        local color = { getR = function() return 0.1 end, getG = function() return 0.9 end, getB = function() return 0.1 end }
+        getCore = function() return { getGoodHighlitedColor = function() return color end,
+            getBadHighlitedColor = function() return color end } end
+        Core = { getTileScale = function() return 1 end }
+        Cur.preview = function() return { { a = { 400, 400, 0, 0 } } }, 1, 0 end
+        local eF = Entry.resolve("pcf_01_0")
+        local cur = setmetatable({ character = P7, name = eF.name, entry = eF, d = 0, canDrag = false, offsBy = {},
+            colors = { warning = color }, texts = function() end }, { __index = Cur })
+        local function paint(valid)
+            Cur.hook.valid = valid
+            cur:refresh(400, 400, 0, 400, 400)
+            return cur.g.n == 1 and cur.g.tr[1] == 0.65 and cur.g.m[1] == 1
+        end
+        print = function(s, ...) if not tostring(s):find("cursor hook valid failed", 1, true) then realPrint(s, ...) end end
+        local okPaint, nPaint = paint(nil), cur.g.n
+        local badPaint = paint(function() return false end)
+        local errPaint = paint(function() error("boom") end)
+        print = realPrint
+        Cur.hook.valid = realValid
+        getText = function(k) return k end
+        local function label3(name)
+            local c = setmetatable({ res = { { a = { 0, 0, 0 }, code = "DIG_STAND" } }, okN = 0, swapN = 0, states = { n = 1 },
+                entry = Entry.resolve(name), name = name, d = 0, colors = { text = {}, warning = {}, textMuted = {} }, player = 7,
+                joypad = true, character = { getPlayerNum = function() return 7 end }, reasons = function() end,
+                swapText = function() end, layout = function() end }, { __index = Cur })
+            c:texts()
+            return c.label3 and c.label3 .. (c.label3warn and "!" or "") or "nil"
+        end
+        local l3Cell, l3S, l3Floor = label3(CELL), label3(S), label3("pcf_01_0")
+        getText = realGT
+        local maxW
+        local nop = function() end
+        local tip = { font = 1, UI = { Text = { wrap = function(s, w) maxW = w return { s } end } }, setWidth = nop,
+            setHeight = nop, setVisible = nop }
+        getTextManager = function() return { getFontHeight = function() return 20 end,
+            MeasureStringX = function(_, _, s) return #s end } end
+        getPlayerScreenWidth = function() return 1280 end
+        Cur.layout({ tooltip = tip, src = { "a", {} }, player = 0 })
+        local small = maxW
+        getPlayerScreenWidth = function() return 3840 end
+        Cur.layout({ tooltip = tip, src = { "a", {} }, player = 0 })
+        getTextManager, getPlayerScreenWidth, getCore, Core, Cur.preview = realTM, realSW, realCore, realCoreT, realPreview
+        check(nPaint == 1 and not okPaint and badPaint and errPaint, "規劃模式說不能放（或掛鉤丟錯）：整片畫紅、第一格加警告記號")
+        check(l3Cell == "IGUI_MBLD_Refund_dig!" and l3S == "IGUI_MBLD_Dig_Warn!" and l3Floor == "nil",
+            "挖掘的游標標籤：挖一格寫拆不回去、入口寫會拆掉上方的地板與草，都用警告色；一般地板沒有這行（"
+            .. l3Cell .. " " .. l3S .. " " .. l3Floor .. "）")
+        check(small == 512 and maxW == 640, "游標標籤框：1280 寬畫面最寬 512（4 成），4K 畫面照 32 個字高 640（"
+            .. tostring(small) .. "／" .. tostring(maxW) .. "）")
+    end)()
+
+    -- 擷取地下一層：外邊的土牆是挖出來時自己長的地形，記成不收（地形），不當成牆收；地面層不問
+    ;(function()
+        local keepEdge = BM.isDirtOnOuterEdge
+        BM.isDirtOnOuterEdge = function(o) return o.dirt == true end
+        local spr = Entry.sprite("pcf_01_0")
+        local function grab(z)
+            local res = Cap.scan(400, 400, 401, 401, z).res
+            local o = { dirt = true, getSprite = function() return spr end, getAttachedAnimSprite = function() return nil end,
+                getOverlaySprite = function() return nil end }
+            local sq = { getX = function() return 400 end, getY = function() return 400 end, getZ = function() return z end,
+                getObjects = function() return javaList({ o }) end }
+            Cap.square(res, sq, z)
+            return res
+        end
+        local under, ground = grab(-1), grab(0)
+        BM.isDirtOnOuterEdge = keepEdge
+        check(under.n == 0 and (under.skipZ[-1] or {}).TERRAIN == 1 and ground.n == 1,
+            "擷取地下一層外邊的土牆：記成不收（地形），不當成牆收；地面層同一張圖照收（" .. under.n .. "／" .. ground.n .. "）")
+    end)()
 
     -- 框選地下一層擷取：入口樓梯六張圖（carpentry_02_88–90、96–98）在遊戲裡帶 EntityScript（原版 Wood_Stairs 的圖，
     -- SpriteConfigManager.java:134-140），圖塊分類回 ENTITY、會交給配方。在地下室集合裡的照挖掘不收（LUA）；集合外的

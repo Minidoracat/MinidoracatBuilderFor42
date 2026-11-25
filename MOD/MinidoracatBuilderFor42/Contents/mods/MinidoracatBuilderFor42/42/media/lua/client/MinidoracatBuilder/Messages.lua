@@ -15,9 +15,11 @@ local Entry, USE = MinidoracatBuilder.Entry, MinidoracatBuilder.Materials.USE
 -- WALK（一格都還沒蓋就停下）、NO_ROOM（第 i 格旁邊沒有空位可站，Client.lua 的 queue）、游標的 OVER_MAX（超過一次拖曳
 -- 最多幾項，extra.max）、NO_FACE（長方形那一邊這款沒有對應的朝向）與 STAND_OUTSIDE（拖一片水面時自己站在範圍裡），
 -- 以及藍圖檢查的 DOOR_WIDE（車庫門比這裡一次能蓋的寬）、COVER（牆面油漆這類不能照圖蓋）、DARK（太暗）。
--- 挖地下室（Basement.pre）的 DIG_BD（裝了 Basement Building）、DIG_LEVEL（入口不在一樓地面、挖這一格不在地下一層）、
+-- 挖地下室（Basement.pre）的 DIG_BD（裝了 Basement Building）、DIG_LEVEL（入口不在一樓地面、挖一格不在地下一層）、
 -- DIG_ROOM（貼著別的地下室或地圖原有的地下空間）、DIG_EDGE（沒貼著已挖的格子）、DIG_FULL（一塊到上限，extra.max）、
--- DIG_CLEAR（入口開洞的地方有東西）。
+-- DIG_CLEAR（入口開洞的地方有東西）、DIG_DONE（這格已經挖開）、DIG_ENTRY（加開入口的樓梯與樓梯腳前面那格沒挖好，
+-- 或新入口貼著已挖的地方）、DIG_HUNG（要挖穿的土牆上掛著東西），Check.item 的 DIG_STAND（挖一格沒站在已挖的
+-- 正交鄰格上；客戶端找不到這種站位時 Queue 也報它）、DIG_PATCH（挖掘開著但土牆圖塊沒載入，Basement.patched）。
 -- 不在表裡的碼退回 IGUI_MBLD_Refuse_Other 並附上碼，玩家回報時看得到。
 Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, RATE_LIMITED = true,
     BAD_REQUEST = true, NO_INTENT = true, UNKNOWN = true, UNSUPPORTED = true, DISABLED = true, BAD_FACE = true,
@@ -26,7 +28,8 @@ Messages.CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, STALE = true, R
     NO_ROOM = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true, OVER_MAX = true,
     NO_FACE = true, NOT_EMPTY = true, ATTACHED = true, NOT_OURS = true, SKILL = true, SQUARE_FULL = true, NOT_NATURAL = true,
     NO_UPPER = true, STAND_OUTSIDE = true, DOOR_WIDE = true, COVER = true, DARK = true, DIG_BD = true, DIG_LEVEL = true,
-    DIG_ROOM = true, DIG_EDGE = true, DIG_FULL = true, DIG_CLEAR = true }
+    DIG_ROOM = true, DIG_EDGE = true, DIG_FULL = true, DIG_CLEAR = true, DIG_DONE = true, DIG_ENTRY = true, DIG_STAND = true,
+    DIG_PATCH = true, DIG_HUNG = true }
 
 -- 耗材鍵（Cost 的 uses）→ 名稱：tag:base:concrete 照標籤收（黏土漿、混凝土的桶子都算），寫通稱；其他是 fullType
 function Messages.useName(key)

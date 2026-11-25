@@ -47,8 +47,8 @@ end
 local SWITCH = {}
 for i = 0, 7 do SWITCH["lighting_indoor_01_" .. i] = i end
 
--- 挖地下室的三個項目：圖是借來的（看不見的格子、BD 的入口圖），原本的名稱不對，照用途叫（完整名與方格短名同一個；
--- 快取只照名稱記，所以不看 kind）
+-- 挖地下室的三個項目：ID 借用原版的圖名（引擎的隱形地板 invisible_01_0、地圖的地下土塊 underground_01_0／1，原版 tiledef
+-- 帶 solid、cutW），原本的名稱不對，照用途叫（完整名與方格短名同一個；快取只照名稱記，所以不看 kind）
 local DIG_NAME = { [Entry.DIG_S] = "IGUI_MBLD_Dig_EntranceS", [Entry.DIG_E] = "IGUI_MBLD_Dig_EntranceE",
     [Entry.DIG_CELL] = "IGUI_MBLD_Dig_Cell" }
 
