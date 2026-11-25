@@ -81,7 +81,7 @@ local function send(s, j)
     return nil, code
 end
 
--- 排一筆建造（契約「Queue」）。anchors＝{ { x, y, z, d }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，
+-- 排一筆建造。anchors＝{ { x, y, z, d }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，
 -- 省略就不畫排隊虛影；overlap＝疊放（Client.build）。opts.owner＝"drag"（預設）或 "plan"，opts.onDone(sum) 整組結束時叫一次。
 -- 手拖的進來時先取消照圖蓋的（玩家動手＝照圖蓋暫停）。沒有在跑的就立刻送，有就接在後面。
 -- 回 組的 id 與（立刻送出時的）nonce；立刻送卻送不出去回 nil, 原因碼

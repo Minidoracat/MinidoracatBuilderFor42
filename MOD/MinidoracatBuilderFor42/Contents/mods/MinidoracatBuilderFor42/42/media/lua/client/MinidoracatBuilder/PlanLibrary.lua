@@ -24,7 +24,7 @@ L.HEAD_MS, L.HEAD_MAX = 2, 25
 -- shortcut: 超過這個字數就提示改傳檔案（常見聊天軟體單則上限 2,000 字）；玩家回報別的管道更短再調
 L.SHARE_LONG = 2000
 L.CAPS = { "window", "controls", "dialog", "focus", "table", "scrollPanel", "dropdown", "textWrap" }
--- PlanFile 的原因碼（temp 契約 PlanData 第 2 節）：每個碼一個 IGUI_MBLD_PlanErr_<碼>，句子寫出下一步
+-- PlanFile 的原因碼：每個碼一個 IGUI_MBLD_PlanErr_<碼>，句子寫出下一步
 L.ERRORS = { FORMAT = true, VERSION = true, NO_END = true, NAME = true, RANGE = true, COUNT = true, ITEM = true,
     FULL = true, DUP = true, TOO_BIG = true, CHECKSUM = true, DELETED = true, FILE = true, NO_FILE = true, WRITE = true,
     READ = true }
@@ -1274,7 +1274,7 @@ function Imp.new(UI, pn)
     if UI.CAPABILITIES.textFieldSync == true then
         local bw = pasteBtn and pasteBtn.width + GAP or 0
         -- onTextChange（同步）只涵蓋打字、刪除、貼上、清除；剪下、輸入法送出、截字不叫它，由每幀的 onChange 補
-        -- （框架 rev 28 交接檔「結果」）。兩個走同一條 typed，同一段字只處理一次（Imp.seen）
+        -- （框架 rev 28）。兩個走同一條 typed，同一段字只處理一次（Imp.seen）
         self.seen = ""
         local function typed(f, text) self:typed(f, text) end
         self.field = UI.TextField.new({ x = PAD, y = y, width = innerW - bw, text = "", maxLength = Imp.TYPE_MAX,

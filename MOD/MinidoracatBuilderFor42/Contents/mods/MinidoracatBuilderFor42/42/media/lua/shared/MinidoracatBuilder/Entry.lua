@@ -1,5 +1,5 @@
 -- 項目：客戶端送來的「項目 ID＋朝向」→ 這次要放的 sprite、種類、佔地。兩端共用：客戶端預覽，伺服器重算後才算數。
--- 項目 ID＝sprite 名稱，多格項目用該面 grid 的原點（bt-catalog §8.1）。伺服器不建目錄，收到請求才重算這一項（§8.2）。
+-- 項目 ID＝sprite 名稱，多格項目用該面 grid 的原點。伺服器不建目錄，收到請求才重算這一項。
 require "MinidoracatBuilder/Rules"
 require "MinidoracatBuilder/Sources"
 
@@ -272,8 +272,8 @@ function Entry.alternate(spr, x, y)
     if not pair then return spr end
     local alt = Entry.sprite(pair[(x + y) % 2 + 1])
     if not alt or alt == spr then return spr end
-    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋（審查 1107 Codex）。
-    -- 48–51、88–91 帶牆的屬性，目錄歸在牆；兩張要同一個種類（Check.item 換圖後照原本那張的種類蓋，審查 1112 Claude）
+    -- 另一張也要自己能蓋（同 Entry.face）：別的 MOD 用 addLuaSprites 排除、或配方佔走它時照 resolve 擋。
+    -- 48–51、88–91 帶牆的屬性，目錄歸在牆；兩張要同一個種類（Check.item 換圖後照原本那張的種類蓋）
     local other, mine = Entry.resolve(alt:getName()), Entry.resolve(spr:getName())
     return other and mine and other.kind == mine.kind and (other.kind == "fence" or other.kind == "wall") and alt or spr
 end
@@ -559,7 +559,7 @@ end
 -- 片 i（0 起）在頭片格＋i×上坡方向；上坡方向就是 SlopedSurfaceDirection（引擎算高度時那一邊是 Max，
 -- IsoGridSquare.java:10248-10257）。方向字串引擎用 IsoDirections.fromString（去頭尾空白、轉大寫再 valueOf，
 -- PropertyContainer.java:270-271、IsoDirections.java:32-34）讀，這裡同一種寫法，只收 N／E／S／W。
--- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98（見 builder-dev placement.md「坡道」）
+-- 坡頂往前 RAMP_DECK 格、上一層補平台：坡頂沒有接上一層地板只走得到 z＝0.98
 Entry.RAMP_DECK = 1
 local RAMP_DIR = { N = { 0, -1, 1 }, E = { 1, 0, 2 }, S = { 0, 1, 3 }, W = { -1, 0, 4 } } -- dx, dy, Entry.face 的 d
 local function slope(spr)
@@ -742,7 +742,7 @@ function Entry.face(entry, d)
     if not spr then return nil end
     if spr == entry.spr then return spr end
     -- 另一面也要自己能蓋、同一種類：來源、圖塊組、種類開關照 Entry.resolve 重算（同一個 tileset 的圖可能來自不同
-    -- tiledef 檔，那個來源被停用時要擋，審查 1103 Codex；配對面也一樣，Claude 第 2 輪）。開關執行中會變，所以不快取
+    -- tiledef 檔，那個來源被停用時要擋；配對面也一樣）。開關執行中會變，所以不快取
     -- 這一步。樓梯的另一面是另一組，resolve 也驗它湊得成三格
     local other = Entry.resolve(spr:getName())
     if not other or other.kind ~= entry.kind then return nil end

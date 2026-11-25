@@ -1,4 +1,4 @@
--- 目錄索引：整場遊戲留在記憶體，不存硬碟（bt-perf §4、§8）。
+-- 目錄索引：整場遊戲留在記憶體，不存硬碟。
 -- bucket[種類][tileset] = { n = 數量, 名稱1, 名稱2, … }：只存 sprite 名稱字串（Java 端同一個物件，不另佔空間），
 -- 不存每項一張表（3.5 萬項：名稱陣列約 2 MB，每項一張表約 12 MB）。陣列自己記 n：Kahlua 的 #t 是二分搜尋。
 -- 整理期間桶另有 k（圖塊編號，排序用），排完就丟掉。
@@ -27,7 +27,7 @@ Index.reset()
 
 -- 加一個項目。key＝群組鍵（Catalog.scanSprite 建）：同一件的各面共用一個鍵、只留一項，取編號最小的那張當代表，
 -- 整理順序不影響結果；共用名稱的不同物件各用自己的鍵；沒有 CustomName 時 nil。num＝圖塊編號，記在桶的 k（排序用，排完丟掉）。
--- 每次整理約跑 5.7 萬次：只做表操作，不呼叫 Java（AGENTS.md 踩坑「目錄整理的成本幾乎只看 Java 呼叫次數」）。
+-- 每次整理約跑 5.7 萬次：只做表操作，不呼叫 Java（目錄整理的成本幾乎只看 Java 呼叫次數）。
 function Index.add(kind, name, tileset, num, file, key, raw)
     local g = key and Index.groups[key]
     if g then
@@ -91,7 +91,7 @@ function Index.names(kind)
 end
 
 -- 第二段：有名稱項目的搜尋鍵＝小寫「顯示名|原名」。顯示名用原版移動物件翻譯，
--- 先自己去掉 "."（Translator.getMoveableDisplayName 的 replace 不吃 regex，名稱有點就查不到；bt-catalog §4.1）
+-- 先自己去掉 "."（Translator.getMoveableDisplayName 的 replace 不吃 regex，名稱有點就查不到）
 function Index.addNameKey(g)
     local shown = Translator.getMoveableDisplayNameOrNull((g.raw:gsub("%.", "")))
     local keys = Index.nameKey

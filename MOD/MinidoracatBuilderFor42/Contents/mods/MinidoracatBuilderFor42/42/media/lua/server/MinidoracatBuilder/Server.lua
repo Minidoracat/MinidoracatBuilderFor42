@@ -1,4 +1,4 @@
--- 伺服器（單機在本機跑同一套）：開服建「tiledef 檔號 → MOD」表；建造的權威流程（bt-authority §9、設計稿「伺服器權威」）。
+-- 伺服器（單機在本機跑同一套）：開服建「tiledef 檔號 → MOD」表；建造的權威流程（設計稿「伺服器權威」）。
 -- 身分只認 OnClientCommand 的連線玩家：客戶端先送 intent（項目、朝向、各項的原點座標），動作只帶 nonce 與第幾項。
 -- complete() 不信任動作帶來的參數，只照這位玩家自己的 intent 做，sprite、種類、佔地、成本一律由伺服器重算。
 if isClient() then return end
@@ -26,7 +26,7 @@ local LOG = "[MinidoracatBuilderFor42] "
 local MODULE = "MinidoracatBuilder"
 local INTENT_TTL_MS = 180000          -- 收下後要先走過去（INTENT_REACH 100 格，繞路也夠；建造作弊不走）；每做完一項再延長
 local RATE_WINDOW_MS, RATE_MAX = 5000, 20 -- 照 VehicleManager 的 intent 限流；改了要和 client/Client.lua 的 Client.RATE_WINDOW_MS、Client.RATE_MAX 一起改（harness 釘住兩邊一致）
-local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久（bt-authority §6.3）
+local WAKE_MS = 3000                  -- 剛喚醒區域系統的那一帶，第一項至少等這麼久
 local WAKE_SPAN = 24                  -- 喚醒一次涵蓋周圍 7×7 chunk，約 ±24 格
 local OVERLAP = { overlap = true }    -- 疊放的請求交給 Check.item 的 opts（只讀；沒有 preview，照伺服器的路走）
 -- Kahlua 沒有弱表：表裡的 player 物件靠新請求取代，過期的在下一次有人送請求時清掉（sweep）。
@@ -364,7 +364,7 @@ local function rehang(player, sq, saved)
 end
 
 -- sq 記下的地面覆蓋裡、現在還掛著的地毯（Place.isRug：名稱 floors_rugs 或 MoveType=FloorRug）。鏟地、火燒拿掉圖但帳本還在的
--- 殘帳不帶：不然換一塊地板就把燒掉的地毯免費掛回來（審查 1107 Claude 第 2 輪）
+-- 殘帳不帶：不然換一塊地板就把燒掉的地毯免費掛回來
 local function rugsOf(sq, saved)
     local out = {}
     for name, items in pairs(saved) do
@@ -375,7 +375,7 @@ local function rugsOf(sq, saved)
 end
 
 -- 換牆前記下的那條邊帳本（list）裡，圖已經不在舊牆（host）上的是殘帳（原版清除塗鴉、污垢只拿掉附加圖，不發移除事件）：
--- 當場清掉，不跟著換到新牆（審查 1112 Claude）。圖塊已經不在的（拿掉了圖塊 MOD）照換地板的做法留著：掛不回去時整份退
+-- 當場清掉，不跟著換到新牆。圖塊已經不在的（拿掉了圖塊 MOD）照換地板的做法留著：掛不回去時整份退
 local function hungOn(sq, list, host, edge)
     for name in pairs(list or {}) do
         if Entry.sprite(name) and not Place.attachedAt(host, name) then
@@ -397,8 +397,8 @@ end
 -- MinidoracatBuilderPlaceAction:complete()。回 true＝放好；false＝MP 客戶端收到 Reject 並清掉後面的動作，原因另外推
 -- （單機不看回傳值，由 Client 收到 refused 時清佇列）。
 -- 順序：身分 → 目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）→ 材料規劃 → 放置 → 扣料 → 收尾
--- （bt-authority §9；技能是本 MOD 加的）。
--- 原地替換（Check.item 的 info.replace，設計稿 claim 4）：只補新的比舊的多的料（Check.net 的 pay），多的照拆除每項退
+-- （技能是本 MOD 加的）。
+-- 原地替換（Check.item 的 info.replace，設計稿）：只補新的比舊的多的料（Check.net 的 pay），多的照拆除每項退
 -- 1..v（back）；工具要新舊兩件的聯集。先蓋新的、再移除舊的；任一步失敗就收回新的、舊的不在了就蓋回，不扣料、不退料
 -- （蓋回也失敗時舊的退料表整份退）。舊的一樓地板查不到帳本時照一般蓋。新的耐久照舊的剩下的比例。
 -- 建造作弊照一般建造：不扣、不退，新的退料表記空。經驗只照 pay 給。
@@ -449,7 +449,7 @@ function Server.complete(player, n, i)
         cells[1].wear = math.min(1, rep.obj:getHealth() / rep.obj:getMaxHealth()) -- Place.thumpable 照比例給新的耐久
     end
     -- 換一樓地板：每格舊地板上本工具掛的地面覆蓋先記下來（換好或蓋回舊的之後掛回去，rehang）。舊地板不是本工具的（不算替換）
-    -- 時只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（審查 1107 Codex，多格的每格各記）。
+    -- 時只記地毯：地毯照原版鋪在地板上面，換地板不跟著消失；標線、污漬這類照舊跟著舊地板消失（多格的每格各記）。
     -- 原地換牆這類：舊的那件是哪條邊的牆（Place.wallAt），那條邊本工具掛的牆面疊圖照樣記下來、掛回新的
     local saved = {}
     if Overlays then

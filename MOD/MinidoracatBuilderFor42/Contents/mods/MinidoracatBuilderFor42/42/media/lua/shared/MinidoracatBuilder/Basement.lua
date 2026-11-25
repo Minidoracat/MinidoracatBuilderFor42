@@ -20,7 +20,7 @@ Basement.MAX = 400                   -- 一塊最多幾格（＝Circuits.ROOM_MA
 -- media/mdcbuilder_basement.patch.tiles（scripts/gen_basement_tiles.py 寫出，和 Basement Building 的那三格相同）
 Basement.DIRT = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10" }
 Basement.AREA = 256                  -- 同步用的大區邊長
--- 地下室的 x、y 只收 0 ≤ 值 < LIMIT：格子鍵（Place.key）每軸 5 位數，再大就和別格撞鍵（審查 round1 F12）
+-- 地下室的 x、y 只收 0 ≤ 值 < LIMIT：格子鍵（Place.key）每軸 5 位數，再大就和別格撞鍵
 Basement.LIMIT = 100000
 local Z = -1
 local BIG = 1e15
@@ -187,7 +187,7 @@ function Basement.area(ax, ay)
 end
 
 -- 啟用的 MOD 清單裡有 Basement Building（同 Rules.unlistModSprites 的讀法）。清單換了引擎會重載 Lua，第一次查完就記在
--- Basement.bdOn（每次檢查都掃一遍 MOD 清單太浪費，審查 round1 F16；測試改清單時清成 nil）
+-- Basement.bdOn（每次檢查都掃一遍 MOD 清單太浪費；測試改清單時清成 nil）
 function Basement.bd()
     if Basement.bdOn == nil then
         local on, mods = false, getActivatedMods()
@@ -1225,7 +1225,7 @@ function Basement.plan(planned, x, y, z)
     end
 end
 
--- 「挖這一格」c 挖下去之後那一塊有幾格：c 加上四鄰各群（已挖的塊、預覽時排在前面連得上的格子，審查 round1 F15）不重複的格數。
+-- 「挖這一格」c 挖下去之後那一塊有幾格：c 加上四鄰各群（已挖的塊、預覽時排在前面連得上的格子）不重複的格數。
 -- near＝c 的四鄰有已挖的或排在前面的。c 本身在集合裡（帳本有、地板沒有，重挖）時它的塊已經算了它，也算 near
 local function digSize(c, planned)
     local uf = planned and planned.dig
@@ -1353,7 +1353,7 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
         end
     end
     local skip = entrance and inSet == stairs and same
-    -- 加開入口：樓梯底端前面那格也要已經挖開（同一塊），不然下了樓梯面對土牆（審查 round1 F6）
+    -- 加開入口：樓梯底端前面那格也要已經挖開（同一塊），不然下了樓梯面對土牆
     if skip and top and bottom then
         local east = bottom.x ~= top.x -- 樓梯只往南或往東下
         local fx, fy = bottom.x + (east and 1 or 0), bottom.y + (east and 0 or 1)
@@ -1421,7 +1421,7 @@ end
 
 -- 洞那格上可以跟著拆或留著的：地板（不是水面）、草與可移除的植物、格邊的牆與牆上的掛件。開洞會拆的那幾種（openHole）
 -- 另外不收：多格的一組（引擎整組拆，連沒驗過的格子，IsoGridSquare.java:5929-5960、IsoObjectUtils.isObjectMultiSquare）、
--- 掛著本工具地面覆蓋的地板（拆了覆蓋和它的退料跟著不見，同水面 waterOk）；地毯是能搬的家具，也不收（審查 round1 F2、F5）
+-- 掛著本工具地面覆蓋的地板（拆了覆蓋和它的退料跟著不見，同水面 waterOk）；地毯是能搬的家具，也不收
 local function holeOk(o)
     local p = o:getProperties()
     if not p then return false end

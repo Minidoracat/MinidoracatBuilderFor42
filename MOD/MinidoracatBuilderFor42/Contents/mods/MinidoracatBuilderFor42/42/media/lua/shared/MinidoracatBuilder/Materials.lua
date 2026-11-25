@@ -1,8 +1,8 @@
--- 材料：自己找，不收客戶端給的清單（bt-authority §5.1）。
+-- 材料：自己找，不收客戶端給的清單。
 -- 找的順序照原版建造扣料（buildUtil.consumeMaterial，ISBuildUtil.lua:125-237）：背包（含袋子）→ 周圍 3×3 地上 →
 -- 釘子還不夠就拆背包裡的釘子盒。差別：地上以玩家所在格為中心（原版以建造格為中心），隔牆、隔關著的門窗的不拿。
--- ponytail：家具、車上的容器不找；要找時照 §5.1 逐個過安全屋拿取權限、上鎖與 2.5 格。
--- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣（§5.6）。plan／consume 只在伺服器的 complete() 跑，
+-- ponytail：家具、車上的容器不找；要找時逐個過安全屋拿取權限、上鎖與 2.5 格。
+-- 先 plan（只找、不動），物件放好後才 consume，放失敗就不扣。plan／consume 只在伺服器的 complete() 跑，
 -- MP 只發生一次。客戶端只用 summary／short／take 給畫面看（同一套找法），伺服器照樣重算。
 
 MinidoracatBuilder = MinidoracatBuilder or {}

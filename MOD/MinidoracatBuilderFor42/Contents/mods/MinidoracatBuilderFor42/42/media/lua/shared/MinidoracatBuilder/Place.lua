@@ -1,4 +1,4 @@
--- 放置：補格子、每格能不能放、依種類建立物件並同步。出處 bt-authority §2、§4.2。
+-- 放置：補格子、每格能不能放、依種類建立物件並同步。
 -- 兩端共用：伺服器（單機在本機）放置；客戶端只用 Place.check 給游標預覽（Check.item 的 preview 不補格子，只查已有的格子）。
 -- 通則：建好物件、設完屬性，才 AddSpecialObject（引擎自己更新室內判定與碰撞），再 transmit 一次。
 -- 客戶端收到 AddItemToMap 不會去重，送兩次就變兩個（IsoObject.java:4419-4460）。
@@ -83,7 +83,7 @@ end
 
 -- 牆面疊圖的宿主只認佔住那條邊的東西（和下面 edgeTaken 同一組鍵）：getWall 只看 cutN／cutW，會找到只帶 cutN 的裝飾片
 -- （wallOverlay 種類）或那條邊沒牆時獨立放的牆面疊圖本身。那條邊之後還能蓋牆，新牆插在地板後、它前面，宿主就換人，掛在它
--- 身上的圖再也找不到（審查 1112 Codex、Claude）。這類照同一條件往後找，找不到就照舊建獨立物件
+-- 身上的圖再也找不到。這類照同一條件往後找，找不到就照舊建獨立物件
 local EDGE_KEYS = {
     N = { F.WallN, F.WallNTrans, F.WallNW, F.collideN, F.DoorWallN, "DoorWallNTrans", F.WindowN, F.HoppableN, F.TallHoppableN },
     W = { F.WallW, F.WallWTrans, F.WallNW, F.collideW, F.DoorWallW, "DoorWallWTrans", F.WindowW, F.HoppableW, F.TallHoppableW },
@@ -153,7 +153,7 @@ end
 -- 本 MOD 挖的地下室（Basement）也走這裡：土牆的查與拆用同名的 isOuterEdge、isDirtOnOuterEdge、clearDirt，能不能蓋用它自己的 refuses。
 -- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
 -- 判斷丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
--- 每格再丟一次（審查 1107 Grok）。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
+-- 每格再丟一次。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
 local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "isFrameOnDirt", "isDirtLookOnOuterEdge", "clearDirt" }
 local broken
 local function dirtLayer(sq)
@@ -199,7 +199,7 @@ end
 -- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls）。它放的牆是一般 IsoObject；
 -- 同一張圖的 IsoThumpable 是玩家用本工具或原版蓋的，不算（它升級時也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。
 -- 西北角那件一件管兩邊：both（另一邊這次也換）時兩邊都算；只換一邊時
--- 要補得回另一邊（bdWalls 的單邊圖在 namedMap）才算，補不回照舊擋（審查 1125 Codex：整件拆了另一邊變回土牆，升級的料沒了）。
+-- 要補得回另一邊（bdWalls 的單邊圖在 namedMap）才算，補不回照舊擋（整件拆了另一邊變回土牆，升級的料沒了）。
 -- 不是外邊或沒有回 nil
 local function outerDirt(D, sq, k, both)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return nil end
@@ -231,7 +231,7 @@ local function basementCheck(D, sq, spr, n0, w0, n, w)
 end
 
 -- 它只認實牆的格邊（WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
--- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋（審查 1107 Claude）
+-- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋
 local function bdEdges(spr, n, w)
     local p = spr:getProperties()
     local nw = p:has(F.WallNW)
@@ -370,7 +370,7 @@ end
 
 -- 格上有斜面（坡道片，本 MOD 蓋的或任何帶 SlopedSurfaceDirection 的物件）時還放得下的：佔格邊的（Entry.EDGE）與掛在牆、
 -- 窗上的（不站在地板上）。其他站在地板上的東西引擎照高度 0 放，坡面卻是 0.05～1（探針：容器、牆、地板都放得下、
--- 高度都是 0，見 builder-dev placement.md「坡道」）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
+-- 高度都是 0）；地板還會把坡道片當成舊地板拆掉（Place.clearFloor）
 local ON_SLOPE = { curtain = true, wallObject = true, windowObject = true, wallOverlay = true }
 local function slopeOk(kind, spr)
     return Entry.EDGE[kind] or ON_SLOPE[kind] or Rules.onWall(kind, spr) ~= nil
@@ -424,8 +424,8 @@ local function rampExit(sq, north)
     end
     return false
 end
--- 要放的圖會不會擋那條邊：牆、窗（collideN／W、windowN／W）。門不算：門開著走得過，先放坡道再裝門可以（使用者裁定，
--- builder-dev placement.md「門開著也擋（刻意）」）；放坡道時的 edgeBlocked 照 isSomethingTo 連門一起擋，門隨時可能被關上
+-- 要放的圖會不會擋那條邊：牆、窗（collideN／W、windowN／W）。門不算：門開著走得過，先放坡道再裝門可以（使用者裁定）；
+-- 放坡道時的 edgeBlocked 照 isSomethingTo 連門一起擋，門隨時可能被關上
 local function blocksEdge(p, north)
     if north then return p:has(F.collideN) or p:has(F.windowN) end
     return p:has(F.collideW) or p:has(F.windowW)
@@ -436,7 +436,7 @@ end
 -- （rampClear）。最上面那片（Entry.rampTop）比照樓梯頂：往平台那條邊、這一層與上一層都沒有牆、窗、門，不然走到坡頂
 -- 過不去。那條邊照持有它的格子查（edgeBlocked）：往北、西上坡是坡頂格與它正上方那格，往南、東是前方格與平台格；
 -- 預覽時另一側的格子可能還沒載入，照樣查得到。格上已經有斜面的由 Place.check 開頭擋（slopeOk）。正上方有地板不擋：
--- 探針走得過去（見 builder-dev placement.md「坡道」）
+-- 探針走得過去
 local function rampOk(spr, sq, role)
     if role == "platform" then return not (sq:isSolid() or sq:isSolidTrans()) end
     if sq:isVehicleIntersecting() then return false, "VEHICLE" end
@@ -476,7 +476,7 @@ function Place.caution(kind, spr, sq)
     return nil
 end
 
--- 屋頂（原版沒有放屋頂的路徑，bt-newkinds §5.3）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
+-- 屋頂（原版沒有放屋頂的路徑）：正下方不是樓梯（同原版地板的 HasStairsBelow；一樓也查地下室的樓梯）。
 -- 一樓（z＝0）不查支撐：原版地圖的屋簷、貼牆的邊緣裝飾、帳篷與碉堡頂都放在一樓（離線讀 Muldraugh 的 lotpack，z＝0 的
 -- 屋頂類 74,231 片；使用者 2026-11-09 選全部屋頂類都放行）。地下室不放。二樓起要有東西撐著：正下方那格有牆或屋頂片，
 -- 四鄰往下一層有屋頂片（單斜往上一層接：那片正下方只有天花板，靠斜下方的鄰片撐），或這格、四鄰同一層有地板或屋頂
@@ -487,7 +487,7 @@ end
 -- planned（只有客戶端預覽一排時給）：同一排前面判定可蓋的屋頂格（鍵＝Place.key），當成撐得住的鄰格。伺服器一項
 -- 一個動作照順序蓋，輪到後面那格時前一格已經在世界上，不必傳。
 -- 屋頂片＝屋頂型別或帶 RoofGroup、而且不是樓板：平屋頂地板片（roofs_01_22 這類，帶 RoofGroup 的 solidfloor 片，分類是地板）
--- 是樓板，算了的話鋪在一樓就能讓正上方、旁邊上一層浮空蓋（審查第 5 輪）；同一層的支撐照 supports 的 solidfloor 算
+-- 是樓板，算了的話鋪在一樓就能讓正上方、旁邊上一層浮空蓋；同一層的支撐照 supports 的 solidfloor 算
 local function roofPiece(sq)
     if not sq then return false end
     local objects = sq:getObjects()
@@ -534,7 +534,7 @@ function Place.roofAt(x, y, z, ...)
     if z < 0 then return false end
     local cell = getCell()
     local below = cell:getGridSquare(x, y, z - 1)
-    if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋（審查 1109 Claude）
+    if below and below:HasStairs() then return false end -- 一樓也查：地下室的樓梯口上面不蓋
     if z == 0 then return true end
     if below and (below:getWall(true) or below:getWall(false) or below:getWallSE()) then return true end
     if roofPiece(below) or roofPiece(cell:getGridSquare(x - 1, y, z - 1)) or roofPiece(cell:getGridSquare(x + 1, y, z - 1))
@@ -830,7 +830,7 @@ end
 -- 這些），再放水面。物件已經送出，記號另外 transmitModData（存檔跟著物件）。伺服器在地板帳本記一筆空的退料：這片是不是
 -- 本工具挖的以帳本為準（Place.refundOf）。水面放不上去：補回原本的地面（補不上就把拆掉的那片原地板放回去）再報錯。
 -- 放上去就記進 placed（{ water = 物件 }，同 Place.attach 的紀錄），後面出錯時 Place.undo 換回地面。不登記水面 zone
--- （那一帶會沒有「釣魚」，原型 Q4）
+-- （那一帶會沒有「釣魚」）
 function Place.dig(sq, spr, placed)
     local floor = sq:getFloor()
     local fs = floor and floor:getSprite()
@@ -961,7 +961,7 @@ function Place.check(kind, spr, sq, ...)
         if buildUtil.stairIsBlockingPlacement(sq, true, nil) then return false end
     end
     if p:has("IsMoveAble") then
-        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑（bt-authority §4.2）。
+        -- 原版搬家具放下的判斷（地板、桌面、掛牆要有牆、窗上物件要有窗框、地毯不疊、箱子疊多高…），伺服器能跑。
         -- 成功時回的不一定是 true（掛牆時回那面牆），照真假看。
         local props = ISMoveableSpriteProps.new(spr)
         -- 不要求原版的擺放技能與工具（設計稿：工具照 Cost）：placeTool 是 nil 時 hasRequiredSkill／hasTool 都放行（:1956-1961）
@@ -1030,7 +1030,7 @@ local function refundable(cost)
 end
 
 -- 一樓以下（含地下室）的地板：buildMaterials 留空，也不給原版搬動工具拆（isDismantable＝false）；本工具會拆的退料記在
--- 伺服器的地板帳本（Floors）。見 builder-dev placement.md「一樓地板的退料」
+-- 伺服器的地板帳本（Floors）。
 local function groundFloor(obj, sq)
     if sq:getZ() > 0 then return false end
     if obj:isFloor() then return true end
@@ -1245,8 +1245,8 @@ function Place.isRug(name, p)
 end
 local function isRug(o, p) return Place.isRug(o:getTextureName(), p) end
 
--- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:372-437），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上，
--- bt-authority §2.1-4），地毯留著、新地板插在地毯前面；沒有地毯時插回舊地板原本的位置（原版加在最後：同一格已有家具時
+-- 地板：照原版 floor.OnCreate（buildRecipeCode.lua:372-437），差別是先拆舊的再放新的（同一格先刪後加，索引才對得上），
+-- 地毯留著、新地板插在地毯前面；沒有地毯時插回舊地板原本的位置（原版加在最後：同一格已有家具時
 -- 地板排到家具後面，之後蓋的牆照「插在最後一個地板後面」也跟著排到家具後面，見 edgeIndex）。舊物件只拆這一格的那片：
 -- 多格的一組照原版整組拆會動到沒驗證過的格子（IsoGridSquare.java:5933-5956）。IsoThumpable 的地板照建的時候設的
 -- isFloor 拆，不看現在的圖：地板帳本一格只記一筆（Floors）。回新地板該插的位置，或 nil（加在最後）
@@ -1386,7 +1386,7 @@ local function placeStairs(cells, placed)
         if MinidoracatBuilder.Ledger then MinidoracatBuilder.Ledger.put(floor, {}) end
     end
     -- 記號先記進 placed（{ flag＝格子, key, old＝原本的值 }）：之後出錯 Place.undo 照原本的值寫回，不留一個擋住
-    -- 之後同向樓梯的假記號（審查 round1 F4）
+    -- 之後同向樓梯的假記號
     local md, flagKey = sq:getModData(), "ConnectedToStairs" .. tostring(not west)
     placed[#placed + 1] = { flag = sq, key = flagKey, old = md[flagKey] }
     md[flagKey] = true
@@ -1395,8 +1395,8 @@ local function placeStairs(cells, placed)
     if above then above:RecalcAllWithNeighbours(true) end
 end
 
--- 坡道：每片一個一般物件（引擎照格上物件的圖塊屬性算斜面，IsoThumpable 也是物件，但原版與探針都用一般物件，
--- 見 builder-dev placement.md「坡道」），AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
+-- 坡道：每片一個一般物件（引擎照格上物件的圖塊屬性算斜面，IsoThumpable 也是物件，但原版與探針都用一般物件），
+-- AddTileObject 放（不進特殊物件清單，IsoGridSquare.java:5846-5880），
 -- 記號＝頭片名（Place.ramp，只給右鍵選單看）放之前寫好，跟著整件物件送給玩家。照樓梯清掉這格的草。坡頂上一層沒有地板
 -- 時補平台（layFloor：引擎半途出錯的那片拿掉、整組失敗），記帳本（拆坡道時一起拆，Dismantle.plan）。整組的退料記成
 -- 伺服器帳本一筆，鍵是頭片那格加上頭片圖名（Ledger.rampKey、Place.refundOf）：這一筆是「這組是本 MOD 蓋的」唯一的憑據，記不進去就整組失敗
@@ -1464,7 +1464,7 @@ end
 -- 那裡 camping_01_04..06 的 campfire 例外，目錄沒有這三張）。建成 IsoThumpable 的話原版認不得：生火選單只開給
 -- isFireInteractionObject（IsoFireplace、IsoBarbecue，IsoObject.java:6779-6781），爐子、洗衣機的功能也在各自的類別裡。
 -- 擋路的（solid／solidtrans）照原版搬家具放爐子、烤肉架、洗衣機、烘衣機設 movedThumpable（ISMoveableSpriteProps.lua:2246-2263,
--- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時（審查 1109 Claude）；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
+-- 2311-2313），殭屍打得壞，同 0.6.1 蓋成 IsoThumpable 時；沙盒「殭屍打不壞」打開時不設，讀檔時 Place.harden
 -- 照當下的值改（同燈）。目錄的壁爐靠牆、不擋整格（collideN／W），原版搬家具也不設，照舊不打。沒有 buildMaterials：拆了退什麼記在伺服器帳本（同燈）。
 -- 0.6.1 以前蓋成 IsoThumpable 的照舊，拆掉重蓋才是新的（使用者 2026-11-09 裁定）。
 local APPLIANCE = {
@@ -1560,7 +1560,6 @@ end
 -- 拆了退什麼只看伺服器的覆蓋帳本（server/MinidoracatBuilder/Overlays.lua）。那一件被移除（換地板、拆牆、打壞）時圖跟著
 -- 它走（地圖的也是），它是那格的地板或 Place.wallAt 那一件時帳本跟著清（Overlays.drop；原地換牆由 Server.complete 掛回新牆）。
 -- 不觸發移除事件的原版動作不清：鏟地、清除塗鴉與污垢只拿掉附加圖；火燒對一般物件只拿掉附加圖、IsoThumpable 直接換成新物件。
--- 見 builder-dev placement.md「掛上去的地面覆蓋與牆面疊圖」。
 local LOG = "[MinidoracatBuilderFor42] "
 local function at(sq) return sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ() end
 
@@ -1647,8 +1646,8 @@ end
 
 -- 區域資料（引擎算室內、房間圍合用的 IsoRegions）補推。引擎有兩份緩衝輪流當前台，格子的更新在背景執行緒成批套用；
 -- 排到那一批「套用」後面的格子只寫進一份（IsoRegionWorker.java:129-208 取空佇列就開批、:210-296 兩份各跑一輪），之後
--- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回
--- （builder-dev placement.md「區域資料補推」）。所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
+-- 每換一次緩衝，那一格就在有牆、沒牆之間跳，圍好的房子時而不算室內。實機 58,080 片牆漏 5 片，對那格重推 5 次都補回。
+-- 所以會改區域位元的種類（地板、格邊的牆與門窗、樓梯、坡道、水面）
 -- 放好或拆掉後，下一個 tick 照那一格當時的樣子再推一次：兩份已經一致時引擎不改資料。這是降低機率、不是保證：補推
 -- 自己也可能只寫進一份，兩次都遇上才會留下。存座標不存格子（格子物件會回收重用）。kind 給 nil＝不看種類
 -- （Place.undo、挖水、填平）。o＝剛放好或剛拆掉的物件：牆面疊圖的圖帶 cut 時（牆頂橫條）在區域位元裡算一面牆（flagsOf），
@@ -1861,7 +1860,7 @@ function Place.build(kind, cells, placed)
         else
             obj = thumpable(c, kind, north)
             -- 屋頂不擋整格；AddSpecialObject 不會重算下面幾層「有屋頂」（客戶端收到 AddItemToMap 才算，
-            -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對（bt-newkinds §5.2）
+            -- AddItemToMapPacket.java:69），伺服器自己算，存檔才對
             if kind == "roof" then obj:setBlockAllTheSquare(false) end
             placed[#placed + 1] = obj
             if kind == "floor" then
@@ -1962,8 +1961,8 @@ end
 -- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：和地下室 MOD 包住原版建造完成的那段做同一件事：
 -- 這次蓋的格邊是外邊就拆掉那條邊的土牆和它放的牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
 -- Place.undo、原地替換拆舊的）時，那一層在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆，本工具不必管。
--- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）。
--- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣（審查 1107 Claude 第 2 輪）；INTERNAL 會清掉
+-- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回。
+-- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣；INTERNAL 會清掉
 -- 客戶端排在後面的動作，不會每格再丟
 function Place.clearDirt(kind, cells)
     if not Entry.EDGE[kind] then return end
@@ -2098,7 +2097,7 @@ function Place.onAdded(obj)
     if not id then return end
     -- 撿放過的家電：原版照擋路與否再設 movedThumpable（ISMoveableSpriteProps.lua:2246-2313,2501-2504），在 AddSpecialObject
     -- 之前、尋路當下就讀到（SquareUpdateTask.java:345-348），改了要再推。只有家電（Place.keyed 照類別認）有 harden 的分支；
-    -- 原版放成一般物件的擋路家具（69 張）這版不修（主代理 2026-11-21 裁定）
+    -- 原版放成一般物件的擋路家具（69 張）這版不修（2026-11-21 裁定）
     if not md.builderEntry and Place.keyed(obj) then
         local was = obj:isMovedThumpable()
         Place.harden(obj)

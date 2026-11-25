@@ -110,7 +110,7 @@ end
 
 -- 洞那格：拿掉地板與草、可移除的植物（上下才看得到、走得通），格邊的牆與掛件留著
 -- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），真的拆掉了才算
--- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960；審查 round1 F2）。拆掉地板時補推區域資料
+-- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960）。拆掉地板時補推區域資料
 -- （Place.repush；洞在 z=0，引擎的區域資料只收 z ≥ 0，IsoRegionWorker.java:379）。回退料表或 nil
 local function openHole(sq)
     local had, gone, objects = nil, false, sq:getObjects()
@@ -196,7 +196,7 @@ end
 -- partial＝加進集合、補牆、開洞有一步出錯（玩家看得到的部分沒做完；給蓋的人一句提示）。
 -- 帳本寫成功之前不做拿不回來的事（開洞在後）；有一格寫不進去就把這次寫的拿掉並丟錯（Server.complete 撤回、不扣料）。
 -- 帳本寫好了就算蓋成（Server.complete 照常扣料、磨鏟子）：之後每一步（加進集合、補牆、開洞、登錄、同步）出錯只記 log、
--- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上（審查 round1 F1）。
+-- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上。
 -- 當機後帳本和地板可能對不上（chunk 隨時寫、帳本跟整體存檔）：帳本有、地板沒有的格子（Basement.pre 當成沒挖過、准它重挖）
 -- 不重寫帳本，照樣補牆；地板有、帳本沒有的（orphans）收進這一批
 function BasementLedger.commit(player, cells, anchor)
@@ -250,7 +250,7 @@ function BasementLedger.commit(player, cells, anchor)
     return holes, partial
 end
 
--- 一個 basements 封包最多帶幾個矩形：同一塊不拆開，塞不下就換下一段（審查 round1 F11）
+-- 一個 basements 封包最多帶幾個矩形：同一塊不拆開，塞不下就換下一段
 local SEGMENT = 500
 
 -- 一塊的房間 { { { x, y }, ... }, ... } → { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形）、矩形數

@@ -19,8 +19,8 @@ local NS, EW = GridSquareEdgeFacingDirection.NORTH_SOUTH, GridSquareEdgeFacingDi
 -- IsoObject 的地板，圖還是挖的那張）、坡道片（Place.ramp：一般 IsoObject，記號是頭片名），modData 的 builderEntry 有值；
 -- 車庫門、雙開門（IsoDoor）看整組第一片的記號（Place.ourDoor）。
 -- 退多少不看這個記號，只看伺服器寫的退料表（Place.refundOf、帳本）。地板另外要圖和蓋的時候一樣（Place.onAboutToBeRemoved
--- 清退料表時不比圖；見 builder-dev placement.md「一樓地板的退料」）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
--- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷（審查 1109 Claude）
+-- 清退料表時不比圖）。第二個回傳值：是不是蓋成地板的（isFloor 只有地板設，
+-- Place.thumpable）。先看 modData：地圖物件多半沒有，一區拆除整區掃時省掉類別判斷
 local function mine(o)
     if instanceof(o, "IsoDoor") then return Place.ourDoor(o) end
     if not o:hasModData() then return false end
@@ -471,7 +471,7 @@ function Dismantle.check(player, kind, plan, ...)
     return nil
 end
 
--- ---------------------------------------------------------------- 原地替換（設計稿 claim 4）
+-- ---------------------------------------------------------------- 原地替換（設計稿）
 -- 在本工具蓋的東西上蓋同一組的另一款＝換掉舊的。同一組：牆、柵欄、門框、窗框互換（不必先拆牆就能開窗），其他照種類。
 Dismantle.GROUP = { wall = "edge", fence = "edge", doorFrame = "edge", windowFrame = "edge" }
 -- 不換的種類：燈、樓梯（多片、帳本）；地面覆蓋、牆面疊圖、疊圖會疊加（蓋新的是多一張，不是換）；門、窗、窗簾不是

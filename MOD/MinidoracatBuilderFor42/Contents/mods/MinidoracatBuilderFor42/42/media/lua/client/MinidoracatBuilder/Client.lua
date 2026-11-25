@@ -79,7 +79,7 @@ end
 
 -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
 -- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。挖這一格照格邊種類：站在已挖的那一側（四個正交鄰格裡
--- 已挖的，standBeside；隔著土牆動手，plan.md §1.4），沒挖的鄰格沒有地板站不了
+-- 已挖的，standBeside；隔著土牆動手），沒挖的鄰格沒有地板站不了
 local standBeside
 local function walkTo(player, kind, spr, c)
     if Entry.EDGE[kind] then return walkNear(player, kind, Entry.north(kind, spr), c[1], c[2], c[3]) end

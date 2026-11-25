@@ -1,6 +1,6 @@
 -- 圖塊來源：sprite ID → tiledef 檔號 → MOD ID。兩端共用。
 -- Lua 讀不到 TileDef 的欄位（只有公開欄位、沒有 getter），所以檔號由 sprite ID 反算，
--- 檔號對 MOD 讀各 MOD 的 mod.info（bt-perf §7.2）。
+-- 檔號對 MOD 讀各 MOD 的 mod.info。
 MinidoracatBuilder = MinidoracatBuilder or {}
 local Sources = MinidoracatBuilder.Sources or {}
 MinidoracatBuilder.Sources = Sources

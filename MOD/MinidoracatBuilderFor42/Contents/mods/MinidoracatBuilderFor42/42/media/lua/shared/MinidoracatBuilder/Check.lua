@@ -1,5 +1,5 @@
 -- 一項能不能蓋：伺服器 complete() 與客戶端預覽共用同一份判斷（從 Server.complete 抽出）。
--- 伺服器：照 bt-authority §9 的順序（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）），通過後材料、放置、扣料、
+-- 伺服器：照順序查（目錄重算 → 距離（座標）→ 補格子 → 安全屋 → 可放置 → 技能（硬核）），通過後材料、放置、扣料、
 -- 經驗仍在 Server.complete。客戶端 preview：不補格子、不寫任何東西，格子不存在就略過要格子的檢查（交給伺服器），
 -- 材料用 Materials.summary 的摘要估。客戶端的結果只給畫面看，伺服器照樣每格重算。
 require "MinidoracatBuilder/Entry"
@@ -207,7 +207,7 @@ function Check.item(player, name, d, anchor, ...)
     end
     -- 地下室（Basement.pre 只讀座標與已有的格子）：加開入口（skip）時兩旁已挖的格子不再挖，從這次的格子拿掉。
     -- 「挖這一格」是從已挖的那一側往外挖：角色要站在地下一層、這格東南西北的鄰格上，那一格已經挖開（Check.near 對 dig
-    -- 不查走得到，審查 round1 F7）。游標預覽（walk：Client.build 會先走過去）與建造作弊（同 Check.near）不查
+    -- 不查走得到）。游標預覽（walk：Client.build 會先走過去）與建造作弊（同 Check.near）不查
     if entry.kind == "dig" then
         local B = MinidoracatBuilder.Basement
         local code, extra, skip = B.pre(player, entry, cells, anchor, planned, preview)

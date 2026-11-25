@@ -1,4 +1,4 @@
--- 管理面板（設計稿 builder-feedback-1031 第 1、2 節）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
+-- 管理面板（設計稿）：管理員開關種類、來源、圖塊組，改規則頁的沙盒值（Admin.RULES）。
 -- 改開關只改面板裡的草稿；按「套用」才寫沙盒，走原版沙盒封包（不新增網路指令）：
 --   多人：當下從 getSandboxOptions() 複製一份、只改本 MOD 的鍵、sendToServer。伺服器先驗 Capability.SandboxOptions
 --   （PacketTypes.java:294-299,417），再存檔、轉送給每個連線（GameServer.java:1732-1750），客戶端收到後 toLua 更新
@@ -682,7 +682,7 @@ end
 -- ----- 草稿與狀態列 -----
 
 -- 從 SandboxVars 重讀。自己的套用成功、按「還原」：草稿清掉。重新打開面板、設定被別人或快捷鈕改了：keep＝true，草稿只留
--- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動，審查 1116 #6）
+-- 和新值還不一樣的項目（不然開關照舊值畫，按套用時又把剛改的蓋回去；關掉再開不丟還沒套用的改動）
 function Panel:reload(...)
     local keep = ...
     local s, old = Entry.settings(), keep and self.edit

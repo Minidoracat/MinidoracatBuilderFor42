@@ -49,9 +49,9 @@ end
 
 -- 方法寫在 Cursor，類別第一次用到才 derive：ISBuildingObject 在 server 資料夾，MP 客戶端比 client 晚載入。
 local Class, Marks, Panel
--- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿 builder-batch-1101 claim 2，使用者 2026-11-01 選 ring）：
+-- 能按住拖的種類，與兩邊都 ≥2 格時拉成長方形的畫法（設計稿，使用者 2026-11-01 選 ring）：
 -- fill＝鋪滿、ring＝沿四邊圍一圈（牆、柵欄佔格邊）、edge＝沿四邊每一格（柱子）。寬或高是 1 時照舊一排、照目前朝向。
--- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘。挖地下室（plan.md §1.4）只有
+-- 配方項目照同一份（Recipes.dragMode）。水面（2026-11-13）照地板鋪滿：一次挖一片池塘。挖地下室只有
 -- 「挖這一格」能拖（Cursor.new 把入口的 canDrag 關掉：入口一次一個錨點，伺服器拒絕多錨點）
 local DRAG = { floor = "fill", roof = "fill", floorOverlay = "fill", water = "fill", dig = "fill", wall = "ring",
     fence = "ring", post = "edge" }
@@ -366,7 +366,7 @@ function Cursor.start(playerNum, name, d, ...)
     return o
 end
 
--- 一區拆除模式（契約 C7）：拖一個長方形，畫法、按下判斷（介面上按下不算）、右鍵取消、標籤框沿用建造游標。只用滑鼠：
+-- 一區拆除模式：拖一個長方形，畫法、按下判斷（介面上按下不算）、右鍵取消、標籤框沿用建造游標。只用滑鼠：
 -- 手把玩家回 nil、不開（使用者 2026-11-01 選 no）。z＝玩家那層。cb.preview(x1, y1, x2, y2, z) 回
 -- { cells = { { x, y, z, bad }, ... }, lines = { 字串, ... } }：要拆的格子畫紅框，bad 的灰框加警告三角（over＝true 的不加，
 -- 見 areaShow），範圍外圈沒東西的格子淡灰；lines 一行一行畫在標籤框，最後一行當按鍵說明（淡色）。cb.outline（選填）同格式，
@@ -381,7 +381,7 @@ function Cursor.startArea(playerNum, cb)
     return o
 end
 
--- 吸管（設計稿 builder-hardcore-sets-1101 claim 3，使用者 2026-11-01 選 button）：一區拆除模式只框一格（滑鼠那格、
+-- 吸管（設計稿，使用者 2026-11-01 選 button）：一區拆除模式只框一格（滑鼠那格、
 -- 換到玩家那層），格子畫可蓋的綠框；cb 同 startArea（preview 回 { cells, lines }，放開左鍵 cb.release(x, y, x, y, z)、
 -- 右鍵或換了別的游標 cb.cancel()）。手把回 nil，同 startArea。
 function Cursor.startPick(playerNum, cb)
@@ -503,7 +503,7 @@ end
 -- onJoypadPressButton（JoyPadSetup.lua:363-366），原版基底又不處理 A（:627-653；原版只有 ISMoveableCursor 自己接，
 -- ISMoveableCursor.lua:1053-1057）。這裡照手把游標現在那一格（xJoypad…）重算可不可蓋、記成 square，再設建造旗標；
 -- 下一幀 DoTileBuilding 照 square 那格呼叫 tryBuild（:133-136,171-174）。不沿用上一幀的 square／canBeBuild：方向鍵
--- 連跳和 A 落在同一次手把輪詢時（先跑方向、再掃按鍵，JoyPadSetup.lua:940-963）它們還是剛離開的那一格（審查 1110 Grok）。
+-- 連跳和 A 落在同一次手把輪詢時（先跑方向、再掃按鍵，JoyPadSetup.lua:940-963）它們還是剛離開的那一格。
 -- 那一格還沒建出來（原版下一幀才補）就不蓋。接線游標、配方項目開的原版游標實例共用（Wiring.lua、Recipes.lua）。
 -- 42.21 的 DoTileBuilding 還會替手把讀建造鍵，放開 A 時自己蓋（那一版 ISBuildingObject.lua:114-121 的
 -- isBuildButtonReleased）；這裡再設旗標會蓋兩次，所以 42.22 以前交回原版。讀碼推論，沒有在 42.21 實測
@@ -784,7 +784,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     for _, r in ipairs(self.res) do
         local a, code, e = r.a, r.code, r.extra
         local at = code and AT_CELL[code] and e and e.x
-        -- 替換格（契約 C7）：黃色虛影與地框＋替換記號，不只靠顏色
+        -- 替換格：黃色虛影與地框＋替換記號，不只靠顏色
         local swap = code == nil and r.info ~= nil and r.info.replace ~= nil
         if swap then swapN = swapN + 1 end
         local offs = self:offsFor(a) or NO_OFFS
@@ -872,7 +872,7 @@ function Cursor:swapText()
     return table.concat(lines, "\n")
 end
 
--- 被擋的原因（審查 #6）：一格時照那一格；拖一片時每個原因碼一行、寫幾格（Messages.reasons），缺料的合成一行寫整片還差多少
+-- 被擋的原因：一格時照那一格；拖一片時每個原因碼一行、寫幾格（Messages.reasons），缺料的合成一行寫整片還差多少
 function Cursor:reasons()
     local res, n, ok = self.res, #self.res, self.okN
     if n == 1 then return res[1].code and Messages.refusal(res[1].code, res[1].extra) end
@@ -921,7 +921,7 @@ function Cursor:texts()
     end
     self.label = name
     local res, n, ok, swap = self.res, #self.res, self.okN, self.swapN
-    -- 跳過＝被擋＋缺料，數字加得起來（審查 #10）；有替換時新蓋＋替換＋跳過＝全部
+    -- 跳過＝被擋＋缺料，數字加得起來；有替換時新蓋＋替換＋跳過＝全部
     local label2
     if n > 1 and swap > 0 then
         label2 = ok == n and getText("IGUI_MBLD_DragSwap", tostring(n), tostring(ok - swap), tostring(swap))
@@ -1120,7 +1120,7 @@ end
 -- 開頭先比 getDrag：已關掉的游標，removeFromUIManager 排隊中這一幀還會畫。
 
 -- 記號層：每個壞格子上一個警告三角、每個替換格上一個替換圖示（框架 UI.Icons 的 reload，rev 2；不只靠顏色），下面墊
--- surface 底，在紅色、黃色虛影上也看得清楚（審查 #11）。缺圖示時退回字：「!」與「~」（框架紅線：get／draw 回 false）。
+-- surface 底，在紅色、黃色虛影上也看得清楚。缺圖示時退回字：「!」與「~」（框架紅線：get／draw 回 false）。
 -- backMost：UIManager 每次 update 把它移到最底層（UIManager.java:560-564），不畫在聊天框、建造視窗等介面上面。
 local function marksRender(self)
     local c = self.cursor
@@ -1216,7 +1216,7 @@ function Cursor:layout()
     end
     self.lines = lines
     o.fh = fh
-    -- 右邊多留半個字寬：中文句尾的全形句號量出來比畫出來窄，會畫到框外（介面審查第 8 條）
+    -- 右邊多留半個字寬：中文句尾的全形句號量出來比畫出來窄，會畫到框外
     o:setWidth(w + PAD * 2 + math.ceil(fh / 2))
     o:setHeight(lines.n * fh + PAD * 2)
     o:setVisible(not self.overUI)
@@ -1344,7 +1344,7 @@ end
 -- ---------------------------------------------------------------- 送出後（排程、通知、排隊虛影在 Queue.lua）
 -- 下面幾個名稱 Recipes.lua、Menu.lua 與 E2E 在用，照舊保留，轉給 Queue。
 
--- 送一次建造（游標放開時，契約 C4）：交給排程（Queue.push，手拖的），前面有排著的就接在後面。anchors＝{ { x, y, z, d }, ... }
+-- 送一次建造（游標放開時）：交給排程（Queue.push，手拖的），前面有排著的就接在後面。anchors＝{ { x, y, z, d }, ... }
 -- （每格自己的朝向 0..5）；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，省略就不畫排隊虛影。overlap＝疊放模式。
 -- 回 nonce（排在別筆後面、還沒送出時回組的 id），或 nil, 原因碼。
 function Cursor.send(player, name, anchors, ...)

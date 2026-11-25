@@ -18,7 +18,7 @@ local MODULE = "MinidoracatBuilder"
 local KEEP = 32 -- Wiring.results 只留最近幾筆
 local BUSY_MS = 5000 -- 送出後這麼久沒回覆就不再等（伺服器每個指令都回，這是保險）
 local PAD, GAP, SW = 8, 6, 10
--- 接線模式的外框顏色（設計稿）：這個開關綠、已接黃、可接白、別條線路灰。綠色盲分不出綠與黃（審查 1116 #3），所以每種
+-- 接線模式的外框顏色（設計稿）：這個開關綠、已接黃、可接白、別條線路灰。綠色盲分不出綠與黃，所以每種
 -- 另配一個框架圖示（UI.Icons，rev 2／6），世界上與面板圖例畫同一個；缺圖示時退回 ASCII 字（Kahlua 字串字面值不能有非 ASCII）
 local COLOR = { this = { 0, 1, 0 }, wired = { 1, 0.85, 0.4 }, free = { 0.95, 0.95, 0.95 }, other = { 0.55, 0.55, 0.55 } }
 local ICON = { this = "plug", wired = "check", free = "plus", other = "lock" }
@@ -258,16 +258,16 @@ end
 -- 例：擋住視線被切掉的牆上的燈）不算，同 :68、:298。指燈頭、牆上的燈時，滑鼠下的地板格是後面那一格（E2E builder-bili-1109a），
 -- 所以先照圖找。好幾格都中時照引擎的順序取最後一格：層高大的，同一層 y 大的、再來 x 大的（FBORenderObjectPicker.java:195-199,
 -- 247-251，從尾端往前挑 :337；引擎在層高之後另比 render layer，Lua 讀不到）。那一格從現在輪到的（m.pick）往後找第一個命中的：
--- 只有一個中就是它（指著哪個選哪個，審查 1109 Grok），好幾個都中時點一次換下一個命中的（審查 1109 Codex）。
--- 比游標那一層（zmin）低的候選不算：從樓上看，下一層的燈被這層的地板蓋住，引擎點到的是地板（同上，層高先比；審查 1109
--- Claude 第 2 輪），0.6.1 照游標那格找時也點不到下一層。回選到的、它在疊在滑鼠那點的幾個裡排第幾、共幾個（面板提示
+-- 只有一個中就是它（指著哪個選哪個），好幾個都中時點一次換下一個命中的。
+-- 比游標那一層（zmin）低的候選不算：從樓上看，下一層的燈被這層的地板蓋住，引擎點到的是地板（同上，層高先比），
+-- 0.6.1 照游標那格找時也點不到下一層。回選到的、它在疊在滑鼠那點的幾個裡排第幾、共幾個（面板提示
 -- 「再點一次換下一個」照這個數，只疊一個時不提示），或 nil
 function Wiring.atMouse(pn, zmin)
     local m = Wiring.mode
     if not (m and m.cand) then return nil end
     local mx, my, zoom, ts = getMouseX(), getMouseY(), getCore():getZoom(pn), Core.getTileScale()
     local w, h, rank, hit, at = 64 * ts, 128 * ts, nil, nil, nil
-    for _, c in ipairs(m.cand) do -- 每幀跑：排在已中的那格前面的不取物件（審查 1109 Claude）
+    for _, c in ipairs(m.cand) do -- 每幀跑：排在已中的那格前面的不取物件
         local r = c.z * 1e11 + c.y * 100000 + c.x
         local o = c.z >= (zmin or c.z) and (not rank or r >= rank) and objAt(c)
         if o and o:getTargetAlpha(pn) > 0 then
@@ -280,7 +280,7 @@ function Wiring.atMouse(pn, zmin)
         end
     end
     if not rank then return nil end
-    -- 從那一格輪到的往後找：部分疊在滑鼠那點時也照樣輪到下一個命中的，不會卡在第一個（審查 1109 Codex 第 2 輪）
+    -- 從那一格輪到的往後找：部分疊在滑鼠那點時也照樣輪到下一個命中的，不會卡在第一個
     local p = posOf(at.x, at.y, at.z)
     local list, want, start, nth, n = m.byPos[p], m.pick[p], 1, {}, 0
     for j, c in ipairs(list) do
@@ -592,7 +592,7 @@ local function buildPanel(m, UI)
     m.marks = mk
 end
 
--- 「全部拔掉」：先跳確認框寫出盞數，按了確認才送 clear（一按就拿掉整條線路的燈、不能復原，審查 1116 #2；同一區拆除
+-- 「全部拔掉」：先跳確認框寫出盞數，按了確認才送 clear（一按就拿掉整條線路的燈、不能復原；同一區拆除
 -- 的確認：danger 樣式、寫出數量）。框不擋操作、開在游標旁（框架 rev 26 的 modal／anchor；舊框架忽略這兩個欄位，照舊
 -- 置中加遮罩）。線路上沒有燈時沒有東西會丟，直接送。確認時接線模式已經關掉或換了開關就不送
 function Wiring.confirmClear()
@@ -717,7 +717,7 @@ local function lampMenu(context, playerNum, player, o, label)
     context:addSubMenu(opt, sub)
     local info = sub:addOption(getText("IGUI_MBLD_Wire_Loading"))
     local st = {}
-    -- 回覆前與沒有接線時拔線、打開接線模式不能選：標籤後面加「（不能選）」，不只靠原版的紅字（審查 1116 #4）
+    -- 回覆前與沒有接線時拔線、打開接線模式不能選：標籤後面加「（不能選）」，不只靠原版的紅字
     local unplugText, openText = getText("IGUI_MBLD_Menu_Unplug"), getText("IGUI_MBLD_Menu_OpenWiring")
     local unplug = sub:addOption(getText("IGUI_MBLD_Menu_NoUse", unplugText), playerNum, Wiring.unplug, o)
     local open = sub:addOption(getText("IGUI_MBLD_Menu_NoUse", openText), playerNum, Wiring.openFromLamp, st)

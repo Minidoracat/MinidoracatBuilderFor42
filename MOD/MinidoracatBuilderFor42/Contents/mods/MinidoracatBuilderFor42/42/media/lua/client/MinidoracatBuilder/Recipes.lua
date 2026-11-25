@@ -478,7 +478,7 @@ local function joypadPress(self, joypadIndex, joypadData, button)
     return MinidoracatBuilder.Cursor.padBuild(self)
 end
 
--- ===== 取代前一排的提示（使用者 2026-10-29：配方拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格；ui.md 裁定。
+-- ===== 取代前一排的提示（使用者 2026-10-29：配方拖一排照舊取代前一排，放開前提示會取消前一排剩下的 N 格。
 -- 2026-11-16 起圖塊項目再拖一排改成接在後面蓋（queue=append，Queue.lua），配方拖一排與拆除照舊清佇列、取消排著的）=====
 -- 原版游標沒有本工具的標籤框，配方游標另外在滑鼠右下（手把：游標那格）畫同一句（IGUI_MBLD_Replace），上面先列預覽提醒
 -- （mbldWarn：坡頂出口、全高窗配不上框，同圖塊游標的 Cursor:texts）。框只顯示、不收滑鼠（同 Cursor 的標籤框），放在滑鼠右下
@@ -815,7 +815,7 @@ local function onStartCraft(o, action)
     if sending and sending.cursor == o then sending.action = action end
 end
 
--- 這個請求（Client.pending／pendingUnbuild）是不是這個角色的：分割畫面時別的玩家的請求不能動（審查 1112 Codex）
+-- 這個請求（Client.pending／pendingUnbuild）是不是這個角色的：分割畫面時別的玩家的請求不能動
 local function ownedBy(req, player)
     return req ~= nil and req.player == player
 end
@@ -986,7 +986,7 @@ function Recipes.left(pn, all)
     return #row.cells - (all and row.placed or row.i)
 end
 
--- ===== 規劃與照圖蓋（第二波契約「追加」：配方項目也能記進藍圖、照圖蓋）=====
+-- ===== 規劃與照圖蓋（配方項目也能記進藍圖、照圖蓋）=====
 -- 面＝配方游標的 nSprite：1..4＝西、北、東、南（ISBuildingObject.lua:486-516；同 row.cells[i][4]）
 
 -- 這個配方第 d 面第一格有圖的：圖名, 離錨點幾格 dx, dy（PlanCheck 看蓋好沒、PlanGhost 畫虛影）；
@@ -1144,8 +1144,8 @@ function Recipes.build(pn, id)
             Messages.toast(player, getText("IGUI_MBLD_Recipe_NoPlan"))
             return nil
         end
-        -- 照原版視窗的建造鈕擋（ISWidgetBuildControl.lua:165-171），不夠就不開，發通知（審查 1109 Codex）；
-        -- 太暗時原版也擋，通知寫太暗（審查 1109 第 2 輪 Claude）
+        -- 照原版視窗的建造鈕擋（ISWidgetBuildControl.lua:165-171），不夠就不開，發通知；
+        -- 太暗時原版也擋，通知寫太暗
         if blocked(L, player) then
             Messages.toast(player, getText(Recipes.dark(pn, r) and "IGUI_MBLD_Recipe_TooDark" or "IGUI_MBLD_Recipe_Blocked"))
             return nil

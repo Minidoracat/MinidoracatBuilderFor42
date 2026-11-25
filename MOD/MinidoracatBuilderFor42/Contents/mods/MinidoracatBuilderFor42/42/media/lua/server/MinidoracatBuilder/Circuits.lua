@@ -1,4 +1,4 @@
--- 線路（第六階段，設計稿「燈與開關」、研究 bt-switch）：本工具蓋的開關控制同一條線路上的燈。只在伺服器（單機在本機跑同一套）。
+-- 線路（第六階段，設計稿「燈與開關」）：本工具蓋的開關控制同一條線路上的燈。只在伺服器（單機在本機跑同一套）。
 -- 帳本是 Ledger.circuits（Store，跟世界一起存檔、一起回溯；客戶端只拿得到自己查的那一條）：
 --   [編號] = { s = { [鍵] = true }, l = { [鍵] = true } }，鍵＝Ledger.key；下一個編號記在 Ledger 主系統的 circuits.next。
 --   一條線路最多 MAX_S 個開關、MAX_L 片燈（多格燈每片各算一片、整組一起進出）；一個開關、一片燈只屬於一條線路。
@@ -6,10 +6,10 @@
 --   反查表 byKey 不存，第一次用到時從 c 重建（只有一份真相）。
 -- 開關＝帳本裡（本工具蓋的）、sprite 過 Rules.switchProps（沒有 lightR、沒有 streetlight、不能搬）的 IsoLightSwitch。
 --   燈＝sprite 有 lightR 的 IsoLightSwitch，本工具蓋的或 sprite 能搬（IsMoveAble；建構子照它設 canBeModified，
---   IsoLightSwitch.java:77-80）。只認伺服器帳本與 sprite 屬性，不看物件 modData 與客戶端改得到的欄位（細節見知識庫 circuits.md）。
+--   IsoLightSwitch.java:77-80）。只認伺服器帳本與 sprite 屬性，不看物件 modData 與客戶端改得到的欄位。
 -- 按：包原版 ISToggleLightAction 的 complete（點擊、右鍵、手把都走它）。線路裡的開關切整條線路；本工具蓋的燈切自己（不能搬
 --   的燈在地圖房屋外原版切不了，IsoLightSwitch.java:498-499）；其他照原版。不要求有電：燈亮不亮由客戶端每片照電力判斷
---   （LightingJNI.java:281-294），伺服器對自建屋一律算沒電（bt-switch §8）。原版開關切房間燈時線路上的燈不跟著動（設計稿）。
+--   （LightingJNI.java:281-294），伺服器對自建屋一律算沒電。原版開關切房間燈時線路上的燈不跟著動（設計稿）。
 -- 接線：客戶端送 circuit（查）／wire（改），身分只認 OnClientCommand 的連線玩家；回 circuit 給那位玩家。改帳本之前先把
 --   距離、每一格的建造權限、範圍、上限全部查完，任何一項不過就整筆不做。
 if isClient() then return end
@@ -668,7 +668,7 @@ function Circuits.autoWire(player, sw)
     return nil, info
 end
 
--- 燈放下：同一個封閉房間裡的開關只有一組（一條線路，或只有一個沒接線的開關）就接進去（bt-switch §2.3 第 4 步）。
+-- 燈放下：同一個封閉房間裡的開關只有一組（一條線路，或只有一個沒接線的開關）就接進去。
 -- 要接的開關（新線路就是那一個，既有線路就是那條的每個開關）照預覽查 BUILD，被拒就不接。
 -- 回線路編號；沒接上而房間裡（燈的 RANGE 格內）有本工具的開關時回 nil, 原因（MULTI／FULL／OUT_OF_RANGE／DENIED）
 function Circuits.lampPlaced(player, lamp)

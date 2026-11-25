@@ -3,7 +3,7 @@
 -- 物件、不送客戶端。存檔在 Store（跟世界一起存檔、一起回溯）：
 -- 燈、開關（IsoLightSwitch）與家電（壁爐這類，Place.keyed）：gos_MinidoracatBuilder_<n>.bin，[編號] = { p = 位置
 --   （Store.pos）, s = 蓋的圖名, i = { [fullType] = 退料數 } }。蓋的時候把編號寫進物件的 keyId（IsoObject 的欄位，任何類別
---   都跟著存檔），認物件看編號、位置與蓋的圖，不看 modData（見知識庫 placement.md「燈的帳本照編號認」）。
+--   都跟著存檔），認物件看編號、位置與蓋的圖，不看 modData。
 -- 樓梯平台：同一本，["x,y,z,sprite"] = {}（只記是本 MOD 補的，不退料）。
 -- 車庫門、雙開門（IsoDoor，沒有 buildMaterials）：同一本，["x,y,z,doorN"／"…,doorW"] = 整組的退料表（Ledger.putDoor）。
 -- 坡道：同一本，["ramp:x,y,z,<頭片圖名>"] = 整組的退料表（Ledger.putRamp）；坡頂平台照樓梯平台記。

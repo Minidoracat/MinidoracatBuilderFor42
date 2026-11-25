@@ -219,7 +219,7 @@ local function parse(nextLine, headOnly)
 
     local plan = Plan.new(name)
     Plan.begin(plan)
-    -- 檔案的項目序號 → 藍圖裡的序號。挖地下室的項目不讀（藍圖不認挖掘，地下室方案 §1.4）：那幾片丟掉，片數照檔案驗
+    -- 檔案的項目序號 → 藍圖裡的序號。挖地下室的項目不讀（藍圖不認挖掘）：那幾片丟掉，片數照檔案驗
     local map = {}
     for idx, item in ipairs(items) do map[idx] = not DIG[item.id] and Plan.item(plan, item.id, item) or nil end
     local seen, pc = {}, 0

@@ -119,7 +119,7 @@ end
 
 -- 照原因數件數，每個碼一行，件數多的在前（同數照碼名；逐筆插入，不用 table.sort，家族規則）。
 -- counts＝{ [碼] = 件數 } 或 { [碼] = { n = 件數, extra = 拒絕附帶的欄位 } }（缺料、缺工具要 extra 才寫得出缺什麼）。
--- unbuild＝true：拆除碼的短字＋件數（「裡面還有東西 1」）；否則建造的一句話＋格數（游標拖一片時每種原因一行，審查 #6）
+-- unbuild＝true：拆除碼的短字＋件數（「裡面還有東西 1」）；否則建造的一句話＋格數（游標拖一片時每種原因一行）
 function Messages.reasons(counts, ...)
     local unbuild = ...
     local rows = {}

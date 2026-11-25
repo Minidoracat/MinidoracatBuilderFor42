@@ -25,7 +25,7 @@ local WOOD = {
     solid = { [PLANK] = 2, [NAILS] = 2 },
     stairs = { [PLANK] = 13, [NAILS] = 8 },                                 -- Wood_Stairs（整組，stairs/entity_carpentry_stairs.txt）
     roof = { [PLANK] = 1, [NAILS] = 2 },                                    -- 原版沒有屋頂配方：比照木地板，斜面多一根釘子
-    ramp = { [PLANK] = 1, [NAILS] = 1 },                                    -- 坡道每片：原版沒有配方，照木地板（Q2 選維持現價）
+    ramp = { [PLANK] = 1, [NAILS] = 1 },                                    -- 坡道每片：原版沒有配方，照木地板（維持現價）
 }
 -- 照木頭收的家具、容器（沒有拆解材質，MaterialType 不是金屬；磚石沒有家具配方也照木頭）照原版搬運重量
 -- （PickUpWeight／10 公斤，沒寫當 5 公斤，ISMoveableSpriteProps.lua:148-149）分三級（使用者 2026-10-27 選）：
@@ -93,8 +93,7 @@ local function scrapTools(def)
     end
     return nil
 end
--- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退；多格的每一格各收（使用者 2026-10-27 選並確認；
--- 原因見 AGENTS.md 踩坑錄）。
+-- 電器（任一 Material 的拆解技能是電工）另收 1 個電子零件，拆了不退；多格的每一格各收（使用者 2026-10-27 選並確認）。
 local ESCRAP = "Base.ElectronicsScrap"
 -- 經驗（使用者 2026-10-27 決定：不要求技能，照材質給；技能選 B）：每付一件材料 5 點，給「拆掉時決定這件退不退」的
 -- 技能。有拆解材質的，原版每個 Material 照自己拆解定義的技能擲退料機率（ISMoveableSpriteProps.lua:3318-3324、

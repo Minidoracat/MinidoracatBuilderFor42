@@ -1,4 +1,4 @@
--- 一區拆除（設計稿 claim 3，使用者 2026-11-01 選「本工具拆的＋原版拆解的」）：右鍵「拆除一區...（建造工坊）」→
+-- 一區拆除（設計稿，使用者 2026-11-01 選「本工具拆的＋原版拆解的」）：右鍵「拆除一區...（建造工坊）」→
 -- 拖長方形（Cursor.startArea，只用滑鼠）→ 放開跳確認面板（照頁籤分種類勾選）→ 一張清單送出（Client.dismantleMany）→
 -- 輪完或停下跳總結通知。範圍是玩家那一層，另收正上方那層的屋頂（從屋裡框地板拆得到頭上那片，同 Menu.targets）。
 -- 這裡的判斷只給畫面用：能不能拆、退什麼料由伺服器照清單一件一件重查（Server.dismantle）；原版拆解照原版動作自己查。
@@ -19,7 +19,7 @@ local LOG = "[MinidoracatBuilderFor42] "
 local PAD, GAP = 8, 6
 -- 一區拆除的預覽不再照時間過期：同一個範圍、世界戳記（Area.stamp）沒變就回同一份（游標拖曳中停住才問、按住不動每秒問一次）
 
--- 拆的順序（設計稿 3.4）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板（水面跟地板一起填平）；同一順位由上層往下。
+-- 拆的順序（設計稿）：先拆掛在上面的，再拆家具、牆，最後拆屋頂、地板（水面跟地板一起填平）；同一順位由上層往下。
 -- 二樓地板上有東西時不給拆（FLOOR_IN_USE），照這個順序拆到它時上面已經空了。表外的種類算 2
 local ORDER = {
     floorOverlay = 1, wallOverlay = 1, wallObject = 1, windowObject = 1, attached = 1, overlay = 1,
@@ -187,7 +187,7 @@ local function maxItems()
     return math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
 end
 
--- 送給 Client.dismantleMany 的一件（C6）。t＝Area.scan／Menu.targets 的一項
+-- 送給 Client.dismantleMany 的一件。t＝Area.scan／Menu.targets 的一項
 function Area.item(t)
     local sq = t.overlay and t.overlay.sq or t.obj:getSquare()
     local own = {}
@@ -289,7 +289,7 @@ function Area.outline(x1, y1, x2, y2)
     } }
 end
 
--- 右鍵「拆除一區...（建造工坊）」：開長方形游標（Cursor.startArea，C7），放開跳確認面板
+-- 右鍵「拆除一區...（建造工坊）」：開長方形游標（Cursor.startArea），放開跳確認面板
 function Area.start(playerNum)
     local Cursor = B.Cursor
     local player = getSpecificPlayer(playerNum)
@@ -427,7 +427,7 @@ function Panel.new(UI, playerNum, list, cw, ch)
     if sum.smash > 0 then para(getText("IGUI_MBLD_Area_Smash", tostring(sum.smash)), c.textMuted) end
     if listed > 0 then para(getText("IGUI_MBLD_Unbuild_RefundTip"), c.textMuted) end
     if listed > self.max then para(getText("IGUI_MBLD_Area_Over", tostring(self.max)), c.warning, true) end
-    -- 按鈕寬照最長的標題（全勾、取到上限時）定死：setTitle 不重算明示的寬度（ui.md 已知坑）
+    -- 按鈕寬照最長的標題（全勾、取到上限時）定死：setTitle 不重算明示的寬度
     local btnH = fh + 10
     local goTitle = getText("IGUI_MBLD_Area_Go", tostring(math.min(listed, self.max)))
     local goW = tm:MeasureStringX(font, goTitle) + 20
