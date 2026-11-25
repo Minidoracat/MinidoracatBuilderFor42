@@ -9421,18 +9421,22 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         if cls == "IsoLightSwitch" then return type(o) == "table" and o.light == true end
         return realInst(o, cls)
     end
-    -- 地下的格子（引擎的 setRoomID／setRoom／屍體清單）
+    -- 地下的格子（引擎的 setRoomID／setRoom／屍體清單）：getRoom 在 roomID 是 -1 時回 null；setRoomID(-1) 只改編號、
+    -- 不動房間指標（IsoGridSquare.java:9220-9222,9414-9420）
     local function ug(x, y, z, o)
         local sq = square(x, y, z or Z, o)
+        sq.roomID = -1
         function sq:setRoomID(id) self.roomID = id end
+        function sq:getRoomID() return self.roomID end
         function sq:setRoom(r) self.room = r end
+        function sq:getRoom() if self.roomID == -1 then return nil end return self.room end
         function sq:getStaticMovingObjects() return { isEmpty = function() return #(self.bodies or {}) == 0 end } end
         return sq
     end
     -- 假引擎：metaGrid 的 getRoomAt、BuildingRoomsEditor（applyChanges 照 calculateMetaID 在全部房間的矩形裡取角，
     -- BuildingDef.java:319-341；同一棟只在新建物外框左上角所在的地圖格（256 格）裡照 metaID 找，找到才換掉舊的（整棟每間），
     -- BuildingRoomsEditor.java:233-248、BREBuilding.getLotHeader）、殭屍補充。meta[地圖格:相對角]＝那一棟；live[角]＝第一間
-    local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0 }
+    local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0 }
     local function tk(x, y) return x .. "," .. y end
     local grid = { getRoomAt = function(_, x, y, z)
         if z ~= Z then return nil end
@@ -9445,7 +9449,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     end
     local function newDef(name)
         eng.ids = eng.ids + 1
-        local def = { id = eng.ids, name = name, n = 0, switches = {} }
+        local def = { id = eng.ids, name = name, n = 0, switches = {}, lightsActive = false }
         function def:getID() return self.id end
         function def:getName() return self.name end
         function def:setName(n) self.name = n end
@@ -9495,7 +9499,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 local lx, ly = math.floor(x0 / 256), math.floor(y0 / 256)
                 local mk = lx .. "," .. ly .. ":" .. (cx - lx * 256) .. "," .. (cy - ly * 256)
                 local old = eng.meta[mk]
-                if old then for k, d in pairs(eng.tile) do if d.bld == old then eng.tile[k] = nil end end end
+                if old then -- 舊的整棟拿掉，房間的 def 清成 null（BREBuilding.java:230-242、IsoRoom.java:672-674）
+                    for k, d in pairs(eng.tile) do if d.bld == old then eng.tile[k] = nil end end
+                    for _, d in ipairs(old.rooms) do d:getIsoRoom().def = nil end
+                end
                 local bld = { rooms = {} } -- 同一棟的房間共用（getBuilding 回它）
                 function bld.setUserDefined(_, v) for _, d in ipairs(bld.rooms) do d.user = v end end
                 function bld.setAllExplored(_, v) for _, d in ipairs(bld.rooms) do d.explored = v end end
@@ -9527,6 +9534,75 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         for _, d in pairs(eng.live) do if d.n > 0 then n = n + 1 end end
         return n
     end
+    -- 牆上的房間開關（圖沒有 lightR）：建構時那格有房間就照房間的 lightsActive、加進房間的開關清單，沒有就開著
+    -- （IsoLightSwitch.java:90-100）。switchLight：那格有房間就改房間的 lightsActive、清單裡每個跟著改，伺服器上送一次
+    -- metaGrid（eng.metaSent 加 1）；房間已被換掉（def 是 null）時丟錯（:519-535）。o.can＝canSwitchLight 的回傳
+    local function roomSwitch(sq)
+        local o = obj(sq, "t_roomswitch", false, {})
+        o.light, o.roomSwitch, o.on, o.can = true, true, true, true
+        function o:isActivated() return self.on end
+        function o:canSwitchLight() return self.can end
+        function o:switchLight(v)
+            local room = sq:getRoom()
+            if room then
+                if room.def == nil then error("switchLight: room.def is null") end
+                room.def.lightsActive = v
+                for _, s in ipairs(room.def.switches) do s.on = v end
+                if isServer() then eng.metaSent = eng.metaSent + 1 end
+            end
+            self.on = v
+        end
+        local room = sq:getRoom()
+        if room then
+            o.on = room.def.lightsActive
+            room.def.switches[#room.def.switches + 1] = o
+        end
+        sq.objects[#sq.objects + 1] = o
+        return o
+    end
+    eng.switch = roomSwitch
+    -- 重新讀進格子：照 metaGrid 設房間（IsoChunk.java:3588-3591），再讀物件：房間開關那格有房間就照房間的
+    -- lightsActive、加進房間的開關清單（IsoLightSwitch.java:356-359）
+    function eng.reload(list)
+        for _, sq in ipairs(list) do
+            local def = grid:getRoomAt(sq:getX(), sq:getY(), sq:getZ())
+            sq.roomID, sq.room = def and def.id or -1, def and def:getIsoRoom() or nil
+            local room = sq:getRoom()
+            for _, o in ipairs(sq.objects) do
+                if o.roomSwitch and room then
+                    o.on = room.def.lightsActive
+                    local seen = false
+                    for _, s in ipairs(room.def.switches) do seen = seen or s == o end
+                    if not seen then room.def.switches[#room.def.switches + 1] = o end
+                end
+            end
+        end
+    end
+    -- 假引擎的房間開關、getRoom、重新讀進、舊房間 def 清掉，照上面引擎出處的行為
+    ;(function()
+        local s1, s2 = ug(5900, 5900), ug(5901, 5900)
+        local def = newDef("probe")
+        def.lightsActive = true
+        for _, s in ipairs({ s1, s2 }) do s.roomID, s.room = def.id, def:getIsoRoom() end
+        local a, b = roomSwitch(s1), roomSwitch(s2)
+        local born = a.on and b.on and #def.switches == 2
+        local keep = eng.metaSent
+        b:switchLight(false)
+        local linked = not a.on and not def.lightsActive and eng.metaSent == keep + 1
+        s1:setRoomID(-1)
+        local hidden = s1:getRoom() == nil and s1.room == def:getIsoRoom() and s1:getRoomID() == -1
+        a:switchLight(true)
+        local alone = a.on and not b.on and eng.metaSent == keep + 1
+        eng.tile[tk(5900, 5900)] = def
+        eng.reload({ s1 })
+        local back = s1:getRoom() == def:getIsoRoom() and not a.on and #def.switches == 2
+        eng.tile[tk(5900, 5900)] = nil
+        def:getIsoRoom().def = nil
+        local npe = not pcall(b.switchLight, b, true)
+        check(born and linked and hidden and alone and back and npe,
+            "假引擎：房間開關照房間燈、一個切整間跟著且送一次 meta；setRoomID(-1) 後 getRoom 是 null、開關只切自己；"
+                .. "重新讀進照 metaGrid 掛回房間、開關照房間燈；房間 def 清掉後 switchLight 丟錯")
+    end)()
     -- 一個 3×3 的入口（東西向）：樓梯 (x..x+2, y)、兩旁挖 (x..x+2, y±1)、平台 (x−1, y, 0)、洞 (x..x+2, y, 0)
     local function entrance(x, y)
         local c = { { x = x, y = y, z = Z, role = "top" }, { x = x + 1, y = y, z = Z, role = "mid" },
