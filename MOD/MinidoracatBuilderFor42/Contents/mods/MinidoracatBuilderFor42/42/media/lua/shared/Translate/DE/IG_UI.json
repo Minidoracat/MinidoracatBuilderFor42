@@ -797,6 +797,7 @@
   "IGUI_MBLD_Admin_DisableTileset": "Dieses Tileset deaktivieren",
   "IGUI_MBLD_Admin_DisableSource": "Diese Quelle deaktivieren",
   "IGUI_MBLD_Admin_VanillaSource": "Das Grundspiel kann nicht als Ganzes deaktiviert werden. Deaktiviere stattdessen seine Tilesets oder Arten.",
+  "IGUI_MBLD_Admin_DigKind": "Keller lassen sich nur über die Art „Keller“ (Reiter Arten) ein- oder ausschalten.",
   "IGUI_MBLD_Admin_Title": "Build Anything · Verwalten",
   "IGUI_MBLD_Admin_Tab_kinds": "Arten",
   "IGUI_MBLD_Admin_Tab_sources": "Quellen",

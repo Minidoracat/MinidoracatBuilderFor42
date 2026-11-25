@@ -797,6 +797,7 @@
   "IGUI_MBLD_Admin_DisableTileset": "Wyłącz ten zestaw kafelków",
   "IGUI_MBLD_Admin_DisableSource": "Wyłącz to źródło",
   "IGUI_MBLD_Admin_VanillaSource": "Gry bazowej nie można wyłączyć w całości. Wyłącz jej zestawy kafelków lub rodzaje.",
+  "IGUI_MBLD_Admin_DigKind": "Piwnice włącza się i wyłącza tylko rodzajem Piwnice (karta Rodzaje).",
   "IGUI_MBLD_Admin_Title": "Build Anything · Zarządzanie",
   "IGUI_MBLD_Admin_Tab_kinds": "Rodzaje",
   "IGUI_MBLD_Admin_Tab_sources": "Źródła",

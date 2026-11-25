@@ -797,6 +797,7 @@
   "IGUI_MBLD_Admin_DisableTileset": "このタイルセットを無効にする",
   "IGUI_MBLD_Admin_DisableSource": "この提供元を無効にする",
   "IGUI_MBLD_Admin_VanillaSource": "バニラはまとめて無効にできません。タイルセットか種類を無効にしてください。",
+  "IGUI_MBLD_Admin_DigKind": "地下室は「種類」タブの「地下室」でのみオン・オフできます。",
   "IGUI_MBLD_Admin_Title": "自由建築 · 管理",
   "IGUI_MBLD_Admin_Tab_kinds": "種類",
   "IGUI_MBLD_Admin_Tab_sources": "提供元",

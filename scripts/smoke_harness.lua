@@ -11356,6 +11356,48 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 local wOut = paint(S, "DIG_ROOM", { x = X + 1, y = Y + 4, z = -1 })
                 check(wOut["1,4,0"].m == 1 and wOut["1,4,0"].fr == 0.9 and wOut["1,4,0"].fa == 0.3 and wOut["0,4,0"].m == 0,
                     "入口被擋、指著地下的室那一格：記號標在它正上方地面那一格（淡地框照舊）")
+                -- 拒絕碼指著畫出來的格子以外：挖一格要挖穿的土牆在鄰格（DIG_HUNG）→ 鄰格另畫壞色地框＋記號、不畫圖；
+                -- 入口樓梯底前面那格在地下一層、不在預覽裡（DIG_ENTRY）→ 畫在它正上方的地面
+                local hOut, hN = paint(Entry.DIG_CELL, "DIG_HUNG", { x = X + 1, y = Y, z = 0 })
+                local hc, hn = hOut["0,0,0"], hOut["1,0,0"]
+                local xOut, xN = paint(S, "DIG_ENTRY", { x = X, y = Y + 5, z = -1 })
+                local xc = xOut["0,5,0"]
+                check(hN == 2 and hc.m == 0 and hc.fr == 0.6 and hn.m == 1 and hn.fr == 0.9 and hn.s == "-" and xN == 11
+                    and xc.m == 1 and xc.fr == 0.9 and xc.s == "-",
+                    "被擋的位置不在預覽裡（土牆在鄰格、樓梯底前面那格）：那一格另外畫壞色地框與警告記號，在地下一層的畫在正上方的地面（"
+                    .. hN .. " " .. xN .. "）")
+                -- 挖地下室借用原版圖名（underground_01、invisible_01）：管理員關掉這兩個圖塊組或來源不影響挖掘（只照沙盒
+                -- KindDig），建造視窗照樣列、左邊不列這兩個圖塊組，詳情的「關掉這套圖塊」對它們不做事
+                do
+                    local W, Ix = MinidoracatBuilder.Window, MinidoracatBuilder.Index
+                    local keepTs = sb.DisabledTilesets
+                    sb.DisabledTilesets = "underground_01;invisible_01"
+                    local okS, okC = Entry.resolve(S) ~= nil, Entry.resolve(Entry.DIG_CELL) ~= nil
+                    local blkDig, blkWall = W.blocked("underground_01", "dig"), W.blocked("underground_01", "wall")
+                    local realB, realK, realAdmin, realV = Ix.bucket, Ix.kindSets, MinidoracatBuilder.Admin, W.v
+                    Ix.bucket = { dig = { underground_01 = { n = 2, S, E }, invisible_01 = { n = 1, Entry.DIG_CELL } } }
+                    Ix.kindSets = { dig = { n = 2, "underground_01", "invisible_01" } }
+                    local okG, groups = pcall(W.categories, "all")
+                    local digRow, fams = false, 0
+                    for _, grp in ipairs(okG and groups or {}) do
+                        for _, it in ipairs(grp.items) do
+                            if it.id == "k:dig" then digRow = true end
+                            if it.id:sub(1, 2) == "f:" then fams = fams + 1 end
+                        end
+                    end
+                    local quick = 0
+                    MinidoracatBuilder.Admin = { available = function() return true end, canManage = function() return true end,
+                        quick = function() quick = quick + 1 end }
+                    W.v = { selName = S }
+                    W.quickDisable("tileset")
+                    W.quickDisable("source")
+                    Ix.bucket, Ix.kindSets, MinidoracatBuilder.Admin, W.v = realB, realK, realAdmin, realV
+                    sb.DisabledTilesets = keepTs
+                    check(okS and okC and not blkDig and blkWall and okG and digRow and fams == 0 and quick == 0,
+                        "管理員關掉 underground_01、invisible_01：入口、挖一格照樣解析得到（兩端同一份 Entry.resolve），目錄照列、"
+                        .. "左邊不列這兩個圖塊組，快捷鈕不對挖掘項目做事（" .. tostring(okS) .. tostring(okC) .. " " .. tostring(blkDig)
+                        .. " " .. tostring(digRow) .. " fams=" .. fams .. " quick=" .. quick .. "）")
+                end
                 Cursor.hook.valid = function() return false end
                 local pOut = paint(E)
                 Cursor.hook.valid = nil
@@ -18902,13 +18944,18 @@ end)()
     local nDig, tDig = plan.n, #toasts
     local okDig, whyDig = PM.addCells(0, Entry.DIG_CELL, { { 52, 52, -1, 0 } })
     local dc = cursor({ { a = { 52, 52, 0, 0 } } }, Entry.DIG_S)
-    local dl = Cur.hook.label(dc, { "L1", "T" })
+    local dl = Cur.hook.label(dc, { "L1", "T", "HINT", "M" })
     local dcValid = Cur.hook.valid(dc)
     dc:tryBuild(1, 1, 0)
     check(okDig == nil and whyDig == "DIG" and dl[3] == "IGUI_MBLD_PlanNoDig" and dl[4] == "W" and dcValid == false
         and plan.n == nDig and sent == 0 and toasts[#toasts] == "IGUI_MBLD_PlanNoDig" and #toasts == tDig + 2,
         "F9 規劃不收挖掘項目：配方路徑回 DIG、游標標籤寫原因且不可放、放開不記不送（"
         .. tostring(whyDig) .. " " .. tostring(dl[3]) .. " n=" .. plan.n .. " toasts+" .. (#toasts - tDig) .. "）")
+    local dlPlanHint = false
+    for i = 1, #dl do if dl[i] == "IGUI_MBLD_PlanHint" then dlPlanHint = true end end
+    check(not dlPlanHint and dl[#dl - 1] == "IGUI_MBLD_HintCancel" and dl[#dl] == "M" and wl[#wl - 1] == "IGUI_MBLD_PlanHint",
+        "規劃中拿挖掘項目：按鍵行只寫取消，不寫「拖曳加進藍圖」（和「不能記進藍圖」矛盾）；超出範圍這類換位置就加得進去的，"
+        .. "按鍵行照舊（" .. tostring(dl[#dl - 1]) .. " " .. tostring(wl[#wl - 1]) .. "）")
 
     -- 樓層：hook.layer 回規劃層和玩家那層的差，夾在藍圖 4 層的範圍內
     PM.setLevel(2)
@@ -28328,15 +28375,28 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         print = realPrint
         Cur.hook.valid = realValid
         getText = function(k) return k end
-        local function label3(name)
-            local c = setmetatable({ res = { { a = { 0, 0, 0 }, code = "DIG_STAND" } }, okN = 0, swapN = 0, states = { n = 1 },
-                entry = Entry.resolve(name), name = name, d = 0, colors = { text = {}, warning = {}, textMuted = {} }, player = 7,
+        -- 挖掘警告行（digWarn）；ahead＝前面還排著幾格（Queue.left）：排隊那一行和警告行要各自在標籤框裡
+        local Qm = MinidoracatBuilder.Queue
+        local function label3(name, ahead)
+            local realLeft = Qm.left
+            Qm.left = function(_, owner) return owner == "drag" and (ahead or 0) or 0 end
+            local c = setmetatable({ res = { { a = { 0, 0, 0 }, code = not ahead and "DIG_STAND" or nil } }, okN = ahead and 1 or 0,
+                swapN = 0, states = { n = 1 }, entry = Entry.resolve(name), name = name, d = 0,
+                colors = { text = {}, warning = {}, textMuted = {} }, player = 7,
                 joypad = true, character = { getPlayerNum = function() return 7 end }, reasons = function() end,
                 swapText = function() end, layout = function() end }, { __index = Cur })
-            c:texts()
-            return c.label3 and c.label3 .. (c.label3warn and "!" or "") or "nil"
+            local ok = pcall(c.texts, c)
+            Qm.left = realLeft
+            local both = { queued = false, warn = false }
+            for i = 1, #(c.src or {}), 2 do
+                if c.src[i] == "IGUI_MBLD_Append" and c.src[i + 1] == c.colors.text then both.queued = true end
+                if c.src[i] == c.digWarn and c.src[i + 1] == c.colors.warning then both.warn = true end
+            end
+            return ok and c.digWarn and c.digWarn .. (both.warn and "!" or "") or "nil", both
         end
         local l3Cell, l3S, l3Floor = label3(CELL), label3(S), label3("pcf_01_0")
+        local qS, qBoth = label3(S, 2)
+        local qCell, qCellBoth = label3(CELL, 1)
         getText = realGT
         local maxW
         local nop = function() end
@@ -28354,6 +28414,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         check(l3Cell == "IGUI_MBLD_Refund_dig!" and l3S == "IGUI_MBLD_Dig_Warn!" and l3Floor == "nil",
             "挖掘的游標標籤：挖一格寫拆不回去、入口寫會拆掉上方的地板與草，都用警告色；一般地板沒有這行（"
             .. l3Cell .. " " .. l3S .. " " .. l3Floor .. "）")
+        check(qS == "IGUI_MBLD_Dig_Warn!" and qBoth.queued and qCell == "IGUI_MBLD_Refund_dig!" and qCellBoth.queued,
+            "前面還有排著的時候放入口或挖一格：「接在後面」那一行和挖掘警告行都在標籤框裡，警告不被排隊行取代（"
+            .. qS .. " " .. qCell .. "）")
         check(small == 512 and maxW == 640, "游標標籤框：1280 寬畫面最寬 512（4 成），4K 畫面照 32 個字高 640（"
             .. tostring(small) .. "／" .. tostring(maxW) .. "）")
     end)()

@@ -797,6 +797,7 @@
   "IGUI_MBLD_Admin_DisableTileset": "Turn off this tileset",
   "IGUI_MBLD_Admin_DisableSource": "Turn off this source",
   "IGUI_MBLD_Admin_VanillaSource": "The base game can't be turned off as a whole. Turn off its tilesets or kinds instead.",
+  "IGUI_MBLD_Admin_DigKind": "Basements are turned on or off only with the Basements kind (Kinds tab).",
   "IGUI_MBLD_Admin_Title": "Build Anything · Manage",
   "IGUI_MBLD_Admin_Tab_kinds": "Kinds",
   "IGUI_MBLD_Admin_Tab_sources": "Sources",

@@ -146,7 +146,8 @@ function Entry.resolve(name)
     local file = Sources.fileOf(id)
     local mod = Sources.isModFile(file) and Sources.map()[file] or nil
     local s = Entry.settings()
-    if (mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset]
+    -- 挖地下室的三個項目借用原版的圖名，圖塊組、來源對它們沒有意義：只照種類開關（沙盒 KindDig）
+    if kind ~= "dig" and ((mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset])
         or not Entry.kindSet(kind, s) then
         return nil, "DISABLED"
     end

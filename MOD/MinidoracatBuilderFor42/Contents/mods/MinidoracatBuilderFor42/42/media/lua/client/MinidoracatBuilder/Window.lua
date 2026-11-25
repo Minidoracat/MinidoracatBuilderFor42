@@ -164,8 +164,10 @@ function W.sourceOf(ts)
     return Sources.byFile and Sources.byFile[file] or "?"
 end
 
--- 管理員關掉的 tileset 或來源（沙盒 DisabledTilesets／DisabledSources；伺服器同一套，Entry.resolve 回 DISABLED）
-function W.blocked(ts)
+-- 管理員關掉的 tileset 或來源（沙盒 DisabledTilesets／DisabledSources；伺服器同一套，Entry.resolve 回 DISABLED）。
+-- kind＝這一桶的種類：挖地下室只照種類開關，不看圖塊組與來源（同 Entry.resolve）
+function W.blocked(ts, kind)
+    if kind == "dig" then return false end
     local s = Entry.settings()
     if disabledTilesets(s.DisabledTilesets)[ts] then return true end
     local src = W.sourceOf(ts)
@@ -281,10 +283,9 @@ end
 local function exactBucket(q)
     if not q:find("_%d+$") or not Entry.sprite(q) then return nil end
     local ts = q:match("^(.*)_%d+$")
-    if W.blocked(ts) then return nil end
     local s = Entry.settings()
     for kind, sets in pairs(Index.bucket or {}) do
-        local b = Entry.BUILDABLE[kind] and Entry.kindOn(kind, s) and sets[ts] -- 目錄也收了車庫門，不能蓋
+        local b = Entry.BUILDABLE[kind] and Entry.kindOn(kind, s) and not W.blocked(ts, kind) and sets[ts] -- 目錄也收了車庫門，不能蓋
         if b then
             for i = 1, b.n do
                 if b[i] == q then return b end
@@ -434,7 +435,7 @@ local function listFor(st)
             for j = 1, sets.n do
                 local ts = sets[j]
                 if (not fam or W.familyOf(ts) == fam) and (st.source == "all" or W.sourceOf(ts) == st.source)
-                    and not W.blocked(ts) then
+                    and not W.blocked(ts, k) then
                     if not setHit or setHit[ts] then
                         append(out, byTs[ts])
                     elseif hits and hits[ts] then
@@ -623,7 +624,7 @@ local function startSubs(v, k)
     local sets, byTs = (Index.kindSets or EMPTY)[k], (Index.bucket or EMPTY)[k]
     for j = 1, sets and byTs and sets.n or 0 do
         local ts = sets[j]
-        if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then append(list, byTs[ts]) end
+        if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts, k) then append(list, byTs[ts]) end
     end
     local shown = Recipes.shown(W.playerNum).list
     for i = 1, shown.n do
@@ -728,13 +729,16 @@ function W.categories(tab)
         if sets then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts) then
+                if (src == "all" or W.sourceOf(ts) == src) and not W.blocked(ts, k) then
                     local n = bucket[k][ts].n
                     kindN[k] = (kindN[k] or 0) + n
                     total = total + n
-                    local f = W.familyOf(ts)
-                    if not famN[f] then famList[#famList + 1] = f end
-                    famN[f] = (famN[f] or 0) + n
+                    -- 挖地下室借用的原版圖名（invisible_01、underground_01）對玩家沒有意義，不列成圖塊組；種類那一列就是它們
+                    if k ~= "dig" then
+                        local f = W.familyOf(ts)
+                        if not famN[f] then famList[#famList + 1] = f end
+                        famN[f] = (famN[f] or 0) + n
+                    end
                 end
             end
         end
@@ -804,7 +808,7 @@ function W.sources()
         if sets then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if not W.blocked(ts) then
+                if not W.blocked(ts, k) then
                     local src = W.sourceOf(ts)
                     if not counts[src] then order[#order + 1] = src end
                     local n = bucket[k][ts].n
@@ -1162,7 +1166,7 @@ function W.startReplace(v, rp)
         if (k == rp.kind or (g and G[k] == g)) and Entry.kindOn(k, s) and sets and byTs then
             for j = 1, sets.n do
                 local ts = sets[j]
-                if not W.blocked(ts) then
+                if not W.blocked(ts, k) then
                     local b = byTs[ts]
                     for i = 1, b.n do
                         list.n = list.n + 1
@@ -2011,12 +2015,16 @@ local function prepareDetail(v)
         or (name ~= nil and not kindOk) and getText("IGUI_MBLD_Overlap_TipKind")
         or getText("IGUI_MBLD_Overlap_Tip", tostring(max)))
     -- 管理員快捷鈕（W.layout 只在管理員的寬、中版排出來）：停用這一項的圖塊組；來源是 MOD 才能整個停用
-    -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）
+    -- （DisabledSources 只收 MOD ID，原版的圖改用圖塊組或種類關）。挖地下室只照種類開關（Entry.resolve）：兩顆都不能按，
+    -- 提示寫去哪裡關
+    local dig = e ~= nil and e.kind == "dig"
     local src = e and W.sourceOf(e.tileset)
-    local modSrc = src ~= nil and src ~= "vanilla" and src ~= "?"
-    v.qTileset:setEnabled(e ~= nil)
+    local modSrc = not dig and src ~= nil and src ~= "vanilla" and src ~= "?"
+    local digTip = dig and getText("IGUI_MBLD_Admin_DigKind") or nil
+    v.qTileset:setEnabled(e ~= nil and not dig)
+    v.qTileset:setTooltip(digTip)
     v.qSource:setEnabled(modSrc)
-    v.qSource:setTooltip(src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
+    v.qSource:setTooltip(digTip or src == "vanilla" and getText("IGUI_MBLD_Admin_VanillaSource") or nil)
 end
 W.prepareDetail = prepareDetail -- 離線測試用（同 W.runSubs）
 
@@ -2352,7 +2360,7 @@ for _, k in ipairs(SET_KINDS) do IS_SET_KIND[k] = true end
 -- 在目錄裡（Index 那一桶有它）、沒被管理員關掉：回它的種類（Sets.of 對位置）
 local function listedKind(name)
     local e = Entry.resolve(name)
-    local arr = e and not W.blocked(e.tileset) and Index.bucket and Index.bucket[e.kind] and Index.bucket[e.kind][e.tileset]
+    local arr = e and not W.blocked(e.tileset, e.kind) and Index.bucket and Index.bucket[e.kind] and Index.bucket[e.kind][e.tileset]
     for i = 1, arr and arr.n or 0 do
         if arr[i] == name then return e.kind end
     end
@@ -2396,7 +2404,7 @@ function W.setOf(name)
     end
     local rows, s = {}, Entry.settings()
     for _, k in ipairs(SET_KINDS) do
-        local arr = not W.blocked(ts) and Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][ts]
+        local arr = not W.blocked(ts, k) and Entry.kindOn(k, s) and Index.bucket and Index.bucket[k] and Index.bucket[k][ts]
         for i = 1, arr and arr.n or 0 do rows[#rows + 1] = { key = tonumber(arr[i]:match("_(%d+)$")), name = arr[i] } end
     end
     sortByKey(rows)
@@ -2427,7 +2435,7 @@ local function frameIndex()
         local sets, byTs = kindSets[k], bucket[k]
         for j = 1, sets and byTs and Entry.kindOn(k, s) and sets.n or 0 do
             local ts = sets[j]
-            local arr = not W.blocked(ts) and byTs[ts]
+            local arr = not W.blocked(ts, k) and byTs[ts]
             for i = 1, arr and arr.n or 0 do
                 local spr = Entry.sprite(arr[i])
                 local shape = spr and frameOf(spr:getProperties())
@@ -2884,11 +2892,11 @@ function W.openAdmin()
     if A and A.available() and A.canManage() then A.open(W.playerNum) end
 end
 
--- 詳情的管理員快捷鈕：對所有玩家停用選著那一項的圖塊組或來源（Admin.quick 先跳確認）
+-- 詳情的管理員快捷鈕：對所有玩家停用選著那一項的圖塊組或來源（Admin.quick 先跳確認）。挖地下室只照種類開關，不管
 function W.quickDisable(field)
     local v, A = W.v, B.Admin
     local e = v and v.selName and Entry.resolve(v.selName)
-    if not (e and A and A.available() and A.canManage()) then return end
+    if not (e and e.kind ~= "dig" and A and A.available() and A.canManage()) then return end
     if field == "tileset" then
         A.quick(W.playerNum, "tileset", e.tileset)
         return

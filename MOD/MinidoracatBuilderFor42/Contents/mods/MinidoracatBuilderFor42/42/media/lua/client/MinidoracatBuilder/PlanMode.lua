@@ -236,8 +236,10 @@ function hook.label(c, src)
     local last = #src
     if c.hint and src[last - 1] == c.hint then last = last - 2 end
     for i = 3, last do out[#out + 1] = src[i] end
+    -- 挖掘項目永遠記不進藍圖（DIG）：不教「拖曳加進藍圖」，左鍵也不會蓋，只留取消。
+    -- 其他原因（超出範圍、太多片）換位置或少拖幾格就加得進去，按鍵說明照舊
     if c.hint then
-        out[#out + 1] = getText("IGUI_MBLD_PlanHint")
+        out[#out + 1] = getText(c.planWhy == "DIG" and "IGUI_MBLD_HintCancel" or "IGUI_MBLD_PlanHint")
         out[#out + 1] = col.textMuted
     end
     return out

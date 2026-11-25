@@ -800,7 +800,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         local swap = code == nil and r.info ~= nil and r.info.replace ~= nil
         if swap then swapN = swapN + 1 end
         local offs = self:offsFor(a) or NO_OFFS
-        local kept = keptOf(r, offs)
+        local kept, marked = keptOf(r, offs), false
         for j, o in ipairs(offs) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
             local role = o[5]
@@ -814,6 +814,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
             if cut or (role and o[3] < 0 and DIG_STAIR[role]) then
                 -- Check.item 修剪掉的格子不會蓋、地下室入口的樓梯在洞底下：不畫
             else
+                marked = marked or hit
                 local gz = role == "dig" and o[3] < 0 and a[3] or z -- 地下的室畫在正上方的地面
                 if code == nil then
                     ghost(g, x, y, gz, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
@@ -833,6 +834,12 @@ function Cursor:refresh(ax, ay, az, ex, ey)
                     g.fa[i] = ROOM_FRAME_A
                 end
             end
+        end
+        -- 拒絕碼指著畫出來的格子以外（要挖穿的土牆在鄰格、鄰格的權限、修剪掉的格子、加開入口樓梯底前面那格）：那一格
+        -- 另外畫壞色地框＋記號，不然畫面上看不出是哪裡擋住。在游標那層底下的畫在正上方（同地下的室）
+        if at and not marked then
+            local ez = math.max(e.z or a[3], a[3])
+            ghost(g, e.x, e.y, ez, nil, 0, RED, bad, MARK_BAD)
         end
     end
     self.g, self.gn, self.swapN = g, g.n, swapN
@@ -993,11 +1000,9 @@ function Cursor:texts()
         self.label3, self.label3warn = cut > 0
             and getText(cut == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(cut)) or nil, true
     end
-    -- 挖掘拆不回去：沒有別的第 3 行時用警告行先說（入口另說會拆掉樓梯上方的地板與草）
-    if not self.label3 and self.entry and self.entry.kind == "dig" then
-        self.label3 = getText(self.name == Entry.DIG_CELL and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Dig_Warn")
-        self.label3warn = true
-    end
+    -- 挖掘拆不回去：每次放之前都說，和排隊、取代那一行各佔一行（入口另說會拆掉樓梯上方的地板與草）
+    self.digWarn = self.entry and self.entry.kind == "dig"
+        and getText(self.name == Entry.DIG_CELL and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Dig_Warn") or nil
     self.tip = self:reasons()
     local hint
     if not self.joypad then -- 手把用原版按鈕提示（getAPrompt 等）
@@ -1037,6 +1042,7 @@ function Cursor:texts()
     add(self.stack, col.text)
     add(self.swap, col.text)
     add(self.label3, self.label3warn and col.warning or col.text)
+    add(self.digWarn, col.warning)
     -- 預覽提醒（Cursor.preview 的 info.warn）：每種碼寫一次。長句照其他段由 layout 斷行
     local warned = {}
     for _, r in ipairs(res) do
