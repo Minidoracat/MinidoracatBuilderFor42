@@ -1,6 +1,6 @@
--- 本 MOD 挖的地下室的格子帳本（只在伺服器；設計：temp/feedback-1124/basement/plan.md §1.2、§2.2）：一格一筆，鍵＝Store.pos、
+-- 本 MOD 挖的地下室的格子帳本（只在伺服器）：一格一筆，鍵＝Store.pos、
 -- 值＝空表（整本共用一個對照表項）。算不算室內、哪裡是外邊以這裡為準；鍵只由伺服器寫（Server.complete → commit），
--- 不收客戶端指令。開服載入進 Basement 的集合，60 tick 後一次登錄進引擎；挖了就增量登錄、推給附近的玩家。
+-- 不收客戶端指令。開服載入進 Basement 的集合、當下登錄進引擎；挖了就延後一起登錄、推給附近的玩家。
 -- 存檔在 Store（gos_MinidoracatBuilderBasements_<n>.bin，跟世界一起存檔、一起回溯）。
 if isClient() then return end
 require "Map/SGlobalObjectSystem"
@@ -18,6 +18,7 @@ local S -- 這一場的帳本（initSystem 開）
 local EMPTY = {}
 local Z = -1
 local DUG = { top = true, mid = true, bottom = true, dig = true } -- 記進帳本的角色（樓梯三格也算已挖）
+local DIRS = { { 0, -1 }, { -1, 0 }, { 1, 0 }, { 0, 1 } }
 
 function BasementLedger:new()
     return SGlobalObjectSystem.new(self, NAME)
@@ -30,16 +31,6 @@ local function valid(v)
     return true
 end
 local function sig() return "b" end
-
--- 開服 60 tick 後才登錄：開始時玩家周圍的 chunk 還沒齊（BD aparosa_BD_Rooms.lua 檔尾同一個等法）
-local ticks = 0
-local function countdown()
-    ticks = ticks - 1
-    if ticks > 0 then return end
-    Events.OnTick.Remove(countdown)
-    local ok, err = pcall(Basement.registerAll)
-    if not (ok and err) then print(LOG .. "basement register failed: " .. tostring(err)) end
-end
 
 function BasementLedger:initSystem()
     if BasementLedger.instance == self then return end
@@ -56,8 +47,10 @@ function BasementLedger:initSystem()
     Basement.add(tiles)
     S:summary()
     BasementLedger.instance = self
-    if ticks <= 0 then Events.OnTick.Add(countdown) end
-    ticks = 60
+    -- 當下登錄：單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
+    -- 專用伺服器這時還沒有 chunk，之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+    local ok, err = pcall(Basement.registerAll)
+    if not (ok and err) then print(LOG .. "basement register failed: " .. tostring(err)) end
 end
 
 -- GOS 會對系統表呼叫這幾個（SGlobalObjectSystem.java:96-162）；本系統不持有全域物件、不收客戶端指令
@@ -71,7 +64,7 @@ SGlobalObjectSystem.RegisterSystemClass(BasementLedger)
 
 local function areaOf(x, y) return math.floor(x / Basement.AREA), math.floor(y / Basement.AREA) end
 
--- 洞那格：照 BD openHole（aparosa_BD_Build.lua:383-393）拿掉地板與草、可移除的植物，格邊的牆與掛件留著
+-- 洞那格：拿掉地板與草、可移除的植物（上下才看得到、走得通），格邊的牆與掛件留著
 -- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），真的拆掉了才算
 -- （transmitRemoveItemFromSquare 回 -1＝沒拆，IsoGridSquare.java:5929-5960；審查 round1 F2）。拆掉地板時補推區域資料
 -- （Place.repush；洞在 z=0，引擎的區域資料只收 z ≥ 0，IsoRegionWorker.java:379）。回退料表或 nil
@@ -104,15 +97,68 @@ local function step(what, fn, ...)
     return ok, res
 end
 
+-- 從這次要挖的格子 new 往外找地板有、帳本沒有的格子（當機時 chunk 存了、帳本沒存）：z=-1、格子在、有地板、沒有房間
+-- （地圖的地下室與別的 MOD 登錄的都有房間）。沿著找到的繼續找，併起來那一塊不超過 Basement.MAX。回 { { x, y, z }, ... }。
+-- 只在玩家挖到旁邊時順手收，不掃描、不載入格子。Basement Building 開著時挖不了（Basement.pre 回 DIG_BD），不會走到這裡
+local function orphans(new)
+    local cell, grid = getCell(), getWorld():getMetaGrid()
+    local seen, ids, size, queue, out = {}, {}, #new, {}, {}
+    -- 併進 (x, y) 四鄰的塊之後多幾格（還沒算過的塊）；mark＝記成算過
+    local function blocksNear(x, y, mark)
+        local n, got = 0, {}
+        for _, d in ipairs(DIRS) do
+            local id, bn = Basement.blockOf(x + d[1], y + d[2], Z)
+            if id and not ids[id] and not got[id] then got[id], n = true, n + bn end
+        end
+        if mark then
+            for id in pairs(got) do ids[id] = true end
+        end
+        return n
+    end
+    for _, c in ipairs(new) do
+        seen[Place.key(c.x, c.y, Z)], queue[#queue + 1] = true, c
+        size = size + blocksNear(c.x, c.y, true)
+    end
+    local i = 1
+    while queue[i] and size < Basement.MAX do
+        local q = queue[i]
+        for _, d in ipairs(DIRS) do
+            local x, y = q.x + d[1], q.y + d[2]
+            local k = Place.key(x, y, Z)
+            if not seen[k] then
+                seen[k] = true
+                local sq = Basement.inRange(x, y) and not Basement.has(x, y, Z) and cell:getGridSquare(x, y, Z)
+                if sq and sq:getFloor() and not grid:getRoomAt(x, y, Z) then
+                    local grow = 1 + blocksNear(x, y, false)
+                    if size + grow <= Basement.MAX then
+                        blocksNear(x, y, true)
+                        local c = { x = x, y = y, z = Z }
+                        out[#out + 1], queue[#queue + 1], size = c, c, size + grow
+                    end
+                end
+            end
+        end
+        i = i + 1
+    end
+    if #out > 0 then print(LOG .. "basement: " .. #out .. " dug tiles missing from the ledger were added back") end
+    return out
+end
+
 -- Server.complete 在 Place.build 成功後呼叫（cells＝Check.item 的格子，帶 role）；回 holes＝洞格地板的退料表清單。
 -- 帳本寫成功之前不做拿不回來的事（開洞在後）；有一格寫不進去就把這次寫的拿掉並丟錯（Server.complete 撤回、不扣料）。
 -- 帳本寫好了就算蓋成（Server.complete 照常扣料、磨鏟子）：之後每一步（加進集合、補牆、開洞、登錄、同步）出錯只記 log、
--- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上（審查 round1 F1）
+-- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上（審查 round1 F1）。
+-- 當機後帳本和地板可能對不上（chunk 隨時寫、帳本跟整體存檔）：帳本有、地板沒有的格子（Basement.pre 當成沒挖過、准它重挖）
+-- 不重寫帳本，照樣補牆；地板有、帳本沒有的（orphans）收進這一批
 function BasementLedger.commit(player, cells, anchor)
-    local new = {}
+    local new, again = {}, {}
     for _, c in ipairs(cells) do
-        if DUG[c.role] and c.z == Z and not Basement.has(c.x, c.y, c.z) then new[#new + 1] = c end
+        if DUG[c.role] and c.z == Z then
+            if Basement.has(c.x, c.y, c.z) then again[#again + 1] = { c.x, c.y } else new[#new + 1] = c end
+        end
     end
+    local found, more = step("adopt", orphans, new)
+    for _, c in ipairs(found and more or {}) do new[#new + 1] = c end
     local written = {}
     for _, c in ipairs(new) do
         local k = Store.pos(c.x, c.y, c.z)
@@ -126,6 +172,7 @@ function BasementLedger.commit(player, cells, anchor)
     for i, c in ipairs(new) do tiles[i] = { c.x, c.y } end
     local ok, added = step("add", Basement.add, tiles)
     if not ok then added = {} end
+    for _, t in ipairs(again) do added[#added + 1] = t end
     for _, t in ipairs(added) do
         step("edges", function()
             Basement.fixEdges(t[1], t[2], Z)
@@ -141,7 +188,7 @@ function BasementLedger.commit(player, cells, anchor)
             if opened then holes[#holes + 1] = h end
         end
     end
-    -- 登錄延後一起做（Basement.growLater）：一次拖曳挖很多格只登錄一次
+    -- 登錄延後一起做（Basement.growLater）：一次拖曳挖很多格只登錄一次。重挖的格子在集合裡，growLater 照「還沒登錄」篩
     if #added > 0 then step("grow", Basement.growLater, added) end
     step("sync", function()
         if not isServer() then return Basement.recalcZ() end

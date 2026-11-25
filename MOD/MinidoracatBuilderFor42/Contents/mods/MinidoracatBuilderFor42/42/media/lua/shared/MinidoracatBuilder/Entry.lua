@@ -33,7 +33,7 @@ Entry.STAIR_FLOOR = "carpentry_02_57"
 -- 項目 ID 只在這裡定義，別處一律用這三個常數：入口（樓梯往南下、往東下，互為配對面）、挖這一格
 Entry.DIG_S, Entry.DIG_E, Entry.DIG_CELL = "underground_01_0", "underground_01_1", "invisible_01_0"
 Rules.DIG[Entry.DIG_S], Rules.DIG[Entry.DIG_E], Rules.DIG[Entry.DIG_CELL] = true, true, true
--- 入口的木樓梯（頂、中、底片；同 BD aparosa_BD_Build.lua:47-48）：往南下是 N 型、往東下是 W 型
+-- 入口的木樓梯（頂、中、底片；原版木樓梯建造配方的圖，entity_carpentry_stairs.txt:21,28-30）：往南下是 N 型、往東下是 W 型
 local DIG_STAIRS = { [Entry.DIG_S] = { "carpentry_02_98", "carpentry_02_97", "carpentry_02_96" },
     [Entry.DIG_E] = { "carpentry_02_90", "carpentry_02_89", "carpentry_02_88" } }
 -- 入口樓梯的片（拆除認種類，Dismantle.kindOf）。這六張是原版木樓梯建造配方的圖（entity_carpentry_stairs.txt），引擎替它們

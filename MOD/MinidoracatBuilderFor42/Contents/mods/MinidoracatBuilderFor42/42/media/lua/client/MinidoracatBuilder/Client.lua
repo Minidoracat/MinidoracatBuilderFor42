@@ -673,29 +673,20 @@ function Client.onBasement(cmd, args)
     BM.recalcZ()
 end
 
--- 多人：進場後 60 tick 要一次玩家所在大區的地下室；之後每分鐘看所在大區不是已收到快照的那一區就再要
--- （伺服器每人 5 秒限一次、限速時不回：被丟掉的下一分鐘再要）
-local ASK_TICKS = 60
-local askTicks = 0
+-- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
+-- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
-    if not p then return false end
+    if not p then return end
     local A = MinidoracatBuilder.Basement.AREA
     local ax, ay = math.floor(p:getX() / A), math.floor(p:getY() / A)
-    if synced and ax == synced.ax and ay == synced.ay then return true end
+    if synced and ax == synced.ax and ay == synced.ay then return end
     sendClientCommand(p, MODULE, "basements", {})
-    return true
 end
-function Client.askOnStart()
-    askTicks = askTicks + 1
-    if askTicks >= ASK_TICKS and askBasements() then Events.OnTick.Remove(Client.askOnStart) end
-end
-Events.OnGameStart.Add(function()
-    if isClient() then Events.OnTick.Add(Client.askOnStart) end
-end)
 function Client.askEveryMinute()
-    if isClient() and askTicks >= ASK_TICKS then askBasements() end
+    if isClient() then askBasements() end
 end
+Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)
 
 -- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；

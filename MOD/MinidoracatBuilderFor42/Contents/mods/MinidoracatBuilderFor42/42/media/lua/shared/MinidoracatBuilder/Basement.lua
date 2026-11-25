@@ -1,9 +1,8 @@
--- 地下室（本 MOD 挖的，z 固定 -1；設計：temp/feedback-1124/basement/plan.md §1.2、§2.1）：格子集合與連通塊、外邊土牆、
--- 向引擎登錄房間、挖掘的判斷。兩端共用：伺服器（單機在本機）從帳本（server/MinidoracatBuilder/BasementLedger.lua）載入，
--- 客戶端從同步來的範圍建。一塊連通的地下＝一棟建物、一個房間。
--- 外邊土牆那 6 支和 Basement Building（Workshop 3806513504）的 aparosa_BD_DirtLayer 同名、同語意，Place 的 dirtLayer 照
--- 位置選用哪一層（Basement.near 的格邊歸本 MOD）。差別：外邊只看集合（一格在、一格不在），不看另一格有沒有房間；外來房間
--- 由 Basement.pre 的 DIG_ROOM 擋在 1 格外。
+-- 地下室（本 MOD 挖的，z 固定 -1）：格子集合與連通塊、外邊土牆、向引擎登錄房間、挖掘的判斷。兩端共用：伺服器（單機在本機）
+-- 從帳本（server/MinidoracatBuilder/BasementLedger.lua）載入，客戶端從同步來的範圍建。一塊連通的地下＝一棟建物、一個房間。
+-- 外邊土牆的 isOuterEdge、isDirtOnOuterEdge、clearDirt 和 Basement Building 的 aparosa_BD_DirtLayer 同名、同語意（Place 拆土牆
+-- 的共用程式兩層都叫），Place 的 dirtLayer 照位置選用哪一層（Basement.near 的格邊歸本 MOD）；能不能蓋本 MOD 的層用 refuses。
+-- 外邊只看集合（一格在、一格不在），不看另一格有沒有房間；外來房間由 Basement.pre 的 DIG_ROOM 擋在 1 格外。
 -- 不 require Place 以外的東西：Check 在呼叫時才取（Check 載入時本檔可能還沒載入）。
 require "MinidoracatBuilder/Place"
 
@@ -123,7 +122,7 @@ function Basement.reset(tiles, ax, ay)
         local old = main
         cells, blocks, main = {}, {}, {}
         Basement.add(rest)
-        -- 主建物接回時 tiles 只留還在同一塊的格子（建新表）：舊表帶著拿掉的格子，下一次登錄的 mainRects 會把它們又登錄進去
+        -- 主建物接回時 tiles 只留還在同一塊的格子（建新表）：舊表帶著拿掉的格子，下一次登錄主建物會把它們又登錄進去
         for _, m in pairs(old) do
             local id = cells[key(m.cx, m.cy)]
             if id and not main[id] then
@@ -196,11 +195,14 @@ function Basement.patched()
 end
 Events.OnLoadedTileDefinitions.Add(function() MinidoracatBuilder.Basement.checkPatch() end)
 
--- 格子 → 不重疊的矩形 { { x, y, w, h }, ... }，照 BD aparosa_BD_Rooms.mergeTiles：由北往南、由西往東，先往東延伸、
--- 再整條往南延伸。第一個矩形是最北那一列最西的格子＝calculateMetaID 取的角（BuildingDef.java:319-348）。
--- 不排序（Kahlua 的 table.sort 會溢位）：照列走 y 的範圍。shortcut: 走 y 與每列 x 的整個範圍，格子散得很開時多走空格，
--- 一塊最多 Basement.MAX 格、跨度也在幾百格內
-function Basement.rects(tiles)
+-- 格子 → 不重疊的矩形 { { x, y, w, h }, ... }：每列切成連續段，由北往南把上一列同一段（同樣的 x0、x1）接下去，矩形數不超過
+-- 段數，整塊是矩形時只有 1 個。矩形要少：引擎查一格屬於哪個房間是逐一掃矩形（IsoMetaChunk.java:282-299），每個矩形還建一盞
+-- 房間燈（IsoRoom.java:532-534）。給了角 (cx, cy)：角那一列跨過 cx 的段在 cx 左邊切開，左上角是角的矩形排第一——引擎依序走
+-- 矩形，左上角「x 不大於、y 小於」目前的角才換（BuildingDef.java:319-348），主建物沒有「x ≤ cx 而且 y < cy」的格子（那些另外
+-- 登錄），角不變 metaID 就不變。沒給角時第一個矩形的左上角是最北那一列最西的格子，後面的矩形沒有更北的。
+-- 不排序（Kahlua 的 table.sort 會溢位）：每列照 x 的範圍掃。shortcut: 格子散得很開時多走空格；一塊最多 Basement.MAX 格、跨度在幾百格內
+function Basement.rects(tiles, ...)
+    local cx, cy = ...
     local set, rows, y0, y1 = {}, {}, BIG, -BIG
     for _, t in ipairs(tiles) do
         local x, y = t[1], t[2]
@@ -215,46 +217,44 @@ function Basement.rects(tiles)
         if y < y0 then y0 = y end
         if y > y1 then y1 = y end
     end
-    local used, out = {}, {}
-    local function free(x, y)
-        local k = key(x, y)
-        return set[k] and not used[k]
-    end
+    local open, out = {}, {} -- open["x0,x1"]＝底在上一列、還能往下接的矩形
     for y = y0, y1 do
-        local r = rows[y]
-        for x = r and r[1] or 1, r and r[2] or 0 do
-            if free(x, y) then
-                local w, h = 1, 1
-                while free(x + w, y) do w = w + 1 end
-                local grow = true
-                while grow do
-                    for dx = 0, w - 1 do
-                        if not free(x + dx, y + h) then grow = false break end
-                    end
-                    if grow then h = h + 1 end
+        local r, now = rows[y], {}
+        local x, xe = r and r[1] or 1, r and r[2] or 0
+        while x <= xe do
+            if set[key(x, y)] then
+                local x1 = x
+                while set[key(x1 + 1, y)] and not (y == cy and x1 + 1 == cx) do x1 = x1 + 1 end
+                local k = x .. "," .. x1
+                local rect = open[k]
+                if rect then
+                    rect[4] = rect[4] + 1
+                else
+                    rect = { x, y, x1 - x + 1, 1 }
+                    out[#out + 1] = rect
                 end
-                for dx = 0, w - 1 do
-                    for dy = 0, h - 1 do used[key(x + dx, y + dy)] = true end
-                end
-                out[#out + 1] = { x, y, w, h }
+                now[k], x = rect, x1 + 1
+            else
+                x = x + 1
             end
+        end
+        open = now
+    end
+    for i = 2, cx and #out or 0 do
+        if out[i][1] == cx and out[i][2] == cy then
+            out[1], out[i] = out[i], out[1]
+            break
         end
     end
     return out
 end
 
--- ---------------------------------------------------------------- 外邊土牆層（aparosa_BD_DirtLayer 同名的 6 支）
+-- ---------------------------------------------------------------- 外邊土牆層
 local function dirtKind(name)
     for k, v in pairs(Basement.DIRT) do
         if v == name then return k end
     end
     return nil
-end
-
-local function propsOf(name)
-    local named = IsoSpriteManager.instance:getNamedMap()
-    local spr = name and named:containsKey(name) and named:get(name)
-    return spr and spr:getProperties() or nil
 end
 
 local function covers(kind, k) return kind == k or kind == "NW" end
@@ -293,50 +293,68 @@ function Basement.isDirtOnOuterEdge(obj)
     return (covers(kind, "N") and sqOuter(sq, "N")) or (covers(kind, "W") and sqOuter(sq, "W"))
 end
 
--- 外邊不准蓋的開口（BD OPENING_FLAGS：窗、門框、柵欄、透明牆、門）
-local OPEN = { N = { F.WindowN, F.DoorWallN, F.HoppableN, F.TallHoppableN, F.WallNTrans, F.doorN },
-    W = { F.WindowW, F.DoorWallW, F.HoppableW, F.TallHoppableW, F.WallWTrans, F.doorW } }
-function Basement.isOpeningOnOuterEdge(sq, name)
-    local p = propsOf(name)
-    if not p then return false end
-    for k, list in pairs(OPEN) do
-        for _, f in ipairs(list) do
-            if p:has(f) and sqOuter(sq, k) then return true end
+-- 外邊上不准蓋的（回 true）：引擎只護著帶 WallN／WallW／WallNW 的物件不被拆（z < 0、自己那格或鄰格沒有地板時，
+-- IsoCell.java:4599-4617），所以外邊上只准蓋引擎會護著、角色又穿不過的東西。圖佔的邊（n、w＝Entry.edges 的原始格邊）是外邊時：
+-- 那條邊沒有實牆旗標（門框、窗框、柵欄、透明牆、門）、有實牆旗標但同一條邊也穿得過（窗、門框、柵欄）、或和土牆同一張圖，都擋
+local SOLID = { N = F.WallN, W = F.WallW }
+local PASS = { N = { F.WindowN, F.DoorWallN, F.HoppableN, F.TallHoppableN },
+    W = { F.WindowW, F.DoorWallW, F.HoppableW, F.TallHoppableW } }
+local function refusesEdge(sq, p, dirt, k)
+    if not sqOuter(sq, k) then return false end
+    if dirt or not (p:has(SOLID[k]) or p:has(F.WallNW)) then return true end
+    for _, f in ipairs(PASS[k]) do
+        if p:has(f) then return true end
+    end
+    return false
+end
+function Basement.refuses(sq, spr, n, w)
+    local p, dirt = spr:getProperties(), dirtKind(spr:getName()) ~= nil
+    return (n == true and refusesEdge(sq, p, dirt, "N")) or (w == true and refusesEdge(sq, p, dirt, "W"))
+end
+
+-- 附加圖貼在牆的哪一面（Rules.onWall 同一組旗標）；認不出的回 nil，當成兩面都有
+local function faceOf(spr)
+    local p = spr:getProperties()
+    if p:has(F.attachedW) then return "W" end
+    if p:has(F.attachedN) then return "N" end
+    return nil
+end
+
+-- 土牆 o 要換成 want 那一片（例：西北角那張只剩一面是外邊）：還留著的那一面上的附加圖（本工具的牆面疊圖）記進 hung，
+-- 換好後掛到新片。o 移除時覆蓋帳本整件清掉（Overlays.drop），所以先記下那幾筆
+local function carry(o, want, hung)
+    local list = o:getAttachedAnimSprite()
+    if not list or list:size() == 0 then return end
+    local Overlays, sq = MinidoracatBuilder.Overlays, o:getSquare()
+    if Overlays and not hung.ledger then hung.ledger = { N = Overlays.at(sq, "N"), W = Overlays.at(sq, "W") } end
+    local own = o:hasModData() and o:getModData().builderOverlays
+    for i = 0, list:size() - 1 do
+        local spr = list:get(i):getParentSprite()
+        local f = spr and faceOf(spr)
+        if spr and (not f or covers(want, f)) then
+            hung[#hung + 1] = spr
+            if type(own) == "table" and own[spr:getName()] then
+                hung.marks = hung.marks or {}
+                hung.marks[spr:getName()] = true
+            end
         end
     end
-    return false
 end
 
-local function dirtOn(sq, k)
-    local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do
-        local kind = dirtOf(objects:get(i))
-        if kind and covers(kind, k) then return true end
-    end
-    return false
-end
-
--- 牆框（只有透明牆、沒有實牆）蓋在外邊的土牆上
-function Basement.isFrameOnDirt(sq, name)
-    local p = propsOf(name)
-    if not p or p:has(F.WallNW) then return false end
-    for _, k in ipairs({ "N", "W" }) do
-        local trans, solid = k == "N" and F.WallNTrans or F.WallWTrans, k == "N" and F.WallN or F.WallW
-        if p:has(trans) and not p:has(solid) and sqOuter(sq, k) and dirtOn(sq, k) then return true end
-    end
-    return false
-end
-
--- 要蓋的圖和土牆同一張，而且它佔的邊有一條是外邊
-function Basement.isDirtLookOnOuterEdge(sq, name)
-    local kind = dirtKind(name)
-    return kind ~= nil and ((covers(kind, "N") and sqOuter(sq, "N")) or (covers(kind, "W") and sqOuter(sq, "W")))
-end
-
-local function putDirt(sq, kind)
+local function putDirt(sq, kind, hung)
     local obj = IsoObject.new(getCell(), sq, Basement.DIRT[kind])
     sq:AddTileObject(obj)
     obj:transmitCompleteItemToClients()
+    if #hung == 0 then return end
+    for _, spr in ipairs(hung) do obj:addAttachedAnimSprite(spr) end
+    if hung.marks then obj:getModData().builderOverlays = hung.marks end
+    obj:transmitUpdatedSpriteToClients()
+    obj:transmitModData()
+    for e, here in pairs(hung.ledger or {}) do
+        for name, items in pairs(here) do
+            if covers(kind, e) and hung.marks and hung.marks[name] then MinidoracatBuilder.Overlays.put(sq, name, items, e) end
+        end
+    end
 end
 
 -- 這格北、西兩條邊照外邊補或拆土牆。held＝當成已經有實牆的那條邊（clearDirt：玩家的牆剛蓋上）。
@@ -359,17 +377,18 @@ local function fix(sq, held)
     local needN = not wallN and isOuter(x, y, z, "N")
     local needW = not wallW and isOuter(x, y, z, "W")
     local want = (needN and needW and "NW") or (needN and "N") or (needW and "W") or nil
-    local kept, changed = false, false
+    local kept, changed, hung = false, false, {}
     for _, d in ipairs(dirt) do
         if d[2] == want and not kept then
             kept = true
         else
+            if want then carry(d[1], want, hung) end
             sq:transmitRemoveItemFromSquare(d[1])
             changed = true
         end
     end
     if want and not kept then
-        putDirt(sq, want)
+        putDirt(sq, want, hung)
         changed = true
     end
     if changed then sq:RecalcAllWithNeighbours(true) end
@@ -411,10 +430,68 @@ function Basement.touch(x, y, z)
 end
 
 -- ---------------------------------------------------------------- 向引擎登錄
--- 一批建物一次 applyChanges。plans＝{ rects, ... }，每棟一組矩形（rects[1] 是 metaID 的角）。步驟與順序照 BD
--- aparosa_BD_Rooms.lua 的 registerRecordsBatch、applyEditor、noRefill、refreshServerSquares（各步原因見它的註解）。
--- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格查得到本 MOD 名稱的房間；引擎沒建出來、角上是別的房間都不算，
--- 審查 round1 F10）
+-- 這間不補殭屍。引擎只在 spawnCount == -1 時算要補幾隻（VirtualZombieManager.java:666-673），房間是 emptyoutside 時算成 0
+-- （:765-772）；新建的房間 doneSpawn 就是 true（BRERoom.java:11-15），chunk 載入時照 spawnCount 補（IsoChunk.java:4181-4193）。
+-- spawnCount 是沒有 setter 的 instance 欄位（RoomDef.java:27），Lua 碰不到（LuaJavaClassExposer.java:299-311 只開放 static
+-- 欄位），所以暫時改名成 emptyoutside、讓引擎算一次記成 0、再改回來。回成不成功
+local function keepEmpty(vzm, def)
+    def:setName("emptyoutside")
+    local ok = pcall(function() vzm:addIndoorZombiesToChunk(nil, def:getIsoRoom()) end)
+    def:setName(Basement.ROOM)
+    return ok
+end
+
+-- 專用伺服器沒有本機玩家：applyChanges 補格子房間的那段只走本機玩家的 chunkMap（BuildingRoomsEditor.java:369-411,413-436），
+-- 已載入的格子照那段自己掛。setRoomID：不設 getRoom 回 null；接著 setRoom：Lua 的數字是 double，房間 ID 超過 2^53 時低位會丟，
+-- setRoomID 可能拿到別的房間（IsoGridSquare.java:9414-9420），用房間物件蓋掉；開關加進房間：按一個連動整間
+-- （IsoLightSwitch.java:518-524）；RecalcProperties：setRoomID 拿掉了室外旗標。房間燈、重畫不做（伺服器不算光照、不畫，
+-- BuildingRoomsEditor.java:385-397）；尋路不看房間，新挖的格子能不能走由鋪地板、放牆時引擎自己通知
+local function hang(cell, def, rects)
+    local room, id = def:getIsoRoom(), def:getID()
+    if not room then return end
+    local switches = room:getLightSwitches()
+    for _, r in ipairs(rects) do
+        for x = r[1], r[1] + r[3] - 1 do
+            for y = r[2], r[2] + r[4] - 1 do
+                local sq = cell:getGridSquare(x, y, Z)
+                if sq then
+                    sq:setRoomID(id)
+                    sq:setRoom(room)
+                    local objects = sq:getObjects()
+                    for i = 0, objects:size() - 1 do
+                        local o = objects:get(i)
+                        if instanceof(o, "IsoLightSwitch") and not switches:contains(o) then switches:add(o) end
+                    end
+                    sq:RecalcProperties()
+                end
+            end
+        end
+    end
+end
+
+-- 重新登錄的房間是新的 RoomDef，房間燈是關的（BRERoom 新建的 RoomDef 沒設 lightsActive，房間燈照它建，
+-- BuildingRoomsEditor.java:383-384），開關卻還開著；伺服器上那個 chunk 重載時開關又照房間設回關（IsoLightSwitch.java:92-97）。
+-- 有開著的開關就照它把整間切開（switchLight 連動整間的開關，IsoLightSwitch.java:518-524），其他開關的狀態照原值還原
+local function relight(room)
+    local list = room and room:getLightSwitches()
+    if not list then return end
+    local on, was = nil, {}
+    for i = 0, list:size() - 1 do
+        local o = list:get(i)
+        was[i + 1] = o:isActivated()
+        if was[i + 1] and not on then on = o end
+    end
+    if not on then return end
+    on:switchLight(true)
+    for i = 0, list:size() - 1 do
+        local o = list:get(i)
+        if o:isActivated() ~= was[i + 1] then o:setActivated(was[i + 1]) end
+    end
+end
+
+-- 一批建物一次 applyChanges（成本是整張地圖的檢查與重算，BuildingRoomsEditor.java:216-267,269-325，和這批幾棟關係很小）。
+-- plans＝{ rects, ... }，每棟一組矩形（rects[1] 是 metaID 的角）。回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格查得到本 MOD
+-- 名稱的房間；引擎沒建出來、角上是別的房間都不算，審查 round1 F10）
 local function apply(plans)
     local ok = {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
@@ -424,7 +501,9 @@ local function apply(plans)
     BuildingRoomsEditor.Reset()
     local editor = BuildingRoomsEditor.getInstance()
     editor:setCurrentBuilding(nil)
-    -- 不呼叫 canAddRoomRectangle：它對相鄰的別棟回 false（BuildingRoomsEditor.java:107-161），annex 一定貼著主建物
+    -- 只用 createBuilding／createRoom／addRectangle：init() 會把 32×32 內的建物都拿出來編輯，非 userDefined 的記成移除
+    -- （BuildingRoomsEditor.java:81-93,220-229）。不呼叫 canAddRoomRectangle：它對相鄰的別棟回 false（:107-161），另外登錄的
+    -- 那幾格一定貼著主建物；改看 isValid
     local done = {}
     for i, rects in ipairs(plans) do
         local building = editor:createBuilding()
@@ -440,9 +519,11 @@ local function apply(plans)
         end
     end
     if #done == 0 then return ok end
-    -- 先清掉見到的房間的待辦：applyChanges 拆舊建物後它會在引擎裡 NPE（BD applyEditor 的註解）
+    -- 先處理見到的房間的佇列：它逐一讀 room.def（IsoCell.java:4167-4171），替換建物時舊房間的 def 被設成 null
+    -- （BREBuilding.java:232-245 → IsoRoom.java:672-674），還留在佇列裡就丟 NPE
     local cell = getCell()
-    pcall(function() cell:ProcessSpottedRooms() end)
+    local spotted, err = pcall(function() cell:ProcessSpottedRooms() end)
+    if not spotted then print(LOG .. "ProcessSpottedRooms failed: " .. tostring(err)) end
     editor:applyChanges(false)
     local grid, server = getWorld():getMetaGrid(), isServer()
     local vzm = not isClient() and VirtualZombieManager and VirtualZombieManager.instance or nil
@@ -452,53 +533,18 @@ local function apply(plans)
         local b = def and def:getName() == Basement.ROOM and def:getBuilding()
         if b then
             ok[i] = true
-            b:setUserDefined(false) -- 漏了客戶端會退回主選單（bdprobe-1124a）
+            b:setUserDefined(false) -- 漏了多人客戶端會退回主選單（實機紀錄）
             b:setAllExplored(true)
-            if vzm then
-                -- 這間的殭屍數定成 0：chunk 載入時不再補室內殭屍（BRERoom 把 doneSpawn 設 true，VirtualZombieManager.java:666-674,765-772）
-                def:setName("emptyoutside")
-                local ok = pcall(function() vzm:addIndoorZombiesToChunk(nil, def:getIsoRoom()) end)
-                def:setName(Basement.ROOM)
-                if not ok then print(LOG .. "noRefill failed at " .. rects[1][1] .. "," .. rects[1][2]) end
+            if vzm and not keepEmpty(vzm, def) then
+                print(LOG .. "keepEmpty failed at " .. rects[1][1] .. "," .. rects[1][2])
             end
-            if server then
-                -- 專用伺服器：applyChanges 只補本機玩家 chunkMap 的格子（BuildingRoomsEditor.java:413-436），已載入的自己掛。
-                -- setRoomID 的 long 從 Lua 進去會失準，後面一定接 setRoom
-                local room, id = def:getIsoRoom(), def:getID()
-                for _, r in ipairs(rects) do
-                    for x = r[1], r[1] + r[3] - 1 do
-                        for y = r[2], r[2] + r[4] - 1 do
-                            local sq = room and cell:getGridSquare(x, y, Z)
-                            if sq then
-                                sq:setRoomID(id)
-                                sq:setRoom(room)
-                                local switches, objects = room:getLightSwitches(), sq:getObjects()
-                                for i = 0, objects:size() - 1 do
-                                    local o = objects:get(i)
-                                    if instanceof(o, "IsoLightSwitch") and not switches:contains(o) then switches:add(o) end
-                                end
-                                sq:RecalcProperties()
-                            end
-                        end
-                    end
-                end
-            end
+            if server then hang(cell, def, rects) end
+            relight(def:getIsoRoom())
         else
             print(LOG .. "no RoomDef after register at " .. rects[1][1] .. "," .. rects[1][2])
         end
     end
     return ok
-end
-
--- 主建物的矩形：角那一格單獨放第一個，metaID 不變（BD liveRects）
-local function mainRects(m)
-    local rest = {}
-    for _, t in pairs(m.tiles) do
-        if not (t[1] == m.cx and t[2] == m.cy) then rest[#rest + 1] = t end
-    end
-    local out = { { m.cx, m.cy, 1, 1 } }
-    for _, r in ipairs(Basement.rects(rest)) do out[#out + 1] = r end
-    return out
 end
 
 -- 引擎找「同一棟」只在新建物外框左上角所在的地圖格裡照 metaID 找（BREBuilding.getLotHeader：BuildingDef.x／256、y／256，
@@ -546,7 +592,7 @@ local function register(list)
             for _, t in ipairs(ts) do
                 local k = key(t[1], t[2])
                 if (t[1] <= m.cx and t[2] < m.cy) or lotOf(t[1]) < m.lx or lotOf(t[2]) < m.ly then
-                    print(LOG .. "annex building at " .. t[1] .. "," .. t[2])
+                    print(LOG .. "separate building at " .. t[1] .. "," .. t[2])
                     plan({ { t[1], t[2], 1, 1 } }, { k }, nil)
                 else
                     if not tiles then
@@ -557,8 +603,10 @@ local function register(list)
                 end
             end
             if tiles then
+                local list = {}
+                for _, v in pairs(tiles) do list[#list + 1] = v end
                 local m2 = { cx = m.cx, cy = m.cy, lx = m.lx, ly = m.ly, tiles = tiles }
-                plan(mainRects(m2), ks, { id, m2 })
+                plan(Basement.rects(list, m.cx, m.cy), ks, { id, m2 })
             end
         end
     end
@@ -575,7 +623,7 @@ local function register(list)
     return all
 end
 
--- 集合裡還沒登錄的格子全部登錄（開服 60 tick 後、客戶端收到 basements 後），一次 applyChanges。回成不成功
+-- 集合裡還沒登錄的格子全部登錄（開服載入帳本當下、客戶端收到 basements 後），一次 applyChanges。回成不成功
 function Basement.registerAll()
     local list = {}
     for k, id in pairs(cells) do
@@ -592,7 +640,7 @@ end
 -- 挖好的新格子延後一起登錄（伺服器 BasementLedger.commit、客戶端收到 dug）：每次登錄整塊重建一次房間，一次拖曳每挖好一格
 -- 就登錄一次會越挖越慢（實機拖 32 格每次最多 177 ms）。集合、帳本、土牆照舊當下就做（呼叫端），這裡只排登錄：最後一批
 -- 加進來之後 GROW_QUIET 毫秒內沒有新的（挖一格 5 秒，Entry.duration），或第一批已經排了 GROW_MAX 毫秒（長的拖曳中途也
--- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄。出錯只記 log，沒登錄的格子下一次 registerAll（開服 60 tick、
+-- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄。出錯只記 log，沒登錄的格子下一次 registerAll（開服、
 -- 客戶端收到 basements）補上
 Basement.GROW_QUIET, Basement.GROW_MAX = 10000, 60000
 local due, dueFirst, dueLast, dueHooked = {}, 0, 0, false
@@ -620,7 +668,8 @@ function Basement.growLater(tiles)
     end
 end
 
--- 本機每位玩家的畫面高度範圍重算：遊戲中途多出地下一層時引擎不重算，樓梯與開關畫不出來（BD aparosa_BD_ZExtent.lua）
+-- 本機每位玩家的畫面高度範圍重算。預防：引擎只在 chunk 載入與玩家換層時重算高度範圍（IsoChunkMap.java:957,233,945），
+-- 挖開新的一層之後自己叫一次，樓梯與開關才畫得出來
 function Basement.recalcZ()
     local cell = getCell()
     if not cell then return end
@@ -637,7 +686,7 @@ local STAIR = { top = true, mid = true, bottom = true }
 
 local function at(c) return { x = c.x, y = c.y, z = c.z } end
 
--- 外來房間（地圖的地下室、BD 的、別的 MOD 的）在 (x, y) 周圍 3×3 內。getRoomAt 在 chunk 沒載入時也查得到（Basements.java:103-128）
+-- 外來房間（地圖的地下室、Basement Building 的、別的 MOD 的）在 (x, y) 周圍 3×3 內。getRoomAt 在 chunk 沒載入時也查得到（Basements.java:103-128）
 local function foreignRoomNear(grid, x, y)
     for dx = -1, 1 do
         for dy = -1, 1 do
@@ -648,35 +697,136 @@ local function foreignRoomNear(grid, x, y)
     return false
 end
 
--- 「挖這一格」c 挖下去之後那一塊有幾格：c、它四鄰已挖的塊，加上預覽時排在它前面、連得上的格子（planned：一路相連，
--- 或接在同一塊已挖的上，審查 round1 F15）。near＝c 的四鄰有已挖的或排在前面的。超過上限就不再往下數
-local function digSize(c, planned)
-    local size, near, seenB, seenP = 1, false, {}, { [key(c.x, c.y)] = true }
-    local queue, i = { { c.x, c.y } }, 1
-    while queue[i] and size <= Basement.MAX do
-        local q = queue[i]
-        for _, d in ipairs(DIRS) do
-            local x, y = q[1] + d[1], q[2] + d[2]
-            local id = cells[key(x, y)]
-            if id then
-                near = near or i == 1
-                if not seenB[id] then
-                    seenB[id], size = true, size + blocks[id].n
-                    for _, t in pairs(blocks[id].tiles) do queue[#queue + 1] = t end -- 接在這一塊上的也算
-                end
-            elseif planned and planned[Place.key(x, y, Z)] and not seenP[key(x, y)] then
-                near = near or i == 1
-                seenP[key(x, y)], size = true, size + 1
-                queue[#queue + 1] = { x, y }
+-- 拖曳預覽的併查集（planned.dig = { parent, size }）：節點是排在前面、可以挖的格子（格鍵，z=-1 的鍵都是負數）和已挖的塊（塊編號，
+-- 正整數，第一次碰到時加進去、大小＝塊的格數）；size[根]＝那一群連起來有幾格。Basement.plan 每接受一格併一次，digSize 只看
+-- 四鄰的根，一次拖曳的成本和格數成正比
+local function root(uf, a)
+    local p = uf.parent
+    while p[a] ~= a do
+        p[a] = p[p[a]]
+        a = p[a]
+    end
+    return a
+end
+
+-- (x, y) 那一群的根與格數：已挖的照它的塊（併查集裡有就取根），排在前面的照併查集；都不是回 nil
+local function group(uf, x, y)
+    local k = key(x, y)
+    local id = cells[k]
+    local node = id or (uf and uf.parent[k] and k)
+    if not node then return nil end
+    if uf and uf.parent[node] then
+        local r = root(uf, node)
+        return r, uf.size[r]
+    end
+    return id, blocks[id].n
+end
+
+-- 預覽接受了一格挖掘（Cursor.preview）：記成排在前面（planned[鍵]），z=-1 的格子併進併查集，和四鄰的已挖塊、排在前面的格子連起來
+function Basement.plan(planned, x, y, z)
+    planned[Place.key(x, y, z)] = true
+    local k = key(x, y)
+    if z ~= Z or cells[k] then return end
+    local uf = planned.dig
+    if not uf then
+        uf = { parent = {}, size = {} }
+        planned.dig = uf
+    end
+    if uf.parent[k] then return end
+    uf.parent[k], uf.size[k] = k, 1
+    for _, d in ipairs(DIRS) do
+        local x2, y2 = x + d[1], y + d[2]
+        local id = cells[key(x2, y2)]
+        if id and not uf.parent[id] then uf.parent[id], uf.size[id] = id, blocks[id].n end
+        local o = id or (uf.parent[key(x2, y2)] and key(x2, y2))
+        if o then
+            local a, b = root(uf, k), root(uf, o)
+            if a ~= b then
+                if uf.size[a] < uf.size[b] then a, b = b, a end
+                uf.parent[b], uf.size[a] = a, uf.size[a] + uf.size[b]
             end
         end
-        i = i + 1
+    end
+end
+
+-- 「挖這一格」c 挖下去之後那一塊有幾格：c 加上四鄰各群（已挖的塊、預覽時排在前面連得上的格子，審查 round1 F15）不重複的格數。
+-- near＝c 的四鄰有已挖的或排在前面的。c 本身在集合裡（帳本有、地板沒有，重挖）時它的塊已經算了它，也算 near
+local function digSize(c, planned)
+    local uf = planned and planned.dig
+    local size, near, seen = 1, false, {}
+    if has(c.x, c.y, Z) then
+        local r, n = group(uf, c.x, c.y)
+        seen[r], size, near = true, n, true
+    end
+    for _, d in ipairs(DIRS) do
+        local r, n = group(uf, c.x + d[1], c.y + d[2])
+        if r then
+            near = true
+            if not seen[r] then seen[r], size = true, size + n end
+        end
     end
     return size, near
 end
 
+-- 這格已經挖開：在集合裡，而且格子在、有地板。帳本有、地板沒有的（當機時帳本存了、chunk 沒存）照沒挖過，准它重挖
+local function dug(x, y)
+    if not has(x, y, Z) then return false end
+    local sq = getCell():getGridSquare(x, y, Z)
+    return sq ~= nil and sq:getFloor() ~= nil
+end
+
+-- 挖開 c 會打開它和已挖鄰格之間那條邊：hsq 的 k 邊，osq＝邊的北或西側那格。邊上有東西回那一格：土牆上的附加圖
+-- （本工具的牆面疊圖掛在土牆上，土牆拆了跟著消失、不退料），或掛在這條邊上的物件（畫、開關這類帶 attached 旗標的，
+-- 牆拆了會懸空）。不替玩家搬，請他先拿下來
+local BACK = { N = F.attachedS, W = F.attachedE }
+local function hungAt(hsq, osq, k)
+    local objects = hsq and hsq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local o = objects:get(i)
+        local kind = dirtOf(o)
+        if kind then
+            local list = covers(kind, k) and o:getAttachedAnimSprite()
+            for j = 0, (list and list:size() or 0) - 1 do
+                local spr = list:get(j):getParentSprite()
+                local f = spr and faceOf(spr)
+                if not f or f == k then return hsq end
+            end
+        else
+            local p = o:getProperties()
+            if p and p:has(k == "N" and F.attachedN or F.attachedW) then return hsq end
+        end
+    end
+    objects = osq and osq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local p = objects:get(i):getProperties()
+        if p and p:has(BACK[k]) then return osq end
+    end
+    return nil
+end
+
+-- 入口出口那條邊（sq 的 k 邊）擋路：牆、窗框、柵欄這類佔住那條邊的。門框與門走得過，不算
+local EXIT = { N = { F.WallN, F.WallNW, F.WallNTrans, F.WindowN, F.HoppableN, F.TallHoppableN, F.collideN },
+    W = { F.WallW, F.WallNW, F.WallWTrans, F.WindowW, F.HoppableW, F.TallHoppableW, F.collideW } }
+local DOORWAY = { N = F.DoorWallN, W = F.DoorWallW }
+local function exitBlocked(sq, k)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local p = o:getProperties()
+        local door = instanceof(o, "IsoDoor") or (instanceof(o, "IsoThumpable") and o:isDoor())
+        if p and not door and not p:has(DOORWAY[k]) then
+            for _, f in ipairs(EXIT[k]) do
+                if p:has(f) then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function pos(sq) return { x = sq:getX(), y = sq:getY(), z = sq:getZ() } end
+
 -- Check.item 補格子之前跑（只讀座標與已經存在的格子）：回 code, extra, skip（skip＝加開入口，Check.item 把角色 dig 的
--- 6 格拿掉）。順序就是回報的優先序（plan.md §2.1）
+-- 6 格拿掉）。順序就是回報的優先序
 function Basement.pre(player, entry, cells, anchor, planned, preview)
     if Basement.bd() then return "DIG_BD" end
     local entrance = false
@@ -703,7 +853,7 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
     -- 加開入口：樓梯底端前面那格也要已經挖開（同一塊），不然下了樓梯面對土牆（審查 round1 F6）
     if skip and top and bottom then
         local fx, fy = bottom.x + (bottom.x - top.x) / 2, bottom.y + (bottom.y - top.y) / 2
-        if Basement.blockOf(fx, fy, Z) ~= blk then return "BLOCKED", { x = fx, y = fy, z = Z } end
+        if Basement.blockOf(fx, fy, Z) ~= blk then return "DIG_ENTRY", { x = fx, y = fy, z = Z } end
     end
     local grid = getWorld():getMetaGrid()
     for _, c in ipairs(cells) do
@@ -714,13 +864,13 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
     local dig = {} -- 這次要挖的格子
     if not entrance then
         local c = cells[1]
-        if has(c.x, c.y, c.z) then return "BLOCKED", at(c) end
+        if dug(c.x, c.y) then return "DIG_DONE", at(c) end
         local size, near = digSize(c, planned)
         if not near then return "DIG_EDGE", at(c) end
         if size > Basement.MAX then return "DIG_FULL", { max = Basement.MAX, x = c.x, y = c.y, z = c.z } end
         dig[1] = c
     elseif not skip then
-        if inSet > 0 then return "BLOCKED", { x = anchor[1], y = anchor[2], z = anchor[3] } end
+        if inSet > 0 then return "DIG_ENTRY", { x = anchor[1], y = anchor[2], z = anchor[3] } end
         -- 新開：9 格都不在集合、四鄰也都不在（要連通請用「挖這一格」，那條路會查權限）
         for _, c in ipairs(cells) do
             if UNDER[c.role] then
@@ -738,13 +888,19 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
         for _, d in ipairs(DIRS) do
             local nx, ny = c.x + d[1], c.y + d[2]
             if has(nx, ny, c.z) then
-                local code = Check.safehouse(player, { x = nx, y = ny, z = c.z, sq = cell:getGridSquare(nx, ny, c.z) },
-                    preview, "dismantle")
+                local nsq = cell:getGridSquare(nx, ny, c.z)
+                local code = Check.safehouse(player, { x = nx, y = ny, z = c.z, sq = nsq }, preview, "dismantle")
                 if code then return code, { x = nx, y = ny, z = c.z } end
+                -- 這條邊在 c 的北、西（鄰格在北、西）時土牆在 c 那格，否則在鄰格
+                local csq, south = cell:getGridSquare(c.x, c.y, c.z), d[1] + d[2] > 0
+                local hung = hungAt(south and nsq or csq, south and csq or nsq, d[1] ~= 0 and "W" or "N")
+                if hung then return "DIG_HUNG", pos(hung) end
             end
         end
     end
+    local plat
     for _, c in ipairs(cells) do
+        if c.role == "platform" then plat = c end
         if c.role == "platform" or c.role == "hole" then
             local sq = cell:getGridSquare(c.x, c.y, c.z)
             if sq then
@@ -752,6 +908,16 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
                 if not ok then return code, at(c), skip end
             end
         end
+    end
+    -- 入口的出口（同 Place.lua stairsOk 一般樓梯的兩條）：平台不是樓梯、也不是別組同向樓梯的平台（placeStairs 記的
+    -- ConnectedToStairs）；樓梯頂正上方那個洞朝平台的那條邊走得過，不然上了樓梯面對牆。平台在頂片西邊＝往西爬
+    if top and plat then
+        local west = plat.x ~= top.x
+        local psq, hsq = cell:getGridSquare(plat.x, plat.y, plat.z), cell:getGridSquare(top.x, top.y, 0)
+        if psq and (psq:HasStairs() or (psq:hasModData() and psq:getModData()["ConnectedToStairs" .. tostring(not west)])) then
+            return "BLOCKED", at(plat), skip
+        end
+        if hsq and exitBlocked(hsq, west and "W" or "N") then return "BLOCKED", pos(hsq), skip end
     end
     return nil, nil, skip
 end
@@ -782,7 +948,7 @@ end
 
 -- Place.check 的 dig 分支：回 true，或 false 與原因碼
 function Basement.checkCell(sq, role, spr)
-    if role == "dig" then return true end -- 已經有地板也過（帳本缺的格子挖了就重新記，plan.md §1.2）
+    if role == "dig" then return true end -- 已經有地板也過（帳本缺的格子挖了就重新記）
     if role == "platform" then
         if not sq:getFloor() or sq:isSolid() or sq:isSolidTrans() then return false, "BLOCKED" end
         return true

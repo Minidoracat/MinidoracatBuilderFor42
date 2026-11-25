@@ -280,6 +280,11 @@ function getCell()
             return nil
         end,
         checkHaveRoof = function() HARNESS_ROOF = (HARNESS_ROOF or 0) + 1 end, -- 全域：記呼叫次數（屋頂情境驗）
+        -- 全域：HARNESS_SPOTTED 記呼叫次數，HARNESS_SPOTTED_BOOM 設了就丟錯（地下室登錄情境驗）
+        ProcessSpottedRooms = function()
+            HARNESS_SPOTTED = (HARNESS_SPOTTED or 0) + 1
+            if HARNESS_SPOTTED_BOOM then error("spotted boom") end
+        end,
     }
 end
 DesignationZoneAnimal = { addNewRoof = function() end }
@@ -693,7 +698,6 @@ require "MinidoracatBuilder/Entry"
 require "MinidoracatBuilder/Cost"
 require "MinidoracatBuilder/Server"
 require "MinidoracatBuilder/Check"
-for _ = 1, 60 do fire("OnTick") end -- Server 載入的地下室帳本開服 60 tick 後登錄一次（帳本空的）：先跑掉，後面數 OnTick 回呼的不受影響
 local Rules, Sources = MinidoracatBuilder.Rules, MinidoracatBuilder.Sources
 local Index, Catalog = MinidoracatBuilder.Index, MinidoracatBuilder.Catalog
 local Entry, Cost, Server = MinidoracatBuilder.Entry, MinidoracatBuilder.Cost, MinidoracatBuilder.Server
@@ -9291,7 +9295,6 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     local Z = -1
     require "MinidoracatBuilder/BasementLedger"
     local Basement, Ledger = B.Basement, B.BasementLedger
-    for _ = 1, 60 do fire("OnTick") end -- 開服那一次 registerAll（帳本還是空的）跑掉
     local D = Basement.DIRT
     local function sp(name, flags, t) return sprite(name, 0, { flags = flags, type = t }) end
     world({ sp(D.W, { "WallW" }), sp(D.N, { "WallN" }), sp(D.NW, { "WallNW" }), sp("t_winN", { "WindowN" }),
@@ -9307,8 +9310,17 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         function o:getSquare() return sq end
         function o:isFloor() return s:getProperties():has(F.solidfloor) end
         function o:getBuildMaterials() return nil end
-        function o:hasModData() return false end
+        function o:hasModData() return self.md ~= nil end
+        function o:getModData() self.md = self.md or {} return self.md end
         function o:transmitCompleteItemToClients() self.sent = true end
+        -- 附加圖（本工具的牆面疊圖）：引擎沒有附加圖時回 null
+        function o:getAttachedAnimSprite() return self.att and javaList(self.att) or nil end
+        function o:addAttachedAnimSprite(spr)
+            self.att = self.att or {}
+            self.att[#self.att + 1] = { getParentSprite = function() return spr end }
+        end
+        function o:transmitUpdatedSpriteToClients() end
+        function o:transmitModData() end
         return o
     end
     IsoObject = { new = function(_, sq, name) return obj(sq, name) end }
@@ -9328,7 +9340,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     -- 假引擎：metaGrid 的 getRoomAt、BuildingRoomsEditor（applyChanges 照 calculateMetaID 取角；同一棟只在新建物外框左上角
     -- 所在的地圖格（256 格）裡照 metaID 找，找到才換掉舊的，BuildingRoomsEditor.java:233-248、BREBuilding.getLotHeader）、殭屍補充。
     -- meta[地圖格:相對角]＝那一棟
-    local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0 }
+    local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0 }
     local function tk(x, y) return x .. "," .. y end
     local grid = { getRoomAt = function(_, x, y, z)
         if z ~= Z then return nil end
@@ -9349,10 +9361,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         function def:getBuilding() return b end
         local room = { def = def }
         function room:getLightSwitches()
-            return { contains = function(_, o)
-                for _, v in ipairs(def.switches) do if v == o then return true end end
-                return false
-            end, add = function(_, o) def.switches[#def.switches + 1] = o end }
+            local list = javaList(def.switches)
+            function list.add(_, o) def.switches[#def.switches + 1] = o end
+            return list
         end
         function def:getIsoRoom() return room end
         return def
@@ -9379,6 +9390,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             for i, v in ipairs(self.list) do if v == b then table.remove(self.list, i) return end end
         end
         function e:applyChanges()
+            eng.applies = eng.applies + 1
             for _, b in ipairs(self.list) do
                 local r = b.rooms[1]
                 local cx, cy, x0, y0 = math.huge, math.huge, math.huge, math.huge
@@ -9473,10 +9485,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
 
     -- c3 矩形
     ;(function()
-        local function sound(tiles)
+        local function sound(tiles, ccx, ccy)
             local set, covered, area = {}, {}, 0
             for _, t in ipairs(tiles) do set[tk(t[1], t[2])] = true end
-            local rs = Basement.rects(tiles)
+            local rs = Basement.rects(tiles, ccx, ccy)
             for _, r in ipairs(rs) do
                 area = area + r[3] * r[4]
                 for x = r[1], r[1] + r[3] - 1 do
@@ -9489,7 +9501,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             -- 第一個矩形＝calculateMetaID 取的角
             local cx, cy = math.huge, math.huge
             for _, r in ipairs(rs) do if r[1] <= cx and r[2] < cy then cx, cy = r[1], r[2] end end
-            return area == #tiles and cx == rs[1][1] and cy == rs[1][2], #rs
+            return area == #tiles and cx == rs[1][1] and cy == rs[1][2] and (ccx == nil or (cx == ccx and cy == ccy)), #rs
         end
         local L = { { 0, 0 }, { 0, 1 }, { 0, 2 }, { 1, 2 }, { 2, 2 } }
         local ring = {}
@@ -9500,6 +9512,38 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local okX = sound({ { 5, 0 }, { 6, 0 }, { 4, 1 }, { 5, 1 }, { 6, 1 }, { 3, 2 } }) -- 角不在最西那一列
         check(okL and nL == 2 and okR and okS and nS == 1 and okX,
             "c3 矩形：L 形、中間有洞的環形、單格、階梯形都不重疊、面積和＝格數，第一個矩形是 metaID 的角")
+        -- 角那一列在角的西邊還有格子：那一段在角左邊切開，角的矩形排第一
+        local okW, nW = sound({ { 0, 0 }, { 1, 0 }, { 2, 0 }, { 3, 0 }, { 0, 1 }, { 1, 1 }, { 2, 1 }, { 3, 1 } }, 2, 0)
+        check(okW and nW == 3, "c3 給了角、角的西邊同一列有格子：在角左邊切開，第一個矩形的左上角是角，3 個矩形")
+        -- 200 組隨機連通形狀：不重疊、面積和＝格數、矩形數不超過段數；一半給角（最北那一列隨便一格）
+        local seed, allOk = 12345, true
+        local function rnd(n)
+            seed = (seed * 1103515245 + 12345) % 2147483648
+            return seed % n
+        end
+        for i = 1, 200 do
+            local tiles, set = { { 0, 0 } }, { [tk(0, 0)] = true }
+            for _ = 1, rnd(40) do
+                local t, d = tiles[rnd(#tiles) + 1], ({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } })[rnd(4) + 1]
+                local x, y = t[1] + d[1], t[2] + d[2]
+                if not set[tk(x, y)] then set[tk(x, y)], tiles[#tiles + 1] = true, { x, y } end
+            end
+            local segs, top = 0, math.huge
+            for _, t in ipairs(tiles) do
+                if not set[tk(t[1] - 1, t[2])] then segs = segs + 1 end
+                if t[2] < top then top = t[2] end
+            end
+            local cx
+            if i % 2 == 0 then
+                local row = {}
+                for _, t in ipairs(tiles) do if t[2] == top then row[#row + 1] = t[1] end end
+                cx = row[rnd(#row) + 1]
+                segs = segs + 1 -- 角那一列多切一刀
+            end
+            local ok, n = sound(tiles, cx, cx and top)
+            allOk = allOk and ok and n <= segs
+        end
+        check(allOk, "c3 200 組隨機連通形狀（一半給角）：不重疊、面積和＝格數、矩形數不超過段數、角的矩形排第一")
     end)()
 
     -- c4 登錄：角與 annex、併塊
@@ -9507,11 +9551,19 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local t = {}
         for x = 2000, 2002 do for y = 2000, 2001 do t[#t + 1] = { x, y } end end
         Basement.add(t)
+        local realPrint, logs = print, {}
+        print = function(s) logs[#logs + 1] = tostring(s) end
+        HARNESS_SPOTTED_BOOM = true
         local ok = Basement.registerAll()
+        HARNESS_SPOTTED_BOOM = nil
+        print = realPrint
         local def = eng.tile[tk(2001, 2001)]
         check(ok and def ~= nil and def == eng.live[tk(2000, 2000)] and def.n == 6 and def.name == Basement.ROOM
             and def.user == false and def.explored == true and eng.zombie[#eng.zombie] == "emptyoutside",
             "c4 一塊 6 格登錄成一棟：角 (2000,2000)、名稱、不是自訂建物、全部探索過、殭屍補充時暫時叫 emptyoutside")
+        local spotLog = false
+        for _, s in ipairs(logs) do spotLog = spotLog or s:find("ProcessSpottedRooms failed: ", 1, true) ~= nil end
+        check(spotLog, "c4 ProcessSpottedRooms 丟錯：記 log，登錄照做")
         Basement.grow(Basement.add({ { 2003, 2000 } }))
         check(eng.live[tk(2000, 2000)].n == 7 and eng.tile[tk(2003, 2000)] == eng.live[tk(2000, 2000)] and liveCount() >= 1,
             "c4 往東加一格：併進主建物（同一個角重登錄、換掉舊的）")
@@ -9540,12 +9592,35 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local retry = Basement.registerAll()
         check(bad == false and retry and eng.tile[tk(2108, 2100)] == eng.live[tk(2100, 2100)],
             "c4 沒有 BuildingRoomsEditor：回失敗不丟錯，那一格之後 registerAll 補登錄")
+        -- 重新登錄的房間燈是關的：有開著的開關就照它把整間切開（switchLight 連動整間），其他開關照原值還原
+        local group = {}
+        local function sw(on)
+            local o = { light = true, on = on, getSprite = function() return nil end, getProperties = function() return nil end }
+            function o:isActivated() return self.on end
+            function o:setActivated(v) self.on = v end
+            function o:switchLight(v)
+                self.switched = v
+                for _, s in ipairs(group) do s.on = v end
+            end
+            group[#group + 1] = o
+            return o
+        end
+        local onSw, offSw = sw(true), sw(false)
+        table.insert(ug(2200, 2200).objects, onSw)
+        table.insert(ug(2201, 2200).objects, offSw)
+        local realServer = isServer
+        isServer = function() return true end
+        Basement.grow(Basement.add({ { 2200, 2200 }, { 2201, 2200 } }))
+        isServer = realServer
+        check(onSw.switched == true and onSw.on == true and offSw.on == false and offSw.switched == nil,
+            "c4 重新登錄後補燈：開著的開關把房間燈切開，關著的開關照原值")
     end)()
 
     -- c5 帳本 commit、外邊土牆
     ;(function()
         for x = 2998, 3006 do for y = 2998, 3005 do ug(x, y) end end
-        local lamp = { light = true, getSprite = function() return nil end, getProperties = function() return nil end }
+        local lamp = { light = true, getSprite = function() return nil end, getProperties = function() return nil end,
+            isActivated = function() return false end }
         table.insert(realCell():getGridSquare(3000, 3000, Z).objects, lamp)
         ug(2999, 3001, 0, { floor = {} })
         for x = 3000, 3002 do
@@ -9639,14 +9714,18 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         for _, o in ipairs(s1.objects) do if not o.thump then dirtN = o end end
         local fake = obj(s1, D.N, true)
         local inner = realCell():getGridSquare(3001, 3001, Z)
+        -- 外邊上能不能蓋（refuses）：實牆過；窗、門框、柵欄（矮、高）、透明牆、門、和土牆同一張圖擋；裡面的邊、圖不佔那條邊都不擋
+        local function ref(name, flags, sq) return Basement.refuses(sq or s1, sp(name, flags), true, false) end
+        local edgeOk = not ref("t_wallN", { "WallN" }) and ref("t_winN", { "WindowN" }) and ref("t_winwallN", { "WallN", "WindowN" })
+            and ref("t_doorframeN", { "WallN", "DoorWallN" }) and ref("t_fenceN", { "HoppableN" })
+            and ref("t_tallfenceN", { "WallN", "TallHoppableN" }) and ref("t_frameN", { "WallNTrans" }) and ref("t_doorN", {})
+            and Basement.refuses(s1, IsoSpriteManager.instance:getNamedMap():get(D.N), true, false)
+            and not ref("t_winN", { "WindowN" }, inner) and not Basement.refuses(s1, sp("t_winN", { "WindowN" }), false, false)
         check(Basement.isOuterEdge(3000, 3000, Z, "N") and not Basement.isOuterEdge(3001, 3001, Z, "N")
             and not Basement.isOuterEdge(3000, 3000, 0, "N") and Basement.isOuterEdge(3003, 3000, Z, "W")
-            and Basement.isDirtOnOuterEdge(dirtN) and not Basement.isDirtOnOuterEdge(fake)
-            and Basement.isOpeningOnOuterEdge(s1, "t_winN") and not Basement.isOpeningOnOuterEdge(inner, "t_winN")
-            and Basement.isFrameOnDirt(s1, "t_frameN") and not Basement.isFrameOnDirt(s1, "t_wallN")
-            and Basement.isDirtLookOnOuterEdge(s1, D.N) and not Basement.isDirtLookOnOuterEdge(s1, D.W)
+            and Basement.isDirtOnOuterEdge(dirtN) and not Basement.isDirtOnOuterEdge(fake) and edgeOk
             and Basement.near(realCell():getGridSquare(3003, 3002, Z)) and not Basement.near(realCell():getGridSquare(3005, 3005, Z)),
-            "c5 外邊土牆層：外邊只看集合、IsoThumpable 的同圖不算土牆、外邊的窗與牆框擋、同圖只擋外邊、near 含東南鄰格")
+            "c5 外邊土牆層：外邊只看集合、IsoThumpable 的同圖不算土牆、外邊只准實牆（窗、門框、柵欄、透明牆、門、土牆同圖都擋）、near 含東南鄰格")
         -- 帳本寫到一半失敗：拿掉這次寫的、丟錯、洞不開
         local realPos, calls = Store.pos, 0
         Store.pos = function(...)
@@ -9700,12 +9779,16 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(touching == "DIG_ROOM" and alone == nil and skip0 == false,
             "c6 新開入口貼著別塊 → DIG_ROOM；四周空的 → 過、不是加開")
         local mixed = pre(entrance(3002, 3001), { 3002, 3001, 0 })
-        check(pre(one(3001, 3001)) == "BLOCKED" and mixed == "BLOCKED" and pre(one(3001, 2999)) == nil,
-            "c6 BLOCKED：已挖的格子、入口樓梯一部分已挖；旁邊的新格照常")
+        local dugSq = realCell():getGridSquare(3001, 3001, Z)
+        dugSq.getFloor = function() return {} end -- 挖好的格子有地板
+        check(pre(one(3001, 3001)) == "DIG_DONE" and mixed == "DIG_ENTRY" and pre(one(3001, 2999)) == nil,
+            "c6 DIG_DONE：已挖的格子；DIG_ENTRY：入口樓梯一部分已挖；旁邊的新格照常")
         local again, _, skip = pre(entrance(3000, 3001), { 3000, 3001, 0 })
         check(again == nil and skip == true, "c6 加開：樓梯 3 格都在同一塊 → 過、skip")
         local edge, edgeAt = one(3100, 3100)
-        check(pre(edge, edgeAt) == "DIG_EDGE" and pre(edge, edgeAt, { [B.Place.key(3101, 3100, Z)] = true }) == nil,
+        local planned = {}
+        Basement.plan(planned, 3101, 3100, Z)
+        check(pre(edge, edgeAt) == "DIG_EDGE" and pre(edge, edgeAt, planned) == nil,
             "c6 DIG_EDGE：四鄰都沒挖拒絕；同一排前面的格子算鄰格")
         local big, small = {}, {}
         for x = 4000, 4019 do for y = 4000, 4019 do big[#big + 1] = { x, y } end end
@@ -9720,6 +9803,120 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local sh = pre(one(3003, 3000))
         owned.owner = nil
         check(sh == "SAFEHOUSE" and pre(one(3003, 3000)) == nil, "c6 已挖的鄰格在別人的安全屋裡：拒絕；不是就過")
+    end)()
+
+    -- D9 當機後帳本和地板對不上：地板有、帳本沒有的格子挖到旁邊時收進來；帳本有、地板沒有的可以重挖
+    ;(function()
+        local p = H.near
+        getOnlinePlayers = function() return javaList({}) end
+        for x = 3398, 3406 do for y = 3398, 3402 do ug(x, y) end end
+        local function floored(x, y) realCell():getGridSquare(x, y, Z).getFloor = function() return {} end end
+        local dig = function(x, y) return Ledger.commit(p, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }) end
+        dig(3400, 3400)
+        floored(3400, 3400)
+        floored(3402, 3400)
+        floored(3403, 3400)
+        local n0 = Ledger.stats().n
+        dig(3401, 3400)
+        local id = Basement.blockOf(3400, 3400, Z)
+        check(Basement.has(3402, 3400, Z) and Basement.has(3403, 3400, Z) and Ledger.stats().n == n0 + 3
+            and Basement.blockOf(3403, 3400, Z) == id and dirtAt(3402, 3400) == "N" and dirtAt(3404, 3400) == "W"
+            and HARNESS_DRIFT() == "",
+            "D9 挖到地板有、帳本沒有的格子旁邊：沿著收進集合與帳本、併成同一塊，中間沒有土牆")
+        -- 3401 在集合、地板沒有（帳本存了、chunk 沒存）：可以重挖，帳本不重複寫
+        local pre1 = function(x, y) return Basement.pre(p, nil, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }, nil, false) end
+        local ghost, done = pre1(3401, 3400), pre1(3400, 3400)
+        local n1 = Ledger.stats().n
+        dig(3401, 3400)
+        check(ghost == nil and done == "DIG_DONE" and Ledger.stats().n == n1 and HARNESS_DRIFT() == ""
+            and dirtAt(3401, 3400) == "N",
+            "D9 帳本有、地板沒有的格子可以重挖（有地板的回 DIG_DONE），帳本不重複寫、外邊照樣補牆")
+        getOnlinePlayers = nil
+    end)()
+
+    -- 牆上的東西：要打開的邊上有附加圖或掛件就拒（DIG_HUNG，指那一格）；西北角土牆換成單邊時留下那一面的附加圖跟著搬
+    ;(function()
+        local p = H.near
+        getOnlinePlayers = function() return javaList({}) end
+        for x = 3498, 3513 do for y = 3498, 3512 do ug(x, y) end end
+        local function dig(x, y) Ledger.commit(p, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }) end
+        local function pre1(x, y) return Basement.pre(p, nil, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }, nil, false) end
+        local function dirtOn(x, y, name)
+            for _, o in ipairs(realCell():getGridSquare(x, y, Z).objects) do
+                if o:getSprite():getName() == name and not o.thump then return o end
+            end
+        end
+        dig(3500, 3500)
+        -- 往東挖：打開的是 3501 那格的西邊（土牆在 3501）。土牆西面掛著疊圖 → 拒、指 3501；北面的不算
+        local wallW, ovW, ovN = dirtOn(3501, 3500, D.W), sp("t_ovW", { "attachedW" }), sp("t_ovN", { "attachedN" })
+        wallW:addAttachedAnimSprite(ovN)
+        local quietN = pre1(3501, 3500)
+        wallW:addAttachedAnimSprite(ovW)
+        local code, at1 = pre1(3501, 3500)
+        wallW.att = nil
+        -- 已挖那格朝東掛的畫（attachedE）→ 拒、指 3500
+        local hsq = realCell():getGridSquare(3500, 3500, Z)
+        local painting = obj(hsq, "t_paintE", false, { "attachedE" })
+        hsq.objects[#hsq.objects + 1] = painting
+        local code2, at2 = pre1(3501, 3500)
+        table.remove(hsq.objects)
+        check(quietN == nil and code == "DIG_HUNG" and at1 and at1.x == 3501 and at1.y == 3500 and at1.z == Z
+            and code2 == "DIG_HUNG" and at2 and at2.x == 3500 and at2.y == 3500 and pre1(3501, 3500) == nil,
+            "#5 要打開的邊上：土牆那一面有疊圖、或已挖那格朝這條邊掛著東西 → DIG_HUNG，指著東西所在那格；另一面的疊圖不擋")
+
+        -- 3510 自己一格：西北角那張；往西挖一格後西邊不是外邊，換成北邊那張，北面的疊圖與記號、覆蓋帳本搬過去。
+        -- 只有北面掛著時往西挖不擋；西面也掛著時（pre 會擋，這裡直接寫帳本）西面那張不搬
+        dig(3510, 3510)
+        local nw = dirtOn(3510, 3510, D.NW)
+        nw:addAttachedAnimSprite(ovN)
+        local open = pre1(3509, 3510)
+        nw:addAttachedAnimSprite(ovW)
+        nw:getModData().builderOverlays = { t_ovN = true, t_ovW = true }
+        local realOv, put = B.Overlays, {}
+        B.Overlays = { at = function(_, e) return e == "N" and { t_ovN = { ["Base.Plank"] = 1 } } or { t_ovW = {} } end,
+            put = function(_, name, items, e) put[#put + 1] = name .. ":" .. e .. ":" .. tostring(items["Base.Plank"]) end }
+        dig(3509, 3510)
+        B.Overlays = realOv
+        local n = dirtOn(3510, 3510, D.N)
+        local att = n and n:getAttachedAnimSprite()
+        check(open == nil and dirtAt(3510, 3510) == "N" and att and att:size() == 1
+            and att:get(0):getParentSprite():getName() == "t_ovN" and n.md and n.md.builderOverlays.t_ovN
+            and not n.md.builderOverlays.t_ovW and table.concat(put, ",") == "t_ovN:N:1",
+            "#5 西北角土牆換成北邊那張：北面的疊圖、記號、覆蓋帳本跟著搬到新片，西面的不搬（" .. table.concat(put, ",") .. "）")
+        getOnlinePlayers = nil
+    end)()
+
+    -- 入口的出口：樓梯頂正上方那個洞朝平台的那條邊有牆 → 拒（門框過）；平台是樓梯、或別組同向樓梯的平台 → 拒
+    ;(function()
+        local p = H.near
+        local X, Y = 3700, 3700
+        local function site(platO)
+            for x = X - 2, X + 3 do for y = Y - 2, Y + 2 do ug(x, y) ug(x, y, 0) end end
+            ug(X - 1, Y, 0, platO or { floor = {} })
+        end
+        local function try() return Basement.pre(p, nil, entrance(X, Y), { X, Y, 0 }, nil, true) end
+        site()
+        local clear = try()
+        local hsq = realCell():getGridSquare(X, Y, 0)
+        hsq.objects[#hsq.objects + 1] = obj(hsq, "t_exitWallW", false, { "WallW" })
+        local wall, atW = try()
+        hsq.objects = { obj(hsq, "t_doorFrameW", false, { "WallW", "DoorWallW" }) }
+        local frame = try()
+        hsq.objects = { obj(hsq, "t_exitWallN", false, { "WallN" }) }
+        local otherEdge = try()
+        check(clear == nil and wall == "BLOCKED" and atW and atW.x == X and atW.y == Y and atW.z == 0 and frame == nil
+            and otherEdge == nil,
+            "#12 入口出口那條邊有牆：BLOCKED、指著樓梯頂正上方那格；門框、別的邊的牆不擋")
+        site({ floor = {}, stairs = true })
+        local stairs, atS = try()
+        site()
+        local plat = realCell():getGridSquare(X - 1, Y, 0)
+        plat:getModData().ConnectedToStairsfalse = true
+        local same = try()
+        plat.md = { ConnectedToStairstrue = true }
+        local other = try()
+        check(stairs == "BLOCKED" and atS and atS.x == X - 1 and atS.y == Y and same == "BLOCKED" and other == nil,
+            "#13 入口平台是樓梯、或已經是別組同向樓梯的平台：BLOCKED；別向的平台記號不擋")
     end)()
 
     -- c7 Basement.checkCell
@@ -9821,12 +10018,33 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             return Basement.pre(H.near, nil, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }, planned, false)
         end
         local P = B.Place.key
-        local ok400 = pre1(5221, 5200, { [P(5220, 5200, Z)] = true })
-        local full = pre1(5221, 5200, { [P(5220, 5200, Z)] = true, [P(5220, 5210, Z)] = true })
-        local same = pre1(5219, 5219, { [P(5220, 5205, Z)] = true, [P(5220, 5206, Z)] = true })
+        local function plannedAt(list)
+            local t = {}
+            for _, c in ipairs(list) do Basement.plan(t, c[1], c[2], Z) end
+            return t
+        end
+        local ok400 = pre1(5221, 5200, plannedAt({ { 5220, 5200 } }))
+        local full = pre1(5221, 5200, plannedAt({ { 5220, 5200 }, { 5220, 5210 } }))
+        local same = pre1(5219, 5219, plannedAt({ { 5220, 5205 }, { 5220, 5206 } }))
         check(#blk == 398 and ok400 == nil and full == "DIG_FULL" and same == "DIG_FULL",
             "F15 上限把排在前面的格子算進去：398 格的塊＋前面 1 格＋這格＝400 過；前面另一格接在同一塊上＝401 拒絕；"
             .. "接在這格所在的塊上也算（" .. tostring(ok400) .. " " .. tostring(full) .. " " .. tostring(same) .. "）")
+
+        -- D8 拖曳預覽每個錨點常數次查表：300 格的一排旁邊拖 512 個錨點，Place.key 合計不超過 20,000 次
+        local row = {}
+        for x = 6000, 6299 do row[#row + 1] = { x, 6001 } end
+        Basement.add(row)
+        local keys, drag, accepted = 0, {}, 0
+        B.Place.key = function(...) keys = keys + 1 return P(...) end
+        for x = 6000, 6511 do
+            if not pre1(x, 6000, drag) then
+                Basement.plan(drag, x, 6000, Z)
+                accepted = accepted + 1
+            end
+        end
+        B.Place.key = P
+        check(keys <= 20000 and accepted == 100,
+            "D8 拖 512 個錨點的預覽：Place.key " .. keys .. " 次（上限 20,000）；300 格的塊接 100 格到上限（" .. accepted .. "）")
 
         local calls, keepMods = 0, getActivatedMods
         getActivatedMods = function() calls = calls + 1 return keepMods() end
@@ -9882,18 +10100,19 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             .. #segs .. " 段 " .. area .. " 格）")
     end)()
 
-    -- 重開服：集合從帳本重建（只有帳本裡的格子），60 tick 後整塊登錄成一棟
+    -- 重開服：集合從帳本重建（只有帳本裡的格子），帳本載入當下整塊登錄成一棟；之後同一塊不再登錄第二次
     ;(function()
         eng.tile, eng.live, eng.meta = {}, {}, {}
         local chunk = assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))
         chunk()
+        local a0 = eng.applies
         HARNESS_REOPEN(Ledger)
-        local before = liveCount()
+        local def, a1 = eng.tile[tk(3001, 3001)], eng.applies
         for _ = 1, 60 do fire("OnTick") end
-        local def = eng.tile[tk(3001, 3001)]
-        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and before == 0 and liveCount() == 1
-            and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10,
-            "c4 重開服：集合照帳本重建，60 tick 後整塊（10 格）登錄成一棟")
+        Basement.registerAll()
+        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 4
+            and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10 and a1 == a0 + 1 and eng.applies == a1,
+            "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那三塊，一次 applyChanges），之後不再登錄第二次")
     end)()
 
     print("情境三十九之三：地下室的判斷、放置與伺服器（Check、Place、Server；plan.md §4.1 c11–c14）")
@@ -10009,8 +10228,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         ;(function()
             local p = player({ id = 7103, x = X0 + 0.5, y = Y0 + 3.5 })
             local wall, at0 = Check.item(p, E, 0, { X0 - 1, Y0 + 3, 0 }, { preview = true })
-            check(wall == "BLOCKED" and at0 and at0.x == X0 + 2 and at0.y == Y0 + 3 and at0.z == Z,
-                "F6 加開入口的樓梯底前面那格沒挖：BLOCKED，指著那一格（" .. tostring(wall) .. "）")
+            check(wall == "DIG_ENTRY" and at0 and at0.x == X0 + 2 and at0.y == Y0 + 3 and at0.z == Z,
+                "F6 加開入口的樓梯底前面那格沒挖：DIG_ENTRY，指著那一格（" .. tostring(wall) .. "）")
             local XA, YA = 3650, 3650
             for x = XA - 2, XA + 5 do for y = YA - 1, YA + 1 do ug(x, y) ug(x, y, 0) end end
             ug(XA - 1, YA, 0, { floor = {}, flags = { solidfloor = true } })
@@ -25800,14 +26019,13 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     sendClientCommand = function(_, module, cmd) sent[#sent + 1] = module .. ":" .. cmd end
     getSpecificPlayer = function() return { getX = function() return px end, getY = function() return px end } end
 
-    -- 快照前的 dug 不登錄（Claude residual 2）；進場第 60 tick 要一次，回覆沒到（伺服器限速丟掉）下一分鐘再要
+    -- 快照前的 dug 不登錄（Claude residual 2）；進場（OnGameStart）當下要一次，回覆沒到（伺服器限速丟掉）下一分鐘再要
     C.onServerCommand("dug", { t = { 90000, 90000, 90001, 90000 } })
     local early = log() == "" and not BM.has(90000, 90000, -1)
-    for _ = 1, 59 do C.askOnStart() end
-    local before60 = #sent
-    C.askOnStart()
+    fire("OnGameStart")
+    local onStart = #sent
     C.askEveryMinute()
-    local asked = before60 == 0 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements"
+    local asked = onStart == 1 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements"
     -- 快照到（一段）：含剛才那兩格，整塊一起登錄、同一塊；之後大區沒變不再要；範圍內的 dug 照登錄
     seg(A, 1, 1, { { 90000, 90000, 3, 1 } })
     local sx, sy = C.basementSynced()
@@ -25834,7 +26052,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     C.askEveryMinute()
     local quiet2 = #sent == 4
     check(asked and quiet and moved and quiet2,
-        "F8 多人：第 60 tick 要 basements；沒收到快照（請求被限速丟掉）下一分鐘再要；收到後大區沒變不再要；換大區再要、沒回再要；"
+        "F8 多人：進場（OnGameStart）當下要 basements；沒收到快照（請求被限速丟掉）下一分鐘再要；收到後大區沒變不再要；換大區再要、沒回再要；"
         .. "收到新的一區後不再要（" .. tostring(asked) .. tostring(quiet) .. tostring(moved) .. tostring(quiet2) .. " " .. #sent .. "）")
     check(early and whole and dugOk and farDrop,
         "F8 快照前的 dug 不登錄；快照到了含它的整塊一起登錄成同一塊（不會一格一棟）；收到的範圍內的 dug 照登錄、範圍外的不登錄")

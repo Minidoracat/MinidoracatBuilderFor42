@@ -146,11 +146,11 @@ local function edgeTaken(sq, north, skip, dirt)
     return sq:getDoor(side) ~= nil or sq:getWindow(side) ~= nil
 end
 
--- Basement Building（Workshop 3806513504，Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）
--- 的土牆是最底層，別的牆可以蓋在上面；蓋好它拆掉那條邊的土牆，上層牆拆了它下一個 tick 補回（aparosa_BD_DirtLayer.lua:1-18、
--- 138-151、196-221）。它只包原版新式建造（:309-397），本工具自己建物件不經過那裡，所以照它的同一份判斷：外邊土牆不算擋，
--- 外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定，:131-135、243-266），被擋的回 BLOCKED（不另立原因碼）。
--- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推，aparosa_BD_Sync.lua:1-16），預覽同一份判斷。
+-- Basement Building（Mod ID aparosa_BasementDig）：地下室外邊（它記的地下室範圍和沒有房間的格子之間）的土牆是最底層，別的牆
+-- 可以蓋在上面；蓋好它拆掉那條邊的土牆，上層牆拆了它下一個 tick 補回。它只包原版新式建造，本工具自己建物件不經過那裡，所以照
+-- 它的同一份判斷：外邊土牆不算擋，外邊不准蓋開口、框、和土牆同一張圖的牆（它的使用者裁定），被擋的回 BLOCKED（不另立原因碼）。
+-- 範圍紀錄兩端都有（伺服器存 Global ModData，客戶端進場後要一份、改了伺服器推），預覽同一份判斷。
+-- 本 MOD 挖的地下室（Basement）也走這裡：土牆的查與拆用同名的 isOuterEdge、isDirtOnOuterEdge、clearDirt，能不能蓋用它自己的 refuses。
 -- 只在 z < 0、它載入、用到的函式都在時才查；出錯也當沒裝它：土牆照舊擋（BLOCKED），不丟錯。不覆寫它的函式。
 -- 判斷丟過錯的那份（broken）之後一律照沒裝它：pcall 接住的錯照樣進引擎的錯誤計數（pitfalls.md Kahlua 段），拖一排時不要
 -- 每格再丟一次（審查 1107 Grok）。同一個 Lua state 內不再試，重進存檔或重開服才重試（它重載時沿用同一張表）
@@ -158,7 +158,7 @@ local BD_FNS = { "isOuterEdge", "isDirtOnOuterEdge", "isOpeningOnOuterEdge", "is
 local broken
 local function dirtLayer(sq)
     if sq:getZ() >= 0 then return nil end
-    -- 本 MOD 挖的地下室：同一份 6 支判斷（Basement）
+    -- 本 MOD 挖的地下室（Basement）
     local B = MinidoracatBuilder.Basement
     if B and B ~= broken and B.near(sq) then return B end
     local D = aparosa_BD_DirtLayer
@@ -171,7 +171,7 @@ end
 
 -- 它挖地下室時放在外邊的牆（木牆、原木牆）：圖名 → 格邊（"W"／"N"／"NW"），從它的 SPRITE.variant／tier 的 wall 收，
 -- 不收牆角柱 SE、跳過土牆那張表（tier.dirt 就是 SPRITE.dirt）。第二個回傳：西北角的圖名 → { 換掉的邊 → 補回另一邊的單邊圖 }，
--- 取同一張表（同一系列、同一級，它升級也整張表換，aparosa_BD_Upgrade.lua:36-57、106-108）。它沒載入或表的形狀不對回空表（只認土牆）。
+-- 取同一張表（同一系列、同一級，它升級也整張表換）。它沒載入或表的形狀不對回空表（只認土牆）。
 -- 照 SPRITE 那張表快取：它重載換了表就重收。讀的時候丟錯由 basement() 的 pcall 接住、設 broken
 local bdKey, bdNames, bdRest = nil, {}, {}
 local function bdWalls()
@@ -196,9 +196,9 @@ local function bdWalls()
     return names, rest
 end
 
--- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls）。它放的牆是一般 IsoObject
--- （aparosa_BD_Build.lua:446-450）；同一張圖的 IsoThumpable 是玩家用本工具或原版蓋的，不算（它的 aparosa_BD_Upgrade.lua:47-57
--- 也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。西北角那件一件管兩邊：both（另一邊這次也換）時兩邊都算；只換一邊時
+-- 這條邊（k＝"N"／"W"）是它的外邊時，這格上不算擋的物件：它的外邊土牆，和它放的牆（bdWalls）。它放的牆是一般 IsoObject；
+-- 同一張圖的 IsoThumpable 是玩家用本工具或原版蓋的，不算（它升級時也這樣分）。換掉它的牆不退料（使用者 2026-11-25 裁定）。
+-- 西北角那件一件管兩邊：both（另一邊這次也換）時兩邊都算；只換一邊時
 -- 要補得回另一邊（bdWalls 的單邊圖在 namedMap）才算，補不回照舊擋（審查 1125 Codex：整件拆了另一邊變回土牆，升級的料沒了）。
 -- 不是外邊或沒有回 nil
 local function outerDirt(D, sq, k, both)
@@ -219,12 +219,18 @@ local function outerDirt(D, sq, k, both)
     return list[1] and list or nil
 end
 
-local function basementCheck(D, sq, name, n, w)
-    if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
+-- n0、w0＝Entry.edges 的原始格邊，n、w＝bdEdges 篩過的。本 MOD 的層照 refuses；Basement Building 的層照它的三支
+local function basementCheck(D, sq, spr, n0, w0, n, w)
+    if D == MinidoracatBuilder.Basement then
+        if D.refuses(sq, spr, n0, w0) then return true end
+    else
+        local name = spr:getName()
+        if D.isOpeningOnOuterEdge(sq, name) or D.isFrameOnDirt(sq, name) or D.isDirtLookOnOuterEdge(sq, name) then return true end
+    end
     return false, n and outerDirt(D, sq, "N", w), w and outerDirt(D, sq, "W", n)
 end
 
--- 它只認實牆的格邊（aparosa_BD_DirtLayer.lua:46-63 edgesOf 的 WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
+-- 它只認實牆的格邊（WallN／WallW／WallNW；門框、窗框它另擋），透明門框、透明牆角
 -- 這類只有字串鍵的它不認：蓋上去它拆了土牆也不補回，所以這幾種的土牆照舊擋（審查 1107 Claude）
 local function bdEdges(spr, n, w)
     local p = spr:getProperties()
@@ -237,8 +243,8 @@ end
 local function basement(sq, spr, n, w)
     local D = dirtLayer(sq)
     if not D then return nil end
-    n, w = bdEdges(spr, n, w)
-    local ok, refused, dn, dw = pcall(basementCheck, D, sq, spr:getName(), n, w)
+    local bn, bw = bdEdges(spr, n, w)
+    local ok, refused, dn, dw = pcall(basementCheck, D, sq, spr, n, w, bn, bw)
     if not ok then
         broken = D
         print("[MinidoracatBuilderFor42] Basement Building check failed, treated as not installed: " .. tostring(refused))
@@ -1910,9 +1916,8 @@ function Place.settle(cells)
 end
 
 -- 它的 clearDirt 只拆土牆；它放的牆（outerDirt 收到、不是土牆的）本工具自己拆，它在移除事件記下、下一個 tick 看到那條邊
--- 有本工具的牆就不補土牆（aparosa_BD_DirtLayer.lua:196-221）。先拆土牆：clearDirt 丟錯撤回時它的牆還在。
--- 只換西北角那件的一邊（both 不成立）：先照它放牆的寫法（aparosa_BD_Build.lua:446-450）在另一邊補回同一張表的單邊牆，
--- 再拆西北角那件；另一邊有牆，它下一個 tick 不補土牆（restoreDirt 先看 wallOrOpeningOn，aparosa_BD_DirtLayer.lua:154-157），
+-- 有本工具的牆就不補土牆。先拆土牆：clearDirt 丟錯撤回時它的牆還在。
+-- 只換西北角那件的一邊（both 不成立）：先在另一邊補回同一張表的單邊牆，再拆西北角那件；另一邊有牆，它下一個 tick 不補土牆，
 -- 補回的這件和它放的一樣（一般 IsoObject、它的牆表的圖），它的升級與本工具之後都認得。補不回的 Place.check 已經擋下
 local function clearEdge(D, sq, k, both)
     if not D.isOuterEdge(sq:getX(), sq:getY(), sq:getZ(), k) then return end
@@ -1938,9 +1943,9 @@ local function clearDirtAt(D, c, n, w)
     if w then clearEdge(D, c.sq, "W", n) end
 end
 
--- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：照地下室 MOD 包原版 setInfo 那段（aparosa_BD_DirtLayer.lua:354-364），
--- 這次蓋的格邊是它的外邊就拆掉那條邊的土牆和它放的牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
--- Place.undo、原地替換拆舊的）時，它在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆（:196-221），本工具不必管。
+-- 蓋好之後（Server.complete 在扣料前另包一層 pcall，丟錯和 Place.build 走同一段撤回）：和地下室 MOD 包住原版建造完成的那段做同一件事：
+-- 這次蓋的格邊是外邊就拆掉那條邊的土牆和它放的牆（Place.check 只在外邊放行實牆）。之後本工具的牆被移除（拆除、蓋到一半出錯的
+-- Place.undo、原地替換拆舊的）時，那一層在移除事件記下、下一個 tick 那條邊沒有牆才補回土牆，本工具不必管。
 -- 出錯丟回 Server.complete：照蓋到一半出錯撤回（Place.undo、不扣料、INTERNAL），拆了一半的土牆由它照上一句補回（審查 1107 Codex）。
 -- 這裡出錯不設 broken：只有伺服器跑得到這裡，設了客戶端不知道，兩端判斷就不一樣（審查 1107 Claude 第 2 輪）；INTERNAL 會清掉
 -- 客戶端排在後面的動作，不會每格再丟

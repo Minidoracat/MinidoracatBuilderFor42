@@ -240,7 +240,10 @@ function Cursor.preview(player, name, d, anchors, S, ...)
             end
             -- 挖這一格：同一次前面可挖的格子算已挖（Basement.pre 的 DIG_EDGE 看 planned）
             if info and info.entry and (LAYERED[info.entry.kind] or info.entry.kind == "dig") then
-                for _, c in ipairs(info.cells) do planned[B.Place.key(c.x, c.y, c.z)] = true end
+                local dig = info.entry.kind == "dig"
+                for _, c in ipairs(info.cells) do
+                    if dig then B.Basement.plan(planned, c.x, c.y, c.z) else planned[B.Place.key(c.x, c.y, c.z)] = true end
+                end
             end
             -- 預覽提醒（Place.caution：全高窗的框不合、坡頂出口）只提醒不擋：丟錯時照樣可蓋。不放進 Check.item：
             -- 藍圖檢查與照圖蓋也帶 walk 呼叫它（PlanCheck、Runner），會每片多算一次
