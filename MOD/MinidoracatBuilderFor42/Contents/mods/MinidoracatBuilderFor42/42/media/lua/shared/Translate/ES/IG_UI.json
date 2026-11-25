@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Para cavarla, colócate en una casilla ya cavada justo al lado (norte, sur, este u oeste).",
   "IGUI_MBLD_Refuse_DIG_DONE": "Esta casilla ya está cavada. Elige una al lado que no lo esté.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Para una entrada adicional, las 3 casillas de la escalera y la casilla frente al pie de la escalera ya tienen que estar cavadas: cávalas primero con \"Cavar casilla de sótano\". Para un sótano nuevo, deja toda la escalera al menos a una casilla de este.",
+  "IGUI_MBLD_Basement_Partial": "Una parte de esta excavación no se terminó (por ejemplo, la abertura de la entrada o los muros de tierra exteriores). Los materiales se gastaron igual. Admins: revisad la línea \"basement ... failed\" en console.txt.",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Hay algo colgado en esta pared de tierra (un cuadro, un interruptor, una decoración de pared o pintura). Descuélgalo o quítalo antes de cavar por aquí."
 }

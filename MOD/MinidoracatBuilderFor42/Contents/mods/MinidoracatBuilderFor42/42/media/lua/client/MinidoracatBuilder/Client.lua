@@ -738,7 +738,7 @@ Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)
 
 -- accepted：{ n }；refused：{ n, i（0＝請求本身被拒）, code, x, y, z, need = { fullType = 數量 }, tools = { ItemTag 欄位名 } }；
--- placed：{ n, i, replaced（原地替換了舊的那件時 true）}
+-- placed：{ n, i, replaced（原地替換了舊的那件時 true）, partial（挖地下室有一步沒做完時 true）}
 -- 目前這筆請求被拒時清掉後面的動作：MP 的 Reject 已清過（再清無害），單機的 complete() 回傳值沒人看，要在這裡清。
 function Client.onServerCommand(cmd, args)
     if UNBUILD[cmd] then return onUnbuild(cmd, args) end
@@ -756,6 +756,10 @@ function Client.onServerCommand(cmd, args)
         if b and b.n == args.n then ISTimedActionQueue.clear(b.player) end
     end
     if cmd == "placed" and b and b.n == args.n then b.last = math.max(b.last or 0, args.i or 0) end
+    if cmd == "placed" and args.partial then
+        Messages.toast(b and b.n == args.n and b.player or getSpecificPlayer(0), getText("IGUI_MBLD_Basement_Partial"),
+            getText("IGUI_MBLD_Title"))
+    end
     if Client.onResult then Client.onResult(cmd, args) end
 end
 
@@ -771,11 +775,16 @@ end)
 --     看起來沒反應（builder-rooms-1029g）。switchLight 會把房間裡其他燈與開關的 activated 一起改掉（:517-523），同一幀照原值
 --     還原（同伺服器 Circuits 的 apply）。地圖房屋的房間燈由伺服器同步，客戶端自己切會和伺服器不一致；沒有房間時切了也看不到
 --     （開關的光源不畫，:790-794）。招牌不算開關（Rules.switchProps），不補。
--- 自建房間的開關照自己的狀態切房間燈，房間裡其他燈與開關的 activated 同一幀還原。回那個房間（不在自建房間回 nil）
+-- 自建房間的開關照自己的狀態切房間燈，房間裡其他燈與開關的 activated 同一幀還原。回那個房間（不在自建房間回 nil）。
+-- 本 MOD 的地下室（房間名 Basement.ROOM，不是自建房間）同樣補切，但只補開著的：同一間沒接燈的開關由伺服器一起切，
+-- 關著的那個照自己切會把同一間其他開著的開關的燈熄掉
 local function lightRoom(obj)
     local sq = obj:getSquare()
-    local room = sq and sq:isUserDefinedRoom() and sq:getRoom()
+    local room = sq and sq:getRoom()
     if not room then return nil end
+    local under = not sq:isUserDefinedRoom() and room:getName() == MinidoracatBuilder.Basement.ROOM
+    if not (under or sq:isUserDefinedRoom()) then return nil end
+    if under and not obj:isActivated() then return room end
     local list, others, was = room:getLightSwitches(), {}, {}
     for i = 0, list:size() - 1 do
         local o = list:get(i)
@@ -799,10 +808,7 @@ end
 -- 只在換房間物件時切：switchLight 會讓整張光照重算（:556 recalcLightTime），不能每秒都切。
 local WATCH_MS = 1000
 local watched, watchAt, watching = {}, 0, false
-local function watchTick()
-    local t = getTimestampMs()
-    if t >= watchAt and t - watchAt < WATCH_MS then return end
-    watchAt = t
+local function watchNow()
     for i = #watched, 1, -1 do
         local w = watched[i]
         local obj = w.obj
@@ -819,6 +825,15 @@ local function watchTick()
             end
         end
     end
+end
+-- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒
+MinidoracatBuilder.Basement.onApplied = watchNow
+
+local function watchTick()
+    local t = getTimestampMs()
+    if t >= watchAt and t - watchAt < WATCH_MS then return end
+    watchAt = t
+    watchNow()
     if #watched == 0 then
         watching = false
         Events.OnTick.Remove(watchTick)

@@ -171,7 +171,8 @@ local function orphans(player, new)
     return out
 end
 
--- Server.complete 在 Place.build 成功後呼叫（cells＝Check.item 的格子，帶 role）；回 holes＝洞格地板的退料表清單。
+-- Server.complete 在 Place.build 成功後呼叫（cells＝Check.item 的格子，帶 role）；回 holes＝洞格地板的退料表清單、
+-- partial＝加進集合、補牆、開洞有一步出錯（玩家看得到的部分沒做完；給蓋的人一句提示）。
 -- 帳本寫成功之前不做拿不回來的事（開洞在後）；有一格寫不進去就把這次寫的拿掉並丟錯（Server.complete 撤回、不扣料）。
 -- 帳本寫好了就算蓋成（Server.complete 照常扣料、磨鏟子）：之後每一步（加進集合、補牆、開洞、登錄、同步）出錯只記 log、
 -- 不丟錯，漏掉的登錄與畫面在下一次開服或進場時照帳本補上（審查 round1 F1）。
@@ -198,21 +199,22 @@ function BasementLedger.commit(player, cells, anchor)
     local tiles = {}
     for i, c in ipairs(new) do tiles[i] = { c.x, c.y } end
     local ok, added = step("add", Basement.add, tiles)
+    local partial = not ok
     if not ok then added = {} end
     for _, t in ipairs(again) do added[#added + 1] = t end
     for _, t in ipairs(added) do
-        step("edges", function()
+        partial = not step("edges", function()
             Basement.fixEdges(t[1], t[2], Z)
             Basement.fixEdges(t[1] + 1, t[2], Z)
             Basement.fixEdges(t[1], t[2] + 1, Z)
-        end)
+        end) or partial
     end
     local holes, cell = {}, getCell()
     for _, c in ipairs(cells) do
         local sq = c.role == "hole" and (c.sq or cell:getGridSquare(c.x, c.y, c.z))
         if sq then
             local opened, h = step("hole", openHole, sq)
-            if opened then holes[#holes + 1] = h end
+            if opened then holes[#holes + 1] = h else partial = true end
         end
     end
     -- 登錄延後一起做（Basement.growLater）：一次拖曳挖很多格只登錄一次。重挖的格子在集合裡，growLater 照「還沒登錄」篩
@@ -224,7 +226,7 @@ function BasementLedger.commit(player, cells, anchor)
         for _, t in ipairs(added) do flat[#flat + 1], flat[#flat + 2] = t[1], t[2] end
         sendNear("dug", { t = flat }, added)
     end)
-    return holes
+    return holes, partial
 end
 
 -- 一個 basements 封包最多帶幾個矩形：同一塊不拆開，塞不下就換下一段（審查 round1 F11）

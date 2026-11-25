@@ -131,6 +131,14 @@ function Circuits.isLamp(o)
     return p ~= nil and p:has("lightR") and (p:has("IsMoveAble") or Ledger.get(o) ~= nil)
 end
 
+-- 本 MOD 挖的地下室裡的牆上開關（Rules.switchProps；不管是不是本工具蓋的）。這些開關由本工具切：伺服器上它們那格
+-- 不掛房間（Basement.setSwitchTile），引擎的房間連動用不上
+local function underSwitch(o)
+    local sq, p, Basement = o:getSquare(), props(o), B.Basement
+    return sq ~= nil and p ~= nil and Basement ~= nil and B.Rules.switchProps(p)
+        and Basement.has(sq:getX(), sq:getY(), sq:getZ())
+end
+
 -- 一盞燈的每一片（同一組的燈；switchLight 連動多格用 setActive，不能搬的片會被擋，IsoLightSwitch.java:543-557）
 local function pieces(o)
     local out = {}
@@ -282,17 +290,17 @@ end
 
 -- 那一格的區域編號與區域；isEnclosed 為真才回（small＝true 時還要不超過 ROOM_MAX 格）。編號會變（IsoRegionManager.java:26），
 -- 只在這一次比。
--- 地下沒有區域資料，引擎查 z < 0 會陣列越界、記一大段錯誤（引擎自己的入口也先擋，IsoGridSquare.java:9987-9989）：自動接線
--- （small）改認房間：本 MOD 挖的地下室照塊與房號（"b"..塊..":"..房號，牆隔開的各一間），地圖或別的 MOD 的地下房間照
--- RoomDef 物件本身（不比 getID：long 進 Lua 失準）。按開關後的補同步（small＝false）照舊不查：地下不建自建房間
+-- 地下沒有區域資料，引擎查 z < 0 會陣列越界、記一大段錯誤（引擎自己的入口也先擋，IsoGridSquare.java:9987-9989）：改認房間。
+-- 本 MOD 挖的地下室照塊與房號（"b"..塊..":"..房號，牆隔開的各一間；small 才限 ROOM_MAX）；地圖或別的 MOD 的地下房間
+-- 只在自動接線（small）時照 RoomDef 物件本身（不比 getID：long 進 Lua 失準），按開關後的補同步不查
 local function roomOf(x, y, z, small)
     if z < 0 then
-        if not small then return nil end
         local Basement = B.Basement
         if Basement then
             local id, room, n = Basement.roomOf(x, y, z)
-            if id then return n <= Circuits.ROOM_MAX and "b" .. id .. ":" .. room or nil end
+            if id then return (not small or n <= Circuits.ROOM_MAX) and "b" .. id .. ":" .. room or nil end
         end
+        if not small then return nil end
         local def = getWorld():getMetaGrid():getRoomAt(x, y, z)
         if not def or def:getName() == "emptyoutside" or def:getArea() > Circuits.ROOM_MAX then return nil end
         return def
@@ -377,8 +385,10 @@ local function regionObjects(sq, rid, out, seen)
 end
 
 -- 客戶端會替這個區域建自建房間、讓開關連動整間的才要還原：地圖房屋（有 room、不是自建）照原版整間連動；
--- 屋頂不到一半的區域客戶端不建房間（WorldRegionToMetaGrid.java:183）
-local function cascades(sq, r)
+-- 屋頂不到一半的區域客戶端不建房間（WorldRegionToMetaGrid.java:183）。本 MOD 的地下室（字串編號）單機與客戶端
+-- 都有房間（BuildingRoomsEditor 把格上的 IsoLightSwitch 收進房間，BuildingRoomsEditor.java:397-401）：一律還原
+local function cascades(sq, rid, r)
+    if type(rid) == "string" then return true end
     if sq:getRoom() ~= nil and not sq:isUserDefinedRoom() then return false end
     local n = r:getSquareSize()
     return n > 0 and r:getRoofCnt() / n >= 0.5
@@ -415,7 +425,12 @@ local function apply(list, v)
         local sq = o:getSquare()
         local rid, r
         if sq then rid, r = roomOf(sq:getX(), sq:getY(), sq:getZ(), false) end
-        if rid and not scanned[rid] and cascades(sq, r) then
+        -- 伺服器上這格還掛著房間（剛登錄過）就先摘掉：掛著房間時 switchLight 改整間的 lightsActive、連動房間裡每個
+        -- 開關與燈並送 MetaGrid（IsoLightSwitch.java:518-535）
+        if type(rid) == "string" and sq:getRoom() ~= nil and underSwitch(o) and B.Basement.setSwitchTile then
+            B.Basement.setSwitchTile(sq:getX(), sq:getY(), true)
+        end
+        if rid and not scanned[rid] and cascades(sq, rid, r) then
             scanned[rid] = true
             if regionObjects(sq, rid, others, seen) then
                 print(LOG .. "CIRCUIT sync truncated at=" .. sq:getX() .. "," .. sq:getY() .. "," .. sq:getZ()
@@ -453,9 +468,29 @@ local function align(ref, swKeys)
     if #list > 0 then apply(list, ref:isActivated()) end
 end
 
--- 按開關（id＝線路編號）或本工具蓋的燈（id＝nil）。順序：距離（同一層、PRESS_REACH 格內）→ Safehouse 的 USE
--- （拒絕時它自己推通知；我們的 complete 不呼叫原版，包在內層的 Safehouse 不會跑）→ 冷卻 → 切。回 complete 的結果。
-function Circuits.press(player, obj, id)
+-- 這個開關所在、上面有燈的線路編號；不是本工具的開關、沒接線或線路上沒燈回 nil
+local function wiredId(d, o)
+    local id = d and Circuits.isSwitch(o) and live(d, Ledger.key(o))
+    if id and count(d.c[id].l) > 0 then return id end
+    return nil
+end
+
+-- 同一間地下室（rid）裡沒接燈的牆上開關（沿房間走，含 sq 上的）
+local function roomSwitches(d, sq, rid)
+    local all, out = {}, {}
+    regionObjects(sq, rid, all, {})
+    for _, o in ipairs(all) do
+        if underSwitch(o) and not wiredId(d, o) then out[#out + 1] = o end
+    end
+    return out
+end
+
+-- 按開關（id＝線路編號）、本工具蓋的燈（id＝nil），或地下室裡沒接燈的牆上開關（id＝nil，第四個參數＝房間編號：
+-- 同一間的這些開關一起切；canSwitchLight 不過就不動，同原版，IsoLightSwitch.java:415-424）。順序：距離（同一層、
+-- PRESS_REACH 格內）→ Safehouse 的 USE（拒絕時它自己推通知；我們的 complete 不呼叫原版，包在內層的 Safehouse 不會跑）
+-- → 冷卻 → 切。回 complete 的結果。
+function Circuits.press(player, obj, id, ...)
+    local rid = ...
     local sq = obj:getSquare()
     if not (player and sq) then return false end
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
@@ -465,7 +500,8 @@ function Circuits.press(player, obj, id)
         return false
     end
     if useDenied(player, x, y, z) then return false end
-    local k = id or Ledger.key(obj)
+    if rid and not obj:canSwitchLight() then return false end
+    local k = id or rid or Ledger.key(obj)
     local t = now()
     if cooling(lastPress[k], t, Circuits.PRESS_MS) then return false end
     lastPress[k] = t
@@ -475,12 +511,14 @@ function Circuits.press(player, obj, id)
         local sw, lamps
         sw, lamps, skipped = members(d, id)
         list = concat(sw, lamps)
+    elseif rid then
+        list = roomSwitches(d, sq, rid)
     else
         list = pieces(obj)
     end
     local v = not obj:isActivated()
     apply(list, v)
-    print(LOG .. "CIRCUIT press user=" .. server().who(player) .. " at=" .. x .. "," .. y .. "," .. z .. " id=" .. tostring(id)
+    print(LOG .. "CIRCUIT press user=" .. server().who(player) .. " at=" .. x .. "," .. y .. "," .. z .. " id=" .. tostring(id or rid)
         .. " on=" .. tostring(v) .. " objects=" .. #list .. " skipped=" .. skipped)
     if skipped > 0 then Circuits.send(player, { note = "UNLOADED", n = skipped, who = player:getOnlineID() }) end
     return true
@@ -490,18 +528,28 @@ end
 -- （包裝看到出錯時不再呼叫原版，不會切兩次）
 function Circuits.onToggle(action)
     local obj = action.object
-    if not (instanceof(obj, "IsoLightSwitch") and Ledger.get(obj)) then return nil end
+    if not instanceof(obj, "IsoLightSwitch") then return nil end
+    local under = underSwitch(obj)
+    if not (under or Ledger.get(obj)) then return nil end
     if Circuits.isLamp(obj) then
         action.mbldClaimed = true
         return Circuits.press(action.character, obj, nil)
     end
-    local d = data()
     -- 招牌這類帳本有、卻不算開關的（Rules.switchProps）照原版：只有開關會被當成線路的開關
-    local id = d and Circuits.isSwitch(obj) and live(d, Ledger.key(obj))
+    local id = wiredId(data(), obj)
+    if id then
+        action.mbldClaimed = true
+        return Circuits.press(action.character, obj, id)
+    end
+    -- 地下室裡沒接燈的牆上開關：同一間的一起切（伺服器上那格不掛房間，原版只切得到它自己）
+    local sq = under and obj:getSquare()
+    local rid = sq and roomOf(sq:getX(), sq:getY(), sq:getZ(), false)
+    if rid then
+        action.mbldClaimed = true
+        return Circuits.press(action.character, obj, nil, rid)
+    end
     -- 沒接線、或線路上還沒有燈的開關照原版（在地圖房屋裡切整間房）
-    if not id or count(d.c[id].l) == 0 then return nil end
-    action.mbldClaimed = true
-    return Circuits.press(action.character, obj, id)
+    return nil
 end
 
 -- 移出世界前（拿起、砸、拆都會觸發；Ledger.lua 同一個事件）
@@ -733,6 +781,19 @@ local function refuse(player, q, code, ...)
     return false
 end
 
+-- 地下室新裝、沒接燈的牆上開關跟同一間已有的同一種開關同一個狀態（那幾個是一起切的，Circuits.press）
+local function matchRoom(o)
+    local sq, d = o:getSquare(), data()
+    local rid = sq and underSwitch(o) and not wiredId(d, o) and roomOf(sq:getX(), sq:getY(), sq:getZ(), false)
+    if not rid then return end
+    for _, s in ipairs(roomSwitches(d, sq, rid)) do
+        if s ~= o then
+            if s:isActivated() ~= o:isActivated() then apply({ o }, s:isActivated()) end
+            return
+        end
+    end
+end
+
 -- 放好一項燈（Server.complete 收尾後）：開關自動接線，燈接進房間裡唯一的線路；結果推給蓋的人（燈沒接上也說原因）
 function Circuits.placed(player, objs)
     local first = objs[1]
@@ -740,6 +801,7 @@ function Circuits.placed(player, objs)
     local d = data()
     if Circuits.isSwitch(first) then
         local code, info = Circuits.autoWire(player, first)
+        matchRoom(first)
         if code then return reply(player, nil, d, nil, { auto = "switch", code = code }) end
         print(LOG .. "CIRCUIT auto user=" .. server().who(player) .. " id=" .. tostring(info.id) .. " lamps=" .. info.n
             .. " taken=" .. info.taken .. " skipped=" .. info.skipped .. " joined=" .. tostring(info.jx ~= nil))
@@ -967,8 +1029,23 @@ if ISToggleLightAction and not B.toggleComplete then
     end
 end
 
+-- 地下室的牆上開關拆掉時：那格沒有別的牆上開關了就不再當開關格（之後的登錄照常把它算進房間）
+function Circuits.unmount(obj)
+    if not underSwitch(obj) then return end
+    local sq = obj:getSquare()
+    local objs = sq:getObjects()
+    for i = 0, objs:size() - 1 do
+        local o = objs:get(i)
+        if o ~= obj and instanceof(o, "IsoLightSwitch") and underSwitch(o) then return end
+    end
+    if B.Basement.setSwitchTile then B.Basement.setSwitchTile(sq:getX(), sq:getY(), false) end
+end
+
 Events.OnObjectAboutToBeRemoved.Add(function(obj)
-    if instanceof(obj, "IsoLightSwitch") then MinidoracatBuilder.Circuits.forget(obj) end
+    if instanceof(obj, "IsoLightSwitch") then
+        MinidoracatBuilder.Circuits.forget(obj)
+        MinidoracatBuilder.Circuits.unmount(obj)
+    end
 end)
 
 return Circuits

@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Stand on a dug tile right next to it (north, south, east or west) to dig it.",
   "IGUI_MBLD_Refuse_DIG_DONE": "This tile is already dug. Pick one next to it that isn't.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "For an extra entrance, the 3 stair tiles and the tile in front of the stairs' foot must already be dug: dig them with \"Dig Basement Tile\" first. For a new basement, keep the whole staircase at least one tile away from this one.",
+  "IGUI_MBLD_Basement_Partial": "Part of this dig wasn't finished (for example the entrance opening or the outer dirt walls). The materials were still used. Admins: see the \"basement ... failed\" line in console.txt.",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Something is mounted on this dirt wall (a picture, a switch, a wall decoration or paint). Take it down or remove it before digging through here."
 }

@@ -899,5 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Zum Graben auf eine gegrabene Kachel direkt daneben stellen (Norden, Süden, Osten oder Westen).",
   "IGUI_MBLD_Refuse_DIG_DONE": "Diese Kachel ist schon gegraben. Eine daneben wählen, die es noch nicht ist.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Für einen zusätzlichen Eingang müssen die 3 Treppenkacheln und die Kachel vor dem Treppenende schon gegraben sein: zuerst mit „Kellerkachel graben“ graben. Für einen neuen Keller muss die ganze Treppe mindestens eine Kachel von diesem entfernt sein.",
+  "IGUI_MBLD_Basement_Partial": "Ein Teil dieser Grabung wurde nicht fertig (z. B. die Eingangsöffnung oder die äußeren Erdwände). Das Material wurde trotzdem verbraucht. Admins: siehe die Zeile \"basement ... failed\" in console.txt.",
   "IGUI_MBLD_Refuse_DIG_HUNG": "An dieser Erdwand hängt etwas (ein Bild, ein Schalter, eine Wanddeko oder Farbe). Erst abnehmen oder entfernen, dann hier durchgraben."
 }
