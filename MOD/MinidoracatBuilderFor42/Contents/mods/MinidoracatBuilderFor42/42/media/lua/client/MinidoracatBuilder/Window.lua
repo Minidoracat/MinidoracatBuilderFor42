@@ -1236,13 +1236,8 @@ function W.whyText(code, detail, ...)
         end
     end
     if code == "DISABLED_KIND" then
-        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）。
-        -- 挖掘開著卻還是關著＝土牆圖塊沒載入（Entry.kindOn），說真正的原因
-        if detail == "dig" and Entry.kindSet("dig", nil) then
-            code = "DIG_PATCH"
-        elseif Entry.KIND_OFF[detail] then
-            code = "OFF_DEFAULT"
-        end
+        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
+        if Entry.KIND_OFF[detail] then code = "OFF_DEFAULT" end
         detail = Names.kind(detail)
     elseif code == "DISABLED_SOURCE" and detail then
         detail = W.modName(detail)

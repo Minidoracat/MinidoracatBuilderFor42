@@ -10624,9 +10624,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             Basement.add({ { 4000, 3800 } })
             local reg = Basement.registerAll()
             print = realPrint
-            check(code == "DISABLED" and why == "DISABLED_KIND" and kind == "dig" and logs == 1 and raw == true
+            check(code == "DIG_PATCH" and why == "DIG_PATCH" and logs == 1 and raw == true
                 and reg == true and eng.tile[tk(4000, 3800)] ~= nil,
-                "✗ 土牆的圖塊補丁沒生效：挖這一格回 DISABLED（說明是種類關掉）、log 只印一次、管理面板照沙盒值、"
+                "✗ 土牆的圖塊補丁沒生效：挖這一格回 DIG_PATCH（說明也是補丁那句）、log 只印一次、管理面板照沙盒值、"
                 .. "已經挖好的照常登錄（" .. tostring(code) .. " " .. tostring(why) .. " logs=" .. logs .. "）")
             spriteMap, spriteOrder = keepMap2, keepOrder2
             Basement.patchOk = nil
@@ -26181,23 +26181,37 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "F7 挖這一格的站位：只走到已挖的正交鄰格（斜角、沒挖的不站）；站在已挖鄰格上不走；沒有就不原地挖、記 noRoom；"
         .. "第 2 格起等前一格進了地下室集合才找站位")
 
-    -- 土牆的圖塊補丁沒載入（挖掘開著卻蓋不了）：Check.item 回 DIG_PATCH、詳情說真正的原因，不說「管理員關掉了」；
-    -- 沙盒本來就關著時照舊 DISABLED
+    -- 土牆的圖塊補丁沒載入（挖掘開著卻蓋不了）：Entry.resolve 回 DIG_PATCH，伺服器收請求、開游標、送請求、Check.item、
+    -- 詳情都拿到它，不說「管理員關掉了」；沙盒本來就關著時照舊 DISABLED
     ;(function()
-        local keepOk, gt, gtn = BM.patchOk, getText, getTextOrNull
-        local p = player({ x = TX + 0.5, y = TY + 0.5, z = -1 })
+        local keepOk, gt, gtn, keepRefuse, keepToast, keepGet = BM.patchOk, getText, getTextOrNull, Server.refuse,
+            Messages.toast, getSpecificPlayer
+        local p = player({ id = 7701, x = TX + 0.5, y = TY + 0.5, z = -1 })
         BM.patchOk = false
-        local code = B.Check.item(p, CELL, 0, { TX, TY, -1 }, { preview = true })
         getText = function(k) return k end
         getTextOrNull = getText
-        local why = B.Window.whyText("DISABLED_KIND", "dig")
+        local refused, toast
+        Server.refuse = function(_, _, _, c) refused = c end
+        Messages.toast = function(_, text) toast = text end
+        getSpecificPlayer = function() return p end
+        local _, resolved = Entry.resolve(CELL)
+        Server.intent(p, { n = 1, e = CELL, c = { TX, TY, -1, 0 }, v = Entry.digest() })
+        local started = Cur.start(0, CELL, 0)
+        local _, built = C.build(p, CELL, { { TX, TY, -1, 0 } })
+        local code = B.Check.item(p, CELL, 0, { TX, TY, -1 }, { preview = true })
+        local why = B.Window.whyText(Entry.why(CELL))
         sb.KindDig = false
         local off = B.Check.item(p, CELL, 0, { TX, TY, -1 }, { preview = true })
-        local whyOff = B.Window.whyText("DISABLED_KIND", "dig")
+        local whyOff = B.Window.whyText(Entry.why(CELL))
         getText, getTextOrNull, sb.KindDig, BM.patchOk = gt, gtn, true, keepOk
-        check(code == "DIG_PATCH" and why == "IGUI_MBLD_Why_DIG_PATCH" and off == "DISABLED" and whyOff == "IGUI_MBLD_Why_OFF_DEFAULT",
-            "補丁沒載入：挖這一格回 DIG_PATCH、說明換成補丁那句；沙盒關著照舊 DISABLED、說預設關閉（" .. tostring(code) .. " "
-            .. tostring(why) .. " " .. tostring(off) .. " " .. tostring(whyOff) .. "）")
+        Server.refuse, Messages.toast, getSpecificPlayer = keepRefuse, keepToast, keepGet
+        check(resolved == "DIG_PATCH" and refused == "DIG_PATCH" and started == nil and toast == "IGUI_MBLD_Refuse_DIG_PATCH"
+            and built == "DIG_PATCH" and code == "DIG_PATCH" and why == "IGUI_MBLD_Why_DIG_PATCH" and off == "DISABLED"
+            and whyOff == "IGUI_MBLD_Why_OFF_DEFAULT",
+            "補丁沒載入：Entry.resolve 回 DIG_PATCH，Server.intent、Cursor.start、Client.build、Check.item、說明都照它；"
+            .. "沙盒關著照舊 DISABLED、說預設關閉（" .. tostring(resolved) .. " " .. tostring(refused) .. " " .. tostring(toast)
+            .. " " .. tostring(built) .. " " .. tostring(code) .. " " .. tostring(why) .. " " .. tostring(off) .. " "
+            .. tostring(whyOff) .. "）")
     end)()
 
     -- 游標：規劃模式說不能放時整片畫紅、第一格加警告記號（不只標籤寫原因）；掛鉤丟錯也一樣。

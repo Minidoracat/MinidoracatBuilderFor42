@@ -119,7 +119,8 @@ function Entry.sprite(name)
     return named:get(name)
 end
 
--- 回 entry＝{ name, spr, kind, tileset, num, mod }，或 nil＋原因碼（UNKNOWN／UNSUPPORTED／DISABLED）
+-- 回 entry＝{ name, spr, kind, tileset, num, mod }，或 nil＋原因碼（UNKNOWN／UNSUPPORTED／DISABLED；挖掘開著、土牆圖塊補丁
+-- 沒生效時 DIG_PATCH，Basement.patched：說真正的原因，不說「管理員關掉了」）
 function Entry.resolve(name)
     local spr = Entry.sprite(name)
     if not spr then return nil, "UNKNOWN" end
@@ -146,9 +147,10 @@ function Entry.resolve(name)
     local mod = Sources.isModFile(file) and Sources.map()[file] or nil
     local s = Entry.settings()
     if (mod and disabledSources(s.DisabledSources)[mod]) or disabledTilesets(s.DisabledTilesets)[tileset]
-        or not Entry.kindOn(kind, s) then
+        or not Entry.kindSet(kind, s) then
         return nil, "DISABLED"
     end
+    if kind == "dig" and not MinidoracatBuilder.Basement.patched() then return nil, "DIG_PATCH" end
     return { name = name, spr = spr, kind = kind, tileset = tileset, num = tonumber(num), mod = mod }
 end
 
@@ -290,7 +292,8 @@ end
 -- 這個名稱為什麼不能蓋、該改找哪一張（建造視窗搜完整圖塊名、右鍵挑圖塊用）。回 code, arg, alt：
 --   code＝原因碼（IGUI_MBLD_Why_<碼>；nil＝能蓋）：UNKNOWN 沒有這張圖、Rules.kindOf 的碼、UNSUPPORTED 不能蓋的種類、
 --     PART 多格的其他格（車庫門、雙開門、坡道的其他片也是）、STAIRS_SET 湊不成三格的樓梯片、DOOR_SET 湊不成整組的車庫門、
---     雙開門、RAMP_SET 湊不成整組的坡道片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的
+--     雙開門、RAMP_SET 湊不成整組的坡道片、DISABLED_KIND／DISABLED_SOURCE／DISABLED_TILESET 管理員關掉的、
+--     DIG_PATCH 土牆圖塊補丁沒生效
 --   arg＝說明裡的名稱：建造配方（EntityScriptName）、種類 ID、MOD ID 或 tileset
 --   alt＝同一件東西能蓋的那一張（開著的門、窗的狀態圖、拉上的窗簾、疊放圖、多格的原點、樓梯的底片、車庫門頭片與雙開門
 --     第 1 片、坡道的頭片），能蓋才給。
@@ -314,10 +317,12 @@ function Entry.why(name, ...)
         alt = offset(name, 4)
     elseif code == "STACK" then
         alt = offset(name, tonumber(p:get("StackReplaceTileOffset")) or 0)
+    elseif res == "DIG_PATCH" then
+        code = "DIG_PATCH"
     elseif res == "DISABLED" then -- resolve 最後才查開關：走到這裡的種類、樓梯組、原點都沒問題
         local s = Entry.settings()
         local tileset = name:match("^(.*)_%d+$")
-        if not Entry.kindOn(kind, s) then
+        if not Entry.kindSet(kind, s) then
             code, arg = "DISABLED_KIND", kind
         elseif disabledTilesets(s.DisabledTilesets)[tileset] then
             code, arg = "DISABLED_TILESET", tileset
