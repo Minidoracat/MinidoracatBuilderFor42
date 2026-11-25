@@ -407,6 +407,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]New entrances[/b]: the whole staircase must be at least one tile away from other basements; to connect them, dig through from inside with Dig Basement Tile.
 [*] [b]Extra entrances[/b]: to add an entrance over a basement you already dug, the 3 stair tiles and the tile in front of the stairs' foot must already be dug; the preview shows only the tiles it will actually open.
 [*] [b]Work time[/b]: about 35 seconds for an entrance and about 6 seconds per dug tile.
+[*] [b]Zombies[/b]: like any stairs, zombies can walk down the entrance stairs.
 [/list]
 [h3]Digging outward[/h3]
 [list]
@@ -417,6 +418,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Something on a dirt wall[/b]: you can't dig through a dirt wall with a picture, switch, wall decoration or paint on it; take it down or remove it first.
 [*] [b]The dug-out dirt[/b]: doesn't turn into items.
 [*] [b]Digging into someone else's area[/b]: digging a tile removes the dirt walls between it and the dug tiles next to it, so you also need permission to dismantle on those tiles.
+[*] [b]Floors right above a basement[/b]: a ground-floor floor right above a basement (including one tile around it) can't be replaced while a person, zombie or animal stands on it, and you're told someone is standing there; the tile has no floor for a moment while it's replaced, and whoever stands there falls into the basement and gets hurt, so wait until they move off.
 [/list]
 [h3]Materials and tools[/h3]
 [list]
@@ -427,8 +429,11 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dirt walls, rooms and lights[/h3]
 [list]
 [*] [b]Dirt walls[/b]: dirt walls form around what you dig, the ground is dirt, and it counts as indoors.
-[*] [b]Replacing the outer dirt walls[/b]: build a solid wall on an outer edge with Build Anything and the dirt wall there is removed; dismantle that wall later and the dirt wall comes back by itself.
-[*] [b]No openings on the outer edge[/b]: door frames, window frames, fences, and walls drawn with the same picture as the dirt wall can't go on an outer edge.
+[*] [b]Replacing the outer dirt walls[/b]: build a solid wall on an outer edge (the side against undug earth) with Build Anything and the dirt wall there moves aside; dismantle that wall later and the dirt wall comes back by itself.
+[*] [b]No openings on the outer edge[/b]: door frames, window frames and see-through walls can't go on an outer edge; the cursor turns red.
+[*] [b]Beside the entrance stairs[/b]: walls, doors and windows can't go on the stair tiles, so the outer dirt walls beside the stairs can't be replaced.
+[*] [b]Vanilla build menu and paint[/b]: walls from the vanilla build menu can't go on an outer edge, so use Build Anything to replace a dirt wall; vanilla paint and signs can be painted on dirt walls.
+[*] [b]Corner posts[/b]: an inward corner of an L-shaped basement gets a dirt-colored corner post by itself; when you build a wall beside that corner, the post moves aside.
 [*] [b]Inside[/b]: walls, doors and furniture between dug tiles follow the usual rules.
 [*] [b]Rooms[/b]: walls and doors divide a basement into separate rooms.
 [*] [b]Each room needs light[/b]: each room needs its own switch or light, and a room without one stays dark; as above ground, lights need power.
