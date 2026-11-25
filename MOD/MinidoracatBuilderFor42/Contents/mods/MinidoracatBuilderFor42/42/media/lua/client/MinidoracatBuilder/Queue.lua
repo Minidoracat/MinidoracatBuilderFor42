@@ -81,7 +81,7 @@ local function send(s, j)
     return nil, code
 end
 
--- 排一筆建造。anchors＝{ { x, y, z, d }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff }，
+-- 排一筆建造。anchors＝{ { x, y, z, d }, ... }；parts[i]＝第 i 格各片的虛影 { x, y, z, sprite, yoff[, 明暗] }（Queue.drawParts），
 -- 省略就不畫排隊虛影；overlap＝疊放（Client.build）。opts.owner＝"drag"（預設）或 "plan"，opts.onDone(sum) 整組結束時叫一次。
 -- 手拖的進來時先取消照圖蓋的（玩家動手＝照圖蓋暫停）。沒有在跑的就立刻送，有就接在後面。
 -- 回 組的 id 與（立刻送出時的）nonce；立刻送卻送不出去回 nil, 原因碼
@@ -526,13 +526,14 @@ end
 -- 游標虛影也是在同一處、世界的 cell 畫完後才畫（FBORenderCell.java:316 的 DoBuilding），所以一樣畫在世界最上層。
 -- 不能用 OnPostFloorLayerDraw：它只在舊渲染器（IsoCell.java:856-860）觸發，B42 預設的 FBO 渲染器沒有
 -- （builder-ui-1029a 截圖一格都沒畫出來）。
--- parts＝{ [i] = { { x, y, z, sprite, yoff }, ... } }（各片的 sprite 是游標照那一格自己的面記的，圍一圈時北、西兩種邊
--- 各畫各的）；配方項目拖的一排（Recipes.lua）也用這支
+-- parts＝{ [i] = { { x, y, z, sprite, yoff[, 明暗] }, ... } }（各片的 sprite 是游標照那一格自己的面記的，圍一圈時北、西兩種邊
+-- 各畫各的；明暗是染色的倍數，沒給就是 1）；配方項目拖的一排（Recipes.lua）也用這支
 function Queue.drawParts(parts)
     local floor = ISBuildingObject.getFloorCursorSprite() -- 不用 self（ISBuildingObject.lua:697-703）
     for _, ps in pairs(parts) do
         for _, g in ipairs(ps) do
-            g[4]:RenderGhostTileColor(g[1], g[2], g[3], 0, g[5], 1, 1, 1, 0.35)
+            local k = g[6] or 1
+            g[4]:RenderGhostTileColor(g[1], g[2], g[3], 0, g[5], k, k, k, 0.35)
             floor:RenderGhostTileColor(g[1], g[2], g[3], QR, QG, QB, 0.8)
         end
     end

@@ -273,11 +273,11 @@ end
 -- ---------------------------------------------------------------- 游標物件
 
 -- 每格要畫的東西攤平成陣列（render 每幀只照陣列畫，不配置）：位置、虛影圖（nil＝只畫地框）、高度、虛影染色與不透明度、
--- 地框色與不透明度、記號、染色的明暗倍數 k（整片改畫紅時照它保留明暗）
+-- 地框色與不透明度、記號
 local GHOST_A, FRAME_A = 0.6, 0.8
 local function newGhosts()
     return { n = 0, x = {}, y = {}, z = {}, spr = {}, yoff = {}, tr = {}, tg = {}, tb = {}, ta = {}, fr = {}, fg = {}, fb = {},
-        fa = {}, m = {}, k = {} }
+        fa = {}, m = {} }
 end
 
 local function ghost(g, x, y, z, spr, yoff, tint, floor, ...)
@@ -285,7 +285,7 @@ local function ghost(g, x, y, z, spr, yoff, tint, floor, ...)
     local i = g.n + 1
     g.n = i
     g.x[i], g.y[i], g.z[i], g.spr[i], g.yoff[i], g.m[i] = x, y, z, spr, yoff, mark or 0
-    g.tr[i], g.tg[i], g.tb[i], g.ta[i], g.k[i] = tint.r, tint.g, tint.b, GHOST_A, 1
+    g.tr[i], g.tg[i], g.tb[i], g.ta[i] = tint.r, tint.g, tint.b, GHOST_A
     g.fr[i], g.fg[i], g.fb[i], g.fa[i] = floor.r, floor.g, floor.b, FRAME_A
 end
 
@@ -755,8 +755,10 @@ local function partSprite(o, x, y)
     if role and o[3] < 0 and (DIG_STAIR[role] or role == "dig") then return nil end
     return Entry.alternate(o[4], x, y)
 end
--- 洞照離落腳處由近到遠越來越暗（看得出從哪一端往下）；地下的室畫在地面上的地框比洞淡（地面那幾格不會動）
-local HOLE_SHADE, HOLE_A, ROOM_FRAME_A = { 0.6, 0.42, 0.25 }, 0.85, 0.3
+-- 能蓋時洞照離落腳處由近到遠越來越暗（看得出從哪一端往下；最暗那格仍看得出是土）；不能蓋時和其他虛影一樣只染紅，
+-- 不再乘明暗（紅乘上去整片近乎全黑）。地下的室畫在地面上的地框比洞淡（地面那幾格不會動）
+local HOLE_SHADE, HOLE_A, ROOM_FRAME_A = { 0.8, 0.6, 0.42 }, 0.85, 0.3
+local function holeShade(o) return HOLE_SHADE[math.abs(o[1]) + math.abs(o[2]) + 1] or 1 end
 
 -- 這次實際會蓋的格子：Check.item 通過時修剪過（加開地下室入口不挖已挖的那幾格）就照它的 info.cells，
 -- 回 { [Place.key] = 那一格 }；沒修剪（格數和 Entry.cells 一樣）回 nil＝照 Entry.cells 全畫，info.cells[j] 對第 j 片
@@ -779,6 +781,10 @@ end
 function Cursor:refresh(ax, ay, az, ex, ey)
     local anchors = self:anchors(ax, ay, az, ex, ey)
     self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S, self.overlap)
+    -- 標籤框預設在滑鼠右下（panelRender）：這一件從原點往東（畫面右下）延伸 2 格以上時改放右上，不蓋住預覽
+    local east, offs0 = 0, self.d ~= nil and self:offsOf(self.d)
+    for _, o in ipairs(offs0 or NO_OFFS) do east = math.max(east, o[1]) end
+    self.tipUp = east >= 2
     local g, scale, warn = newGhosts(), Core.getTileScale(), self.colors.warning
     local good, bad = coreColors()
     local tint = hook("tint", self) -- 規劃模式換可蓋格子的地框色
@@ -815,9 +821,11 @@ function Cursor:refresh(ax, ay, az, ex, ey)
                 end
                 local i = g.n
                 if role == "hole" then
-                    local k = HOLE_SHADE[math.abs(o[1]) + math.abs(o[2]) + 1] or 1
-                    g.k[i], g.ta[i] = k, HOLE_A
-                    g.tr[i], g.tg[i], g.tb[i] = g.tr[i] * k, g.tg[i] * k, g.tb[i] * k
+                    g.ta[i] = HOLE_A
+                    if code == nil then
+                        local k = holeShade(o)
+                        g.tr[i], g.tg[i], g.tb[i] = g.tr[i] * k, g.tg[i] * k, g.tb[i] * k
+                    end
                 elseif gz ~= z then
                     g.fa[i] = ROOM_FRAME_A
                 end
@@ -830,8 +838,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     local v, failed = hook("valid", self)
     if failed or v == false then
         for i = 1, g.n do
-            local k = g.k[i]
-            g.tr[i], g.tg[i], g.tb[i], g.fr[i], g.fg[i], g.fb[i] = RED.r * k, RED.g * k, RED.b * k, bad.r, bad.g, bad.b
+            g.tr[i], g.tg[i], g.tb[i], g.fr[i], g.fg[i], g.fb[i] = RED.r, RED.g, RED.b, bad.r, bad.g, bad.b
         end
         if g.n > 0 then g.m[1] = MARK_BAD end
     end
@@ -1161,6 +1168,7 @@ end
 
 -- 標籤框：名稱、拖曳摘要、排隊提示、原因、按鍵說明，跟著滑鼠（手把：游標那一格）。行在 layout 排好，這裡只畫。
 -- 位置照原版提示框（滑鼠右下 32, 10，ISToolTip.lua:67-79）；超出玩家畫面就翻到滑鼠另一邊，不蓋住滑鼠。
+-- 佔地往畫面右下延伸的（refresh 記的 tipUp）先放滑鼠右上，超出玩家畫面上緣才回右下。
 local function panelRender(self)
     local c = self.cursor
     if getCell():getDrag(c.player) ~= c or not c.lines then return end
@@ -1175,7 +1183,7 @@ local function panelRender(self)
     local left, top = getPlayerScreenLeft(p), getPlayerScreenTop(p)
     local x, y = mx + 32, my + 10
     if x + w > left + getPlayerScreenWidth(p) then x = mx - 16 - w end
-    if y + h > top + getPlayerScreenHeight(p) then y = my - 10 - h end
+    if c.tipUp and my - 10 - h >= top or y + h > top + getPlayerScreenHeight(p) then y = my - 10 - h end
     self:setX(math.max(left, x))
     self:setY(math.max(top, y))
     local col, UI, lines, fh, font = c.colors, self.UI, c.lines, self.fh, self.font
@@ -1316,7 +1324,8 @@ function Cursor:tryBuild(x, y, z)
                 local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
                 local c, cut = cellOf(r, kept, j, x, y, z)
                 local spr = not cut and partSprite(o, x, y)
-                if spr then ps[#ps + 1] = { x, y, z, spr, (c and c.yoff or 0) * scale } end
+                -- 第 6 欄：染色明暗（Queue.drawParts），洞照能蓋時的明暗
+                if spr then ps[#ps + 1] = { x, y, z, spr, (c and c.yoff or 0) * scale, o[5] == "hole" and holeShade(o) or nil } end
             end
             anchors[#anchors + 1] = { a[1], a[2], a[3], a[4], a[5] } -- a[5]：車庫門的寬度（Client.build 送 w）
             parts[#anchors] = ps
