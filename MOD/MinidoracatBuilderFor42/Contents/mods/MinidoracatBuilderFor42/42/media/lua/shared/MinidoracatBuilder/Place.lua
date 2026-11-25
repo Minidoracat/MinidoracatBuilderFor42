@@ -1646,8 +1646,9 @@ end
 do
     local REGIONAL = { floor = true, stairs = true, ramp = true }
     local pending, n = {}, 0
-    -- 這格照現在的物件該有的區域位元：照 IsoRegions.calculateSquareFlags（IsoRegions.java:322-349；protected，Lua 叫不到）
-    local function flagsOf(sq)
+    -- 這格照現在的物件該有的區域位元：照 IsoRegions.calculateSquareFlags（IsoRegions.java:322-349；protected，Lua 叫不到）。
+    -- 1＝北邊隔開、2＝西邊隔開（地下室分房也照這兩位，Basement.split）
+    function Place.flagsOf(sq)
         local f = sq:has(F.solidfloor) and 16 or 0
         if sq:has(F.cutN) or sq:has(T.doorFrN) then
             f = f + ((sq:has(F.WindowN) or sq:has(F.windowN) or sq:has(F.DoorWallN)) and 5 or 1)
@@ -1657,6 +1658,7 @@ do
         end
         return sq:HasStairs() and f + 32 or f
     end
+    local flagsOf = Place.flagsOf
     -- 引擎只在位元和「之前」不同時才送：一般拿 0 當「之前」；位元本身是 0 的（上層沒地板的格子拆掉牆，或
     -- 柱子讓引擎不算同格的西牆）改拿正下方地面那格（有地板，不是 0）。送完把「之前」設回 0
     local function push(cell, sq, x, y, z)
@@ -1676,6 +1678,8 @@ do
         end
     end
     function Place.repush(sq, kind, ...)
+        local B = MinidoracatBuilder.Basement
+        if B and sq:getZ() < 0 then B.dirty(sq:getX(), sq:getY(), sq:getZ()) end -- 地下室的格邊可能變了：重算分房
         if kind and not (Entry.EDGE[kind] or REGIONAL[kind]) then
             local o = ...
             local p = kind == "wallOverlay" and o and o:getProperties()
@@ -2019,14 +2023,16 @@ end
 function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
-    -- 地下室外邊的牆被移除（拆、砸、蓋到一半撤回）：下一個 tick 那條邊沒有牆就補回土牆（Basement.touch 排程）
+    -- 地下室的格子裡有東西被移除（拆、砸、蓋到一半撤回）：分房重算（Basement.dirty 排程，牆、門框、窗都可能隔開房間）；
+    -- 外邊的牆：下一個 tick 那條邊沒有牆就補回土牆（Basement.touch 排程）
     local wsq = not isClient() and obj:getSquare()
-    if wsq and wsq:getZ() < 0 then
-        local spr, B = obj:getSprite(), MinidoracatBuilder.Basement
+    local B = wsq and wsq:getZ() < 0 and MinidoracatBuilder.Basement
+    if B and B.near(wsq) then
+        local x, y, z = wsq:getX(), wsq:getY(), wsq:getZ()
+        B.dirty(x, y, z)
+        local spr = obj:getSprite()
         local p = spr and spr:getProperties()
-        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW)) and B and B.near(wsq) then
-            B.touch(wsq:getX(), wsq:getY(), wsq:getZ())
-        end
+        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW)) then B.touch(x, y, z) end
     end
     if not isClient() then stashNames(obj) end -- 撿走帶記號的容器：記下名字，放下時寫回
     local Overlays = MinidoracatBuilder.Overlays

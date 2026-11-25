@@ -577,9 +577,9 @@ Events.OnTick.Add(Client.tickUnbuild)
 
 -- ---------------------------------------------------------------- 地下室同步（伺服器 BasementLedger）
 -- dug＝{ t = { x1, y1, x2, y2, ... } }：剛挖好的格子。basements＝大區 (ax, ay) 周圍 3×3 範圍內全部連通塊的快照，
--- 分 n 段送：每段 { ax, ay, i, n, b = { { x, y, w, h, x, y, w, h, ... }, ... } }（一塊一個長方形清單，一塊不拆開；
--- 一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。座標都在地下一層。
--- 收到的數字逐個驗（整數、範圍；一塊最多 Basement.MAX 格），有一個不合整則丟掉
+-- 分 n 段送：每段 { ax, ay, i, n, b = { 塊, ... } }，一塊是房間清單 { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形；
+-- 一塊不拆開；一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。block＝{ r = 房間清單 }：伺服器重分了一塊的房間。
+-- 座標都在地下一層。收到的數字逐個驗（整數、範圍；一塊最多 Basement.MAX 格），有一個不合整則丟掉
 local COORD_MAX = 99999 -- Place.key 每軸只留 5 位數
 local SEG_RECTS, SEG_MAX = 500, 1000
 local function int(v, lo, hi)
@@ -595,27 +595,50 @@ local function dugTiles(t)
     end
     return out
 end
--- 一段快照的格子加進 out；回 out，或 nil（壞資料）
+-- 一間的矩形 { x, y, w, h, ... }（左上角在 x0..x1、y0..y1 內）攤成格子加進 out；回這間幾格，或 nil（壞資料）
+local function rectTiles(r, x0, y0, x1, y1, out)
+    local BM = MinidoracatBuilder.Basement
+    if type(r) ~= "table" or #r == 0 or #r % 4 ~= 0 then return nil end
+    local n = 0
+    for i = 1, #r, 4 do
+        local x, y, w, h = r[i], r[i + 1], r[i + 2], r[i + 3]
+        if not (int(x, x0, x1) and int(y, y0, y1) and int(w, 1, BM.MAX) and int(h, 1, BM.MAX)) then return nil end
+        n = n + w * h
+        if n > BM.MAX then return nil end
+        for dy = 0, h - 1 do
+            for dx = 0, w - 1 do out[#out + 1] = { x + dx, y + dy } end
+        end
+    end
+    return n
+end
+-- 一塊的房間清單攤成 { { { x, y }, ... }, ... }（每間一組格子）；累計 rects 個長方形超過 SEG_RECTS、一塊超過 Basement.MAX 格
+-- 或資料不合回 nil。回房間、累計的長方形數
+local function blockRooms(blk, x0, y0, x1, y1, rects)
+    if type(blk) ~= "table" or #blk == 0 then return nil end
+    local rooms, n = {}, 0
+    for i, r in ipairs(blk) do
+        rects = rects + (type(r) == "table" and #r / 4 or 0)
+        if rects > SEG_RECTS then return nil end
+        local room = {}
+        local got = rectTiles(r, x0, y0, x1, y1, room)
+        n = got and n + got
+        if not n or n > MinidoracatBuilder.Basement.MAX then return nil end
+        rooms[i] = room
+    end
+    return rooms, rects
+end
+-- 一段快照的塊加進 out（每塊一份房間清單）；回 out，或 nil（壞資料）
 local function areaTiles(args, out)
     local BM = MinidoracatBuilder.Basement
     local A, ax, ay, list = BM.AREA, args.ax, args.ay, args.b
     if not (int(ax, 0, COORD_MAX / A) and int(ay, 0, COORD_MAX / A) and type(list) == "table") then return nil end
     local x0, y0, x1, y1 = (ax - 1) * A, (ay - 1) * A, (ax + 2) * A - 1, (ay + 2) * A - 1
     local rects = 0
-    for _, r in ipairs(list) do
-        if type(r) ~= "table" or #r == 0 or #r % 4 ~= 0 then return nil end
-        rects = rects + #r / 4
-        if rects > SEG_RECTS then return nil end
-        local n = 0
-        for i = 1, #r, 4 do
-            local x, y, w, h = r[i], r[i + 1], r[i + 2], r[i + 3]
-            if not (int(x, x0, x1) and int(y, y0, y1) and int(w, 1, BM.MAX) and int(h, 1, BM.MAX)) then return nil end
-            n = n + w * h
-            if n > BM.MAX then return nil end
-            for dy = 0, h - 1 do
-                for dx = 0, w - 1 do out[#out + 1] = { x + dx, y + dy } end
-            end
-        end
+    for _, blk in ipairs(list) do
+        local rooms
+        rooms, rects = blockRooms(blk, x0, y0, x1, y1, rects)
+        if not rooms then return nil end
+        out[#out + 1] = rooms
     end
     return out
 end
@@ -638,20 +661,40 @@ local function onSegment(args)
     local i, n = args.i, args.n
     if not (int(n, 1, SEG_MAX) and int(i, 1, n)) then part = nil return print(LOG .. "basements: bad data, dropped") end
     if i == 1 then
-        part = { ax = args.ax, ay = args.ay, n = n, i = 0, tiles = {} }
+        part = { ax = args.ax, ay = args.ay, n = n, i = 0, blocks = {} }
     elseif not (part and part.i == i - 1 and part.ax == args.ax and part.ay == args.ay and part.n == n) then
         part = nil
         return print(LOG .. "basements: segment out of order, dropped")
     end
-    if not areaTiles(args, part.tiles) then part = nil return print(LOG .. "basements: bad data, dropped") end
+    if not areaTiles(args, part.blocks) then part = nil return print(LOG .. "basements: bad data, dropped") end
     part.i = i
     if i < n then return false end
     local BM, done = MinidoracatBuilder.Basement, part
     part = nil
-    BM.reset(done.tiles, done.ax, done.ay)
+    local tiles = {}
+    for _, rooms in ipairs(done.blocks) do
+        for _, room in ipairs(rooms) do
+            for _, t in ipairs(room) do tiles[#tiles + 1] = t end
+        end
+    end
+    BM.reset(tiles, done.ax, done.ay)
+    for _, rooms in ipairs(done.blocks) do BM.setRooms(rooms) end
     BM.registerAll()
     synced = { ax = done.ax, ay = done.ay }
     return true
+end
+
+-- block：已同步的範圍內的塊換上伺服器分好的房間，照 Basement.NEAR 重新登錄（伺服器已經等過延後批次）；範圍外的、壞資料丟掉
+local function onBlock(args)
+    local BM = MinidoracatBuilder.Basement
+    local rooms = blockRooms(args.r, 0, 0, COORD_MAX, COORD_MAX, 0)
+    if not rooms then return print(LOG .. "block: bad data, dropped") end
+    for _, room in ipairs(rooms) do
+        for _, t in ipairs(room) do
+            if not inSynced(t) then return end
+        end
+    end
+    if BM.setRooms(rooms) then BM.registerAll() end
 end
 
 -- 單機：集合與登錄伺服器那一半已經做了（同一個 Lua），只重算畫面高度範圍
@@ -667,6 +710,8 @@ function Client.onBasement(cmd, args)
         end
         if #keep == 0 then return end
         BM.growLater(BM.add(keep)) -- 登錄等挖完一陣子再一次做（Basement.growLater）；高度範圍當下重算
+    elseif cmd == "block" then
+        return onBlock(args)
     elseif not onSegment(args) then
         return
     end
@@ -701,7 +746,7 @@ function Client.onServerCommand(cmd, args)
         if MinidoracatBuilder.Admin then MinidoracatBuilder.Admin.onLedgers(args) end
         return
     end
-    if cmd == "dug" or cmd == "basements" then return Client.onBasement(cmd, args) end
+    if cmd == "dug" or cmd == "basements" or cmd == "block" then return Client.onBasement(cmd, args) end
     if cmd ~= "accepted" and cmd ~= "refused" and cmd ~= "placed" then return end
     local b = Client.pending
     if cmd == "accepted" and b and b.n == args.n and not b.queued then queue(b) end

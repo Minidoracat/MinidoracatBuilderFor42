@@ -47,8 +47,10 @@ function BasementLedger:initSystem()
     Basement.add(tiles)
     S:summary()
     BasementLedger.instance = self
-    -- 當下登錄：單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
-    -- 專用伺服器這時還沒有 chunk，之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+    -- 當下分房、登錄：單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
+    -- 專用伺服器這時還沒有 chunk（分房等巡查），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+    local split, serr = pcall(Basement.splitAll)
+    if not split then print(LOG .. "basement split failed: " .. tostring(serr)) end
     local ok, err = pcall(Basement.registerAll)
     if not (ok and err) then print(LOG .. "basement register failed: " .. tostring(err)) end
 end
@@ -63,6 +65,27 @@ function BasementLedger:OnClientCommand() end
 SGlobalObjectSystem.RegisterSystemClass(BasementLedger)
 
 local function areaOf(x, y) return math.floor(x / Basement.AREA), math.floor(y / Basement.AREA) end
+
+-- 指令推給所在大區與 tiles 任一格的大區相距不到一區（3×3）的連線玩家
+local function sendNear(cmd, args, tiles)
+    local areas, seen = {}, {}
+    for _, t in ipairs(tiles) do
+        local ax, ay = areaOf(t[1], t[2])
+        local k = ax .. "," .. ay
+        if not seen[k] then seen[k], areas[#areas + 1] = true, { ax, ay } end
+    end
+    local Server, players = MinidoracatBuilder.Server, getOnlinePlayers()
+    for i = 0, players:size() - 1 do
+        local p = players:get(i)
+        local px, py = areaOf(p:getX(), p:getY())
+        for _, a in ipairs(areas) do
+            if math.abs(px - a[1]) <= 1 and math.abs(py - a[2]) <= 1 then
+                Server.send(p, cmd, args)
+                break
+            end
+        end
+    end
+end
 
 -- 洞那格：拿掉地板與草、可移除的植物（上下才看得到、走得通），格邊的牆與掛件留著
 -- （Basement.checkCell 已經擋掉其他東西）。本工具蓋的地板照拆除退料（Place.refundOf），真的拆掉了才算
@@ -193,23 +216,9 @@ function BasementLedger.commit(player, cells, anchor)
     step("sync", function()
         if not isServer() then return Basement.recalcZ() end
         if #added == 0 then return end
-        local flat, areas = {}, {}
-        for _, t in ipairs(added) do
-            flat[#flat + 1], flat[#flat + 2] = t[1], t[2]
-            local ax, ay = areaOf(t[1], t[2])
-            areas[#areas + 1] = { ax, ay }
-        end
-        local Server, players = MinidoracatBuilder.Server, getOnlinePlayers()
-        for i = 0, players:size() - 1 do
-            local p = players:get(i)
-            local px, py = areaOf(p:getX(), p:getY())
-            for _, a in ipairs(areas) do
-                if math.abs(px - a[1]) <= 1 and math.abs(py - a[2]) <= 1 then
-                    Server.send(p, "dug", { t = flat })
-                    break
-                end
-            end
-        end
+        local flat = {}
+        for _, t in ipairs(added) do flat[#flat + 1], flat[#flat + 2] = t[1], t[2] end
+        sendNear("dug", { t = flat }, added)
     end)
     return holes
 end
@@ -217,21 +226,30 @@ end
 -- 一個 basements 封包最多帶幾個矩形：同一塊不拆開，塞不下就換下一段（審查 round1 F11）
 local SEGMENT = 500
 
--- 這位玩家所在大區與周圍一圈（3×3）的地下室，一塊一個 { x, y, w, h, x, y, w, h, ... }，分段送（指令 basements：
--- { ax, ay, i＝第幾段, n＝共幾段, b＝這一段的塊 }；沒有地下室也送一段空的 i＝1、n＝1、b＝{}）。位置只用連線玩家自己的座標
-function BasementLedger.send(player)
-    local ax, ay = areaOf(player:getX(), player:getY())
-    local segs, cur, count = {}, {}, 0
-    for _, list in ipairs(Basement.area(ax, ay)) do
+-- 一塊的房間 { { { x, y }, ... }, ... } → { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形）、矩形數
+local function roomRects(rooms)
+    local out, n = {}, 0
+    for i, list in ipairs(rooms) do
         local flat = {}
         for _, r in ipairs(Basement.rects(list)) do
             for j = 1, 4 do flat[#flat + 1] = r[j] end
         end
-        local n = #flat / 4
+        out[i], n = flat, n + #flat / 4
+    end
+    return out, n
+end
+
+-- 這位玩家所在大區與周圍一圈（3×3）的地下室，一塊一個房間清單 { { x, y, w, h, ... }, ... }（每間一組矩形），分段送（指令
+-- basements：{ ax, ay, i＝第幾段, n＝共幾段, b＝這一段的塊 }；沒有地下室也送一段空的 i＝1、n＝1、b＝{}）。位置只用連線玩家自己的座標
+function BasementLedger.send(player)
+    local ax, ay = areaOf(player:getX(), player:getY())
+    local segs, cur, count = {}, {}, 0
+    for _, list in ipairs(Basement.area(ax, ay)) do
+        local rooms, n = roomRects(Basement.byRoom(list))
         if count > 0 and count + n > SEGMENT then
             segs[#segs + 1], cur, count = cur, {}, 0
         end
-        cur[#cur + 1], count = flat, count + n
+        cur[#cur + 1], count = rooms, count + n
     end
     segs[#segs + 1] = cur
     local Server = MinidoracatBuilder.Server
@@ -239,6 +257,19 @@ function BasementLedger.send(player)
         Server.send(player, "basements", { ax = ax, ay = ay, i = i, n = #segs, b = b })
     end
 end
+
+-- 一塊的分房變了、伺服器重登錄之後（Basement.growLater／patrol）：推給附近的玩家（指令 block：{ r = { 每間一組矩形 } }）。
+-- 單機的集合與登錄是同一份，不送
+function BasementLedger.sendBlock(rooms)
+    if not isServer() then return end
+    local all = {}
+    for _, list in ipairs(rooms) do
+        for _, t in ipairs(list) do all[#all + 1] = t end
+    end
+    sendNear("block", { r = (roomRects(rooms)) }, all)
+end
+
+Events.EveryOneMinute.Add(function() Basement.patrol() end)
 
 -- 帳本現在的樣子（離線測試與管理面板）：筆數、每一片的筆數與估計 bytes
 function BasementLedger.stats()
