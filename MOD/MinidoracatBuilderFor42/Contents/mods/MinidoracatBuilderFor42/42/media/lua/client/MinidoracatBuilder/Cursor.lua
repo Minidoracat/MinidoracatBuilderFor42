@@ -781,9 +781,12 @@ end
 function Cursor:refresh(ax, ay, az, ex, ey)
     local anchors = self:anchors(ax, ay, az, ex, ey)
     self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S, self.overlap)
-    -- 標籤框預設在滑鼠右下（panelRender）：這一件從原點往東（畫面右下）延伸 2 格以上時改放右上，不蓋住預覽
+    -- 標籤框預設在滑鼠右下（panelRender）。地下室入口的洞從原點往東（畫面右下）延伸 2 格以上時改放右上，不蓋住預覽：
+    -- 洞與室是平的，往上不會長進框裡。樓梯、坡道、家具的虛影有高度，往東那幾片會往上長進右上那塊，照舊放右下
     local east, offs0 = 0, self.d ~= nil and self:offsOf(self.d)
-    for _, o in ipairs(offs0 or NO_OFFS) do east = math.max(east, o[1]) end
+    for _, o in ipairs(offs0 or NO_OFFS) do
+        if o[5] == "hole" then east = math.max(east, o[1]) end
+    end
     self.tipUp = east >= 2
     local g, scale, warn = newGhosts(), Core.getTileScale(), self.colors.warning
     local good, bad = coreColors()
@@ -1168,7 +1171,7 @@ end
 
 -- 標籤框：名稱、拖曳摘要、排隊提示、原因、按鍵說明，跟著滑鼠（手把：游標那一格）。行在 layout 排好，這裡只畫。
 -- 位置照原版提示框（滑鼠右下 32, 10，ISToolTip.lua:67-79）；超出玩家畫面就翻到滑鼠另一邊，不蓋住滑鼠。
--- 佔地往畫面右下延伸的（refresh 記的 tipUp）先放滑鼠右上，超出玩家畫面上緣才回右下。
+-- 地下室入口往東時（refresh 記的 tipUp）先放滑鼠右上，超出玩家畫面上緣才回右下。
 local function panelRender(self)
     local c = self.cursor
     if getCell():getDrag(c.player) ~= c or not c.lines then return end

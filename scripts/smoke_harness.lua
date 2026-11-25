@@ -11280,6 +11280,21 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 for i, p in ipairs(qs) do qCopy[i] = { p[1], p[2], p[3], qRec, p[5], p[6] } end
                 local okQ, errQ = pcall(B.Queue.drawParts, { qCopy })
                 ISBuildingObject = keepIBO
+                -- 往東延伸、但虛影有高度的項目（往西爬的樓梯、往東上坡的坡道、往東 3 格的家具）：標籤框照舊在右下
+                local tall = { getName = function() return "harness_tall_0" end }
+                local function tallCur(offs)
+                    local c = setmetatable({ character = q, name = "harness_tall", entry = {}, d = 0, canDrag = false,
+                        offsBy = { [0] = offs }, colors = { warning = good }, texts = function() end }, { __index = Cursor })
+                    RES = { { a = { X, Y, 0, 0 } } }
+                    c:refresh(X, Y, 0, X, Y)
+                    return c
+                end
+                local tallCurs = {
+                    tallCur({ { 0, 0, 0, tall, "top" }, { 1, 0, 0, tall, "mid" }, { 2, 0, 0, tall, "bottom" },
+                        { -1, 0, 1, tall, "platform" } }),
+                    tallCur({ { 0, 0, 0, tall }, { 1, 0, 0, tall }, { 2, 0, 0, tall }, { 3, 0, 1, tall, "platform" } }),
+                    tallCur({ { 0, 0, 0, tall }, { 1, 0, 0, tall }, { 2, 0, 0, tall } }),
+                }
                 getCore, Core, Cursor.preview, Cursor.send, Cursor.hook.valid = real[1], real[2], real[3], real[4], real[5]
                 check(#qs == 4 and qDirt == 3 and qOther == 1 and qShade, "入口的排隊虛影：洞 3 格畫泥土、帶能蓋時的明暗，"
                     .. "落腳處 1 格不帶，地下的樓梯與室不送（" .. #qs .. " " .. qDirt .. " " .. qOther .. "）")
@@ -11320,6 +11335,12 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                     "往東的入口：標籤框放在滑鼠右上、不蓋住往右下延伸的洞（手把同一套）；上面放不下回右下；往南的照舊在右下（"
                     .. tostring(eUp) .. " " .. tostring(eLow) .. " " .. tostring(ePad) .. " " .. tostring(sY) .. " "
                     .. tostring(errU) .. "）")
+                local tallNames, tallY = { "往西爬的樓梯", "往東上坡的坡道", "往東 3 格的家具" }, {}
+                for i, c in ipairs(tallCurs) do
+                    tallY[i] = tipY(c, 500, false)
+                    check(tallY[i] == 510, tallNames[i] .. "：佔地往東延伸 2 格以上，但虛影有高度、往東那幾片會往上長，標籤框照舊在"
+                        .. "滑鼠右下（" .. tostring(tallY[i]) .. "）")
+                end
             end
         end)()
 
