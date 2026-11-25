@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""寫出地下室土牆的圖塊補丁檔 media/mdcbuilder_basement.patch.tiles（mod.info 的 tiledef=mdcbuilder_basement.patch 5886）。
+"""寫出地下室土牆與牆角柱的圖塊補丁檔 media/mdcbuilder_basement.patch.tiles（mod.info 的 tiledef=mdcbuilder_basement.patch 5886）。
 
 用法：python scripts/gen_basement_tiles.py（scripts/verify_local.py 比對檔案內容＝build() 的輸出；遊戲路徑用環境變數 PZ_PATH 覆寫）
 
-原版 underground_01_8／9／10 沒有任何屬性，本 MOD 的土牆（Basement.DIRT）要它們是牆：屬性取自原版磚牆
-walls_exterior_house_02_96／97／98（西牆、北牆、西北角），角的參照改指 underground_01_8／9；表頭沿用原版 underground_01 的。
+原版 underground_01_8／9／10／11 沒有任何屬性，本 MOD 的土牆（Basement.DIRT）與外凸轉角的牆角柱（Basement.POST）要它們是牆：
+屬性取自原版磚牆 walls_exterior_house_02_96／97／98／99（西牆、北牆、西北角、轉角柱），角的參照改指 underground_01_8／9；
+表頭沿用原版 underground_01 的。
 格式照 IsoWorld.LoadTileDefinitions（42.22.2 IsoWorld.java:648-760）：檔名結尾 .patch.tiles 時只替已經存在的圖加屬性；
 "tdef"＋int32 版本 1＋tileset 數；tileset＝name 行、image 行、int w、h、tileset 編號、格數；格＝int 屬性數＋（鍵行＋值行）×屬性數。
 int 是 little-endian，行以 LF 結尾（CR 會丟錯）。
@@ -67,7 +68,7 @@ def read_tilesets(path, names):
 def build():
     sets = read_tilesets(VANILLA, {DIRT, BRICK})
     image, w, h, number, _ = sets[DIRT]
-    tiles = [[]] * 8 + [[(k, RENAME.get(v, v)) for k, v in props] for props in sets[BRICK][4][96:99]]
+    tiles = [[]] * 8 + [[(k, RENAME.get(v, v)) for k, v in props] for props in sets[BRICK][4][96:100]]
     out = b"tdef" + _i(1) + _i(1) + _line(DIRT) + _line(image) + _i(w) + _i(h) + _i(number) + _i(len(tiles))
     for props in tiles:
         out += _i(len(props)) + b"".join(_line(k) + _line(v) for k, v in props)

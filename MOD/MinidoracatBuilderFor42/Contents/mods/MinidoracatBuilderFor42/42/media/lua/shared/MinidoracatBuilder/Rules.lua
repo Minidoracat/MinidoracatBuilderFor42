@@ -67,6 +67,8 @@ addRange("constructedobjects_01", 16, 19)
 addRange("solarmod_tileset_01", 0, 39)
 -- 引擎內部：屋頂修補放的隱形地板（IsoRoofFixer.java:23,242）、地底方塊（IsoGridSquare.java:4821-4831）
 unlist({ "invisible_01_0", "underground_01_0", "underground_01_1" })
+-- 地下室外凸轉角的牆角柱（Basement.POST）：挖出來時自己長的，補丁給了 WallSE，不列成柱子
+unlist({ "underground_01_11" })
 -- 照原版圖塊名稱給功能的 MOD（Workshop 路徑 content/108600/<ID>）：{ tileset, 起, 迄, ... }
 local BY_MOD = {
     -- 丙烷補充站：右鍵就能補丙烷，第一次用時照沙盒給初始量（3786849936 ArcadiaRefillablePropane_Shared.lua:55-194、

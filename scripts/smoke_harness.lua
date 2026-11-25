@@ -10269,6 +10269,75 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         H.near = near
     end)()
 
+    -- 外凸轉角的牆角柱：L 形缺西北那格時放在轉角那格（格點東南那格）；長方形與入口不放；重跑不重複；格邊蓋了牆拆掉、
+    -- 牆拆了或柱被砸了下一個 tick 補回；柱上有疊圖時不准挖缺角；挖掉缺角拆掉；集合縮回去（reset）不留
+    ;(function()
+        local p, P = H.near, Basement.POST
+        getOnlinePlayers = function() return javaList({}) end
+        spriteMap[P] = sp(P, { "WallSE", "cutW" }) -- 補丁後的屬性（引擎替 WallSE 加 cutW，IsoWorld.java:978-982）
+        for x = 9698, 9704 do for y = 9698, 9704 do ug(x, y) end end
+        for x = 12000, 12003 do for y = 12000, 12003 do ug(x, y) end end
+        local function posts(x0, y0)
+            local list, at = {}, nil
+            for x = x0 - 2, x0 + 4 do
+                for y = y0 - 2, y0 + 4 do
+                    local sq = realCell():getGridSquare(x, y, Z)
+                    for _, o in ipairs(sq and sq.objects or {}) do
+                        local spr = o.getSprite and o:getSprite()
+                        if spr and spr:getName() == P then list[#list + 1], at = o, sq end
+                    end
+                end
+            end
+            return #list, at, list[1]
+        end
+        local function dig(x, y) Ledger.commit(p, { { x = x, y = y, z = Z, role = "dig" } }, { x, y, Z }) end
+        dig(9701, 9700)
+        dig(9701, 9701)
+        local none = posts(9700, 9700)
+        dig(9700, 9701)
+        local n1, at1 = posts(9700, 9700)
+        local inRect = posts(3000, 3000) + posts(3002, 3001) -- c5 那塊（含入口）：x 2998–3006、y 2998–3005
+        check(none == 0 and n1 == 1 and at1:getX() == 9701 and at1:getY() == 9701 and inRect == 0,
+            "牆角柱：L 形缺西北那格 → 轉角那格放一根；直條、長方形與入口（c5 那塊）沒有（" .. n1 .. "／" .. inRect .. "）")
+        for x = 9699, 9703 do for y = 9699, 9703 do Basement.fixEdges(x, y, Z) end end
+        check(posts(9700, 9700) == 1, "牆角柱：重跑 fixEdges 不重複放")
+        local s = realCell():getGridSquare(9701, 9701, Z)
+        local pw = obj(s, "t_wallW", true, { "WallW" })
+        s.objects[#s.objects + 1] = pw
+        B.Place.clearDirt("wall", { { sq = s, spr = sp("t_wallW", { "WallW" }) } })
+        local walled = posts(9700, 9700)
+        s.removeHere(pw)
+        Basement.touch(9701, 9701, Z)
+        fire("OnTick")
+        local back = posts(9700, 9700)
+        local _, _, post = posts(9700, 9700)
+        B.Place.onAboutToBeRemoved(post)
+        s.removeHere(post)
+        fire("OnTick")
+        local n2, _, post2 = posts(9700, 9700)
+        check(walled == 0 and back == 1 and n2 == 1 and post2 ~= post,
+            "牆角柱：那格西邊蓋了牆就拿掉（引擎分房不算有柱那格的西牆）、牆拆了補回；柱被砸了下一個 tick 補回")
+        post2:addAttachedAnimSprite(sp("t_ovSE", { "attachedSE" }))
+        local code, at = Basement.pre(p, nil, { { x = 9700, y = 9700, z = Z, role = "dig" } }, { 9700, 9700, Z }, nil, false)
+        post2.att = nil
+        dig(9700, 9700)
+        check(code == "DIG_HUNG" and at and at.x == 9701 and at.y == 9701 and posts(9700, 9700) == 0,
+            "牆角柱：柱上有疊圖時不准挖缺角（DIG_HUNG 指柱那格）；拿掉疊圖挖開缺角 → 柱拆掉（" .. tostring(code) .. "）")
+        -- 集合縮回去（reset 拿掉格子；本 MOD 沒有回填）：缺角又空出來補回柱，連轉角那格都不在了就拿掉
+        Basement.add({ { 12001, 12000 }, { 12000, 12001 }, { 12001, 12001 }, { 12000, 12000 } })
+        Basement.fixEdges(12001, 12001, Z)
+        local full = posts(12000, 12000)
+        Basement.reset({ { 12001, 12000 }, { 12000, 12001 }, { 12001, 12001 } }, 46, 46)
+        Basement.fixEdges(12001, 12001, Z)
+        local notch = posts(12000, 12000)
+        Basement.reset({ { 12001, 12000 } }, 46, 46)
+        Basement.fixEdges(12001, 12001, Z)
+        check(full == 0 and notch == 1 and posts(12000, 12000) == 0,
+            "牆角柱：集合縮成 L 形補上柱，再縮到轉角那格不在 → 柱拿掉，不留殘")
+        spriteMap[P] = nil
+        getOnlinePlayers = nil
+    end)()
+
     -- 伺服器的開關格：房間不含裝了牆上開關的那一格（那格沒有房間 → 切換不送 metaGrid、重新讀進不蓋掉開關狀態，
     -- IsoLightSwitch.java:356-359,519-535），只有角那格照舊留在矩形裡
     ;(function()
@@ -10957,9 +11026,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local def, a1 = eng.tile[tk(3001, 3001)], eng.applies
         for _ = 1, 60 do fire("OnTick") end
         Basement.registerAll()
-        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 7
+        check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 8
             and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10 and a1 == a0 + 1 and eng.applies == a1,
-            "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那六塊，一次 applyChanges），之後不再登錄第二次")
+            "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那六塊、牆角柱那一塊，一次 applyChanges），之後不再登錄第二次")
     end)()
 
     -- 開服：開關格從燈的帳本算（Ledger.eachLight，圖是牆上開關才算，有光源的燈不算）。最北列最西那格（角）有牆上開關 → 角取下一格；

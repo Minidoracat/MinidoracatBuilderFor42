@@ -1971,6 +1971,8 @@ function Place.clearDirt(kind, cells)
         if D then
             local n, w = bdEdges(c.spr, Entry.edges(kind, c.spr))
             clearDirtAt(D, c, n, w)
+            -- 本 MOD 的層：這格邊上有了東西，西北角的牆角柱拿掉（Basement 的 fix 照這格現在的物件重看）
+            if D == MinidoracatBuilder.Basement then D.fixEdges(c.sq:getX(), c.sq:getY(), c.sq:getZ()) end
         end
     end
 end
@@ -2035,7 +2037,7 @@ function Place.onAboutToBeRemoved(obj)
     -- 地上的物品被撿走也會來（IsoGridSquare.java:5732-5738）：它不會是宿主，先擋掉，不替每件物品組帳本鍵
     if instanceof(obj, "IsoWorldInventoryObject") then return end
     -- 地下室的格子裡有東西被移除（拆、砸、蓋到一半撤回）：分房重算（Basement.dirty 排程，牆、門框、窗都可能隔開房間）；
-    -- 外邊的牆：下一個 tick 那條邊沒有牆就補回土牆（Basement.touch 排程）
+    -- 格邊上的東西（牆、門框、窗、牆角柱）：下一個 tick 外邊沒有牆就補回土牆、外凸轉角補回牆角柱（Basement.touch 排程）
     local wsq = not isClient() and obj:getSquare()
     local B = wsq and wsq:getZ() < 0 and MinidoracatBuilder.Basement
     if B and B.near(wsq) then
@@ -2043,7 +2045,8 @@ function Place.onAboutToBeRemoved(obj)
         B.dirty(x, y, z)
         local spr = obj:getSprite()
         local p = spr and spr:getProperties()
-        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW)) then B.touch(x, y, z) end
+        if p and (p:has(F.WallN) or p:has(F.WallW) or p:has(F.WallNW) or p:has(F.cutN) or p:has(F.cutW)
+            or p:has(F.WallSE)) then B.touch(x, y, z) end
     end
     if not isClient() then stashNames(obj) end -- 撿走帶記號的容器：記下名字，放下時寫回
     local Overlays = MinidoracatBuilder.Overlays

@@ -19,6 +19,8 @@ Basement.MAX = 400                   -- 一塊最多幾格（＝Circuits.ROOM_MA
 -- 外邊土牆的圖：判斷「是不是土牆」一律查這張表。原版的土牆圖沒有屬性，牆屬性來自本 MOD 的圖塊補丁檔
 -- media/mdcbuilder_basement.patch.tiles（scripts/gen_basement_tiles.py 寫出，和 Basement Building 的那三格相同）
 Basement.DIRT = { W = "underground_01_8", N = "underground_01_9", NW = "underground_01_10" }
+-- 外凸轉角的牆角柱（圖塊補丁給它原版轉角柱 walls_exterior_house_02_99 的 WallSE；不擋路、不擋視線、不隔開房間）
+Basement.POST = "underground_01_11"
 Basement.AREA = 256                  -- 同步用的大區邊長
 -- 地下室的 x、y 只收 0 ≤ 值 < LIMIT：格子鍵（Place.key）每軸 5 位數，再大就和別格撞鍵
 Basement.LIMIT = 100000
@@ -315,6 +317,21 @@ local function dirtOf(o)
     return nil
 end
 
+-- 格點 (x, y)（格子 (x, y) 的西北角）是外凸轉角：西北那格沒挖、其他三格挖了。兩面土牆都在格點收尾，中間的縫由
+-- 格子 (x, y) 的牆角柱補上（引擎把 WallSE 畫在所在那格的西北角，IsoGridSquare.java:1729-1731）。其他轉角都有一面牆蓋過格點
+function Basement.isCorner(x, y)
+    return has(x, y, Z) and has(x - 1, y, Z) and has(x, y - 1, Z) and not has(x - 1, y - 1, Z)
+end
+
+-- 本 MOD 放的牆角柱：圖是 Basement.POST、不是 IsoThumpable，所在格點周圍四格有一格在集合裡
+function Basement.isPost(o)
+    local spr = o:getSprite()
+    local sq = spr and spr:getName() == Basement.POST and not instanceof(o, "IsoThumpable") and o:getSquare()
+    if not sq or sq:getZ() ~= Z then return false end
+    local x, y = sq:getX(), sq:getY()
+    return has(x, y, Z) or has(x - 1, y, Z) or has(x, y - 1, Z) or has(x - 1, y - 1, Z)
+end
+
 function Basement.isOuterEdge(x, y, z, k)
     local d = EDGE[k]
     if z ~= Z or not d then return false end
@@ -395,21 +412,26 @@ local function putDirt(sq, kind, hung)
     end
 end
 
--- 這格北、西兩條邊照外邊補或拆土牆。held＝當成已經有實牆的那條邊（clearDirt：玩家的牆剛蓋上）。
--- 實牆＝土牆以外帶 WallN／WallW／WallNW 的物件（引擎護著不讓人穿過的那幾種）。兩條邊都要土牆時放西北角那一張
+-- 這格北、西兩條邊照外邊補或拆土牆，西北角照外凸轉角補或拆牆角柱。held＝當成已經有實牆的那條邊（clearDirt：玩家的牆剛蓋上）。
+-- 實牆＝土牆以外帶 WallN／WallW／WallNW 的物件（引擎護著不讓人穿過的那幾種）。兩條邊都要土牆時放西北角那一張。
+-- 牆角柱只放在兩條邊上都沒有東西的格子：牆、門框、窗都會蓋住格點，而且引擎分房時帶 WallSE 的格子不算西邊隔開
+-- （IsoRegions.java:336），柱留著會讓玩家在這格西邊蓋的牆不隔開房間
 local function fix(sq, held)
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
-    local objects, dirt, wallN, wallW = sq:getObjects(), {}, held == "N", held == "W"
+    local objects, dirt, posts, wallN, wallW, edged = sq:getObjects(), {}, {}, held == "N", held == "W", false
     for i = 0, objects:size() - 1 do
         local o = objects:get(i)
         local kind = dirtOf(o)
         if kind then
             dirt[#dirt + 1] = { o, kind }
+        elseif Basement.isPost(o) then
+            posts[#posts + 1] = o
         else
             local p = o:getProperties()
             if p and p:has(F.WallNW) then wallN, wallW = true, true end
             if p and p:has(F.WallN) then wallN = true end
             if p and p:has(F.WallW) then wallW = true end
+            edged = edged or (p and (p:has(F.cutN) or p:has(F.cutW) or p:has(F.WallSE))) or false
         end
     end
     local needN = not wallN and isOuter(x, y, z, "N")
@@ -427,6 +449,19 @@ local function fix(sq, held)
     end
     if want and not kept then
         putDirt(sq, want, hung)
+        changed = true
+    end
+    local post = not (wallN or wallW or edged) and Basement.isCorner(x, y)
+    for i, o in ipairs(posts) do
+        if not (post and i == 1) then
+            sq:transmitRemoveItemFromSquare(o)
+            changed = true
+        end
+    end
+    if post and #posts == 0 then
+        local obj = IsoObject.new(getCell(), sq, Basement.POST)
+        sq:AddTileObject(obj)
+        obj:transmitCompleteItemToClients()
         changed = true
     end
     if changed then sq:RecalcAllWithNeighbours(true) end
@@ -1399,6 +1434,14 @@ function Basement.opens(player, c, preview, also)
             local hung = hungAt(south and nsq or csq, south and csq or nsq, d[1] ~= 0 and "W" or "N")
             if hung then return "DIG_HUNG", pos(hung) end
         end
+    end
+    -- 挖開 c 會拆掉東南那格的牆角柱（c 是那個外凸轉角缺的那格）：柱上的疊圖同樣會跟著消失
+    local psq = Basement.isCorner(c.x + 1, c.y + 1) and cell:getGridSquare(c.x + 1, c.y + 1, c.z)
+    local objects = psq and psq:getObjects()
+    for i = 0, (objects and objects:size() or 0) - 1 do
+        local o = objects:get(i)
+        local list = Basement.isPost(o) and o:getAttachedAnimSprite()
+        if list and list:size() > 0 then return "DIG_HUNG", pos(psq) end
     end
     return nil
 end

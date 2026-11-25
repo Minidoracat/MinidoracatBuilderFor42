@@ -139,8 +139,8 @@ function Capture.square(res, sq, z0)
                 elseif g.x == x and g.y == y and g.z == z then
                     add(res, g.e, x, y, z, 0, g.garage and g.w or nil)
                 end
-            elseif z < 0 and B.Basement and B.Basement.isDirtOnOuterEdge(o) then
-                -- 地下室外邊的土牆是挖出來時自己長的地形（挖到哪長到哪），不是能照圖蓋的牆
+            elseif z < 0 and B.Basement and (B.Basement.isDirtOnOuterEdge(o) or B.Basement.isPost(o)) then
+                -- 地下室外邊的土牆與外凸轉角的牆角柱是挖出來時自己長的地形（挖到哪長到哪），不是能照圖蓋的牆
                 skip(res, "TERRAIN", z)
             else
                 local n, deck = res.n, platform(res, name, sq)

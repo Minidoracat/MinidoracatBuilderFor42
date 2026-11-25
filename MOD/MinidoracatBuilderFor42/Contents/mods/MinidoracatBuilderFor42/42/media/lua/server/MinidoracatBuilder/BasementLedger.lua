@@ -252,6 +252,7 @@ function BasementLedger.commit(player, cells, anchor)
             Basement.fixEdges(t[1], t[2], Z)
             Basement.fixEdges(t[1] + 1, t[2], Z)
             Basement.fixEdges(t[1], t[2] + 1, Z)
+            Basement.fixEdges(t[1] + 1, t[2] + 1, Z) -- 這格是外凸轉角缺的那格時，東南那格的牆角柱拆掉
         end) or partial
     end
     local holes, cell = {}, getCell()
