@@ -392,21 +392,21 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Turning it on and where to find it[/h3]
 [list]
 [*] [b]Off by default[/b]: an admin turns on Basements in the sandbox page "what can be built" or in the Manage panel before anyone can dig.
-[*] [b]Where[/b]: the Basements kind in the Stairs & ramps tab, with three items: South Basement Entrance, East Basement Entrance and Dig Basement Tile.
+[*] [b]Where[/b]: the Basements kind in the Stairs & ramps tab, with three items: South Basement Entrance, East Basement Entrance and Dig Basement Tile; while placing an entrance, press R to switch between south and east.
 [*] [b]One level down only[/b]: place the entrance on the ground floor, and use Dig Basement Tile on the level below.
 [*] [b]With Basement Building installed[/b]: the three items are still listed but can't be used, so dig with that mod; basements dug earlier with this tool still count as indoors.
 [*] [b]Permissions[/b]: the usual building rules apply (Enable building, Who can build, Where players can build, safehouses).
 [/list]
 [h3]Opening an entrance[/h3]
 [list]
-[*] [b]What it opens[/b]: a wooden staircase down, and a 3×2 space beyond the foot of the stairs.
+[*] [b]What it opens[/b]: a wooden staircase down, and a 3×2 space beyond the foot of the stairs; with the stairs it covers 3×5 (5×3 for the east entrance).
 [*] [b]The 3 tiles over the stairs[/b]: their floor and grass are removed; floors placed with this tool are refunded as when dismantled, dropped at your feet.
 [*] [b]Clear them first[/b]: furniture, a rug, a floor overlay or dropped items on those 3 tiles block the entrance, so move or remove them; a person or a vehicle standing there blocks it too.
 [*] [b]Top of the stairs[/b]: the tile you stand on before walking down needs a floor or ground and can't be other stairs or blocked; its edge toward the stairs can't have a wall, window frame or fence, but a door frame or door is fine.
 [*] [b]Other underground spaces[/b]: you can't dig within one tile of a basement from the map or another mod's underground room.
 [*] [b]New entrances[/b]: the whole staircase must be at least one tile away from other basements; to connect them, dig through from inside with Dig Basement Tile.
 [*] [b]Extra entrances[/b]: to add an entrance over a basement you already dug, the 3 stair tiles and the tile in front of the stairs' foot must already be dug; the preview shows only the tiles it will actually open.
-[*] [b]Work time[/b]: about 30 seconds for an entrance and about 5 seconds per dug tile.
+[*] [b]Work time[/b]: about 35 seconds for an entrance and about 6 seconds per dug tile.
 [/list]
 [h3]Digging outward[/h3]
 [list]
@@ -433,7 +433,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Rooms[/b]: walls and doors divide a basement into separate rooms.
 [*] [b]Each room needs light[/b]: each room needs its own switch or light, and a room without one stays dark; as above ground, lights need power.
 [*] [b]Switches[/b]: a switch placed in a basement wires the lights in its room by the rules in Switches and wiring.
-[*] [b]When it counts as indoors[/b]: about 10 seconds after you stop, the tiles you just dug count as indoors together.
+[*] [b]When it counts as indoors[/b]: about 10 seconds after you stop, the tiles you just dug count as indoors together; if you keep digging, this happens about once a minute. Pressing a switch or light in that area before then makes it count as indoors first, then switches.
 [/list]
 [h3]Dismantling and blueprints[/h3]
 [list]
@@ -1165,10 +1165,11 @@ end)
 [*] [b]Freshly dug basement tiles[/b]: if you keep dragging without stopping, newly dug tiles can take up to about 1 minute to count as indoors.
 [*] [b]A dig that half failed[/b]: if the entrance opening or the outer dirt walls occasionally aren't finished, the materials are still used and you get a notice that part of this dig wasn't finished; digging another tile next to it fills in the dirt walls around there, and for anything else tell an admin when it happened.
 [*] [b]Basement digging unavailable[/b]: when another mod uses the same tile file number, basement digging turns itself off and basements already dug still count as indoors; admins can check the digging is off line in console.txt.
-[*] [b]Multiplayer: wall switches in basements[/b]: in a few spots, a wall switch you just put up goes back to off after that area unloads and reloads, so press it once; it stops happening after a server restart. Wall switches placed in a basement by other mods go back to off after every server restart.
+[*] [b]Multiplayer: wall switches in basements[/b]: a wall switch you just put up on a basement's corner tile goes back to off after that area unloads and reloads, so press it once; it stops happening after a server restart. Wall switches placed in a basement by other mods go back to off after every server restart.
 [*] [b]Two circuits' wall switches in one room[/b]: when a room has two or more wall switches wired to different circuits, after pressing one the other may need two presses to switch.
 [*] [b]Together with Basement Building[/b]: its switches may affect lights in basements dug with this tool before it was installed.
-[*] [b]Basement console messages[/b]: invalid room metaID and invalid building metaID when loading, and duplicate BuildingDef.metaID ERROR after expanding a basement, are expected.
+[*] [b]Stair row in Basement Building basements[/b]: with Basement Building active, the outer walls along the row with its stairs may not be buildable, since walls can't go on a tile that has stairs.
+[*] [b]Basement console messages[/b]: invalid room metaID and invalid building metaID appearing in pairs where there are basements when loading, and duplicate BuildingDef.metaID ERROR after expanding a basement, are expected; the basements still count as indoors.
 [*] [b]Vanilla actions underground[/b]: moving the vanilla Dig Graves cursor past the dirt walls, or moving multi-tile furniture past a wall underground, prints vanilla errors in the console without affecting the game.
 [*] [b]Areas outside the map[/b]: digging basements inside mods that open areas outside the map, such as RV interiors, hasn't been tested.
 [/list]
@@ -1182,7 +1183,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Remove lights you don't want[/b]: immovable lights built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove fireplaces and stoves you don't want[/b]: fireplaces and immovable stoves built with Build Anything can only be smashed with a sledgehammer after removal, for no materials.
 [*] [b]Remove floor overlays and wall overlays you don't want[/b]: road markings, cracks, and baseboards or graffiti stuck to walls, built with Build Anything, can't be removed after removal.
-[*] [b]Saves with dug basements[/b]: after removal, basements count as outdoors (you hear the rain and it gets cold) and dirt walls no longer block movement. Before removing it, replace the outer dirt walls with regular walls using Build Anything. If you only want to stop players from digging, turn off Basements in the sandbox options instead.
+[*] [b]Saves with dug basements[/b]: after removal, basements count as outdoors and are no longer rooms; the dirt walls are still drawn but no longer block movement. Before removing it, replace the outer dirt walls with regular walls using Build Anything; edges you replaced still block after removal. If you only want to stop players from digging, turn off Basements in the sandbox options instead.
 [*] [b]Zombie-proof builds and container capacity[/b]: to turn what you built back to vanilla, switch off Zombies can't break builds and Zombies can't break doors, set Container capacity multiplier back to 1, restart the server (reload the save in singleplayer), then visit every place you built so the area loads again. This can't be changed after removal.
 [*] [b]Multiplayer server[/b]: shut the server down, back up the save, remove MinidoracatBuilderFor42 from Mods= and this mod's Workshop ID from WorkshopItems= in the server settings, then start it again.
 [*] [b]Singleplayer[/b]: back up the save, remove this mod from that save's mod list, then load it.
@@ -1195,7 +1196,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [*] [b]Containers[/b]: the items inside are still there, and the capacity stays as it was before removal.
 [*] [b]Movable lights[/b]: switch them on and off directly, or pick them up as in vanilla.
 [*] [b]Loading[/b]: the save loads without errors.
-[*] [b]Basements[/b]: the dug area and the entrance stairs stay, and this mod's basement record files (gos_MinidoracatBuilderBasements_*.bin) stay in the save folder.
+[*] [b]Basements[/b]: the dug area, the entrance stairs and the opening above them stay, and this mod's basement record files (gos_MinidoracatBuilderBasements_*.bin) stay in the save folder.
 [/list]
 [h3]Switches and lights[/h3]
 [list]
@@ -1215,7 +1216,7 @@ You can add the mod mid-save. When you remove it, everything you built stays, bu
 [list]
 [*] [b]Restored[/b]: wiring and Dismantle (Build Anything) work again.
 [*] [b]Lights picked up while it was removed[/b]: are no longer wired.
-[*] [b]Basements[/b]: they count as indoors again, from the server's records.
+[*] [b]Basements[/b]: they all count as indoors again, the outer dirt walls block again, and you can keep digging.
 [/list]
 === ❓ FAQ
 [h3]I can't find what I want to build[/h3]
