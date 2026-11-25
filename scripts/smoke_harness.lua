@@ -27106,6 +27106,44 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "挖這一格的拖框：鋪滿；從貼著已挖格子的那格一圈圈往外排，接不上的照原順序放最後 " .. table.concat(got, " "))
     BM.reset({}, math.floor(90100 / BM.AREA), math.floor(90100 / BM.AREA))
 
+    -- 客戶端的登錄排到 OnTick（Client.lua registerLater）：底下兩段把每一則 basements／dug／block 與每分鐘檢查當成各自一次更新，
+    -- 呼叫完就跑那個 OnTick（HARNESS_REG_TICK 只跑客戶端排登錄的那一個，別的 tick 不動）；同一次更新收好幾則的測試叫
+    -- HARNESS_RAW_ON 再自己跑 HARNESS_REG_TICK
+    do
+        local seen = {}
+        local function find(f) -- 從 Client 的函式沿 upvalue 找名叫 registerSoon 的那個
+            if seen[f] then return nil end
+            seen[f] = true
+            for i = 1, 255 do
+                local n, v = debug.getupvalue(f, i)
+                if n == nil then return nil end
+                if n == "registerSoon" and type(v) == "function" then return v end
+                local got = type(v) == "function" and find(v)
+                if got then return got end
+            end
+        end
+        local soon
+        for _, f in pairs(C) do
+            soon = soon or (type(f) == "function" and find(f)) or nil
+        end
+        assert(soon, "Client.lua registerSoon not found")
+        HARNESS_REG_TICK = function()
+            for _, f in ipairs(handlers.OnTick or {}) do
+                if f == soon then return f() end
+            end
+        end
+        local on, ask = C.onServerCommand, C.askEveryMinute
+        HARNESS_RAW_ON, HARNESS_RAW_ASK = on, ask
+        C.onServerCommand = function(...)
+            on(...)
+            HARNESS_REG_TICK()
+        end
+        C.askEveryMinute = function()
+            ask()
+            HARNESS_REG_TICK()
+        end
+    end
+
     -- 同步（F8、F11、修訂號）：多人收 dug／分段的 basements／block 驗資料、更新集合、重算高度；客戶端只在快照收齊、收到 block、
     -- 每分鐘檢查到走近的或等 block 等太久的塊時叫引擎（數假引擎的 applyChanges）；壞資料整則丟；單機只重算高度
     ;(function()
@@ -27798,7 +27836,171 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "兩端：正常挖完，補外圍土牆每一步都成功、commit 不回 partial、不記失敗的 log；外圍每條邊都有土牆（" .. tostring(partial8)
         .. " log=" .. edgeLogs8 .. " " .. walls8 .. "）")
 
+    -- 玩家回到一塊登錄過、離開期間又挖了的地下室：那一刻客戶端最多叫引擎一次。順序照實機：近處登錄 → 走到 290 格外
+    -- （同一個 3×3 範圍，收得到 dug、block，太遠不登錄）→ 走到 900 格外（範圍外，收不到）→ 傳送回來：每分鐘的要快照
+    -- 與快照（含重複投遞）
+    ;(function()
+    local XA = 240 * AR + 100
+    for y = XA, XA + 2 do
+        for x = XA, XA + 2 do ug(x, y, Z, { flags = {} }) end
+    end
+    local realSend, asks = sendClientCommand, 0
+    sendClientCommand = function(_, _, cmd) if cmd == "basements" then asks = asks + 1 end end
+    local function at(x, y)
+        cx, cy, sp = x, y, player({ x = x + 0.5, y = y + 0.5, z = Z })
+    end
+    local function minute(answer) -- 客戶端每分鐘：要快照（有送出且 answer 才回）、登錄身邊的
+        enter("c")
+        local a = asks
+        B.Client.askEveryMinute()
+        if asks > a and answer then
+            local s = snap()
+            for _, m in ipairs(s) do deliver(m, 0) end
+            return s
+        end
+        return nil
+    end
+    at(XA + 1, XA + 1)
     enter("s")
+    SB.grow(SB.add({ { XA, XA }, { XA + 1, XA }, { XA + 2, XA } }))
+    local h0 = EC.applies
+    minute(true)
+    local home = EC.applies - h0
+    h0 = EC.applies
+    at(XA + 1, XA - 290)
+    minute(true)
+    deliver(dig({ { XA, XA + 1 }, { XA + 1, XA + 1 }, { XA + 2, XA + 1 } }), 0)
+    for _, m in ipairs(flush()) do deliver(m, 0) end
+    minute(false)
+    local near290 = EC.applies - h0
+    at(XA + 1, XA - 900)
+    minute(true)
+    local gone = #dig({ { XA, XA + 2 }, { XA + 1, XA + 2 }, { XA + 2, XA + 2 } }).args.t
+    local farMsgs = #flush()
+    minute(false)
+    local far900 = EC.applies - h0
+    at(XA + 1, XA + 5)
+    local a0 = EC.applies
+    local s = minute(true)
+    if s then for _, m in ipairs(s) do deliver(m, 0) end end
+    minute(true)
+    minute(true)
+    local back = EC.applies - a0
+    sendClientCommand = realSend
+    check(home >= 1 and near290 == 0 and far900 == 0 and gone == 6 and back == 1
+        and same(XA - 1, XA + 3, XA, 0) and same(XA - 1, XA + 3, XA + 2, 0),
+        "兩端：回到離開期間又挖了的地下室（290 格外收過 dug／block、900 格外沒收到），每分鐘要快照、快照重複投遞，"
+        .. "客戶端只叫引擎一次、格子與分間和伺服器一樣（home=" .. home .. " 290=" .. near290 .. " 900=" .. far900
+        .. " far msgs=" .. farMsgs .. " back=" .. back .. "）")
+    end)()
+
+    -- 第一次走近很多格、附近好幾塊：快照分好幾段（亂序、重複投遞）收齊時一次登錄全部；伺服器同一批推來好幾塊各自的 block，
+    -- 也只叫引擎一次
+    ;(function()
+    local function at(x, y)
+        cx, cy, sp = x, y, player({ x = x + 0.5, y = y + 0.5, z = Z })
+    end
+    local XC, L = 248 * AR + 100, SB.MAX / 2
+    local big = {}
+    for i = 0, L - 1 do
+        for _, x in ipairs({ XC + i, XC + i + 1, XC + i + 5, XC + i + 6, XC + i + 10, XC + i + 11 }) do
+            ug(x, XC + i, Z, { flags = {} })
+            big[#big + 1] = { x, XC + i }
+        end
+    end
+    at(XC + L / 2, XC + L / 2)
+    enter("s")
+    SB.grow(SB.add(big))
+    local segs = snap()
+    local a0 = EC.applies
+    for i = #segs, 1, -1 do deliver(segs[i], 0) end
+    deliver(segs[1], 0)
+    local first = EC.applies - a0
+    local rows = same(XC - 1, XC + 12, XC, 0) and same(XC + L - 3, XC + L + 12, XC + L - 1, 0)
+    local XD = 252 * AR + 100
+    for y = XD, XD + 10, 10 do
+        for x = XD, XD + 3 do ug(x, y, Z, { flags = {} }) end
+    end
+    at(XD + 1, XD + 5)
+    enter("s")
+    SB.grow(SB.add({ { XD, XD }, { XD + 1, XD }, { XD + 2, XD }, { XD, XD + 10 }, { XD + 1, XD + 10 }, { XD + 2, XD + 10 } }))
+    for _, m in ipairs(snap()) do deliver(m, 0) end
+    local a1 = EC.applies
+    deliver(dig({ { XD + 3, XD }, { XD + 3, XD + 10 } }), 0)
+    local pushed = flush()
+    enter("c")
+    for _, m in ipairs(pushed) do HARNESS_RAW_ON(m.cmd, m.args) end -- 同一次更新收到
+    HARNESS_REG_TICK()
+    local batch = EC.applies - a1
+    check(#segs >= 2 and first == 1 and rows and #pushed == 2 and batch == 1
+        and same(XD - 1, XD + 4, XD, 0) and same(XD - 1, XD + 4, XD + 10, 0),
+        "兩端：第一次走近三塊共 " .. #big .. " 格（快照 " .. #segs .. " 段，倒序、重複投遞）收齊時叫引擎 1 次（" .. first .. "）；"
+        .. "伺服器同一批推來兩塊各自的 block（" .. #pushed .. " 則），客戶端只叫 1 次（" .. batch .. "）、格子與分間和伺服器一樣")
+
+    -- 範圍外的塊和範圍內新挖的格子併成一塊：併起來的那塊不算範圍外，照常登錄
+    local AE = 256
+    local XE, YE = (AE + 2) * AR, AE * AR + 10
+    ug(XE, YE, Z, { flags = {} })
+    ug(XE - 1, YE, Z, { flags = {} })
+    at(XE, YE + 2)
+    enter("c")
+    CB.add({ { XE, YE } })
+    CB.reset({}, AE, AE)
+    local a2 = EC.applies
+    CB.registerNear(nil)
+    local held = EC.applies - a2
+    CB.add({ { XE - 1, YE } })
+    CB.registerNear(nil)
+    local joined = EC.applies - a2
+    check(held == 0 and joined == 1,
+        "客戶端：最近一份快照範圍外的塊不登錄（" .. held .. "）；範圍內新挖的格子把它併進來後照常登錄（" .. joined .. "）")
+
+    -- 同一次更新：只含一部分新格的 block（那一塊還在等其餘的 block，ids 照樣要登錄）與每分鐘檢查（走近了一塊沒登錄過的）
+    -- 一起登錄 1 次；快照與比它新的 block 也是 1 次
+    local XF = 260 * AR + 100
+    for x = XF, XF + 5 do ug(x, XF, Z, { flags = {} }) end
+    for x = XF + 200, XF + 203 do ug(x, XF, Z, { flags = {} }) end
+    at(XF + 1, XF + 3)
+    enter("s")
+    SB.grow(SB.add({ { XF, XF }, { XF + 1, XF }, { XF + 2, XF }, { XF + 200, XF }, { XF + 201, XF }, { XF + 202, XF } }))
+    for _, m in ipairs(snap()) do deliver(m, 0) end
+    local farR = EC.tile[tk(XF + 200, XF)] == nil
+    at(XF + 100, XF + 3)
+    local d1 = dig({ { XF + 3, XF } })
+    local b1 = flush()
+    local d2 = dig({ { XF + 4, XF } })
+    deliver(d1, 0)
+    deliver(d2, 0)
+    local a3 = EC.applies
+    enter("c")
+    for _, m in ipairs(b1) do HARNESS_RAW_ON(m.cmd, m.args) end
+    HARNESS_RAW_ASK()
+    HARNESS_REG_TICK()
+    local mixed = EC.applies - a3
+    local mixedOk = EC.tile[tk(XF + 3, XF)] ~= nil and EC.tile[tk(XF + 200, XF)] ~= nil
+    for _, m in ipairs(flush()) do deliver(m, 0) end
+    local rest = EC.tile[tk(XF + 4, XF)] ~= nil
+    dig({ { XF + 5, XF } })
+    flush()
+    local s5 = snap()
+    dig({ { XF + 203, XF } })
+    local bR = flush()
+    local a4 = EC.applies
+    enter("c")
+    for _, m in ipairs(s5) do HARNESS_RAW_ON(m.cmd, m.args) end
+    for _, m in ipairs(bR) do HARNESS_RAW_ON(m.cmd, m.args) end
+    HARNESS_REG_TICK()
+    local snapBlock = EC.applies - a4
+    check(farR and mixed == 1 and mixedOk and rest and #bR == 1 and snapBlock == 1 and EC.tile[tk(XF + 5, XF)] ~= nil
+        and EC.tile[tk(XF + 203, XF)] ~= nil,
+        "客戶端同一次更新：只含一部分新格的 block（那一塊還在等別格）與每分鐘檢查（走近一塊沒登錄過的）一起登錄 1 次（" .. mixed
+        .. "）；快照與比它新的 block 一起登錄 1 次（" .. snapBlock .. "）")
+    end)()
+
+    enter("s")
+    SB.reset({}, 248, 248)
+    SB.reset({}, 252, 252)
+    SB.reset({}, 240, 240)
     SB.reset({}, 120, 120)
     SB.reset({}, 180, 180)
     SB.reset({}, 141, 140)
@@ -27814,6 +28016,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     undoC()
     undoS()
     end)()
+    C.onServerCommand, C.askEveryMinute = HARNESS_RAW_ON, HARNESS_RAW_ASK
 
     -- F9 「把缺的換成…」：挖掘項目被擋（PlanLibrary.swap 回 SwapBad；種類下拉也不列 dig）
     local Lib = B.PlanLibrary

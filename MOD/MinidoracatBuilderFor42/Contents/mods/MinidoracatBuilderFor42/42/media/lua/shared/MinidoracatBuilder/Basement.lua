@@ -31,7 +31,8 @@ local OTHER = { N = "W", W = "N" }
 -- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } }, box＝{ x0, y0, x1, y1 } 包圍盒（含邊），
 -- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號, todo＝有還沒登錄的格子或要重建的棟
 -- （客戶端 registerNear 只看它、不走格子）；客戶端另有 v＝套用過的伺服器修訂號（block、快照）, wait＝開始等 block 的時間,
--- fresh＝{ [鍵]＝true } 收到 dug 之後還沒等到 block 或快照的格子 }
+-- fresh＝{ [鍵]＝true } 收到 dug 之後還沒等到 block 或快照的格子, stale＝在最近一份快照的範圍外（之後的 dug、block 收不到，
+-- 手上的可能是舊的）}
 -- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
 -- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
@@ -80,7 +81,8 @@ local function merge(a, b)
 end
 
 -- tiles＝{ { x, y }, ... }（z 固定 -1）：加進集合、併連通塊；回真的新增的那幾格。範圍外的（inRange）不收。
--- 新格取第一個相鄰已挖格的房號，不改既有格子的房號：中間的牆拆了之後要不要併成一間，等伺服器照牆重算（split）
+-- 新格取第一個相鄰已挖格的房號，不改既有格子的房號：中間的牆拆了之後要不要併成一間，等伺服器照牆重算（split）。
+-- 加了新格的塊不算範圍外（客戶端只加已同步範圍內的格子：dug、block、快照）
 function Basement.add(tiles)
     local added = {}
     for _, t in ipairs(tiles) do
@@ -102,7 +104,7 @@ function Basement.add(tiles)
                 local o = key(x + d[1], y + d[2])
                 r = r or (cells[o] == id and b.room[o])
             end
-            cells[k], b.n, b.tiles[k], b.room[k], b.todo = id, b.n + 1, xy, r or 1, true
+            cells[k], b.n, b.tiles[k], b.room[k], b.todo, b.stale = id, b.n + 1, xy, r or 1, true, nil
             local box = b.box
             box[1], box[2], box[3], box[4] = math.min(box[1], x), math.min(box[2], y), math.max(box[3], x), math.max(box[4], y)
             added[#added + 1] = xy
@@ -118,7 +120,8 @@ local function range(ax, ay)
 end
 
 -- 客戶端收到 basements：大區 (ax, ay) 周圍 3×3 範圍內的格子整份換成 tiles（範圍外的不動、tiles 裡範圍外的不收）；還在等
--- block 的格子（fresh，比這份快照新的 dug）留著，範圍內的塊不再等（這一次登錄含它們）。
+-- block 的格子（fresh，比這份快照新的 dug）留著，範圍內的塊不再等（這一次登錄含它們）。包圍盒碰不到範圍的塊記成範圍外
+-- （stale）：之後收不到它的 dug、block，走回去時手上的可能是舊的，等涵蓋它的快照到了才登錄（Basement.registerNear）。
 -- 有格子被拿掉時連通塊整份重算（房號照舊分）；拿掉的格子從它登錄進的那一棟移除、不再算登錄過（之後又挖回來要重新登錄），
 -- 那一棟下一次登錄整棟重建；角那一格被拿掉的棟維持原狀（重建會換角，引擎找不到舊的那一棟，拿掉的格子在引擎裡留到下一次
 -- 進場）。回真的新增的那幾格
@@ -165,7 +168,11 @@ function Basement.reset(tiles, ax, ay)
     end
     for _, b in pairs(blocks) do
         local box = b.box
-        if box[1] < x1 and box[3] >= x0 and box[2] < y1 and box[4] >= y0 then b.fresh, b.wait = nil, nil end
+        if box[1] < x1 and box[3] >= x0 and box[2] < y1 and box[4] >= y0 then
+            b.fresh, b.wait, b.stale = nil, nil, nil
+        else
+            b.stale = true
+        end
     end
     return Basement.add(inside)
 end
@@ -1067,12 +1074,14 @@ end
 
 -- 客戶端：身邊（NEAR 格內）有還沒登錄的格子或要重建的棟（todo）、而且沒在等 block 或等超過 WAIT_MS（伺服器一批最晚
 -- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）一次登錄。只走塊、不走格子；沒有
--- 要登錄的塊不走玩家、不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。回成不成功
+-- 要登錄的塊不走玩家、不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。在最近一份快照範圍外的塊（stale）不登錄：
+-- 玩家走回去時每分鐘的檢查會先要那一區的快照，先登錄手上舊的、快照帶來離開期間的變動再登錄一次，同一刻就叫兩次引擎；
+-- 快照到了它就在範圍內，連同變動一次登錄。回成不成功
 Basement.WAIT_MS = Basement.GROW_MAX + 30000
 function Basement.registerNear(ids)
     local now, pick, list, near, any = getTimestampMs(), {}, {}, nil, false
     for id, b in pairs(blocks) do
-        if b.todo and ((ids and ids[id]) or not b.wait or now - b.wait > Basement.WAIT_MS) then
+        if b.todo and not b.stale and ((ids and ids[id]) or not b.wait or now - b.wait > Basement.WAIT_MS) then
             near = near or nearIds(players(), Basement.NEAR)
             if near[id] then
                 pick[id], any = true, true

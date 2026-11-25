@@ -655,6 +655,25 @@ end
 local synced, part = nil, nil
 function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
 
+-- 登錄身邊的地下室（Basement.registerNear）排到這一次更新的 OnTick 一起做：每次更新先處理完收到的封包
+-- （GameWindow.logic → GameClient.update，GameClient.java:386-393），再跑遊戲時間（EveryOneMinute）與 OnTick
+-- （IngameState.java:1558,1653），所以同一批收到的幾則 block、快照與每分鐘檢查併成一次 applyChanges。ids（換過房號的塊，
+-- 不管等不等 block）併起來；有排著的才掛 OnTick，做完就拿掉
+local soon = nil
+local function registerSoon()
+    Events.OnTick.Remove(registerSoon)
+    local ids = soon
+    soon = nil
+    MinidoracatBuilder.Basement.registerNear(ids)
+end
+local function registerLater(ids)
+    if not soon then
+        soon = {}
+        Events.OnTick.Add(registerSoon)
+    end
+    for id in pairs(ids or {}) do soon[id] = true end
+end
+
 -- 快照收到前的 dug 不登錄：先登錄會以新格當主建物的角，快照到了其餘的格子變成一格一棟（快照本來就含它）
 local function inSynced(t)
     if not synced then return false end
@@ -665,7 +684,8 @@ end
 
 -- 一段快照：(ax, ay, n, v) 一樣的是同一份，照段號收、不要求順序。和已套用的同一區、修訂號比較小的丟掉；收到一半時來了另一份：
 -- 修訂號比較小的那一段丟掉，否則丟掉收到一半的、改收新的。重複的段丟掉；壞資料連收到一半的一起丟（EveryOneMinute 會再要）。
--- 收齊了才換掉那一區（Basement.reset 留著還在等 block 的格子）、照本機的塊套用分房、登錄身邊的塊，並記成已收到。回 true＝收齊了
+-- 收齊了才換掉那一區（Basement.reset 留著還在等 block 的格子）、照本機的塊套用分房、排登錄身邊的塊（registerLater），並記成
+-- 已收到。回 true＝收齊了
 local function onSegment(args)
     local i, n, v = args.i, args.n, args.v
     if not (int(n, 1, SEG_MAX) and int(i, 1, n) and int(v, 0, V_MAX)) then
@@ -696,13 +716,13 @@ local function onSegment(args)
     for s = 1, done.n do
         for _, rooms in ipairs(done.seg[s]) do BM.setRooms(rooms, done.v) end
     end
-    BM.registerNear(nil)
+    registerLater(nil)
     synced = { ax = done.ax, ay = done.ay, v = done.v }
     return true
 end
 
 -- block：已同步範圍內的格子（範圍外的略過）還沒有的先加進集合，照本機的塊套用伺服器分好的房間（Basement.setRooms 照 v 略過
--- 較舊的），換過房號的塊當下登錄（身邊的，Basement.registerNear）；壞資料丟掉。回 true＝有範圍內的格子
+-- 較舊的），換過房號的塊排登錄（身邊的，registerLater）；壞資料丟掉。回 true＝有範圍內的格子
 local function onBlock(args)
     local BM = MinidoracatBuilder.Basement
     local rooms = int(args.v, 0, V_MAX) and blockRooms(args.r, 0, 0, COORD_MAX, COORD_MAX, 0)
@@ -717,7 +737,7 @@ local function onBlock(args)
     end
     if #tiles == 0 then return false end
     BM.add(tiles)
-    BM.registerNear(BM.setRooms(rooms, args.v))
+    registerLater(BM.setRooms(rooms, args.v))
     return true
 end
 
@@ -744,7 +764,7 @@ end
 
 -- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
 -- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要），
--- 並登錄走近了的、等 block 等太久的地下室（Basement.registerNear）
+-- 並排登錄走近了的、等 block 等太久的地下室（registerLater）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return end
@@ -756,7 +776,7 @@ end
 function Client.askEveryMinute()
     if not isClient() then return end
     askBasements()
-    MinidoracatBuilder.Basement.registerNear(nil)
+    registerLater(nil)
 end
 Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)
