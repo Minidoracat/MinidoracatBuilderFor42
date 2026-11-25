@@ -375,6 +375,9 @@ def check_tiles():
     spec = importlib.util.spec_from_file_location("gen_basement_tiles", os.path.join(REPO, "scripts", "gen_basement_tiles.py"))
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
+    if not os.path.isfile(gen.VANILLA):
+        print(f"  SKIP  {TILES_TITLE} — 找不到原版圖塊定義 {gen.VANILLA}（設定 PZ_PATH）")
+        return 0
     with open(gen.OUT, "rb") as fh:
         same = fh.read() == gen.build()
     if not same:
