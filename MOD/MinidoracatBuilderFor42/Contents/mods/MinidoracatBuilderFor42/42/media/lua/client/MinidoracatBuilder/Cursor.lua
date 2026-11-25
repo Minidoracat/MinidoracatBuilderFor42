@@ -272,9 +272,12 @@ end
 
 -- ---------------------------------------------------------------- 游標物件
 
--- 每格要畫的東西攤平成陣列（render 每幀只照陣列畫，不配置）：位置、虛影圖（nil＝只畫地框）、高度、虛影染色、地框色、記號
+-- 每格要畫的東西攤平成陣列（render 每幀只照陣列畫，不配置）：位置、虛影圖（nil＝只畫地框）、高度、虛影染色與不透明度、
+-- 地框色與不透明度、記號、染色的明暗倍數 k（整片改畫紅時照它保留明暗）
+local GHOST_A, FRAME_A = 0.6, 0.8
 local function newGhosts()
-    return { n = 0, x = {}, y = {}, z = {}, spr = {}, yoff = {}, tr = {}, tg = {}, tb = {}, fr = {}, fg = {}, fb = {}, m = {} }
+    return { n = 0, x = {}, y = {}, z = {}, spr = {}, yoff = {}, tr = {}, tg = {}, tb = {}, ta = {}, fr = {}, fg = {}, fb = {},
+        fa = {}, m = {}, k = {} }
 end
 
 local function ghost(g, x, y, z, spr, yoff, tint, floor, ...)
@@ -282,8 +285,8 @@ local function ghost(g, x, y, z, spr, yoff, tint, floor, ...)
     local i = g.n + 1
     g.n = i
     g.x[i], g.y[i], g.z[i], g.spr[i], g.yoff[i], g.m[i] = x, y, z, spr, yoff, mark or 0
-    g.tr[i], g.tg[i], g.tb[i] = tint.r, tint.g, tint.b
-    g.fr[i], g.fg[i], g.fb[i] = floor.r, floor.g, floor.b
+    g.tr[i], g.tg[i], g.tb[i], g.ta[i], g.k[i] = tint.r, tint.g, tint.b, GHOST_A, 1
+    g.fr[i], g.fg[i], g.fb[i], g.fa[i] = floor.r, floor.g, floor.b, FRAME_A
 end
 
 -- 原版設定的可蓋／不可蓋地框色（ISBuildIsoEntity.lua:46-68）
@@ -742,18 +745,18 @@ function Cursor:anchors(ax, ay, az, ex, ey)
     return list
 end
 
--- 虛影畫哪一張：地下室入口的洞（圖是看不見的 Entry.DIG_CELL）畫正下方那片樓梯；地下一層的樓梯三片不畫（nil，只畫地框）
+-- 地下室入口（Entry.cells 的角色）：洞的圖是看不見的 Entry.DIG_CELL，畫一片泥土（挖開的樣子）；地下一層的樓梯三片與室
+-- 不畫圖。虛影畫在 z < 0 會落到畫面上錯的位置（引擎照層數把畫面位置往下移，IsoUtils.YToScreen），所以地下的格子在
+-- refresh 另外處理：樓梯在洞的正下方、不另畫，室畫在正上方的地面、只畫淡的地框
 local DIG_STAIR = { top = true, mid = true, bottom = true }
-local function partSprite(offs, o, x, y)
-    if o[5] == "hole" then
-        for _, s in ipairs(offs) do
-            if s[1] == o[1] and s[2] == o[2] and s[3] == o[3] - 1 then return s[4] end
-        end
-    elseif DIG_STAIR[o[5]] and o[3] < 0 then
-        return nil
-    end
+local function partSprite(o, x, y)
+    local role = o[5]
+    if role == "hole" then return Entry.sprite(B.Place.DIRT) end
+    if role and o[3] < 0 and (DIG_STAIR[role] or role == "dig") then return nil end
     return Entry.alternate(o[4], x, y)
 end
+-- 洞照離落腳處由近到遠越來越暗（看得出從哪一端往下）；地下的室畫在地面上的地框比洞淡（地面那幾格不會動）
+local HOLE_SHADE, HOLE_A, ROOM_FRAME_A = { 0.6, 0.42, 0.25 }, 0.85, 0.3
 
 -- 這次實際會蓋的格子：Check.item 通過時修剪過（加開地下室入口不挖已挖的那幾格）就照它的 info.cells，
 -- 回 { [Place.key] = 那一格 }；沒修剪（格數和 Entry.cells 一樣）回 nil＝照 Entry.cells 全畫，info.cells[j] 對第 j 片
@@ -791,19 +794,33 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         local kept = keptOf(r, offs)
         for j, o in ipairs(offs) do
             local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
-            local spr = partSprite(offs, o, x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
+            local role = o[5]
+            local spr = partSprite(o, x, y) -- 交替柵欄：畫這一格實際放的那張（Check.item 同一份）
             -- 放在桌上的高度：Check.item 的 info.cells 和 Entry.cells 同順序，yoff 是 Place.check 的第三個回傳值；
             -- 原版虛影同樣乘 tileScale 當 offsetY（ISBuildingObject.lua:564-571）。沒算到那一格的畫在地上。
             local c, cut = cellOf(r, kept, j, x, y, z)
             local yoff = (c and c.yoff or 0) * scale
-            if cut then
-                -- Check.item 修剪掉的格子不會蓋：不畫
-            elseif code == nil then
-                ghost(g, x, y, z, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
-            elseif not at or (e.x == x and e.y == y and e.z == z) then
-                ghost(g, x, y, z, spr, yoff, RED, bad, MARK_BAD)
+            -- 拒絕碼指著的那一格；洞也算它正下方那片樓梯（樓梯不另畫）
+            local hit = at and e.x == x and e.y == y and (e.z == z or role == "hole" and e.z == z - 1)
+            if cut or (role and o[3] < 0 and DIG_STAIR[role]) then
+                -- Check.item 修剪掉的格子不會蓋、地下室入口的樓梯在洞底下：不畫
             else
-                ghost(g, x, y, z, spr, yoff, RED, NEUTRAL)
+                local gz = role == "dig" and o[3] < 0 and a[3] or z -- 地下的室畫在正上方的地面
+                if code == nil then
+                    ghost(g, x, y, gz, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
+                elseif not at or hit then
+                    ghost(g, x, y, gz, spr, yoff, RED, bad, MARK_BAD)
+                else
+                    ghost(g, x, y, gz, spr, yoff, RED, NEUTRAL)
+                end
+                local i = g.n
+                if role == "hole" then
+                    local k = HOLE_SHADE[math.abs(o[1]) + math.abs(o[2]) + 1] or 1
+                    g.k[i], g.ta[i] = k, HOLE_A
+                    g.tr[i], g.tg[i], g.tb[i] = g.tr[i] * k, g.tg[i] * k, g.tb[i] * k
+                elseif gz ~= z then
+                    g.fa[i] = ROOM_FRAME_A
+                end
             end
         end
     end
@@ -813,7 +830,8 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     local v, failed = hook("valid", self)
     if failed or v == false then
         for i = 1, g.n do
-            g.tr[i], g.tg[i], g.tb[i], g.fr[i], g.fg[i], g.fb[i] = RED.r, RED.g, RED.b, bad.r, bad.g, bad.b
+            local k = g.k[i]
+            g.tr[i], g.tg[i], g.tb[i], g.fr[i], g.fg[i], g.fb[i] = RED.r * k, RED.g * k, RED.b * k, bad.r, bad.g, bad.b
         end
         if g.n > 0 then g.m[1] = MARK_BAD end
     end
@@ -1233,9 +1251,9 @@ function Cursor:hideUI()
     end
 end
 
--- 每幀畫虛影：每格各自的 sprite 照 refresh 算好的染色（可蓋白、不能蓋照原版紅、替換黃；ISBuildingObject.lua:576-580、
+-- 每幀畫虛影：每格各自的 sprite 照 refresh 算好的染色與不透明度（可蓋白、不能蓋照原版紅、替換黃；ISBuildingObject.lua:576-580、
 -- IsoSprite.java:507-516），地框照玩家設定的好／壞色（ISBuildIsoEntity.lua:46-68）、中性灰或黃。沒有 sprite 的格子
--- （NO_FACE、一區拆除）只畫地框。不配置 table／字串。
+-- （NO_FACE、一區拆除、地下室入口的室）只畫地框。不配置 table／字串。
 -- 開頭先比 getDrag：同一幀每個 OnDoTileBuilding2 處理器拿到同一個拖曳物件（IsoCell.java:2612），
 -- 已經關掉的游標可能被別的 MOD 再 render 一次，這時收掉自己的 UI 就走。
 function Cursor:render(x, y, z, square)
@@ -1246,11 +1264,11 @@ function Cursor:render(x, y, z, square)
     if self.overUI or self.picking then return end
     local floor = self:getFloorCursorSprite()
     local g = self.g
-    local gx, gy, gz, gspr, gyoff = g.x, g.y, g.z, g.spr, g.yoff
+    local gx, gy, gz, gspr, gyoff, ta, fa = g.x, g.y, g.z, g.spr, g.yoff, g.ta, g.fa
     for i = 1, g.n do
         local spr = gspr[i]
-        if spr then spr:RenderGhostTileColor(gx[i], gy[i], gz[i], 0, gyoff[i], g.tr[i], g.tg[i], g.tb[i], 0.6) end
-        floor:RenderGhostTileColor(gx[i], gy[i], gz[i], g.fr[i], g.fg[i], g.fb[i], 0.8)
+        if spr then spr:RenderGhostTileColor(gx[i], gy[i], gz[i], 0, gyoff[i], g.tr[i], g.tg[i], g.tb[i], ta[i]) end
+        floor:RenderGhostTileColor(gx[i], gy[i], gz[i], g.fr[i], g.fg[i], g.fb[i], fa[i])
     end
 end
 
@@ -1297,7 +1315,7 @@ function Cursor:tryBuild(x, y, z)
             for j, o in ipairs(offs) do
                 local x, y, z = a[1] + o[1], a[2] + o[2], a[3] + o[3]
                 local c, cut = cellOf(r, kept, j, x, y, z)
-                local spr = not cut and partSprite(offs, o, x, y)
+                local spr = not cut and partSprite(o, x, y)
                 if spr then ps[#ps + 1] = { x, y, z, spr, (c and c.yoff or 0) * scale } end
             end
             anchors[#anchors + 1] = { a[1], a[2], a[3], a[4], a[5] } -- a[5]：車庫門的寬度（Client.build 送 w）

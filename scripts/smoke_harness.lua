@@ -11119,7 +11119,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             for _, c in ipairs(info.cells or {}) do if c.role == "dig" then digs = digs + 1 end end
             check(code == nil and #info.cells == 7 and #info.sprites == 7 and digs == 0,
                 "加開入口：只剩樓梯 3、平台、洞 3 共 7 格（" .. tostring(code) .. " " .. #(info.cells or {}) .. "）")
-            -- F14 游標虛影與排隊虛影只畫 Check.item 留下的格子（7 格）；預檢沒過（太遠）照原本的 13 格畫紅
+            -- F14 游標虛影與排隊虛影只畫 Check.item 留下的格子（樓梯在洞底下不另畫：洞 3＋平台＝4 格）；預檢沒過（太遠）照
+            -- 原本的 13 格畫紅（扣掉樓梯 3 片＝10 格）
             local Cursor = MinidoracatBuilder.Cursor
             local realCore, realCoreT, realSend = getCore, Core, Cursor.send
             local color = { getR = function() return 1 end, getG = function() return 1 end, getB = function() return 1 end }
@@ -11149,9 +11150,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             cur:refresh(XA, YA, 0, XA, YA)
             local farCode, farN = cur.res[1].code, cur.g.n
             Cursor.send, getCore, Core = realSend, realCore, realCoreT
-            check(drawn == 7 and drawnOk and #ps == 4 and onlyKept(px, py, pz, #ps) and farCode ~= nil and farN == 13,
-                "F14 加開入口：游標虛影只畫留下的 7 格、排隊虛影只送會畫的 4 片（洞 3＋平台）；預檢沒過照 13 格畫（"
-                .. drawn .. " " .. #ps .. " " .. tostring(farCode) .. " " .. farN .. "）")
+            check(drawn == 4 and drawnOk and #ps == 4 and onlyKept(px, py, pz, #ps) and farCode ~= nil and farN == 10,
+                "F14 加開入口：游標虛影只畫留下的 4 格（洞 3＋平台；樓梯在洞底下不另畫）、排隊虛影送同樣的 4 片；預檢沒過照 13 格"
+                .. "扣掉樓梯的 10 格畫（" .. drawn .. " " .. #ps .. " " .. tostring(farCode) .. " " .. farN .. "）")
             -- 樓梯底前面那格：沒有格子、沒有地板、和樓梯底之間隔著牆 → DIG_ENTRY，指那一格
             local fk, exits = XA + 3 .. "," .. YA .. "," .. Z, {}
             local keepF = squares[fk]
@@ -11167,6 +11168,102 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             for _, r in ipairs(exits) do exitOk = exitOk and r[1] == "DIG_ENTRY" and r[2].x == XA + 3 and r[2].y == YA end
             check(exitOk, "加開入口的樓梯底前面那格沒有格子、沒有地板、或隔著牆：DIG_ENTRY，指那一格（"
                 .. tostring(exits[1][1]) .. " " .. tostring(exits[2][1]) .. " " .. tostring(exits[3][1]) .. "）")
+            -- 入口的游標預覽（往南、往東）：洞 3 格畫泥土、離落腳處越遠越暗；地下的樓梯不畫（虛影畫在 z < 0 會落到畫面上錯的
+            -- 位置）；樓梯前方的室畫在正上方的地面、只有淡的地框；落腳處照常。被擋時整組紅、指著樓梯那片時標在它上方的洞；
+            -- 規劃模式整片改紅也保留洞的明暗；render 照每格的不透明度畫；排隊虛影的洞也畫泥土
+            do
+                local real = { getCore, Core, Cursor.preview, Cursor.send, Cursor.hook.valid }
+                local good = { getR = function() return 0.1 end, getG = function() return 0.9 end, getB = function() return 0.1 end }
+                local badC = { getR = function() return 0.9 end, getG = function() return 0.1 end, getB = function() return 0.2 end }
+                getCore = function() return { getGoodHighlitedColor = function() return good end,
+                    getBadHighlitedColor = function() return badC end } end
+                Core = { getTileScale = function() return 1 end }
+                Cursor.hook.valid = nil
+                local X, Y, RES = 3800, 3800, nil
+                Cursor.preview = function() return RES, RES[1].code and 0 or 1, 0 end
+                local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-6 end
+                local NONE = { __index = function() return {} end } -- 沒畫到的格子：欄位都是 nil，比對不成立（不丟錯）
+                -- 回 { [dx,dy,z] = 那一格 }（沒畫到的格子回空表）、格數；樓梯的圖名出現過就記在 stair
+                local function paint(name, code, extra)
+                    local e = Entry.resolve(name)
+                    local cur = setmetatable({ character = q, name = e.name, entry = e, d = 0, canDrag = false, offsBy = {},
+                        colors = { warning = good }, texts = function() end }, { __index = Cursor })
+                    RES = { { a = { X, Y, 0, 0 }, code = code, extra = extra } }
+                    cur:refresh(X, Y, 0, X, Y)
+                    local g, out, stair = cur.g, {}, false
+                    for i = 1, g.n do
+                        local s = g.spr[i] and g.spr[i]:getName() or "-"
+                        if Entry.digStair(s) then stair = true end
+                        out[(g.x[i] - X) .. "," .. (g.y[i] - Y) .. "," .. g.z[i]] = { s = s, ta = g.ta[i], fa = g.fa[i], k = g.k[i],
+                            tr = g.tr[i], fr = g.fr[i], m = g.m[i] }
+                    end
+                    return setmetatable(out, NONE), g.n, stair, cur
+                end
+                local SH = { 0.6, 0.42, 0.25 }
+                local function shape(out, n, stair, dx, dy, tint)
+                    local ok = n == 10 and not stair
+                    for i = 0, 2 do
+                        local h = out[i * dx .. "," .. i * dy .. ",0"]
+                        ok = ok and h ~= nil and h.s == B.Place.DIRT and h.ta == 0.85 and h.fa == 0.8 and near(h.k, SH[i + 1])
+                            and near(h.tr, tint * SH[i + 1])
+                    end
+                    local p = out[-dx .. "," .. -dy .. ",0"]
+                    ok = ok and p ~= nil and p.s == Entry.STAIR_FLOOR and p.ta == 0.6 and p.fa == 0.8
+                    for a = 3, 4 do
+                        for b = -1, 1 do
+                            local c = out[(a * dx + b * dy) .. "," .. (a * dy + b * dx) .. ",0"]
+                            ok = ok and c ~= nil and c.s == "-" and c.fa == 0.3
+                        end
+                    end
+                    for k in pairs(out) do ok = ok and not k:find(",%-1$") end
+                    return ok
+                end
+                local sOut, sN, sSt = paint(S)
+                local eOut, eN, eSt, eCur = paint(E)
+                check(shape(sOut, sN, sSt, 0, 1, 1) and shape(eOut, eN, eSt, 1, 0, 1) and sOut["0,0,0"].fr == 0.1,
+                    "入口的游標預覽：往南、往東都是洞 3 格畫泥土、越往下越暗，地下的樓梯不畫、沒有畫在地下一層的格子，"
+                    .. "樓梯前方 3×2 的室畫在地面、只有淡的地框，落腳處照常（" .. sN .. " " .. eN .. "）")
+                -- 被擋：拒絕碼指著往南入口中間那片樓梯（地下一層）→ 標在它上方的洞；其他格紅、地框中性灰
+                local bOut, bN, bSt = paint(S, "BLOCKED", { x = X, y = Y + 1, z = -1 })
+                local mid, top, room = bOut["0,1,0"], bOut["0,0,0"], bOut["0,3,0"]
+                check(shape(bOut, bN, bSt, 0, 1, 0.65) and mid.m == 1 and mid.fr == 0.9 and top.m == 0 and top.fr == 0.6
+                    and room.m == 0 and room.fr == 0.6 and room.fa == 0.3,
+                    "入口被擋：整組畫紅（洞照樣越往下越暗）；指著地下的樓梯時警告記號與壞色地框標在它上方的洞，其他格地框中性灰")
+                local wOut = paint(S, "DIG_ROOM", { x = X + 1, y = Y + 4, z = -1 })
+                check(wOut["1,4,0"].m == 1 and wOut["1,4,0"].fr == 0.9 and wOut["1,4,0"].fa == 0.3 and wOut["0,4,0"].m == 0,
+                    "入口被擋、指著地下的室那一格：記號標在它正上方地面那一格（淡地框照舊）")
+                Cursor.hook.valid = function() return false end
+                local pOut = paint(E)
+                Cursor.hook.valid = nil
+                check(near(pOut["0,0,0"].tr, 0.65 * 0.6) and near(pOut["2,0,0"].tr, 0.65 * 0.25) and pOut["0,0,0"].fr == 0.9
+                    and pOut["3,0,0"].fa == 0.3, "規劃模式說不能放：整片改紅時洞照樣越往下越暗，室的地框照樣淡")
+                -- render：每格照 refresh 記的不透明度畫（洞 0.85、室的地框 0.3），不另外算
+                local alphas, frames = {}, {}
+                local rec = { RenderGhostTileColor = function(_, x, y, z, _, _, _, _, _, a) alphas[(x - X) .. "," .. (y - Y)] = a end }
+                local floorRec = { RenderGhostTileColor = function(_, x, y, z, _, _, _, a) frames[(x - X) .. "," .. (y - Y)] = a end }
+                local keepCell = getCell
+                for i = 1, eCur.g.n do if eCur.g.spr[i] then eCur.g.spr[i] = rec end end
+                eCur.player, eCur.overUI, eCur.showUI = 0, false, function() end
+                eCur.tooltip = { getIsVisible = function() return true end, setVisible = function() end }
+                eCur.getFloorCursorSprite = function() return floorRec end
+                getCell = function() return { getDrag = function() return eCur end } end
+                local okR, errR = pcall(eCur.render, eCur, X, Y, 0)
+                getCell = keepCell
+                check(okR and alphas["1,0"] == 0.85 and alphas["-1,0"] == 0.6 and frames["3,1"] == 0.3 and frames["1,0"] == 0.8,
+                    "render 照每格記的不透明度畫：洞 0.85、落腳處 0.6，室的地框 0.3、其他地框 0.8（" .. tostring(errR) .. "）")
+                -- 排隊虛影（放開後、蓋好前）：洞畫泥土、地下的樓梯與室不送
+                local sent
+                Cursor.send = function(_, _, _, ps) sent = ps end
+                eCur.kx, eCur.ky, eCur.kz, eCur.res = X, Y, 0, { { a = { X, Y, 0, 0 } } }
+                eCur:tryBuild(X, Y, 0)
+                local qs, qDirt, qOther = sent and sent[1] or {}, 0, 0
+                for _, p in ipairs(qs) do
+                    if p[3] == 0 and p[4]:getName() == B.Place.DIRT then qDirt = qDirt + 1 elseif p[3] == 0 then qOther = qOther + 1 end
+                end
+                getCore, Core, Cursor.preview, Cursor.send, Cursor.hook.valid = real[1], real[2], real[3], real[4], real[5]
+                check(#qs == 4 and qDirt == 3 and qOther == 1, "入口的排隊虛影：洞 3 格畫泥土、落腳處 1 格，地下的樓梯與室不送（"
+                    .. #qs .. " " .. qDirt .. " " .. qOther .. "）")
+            end
         end)()
 
         -- c12 帳本寫不進去：世界撤回、不扣料、回 INTERNAL
