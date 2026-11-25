@@ -55,9 +55,10 @@ local function savedRooms()
 end
 
 -- 開服登錄，兩本帳本（本帳本與燈的帳本 Ledger）都開了才做一次：兩邊的 initSystem 結尾各叫一次，不靠系統的啟動順序。
--- 專用伺服器先從燈的帳本記下開關格（z＝-1、在集合裡、圖是牆上開關 Rules.switchProps，Basement.setSwitchTile），再分房、
--- 全部登錄。單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
--- 專用伺服器這時還沒有 chunk（分房等巡查），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+-- 專用伺服器先從燈的帳本記下開關格（z＝-1、在集合裡、圖是牆上開關 Rules.switchProps，Basement.setSwitchTile），再分房
+-- （Basement.splitAll）、全部登錄。單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先
+-- IsoWorld.init 才 initSystems），照牆分；專用伺服器這時還沒有 chunk，照帳本記的房號分（沒記房號的格子算同一間，chunk
+-- 載入後巡查照牆分），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
 local started = false
 function BasementLedger.start()
     local Ledger = MinidoracatBuilder.Ledger

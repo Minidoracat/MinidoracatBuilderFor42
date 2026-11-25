@@ -9388,11 +9388,13 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     local Basement, Ledger = B.Basement, B.BasementLedger
     local D = Basement.DIRT
     local function sp(name, flags, t) return sprite(name, 0, { flags = flags, type = t }) end
-    world({ sp(D.W, { "WallW" }), sp(D.N, { "WallN" }), sp(D.NW, { "WallNW" }), sp("t_winN", { "WindowN" }),
+    -- 土牆三張圖照引擎帶牆的旗標；後面換了 namedMap 的情境（HARNESS_ENGINE）也照這三張建
+    local dirtSpr = { [D.W] = sp(D.W, { "WallW" }), [D.N] = sp(D.N, { "WallN" }), [D.NW] = sp(D.NW, { "WallNW" }) }
+    world({ dirtSpr[D.W], dirtSpr[D.N], dirtSpr[D.NW], sp("t_winN", { "WindowN" }),
         sp("t_frameN", { "WallNTrans" }), sp("t_wallN", { "WallN" }) })
     -- 格上物件：圖照 namedMap（flags 有給就自己做一張）；thump＝IsoThumpable、light＝IsoLightSwitch
     local function obj(sq, name, thump, flags)
-        local s = flags and sp(name, flags) or IsoSpriteManager.instance:getNamedMap():get(name) or sp(name, {})
+        local s = flags and sp(name, flags) or IsoSpriteManager.instance:getNamedMap():get(name) or dirtSpr[name] or sp(name, {})
         local o = { thump = thump }
         function o:getSprite() return s end
         function o:getProperties() return s:getProperties() end
@@ -9415,7 +9417,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         function o:getSpriteConfig() return self.cfg end -- 多格家具（SpriteConfig）：cfg＝{ isValidMultiSquare }
         return o
     end
-    IsoObject = { new = function(_, sq, name) return obj(sq, name) end }
+    -- 引擎 new IsoObject(cell, sq, sprite) 只建物件，AddTileObject 才放進格子
+    local ISO = { new = function(_, sq, name) return obj(sq, name) end }
+    IsoObject = ISO
     -- 雙開門、車庫門：o.double／o.garage＝那一扇的序號（引擎不是的回 -1）
     IsoDoor = { getDoubleDoorIndex = function(o) return o.double or -1 end, getGarageDoorIndex = function(o) return o.garage or -1 end }
     instanceof = function(o, cls)
@@ -9543,9 +9547,11 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         eng.zombie[#eng.zombie + 1] = room.def.name
     end } }
     -- 後面的情境（客戶端同步、兩端各一份世界）要一份乾淨的假引擎：換上新的 eng 與 getWorld、BuildingRoomsEditor、
-    -- VirtualZombieManager（同一套假的），回 eng、還原函式、ug、tk、use（use(e) 換成另一份 eng，兩端各用一份 metaGrid）
+    -- VirtualZombieManager（同一套假的）、IsoObject（補土牆用），回 eng、還原函式、ug、tk、use（use(e) 換成另一份 eng，
+    -- 兩端各用一份 metaGrid）
     HARNESS_ENGINE = function()
-        local keep = { eng, getWorld, BuildingRoomsEditor, VirtualZombieManager }
+        local keep = { eng, getWorld, BuildingRoomsEditor, VirtualZombieManager, IsoObject }
+        IsoObject = ISO
         eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0,
             newDef = newDef }
         getWorld = function()
@@ -9558,7 +9564,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             eng.zombie[#eng.zombie + 1] = room.def.name
         end } }
         return eng, function()
-            eng, getWorld, BuildingRoomsEditor, VirtualZombieManager = keep[1], keep[2], keep[3], keep[4]
+            eng, getWorld, BuildingRoomsEditor, VirtualZombieManager, IsoObject = keep[1], keep[2], keep[3], keep[4], keep[5]
         end, ug, tk, function(e) eng = e end
     end
     local function liveCount()
@@ -11218,17 +11224,25 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         -- F1：帳本寫好之後補牆、登錄出錯：照樣算蓋好（扣料、磨鏟子、洞開好），之後 registerAll 補登錄
         ;(function()
             local realFix, realGrow = Basement.fixEdges, Basement.growLater
+            local logs, keepPrint = {}, print
             local ok, code, r = paidDig(3450, 7132, function()
                 Basement.fixEdges = function() error("injected fixEdges failure") end
                 Basement.growLater = function() error("injected grow failure") end
+                print = function(s) logs[#logs + 1] = tostring(s) end -- 植入的錯誤每格記一行 log，接住不印
             end)
+            print = keepPrint
             Basement.fixEdges, Basement.growLater = realFix, realGrow
+            local edgeLogs = 0
+            for _, s in ipairs(logs) do
+                if s:find("edges failed", 1, true) then edgeLogs = edgeLogs + 1 end
+            end
             local before = eng.tile[tk(3450, Y0)]
             local reg = Basement.registerAll()
             check(ok and r.paid and r.rolls == 9 and r.grew == 9 and Basement.has(3450, Y0, Z) and holesOpen(r.hs)
-                and HARNESS_DRIFT() == "" and before == nil and reg and eng.tile[tk(3450, Y0)] ~= nil and r.a.partial == true,
-                "F1 帳本寫好之後補牆、登錄出錯：照樣蓋好（扣料、擲 9 次、帳本 +9、洞開好）、不回 INTERNAL、placed 帶 partial；"
-                .. "之後補登錄（" .. tostring(code) .. "）")
+                and HARNESS_DRIFT() == "" and before == nil and reg and eng.tile[tk(3450, Y0)] ~= nil and r.a.partial == true
+                and edgeLogs == 9,
+                "F1 帳本寫好之後補牆、登錄出錯：照樣蓋好（扣料、擲 9 次、帳本 +9、洞開好）、不回 INTERNAL、placed 帶 partial、"
+                .. "補牆每格記一行 log；之後補登錄（" .. tostring(code) .. " log=" .. edgeLogs .. "）")
         end)()
 
         -- 開洞出錯：帳本留著、照樣扣料、placed 帶 partial、log 一行；客戶端收到 partial 跳一則提示
@@ -27587,6 +27601,46 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         .. "或先收到開關同步，最後房間燈都亮、只登錄 1 次；單機一樣（" .. why1 .. " / " .. why2 .. " / " .. tostring(ret7)
         .. tostring(def7 and def7.lightsActive) .. "）")
 
+    -- 正常挖完：補外圍土牆每一步都成功，commit 不回 partial（伺服器的 placed 不帶 partial，Server.lua 照這個值送）、
+    -- 不記失敗的 log；挖好的兩格北、西兩邊與東、南鄰格朝這兩格的邊都放了土牆（東鄰格原本沒有格子，照引擎補建）
+    local X8 = 230 * AR + 100
+    enter("s")
+    for x = X8, X8 + 1 do
+        ug(x, X8, Z)
+        ug(x, X8 + 1, Z)
+    end
+    sp = player({ id = 9801, x = X8 + 0.5, y = X8 + 0.5, z = Z })
+    cx, cy = X8, X8
+    local logs8, print8, cell8 = {}, print, getCell
+    print = function(s) logs8[#logs8 + 1] = tostring(s) end
+    getCell = function() -- 引擎 createNewGridSquare 建出格子並放進格網（IsoCell.java:4336）；共用的替身一律建不出來
+        local c = cell8()
+        c.createNewGridSquare = function(_, x, y, z) return ug(x, y, z) end
+        return c
+    end
+    local _, partial8 = Ledger.commit(sp, { { x = X8, y = X8, z = Z, role = "dig" }, { x = X8 + 1, y = X8, z = Z, role = "dig" } },
+        { X8, X8, Z })
+    print, getCell = print8, cell8
+    take()
+    local edgeLogs8 = 0
+    for _, s in ipairs(logs8) do
+        if s:find("edges failed", 1, true) then edgeLogs8 = edgeLogs8 + 1 end
+    end
+    local function dirtAt(x, y) -- 這格上的土牆種類（沒有回 nil）
+        local sq = getCell():getGridSquare(x, y, Z)
+        if not sq then return nil end
+        for _, o in ipairs(sq.objects) do
+            local name = o:getSprite() and o:getSprite():getName()
+            for kind, n in pairs(SB.DIRT) do if n == name then return kind end end
+        end
+        return nil
+    end
+    local walls8 = tostring(dirtAt(X8, X8)) .. "," .. tostring(dirtAt(X8 + 1, X8)) .. "," .. tostring(dirtAt(X8 + 2, X8)) .. ","
+        .. tostring(dirtAt(X8, X8 + 1)) .. "," .. tostring(dirtAt(X8 + 1, X8 + 1))
+    check(partial8 == false and edgeLogs8 == 0 and walls8 == "NW,N,W,N,N",
+        "兩端：正常挖完，補外圍土牆每一步都成功、commit 不回 partial、不記失敗的 log；外圍每條邊都有土牆（" .. tostring(partial8)
+        .. " log=" .. edgeLogs8 .. " " .. walls8 .. "）")
+
     enter("s")
     SB.reset({}, 120, 120)
     SB.reset({}, 180, 180)
@@ -27596,6 +27650,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     SB.reset({}, 205, 205)
     SB.reset({}, 215, 215)
     SB.reset({}, 225, 225)
+    SB.reset({}, 230, 230)
     isServer, isClient, getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, sendServerCommand =
         keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
     MinidoracatBuilder.Basement = SB

@@ -1018,8 +1018,8 @@ end
 -- 就登錄一次會越挖越慢（實機拖 32 格每次最多 177 ms）。集合、帳本、土牆照舊當下就做（呼叫端），這裡只排登錄：最後一批
 -- 加進來之後 GROW_QUIET 毫秒內沒有新的（挖一格 5 秒，Entry.duration），或第一批已經排了 GROW_MAX 毫秒（長的拖曳中途也
 -- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄，同一批也重算新格與 Basement.dirty 標過的塊的分房
--- （牆蓋到一半還沒圍起來時分法沒變，不重登錄）。出錯只記 log，沒登錄的格子下一次開服補上。客戶端不排：等伺服器那一批的
--- block（Basement.await、Basement.registerNear）
+-- （牆蓋到一半還沒圍起來時分法沒變，不重登錄）；按那一塊裡的開關或燈時那一塊先登錄（Basement.growNow）。出錯只記 log，
+-- 沒登錄的格子下一次開服補上。客戶端不排：等伺服器那一批的 block（Basement.await、Basement.registerNear）
 Basement.GROW_QUIET, Basement.GROW_MAX = 10000, 60000
 local due, stale, dueFirst, dueLast, dueHooked = {}, {}, 0, 0, false
 local function flushGrow()
