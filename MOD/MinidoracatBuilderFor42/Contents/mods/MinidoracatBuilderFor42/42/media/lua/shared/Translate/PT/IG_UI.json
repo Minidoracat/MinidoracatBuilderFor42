@@ -277,7 +277,7 @@
   "IGUI_MBLD_PlanFull": "O projeto está cheio (máximo de 4.096 peças). Apague algumas ou salve uma parte como outro projeto",
   "IGUI_MBLD_PlanTooWide": "Fora dos limites do projeto (máximo de 64 quadrados por lado). Desenhe mais perto das outras peças",
   "IGUI_MBLD_PlanTooHigh": "Fora dos limites do projeto (máximo de 4 andares). Mude para um andar dentro do limite",
-  "IGUI_MBLD_PlanNoDig": "Caves não podem entrar num projeto. Sai do planeamento e escava diretamente",
+  "IGUI_MBLD_PlanNoDig": "Porões não podem entrar num projeto. Sai do planeamento e escava diretamente",
   "IGUI_MBLD_PlanBarTitle": "Planear projeto",
   "IGUI_MBLD_PlanDraw": "Desenhar",
   "IGUI_MBLD_PlanSelect": "Selecionar",
