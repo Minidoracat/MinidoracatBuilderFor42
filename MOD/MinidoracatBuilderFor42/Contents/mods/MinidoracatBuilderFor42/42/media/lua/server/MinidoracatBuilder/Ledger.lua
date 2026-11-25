@@ -151,6 +151,20 @@ function Ledger:initSystem()
     Ledger.instance = self
     if n > 0 then print(LOG .. "LEDGER legacy lights waiting: " .. n) end
     watchLegacy(n > 0)
+    -- 地下室的開服登錄要等兩本帳本都開了（開關格從這本算），不靠兩個系統的啟動順序
+    local BL = MinidoracatBuilder.BasementLedger
+    if BL and BL.start then BL.start() end
+end
+
+-- 燈的帳本（編號那一類，值是 { p＝位置, s＝圖名, i＝退料 }）裡每一筆：fn(x, y, z, 圖名)。帳本還沒開不做事
+function Ledger.eachLight(fn)
+    if not L then return end
+    L:each(function(id, e)
+        if type(id) == "number" and type(e) == "table" and type(e.p) == "number" and type(e.s) == "string" then
+            local x, y, z = Store.unpos(e.p)
+            fn(x, y, z, e.s)
+        end
+    end)
 end
 
 -- GOS 會對系統表呼叫這幾個（SGlobalObjectSystem.java:111-162）；本系統不持有全域物件、不收客戶端指令

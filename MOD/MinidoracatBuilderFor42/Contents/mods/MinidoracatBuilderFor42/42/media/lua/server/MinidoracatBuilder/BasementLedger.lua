@@ -32,6 +32,31 @@ local function valid(v)
 end
 local function sig() return "b" end
 
+-- 開服登錄，兩本帳本（本帳本與燈的帳本 Ledger）都開了才做一次：兩邊的 initSystem 結尾各叫一次，不靠系統的啟動順序。
+-- 專用伺服器先從燈的帳本記下開關格（z＝-1、在集合裡、圖是牆上開關 Rules.switchProps，Basement.setSwitchTile），再分房、
+-- 全部登錄。單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
+-- 專用伺服器這時還沒有 chunk（分房等巡查），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+local started = false
+function BasementLedger.start()
+    local Ledger = MinidoracatBuilder.Ledger
+    if started or not (BasementLedger.instance and Ledger and Ledger.instance) then return end
+    started = true
+    if isServer() then
+        local scan, e = pcall(function()
+            local named = IsoSpriteManager.instance:getNamedMap()
+            Ledger.eachLight(function(x, y, z, name)
+                local spr = z == Z and Basement.has(x, y, z) and named:get(name)
+                if spr and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then Basement.setSwitchTile(x, y, true) end
+            end)
+        end)
+        if not scan then print(LOG .. "basement switch scan failed: " .. tostring(e)) end
+    end
+    local split, serr = pcall(Basement.splitAll)
+    if not split then print(LOG .. "basement split failed: " .. tostring(serr)) end
+    local ok, err = pcall(Basement.registerAll)
+    if not (ok and err) then print(LOG .. "basement register failed: " .. tostring(err)) end
+end
+
 function BasementLedger:initSystem()
     if BasementLedger.instance == self then return end
     SGlobalObjectSystem.initSystem(self)
@@ -47,12 +72,8 @@ function BasementLedger:initSystem()
     Basement.add(tiles)
     S:summary()
     BasementLedger.instance = self
-    -- 當下分房、登錄：單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先 IsoWorld.init 才 initSystems）；
-    -- 專用伺服器這時還沒有 chunk（分房等巡查），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
-    local split, serr = pcall(Basement.splitAll)
-    if not split then print(LOG .. "basement split failed: " .. tostring(serr)) end
-    local ok, err = pcall(Basement.registerAll)
-    if not (ok and err) then print(LOG .. "basement register failed: " .. tostring(err)) end
+    started = false
+    BasementLedger.start()
 end
 
 -- GOS 會對系統表呼叫這幾個（SGlobalObjectSystem.java:96-162）；本系統不持有全域物件、不收客戶端指令

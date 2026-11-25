@@ -30,9 +30,10 @@ local OTHER = { N = "W", W = "N" }
 
 -- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } }, box＝{ x0, y0, x1, y1 } 包圍盒（含邊），
 -- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號 }
--- main[編號]＝這一場登錄過的主建物 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
--- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }；regd[鍵]＝這一格已登錄進某一棟
-local cells, blocks, main, regd, lastId = {}, {}, {}, {}, 0
+-- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
+-- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
+-- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
+local cells, blocks, bof, redo, swTiles, lastId = {}, {}, {}, {}, {}, 0
 
 local function inRange(x, y)
     return x >= 0 and y >= 0 and x < Basement.LIMIT and y < Basement.LIMIT
@@ -55,7 +56,7 @@ function Basement.near(sq)
     return z == Z and (has(x, y, z) or has(x, y - 1, z) or has(x - 1, y, z))
 end
 
--- 兩塊併成一塊：小的那塊重標成大的；主建物照大的那塊（它沒有才接小的那塊的）。小的那塊的建物留在引擎裡到下一次開服
+-- 兩塊併成一塊：小的那塊重標成大的。兩邊登錄過的棟都留著（bof 照格子記）
 local function merge(a, b)
     if blocks[a].n < blocks[b].n then a, b = b, a end
     local A, B = blocks[a], blocks[b]
@@ -65,8 +66,7 @@ local function merge(a, b)
     A.n, A.rooms = A.n + B.n, A.rooms + B.rooms
     local p, q = A.box, B.box
     p[1], p[2], p[3], p[4] = math.min(p[1], q[1]), math.min(p[2], q[2]), math.max(p[3], q[3]), math.max(p[4], q[4])
-    main[a] = main[a] or main[b]
-    blocks[b], main[b] = nil, nil
+    blocks[b] = nil
     return a
 end
 
@@ -109,8 +109,9 @@ local function range(ax, ay)
 end
 
 -- 客戶端收到 basements：大區 (ax, ay) 周圍 3×3 範圍內的格子整份換成 tiles（範圍外的不動、tiles 裡範圍外的不收）。
--- 有格子被拿掉時連通塊整份重算（主建物照它的角那一格接回去；房號照舊分；拿掉的格子在引擎裡的建物留到下一次進場），
--- 拿掉的格子不再算登錄過（regd）：之後又挖回來要重新登錄（審查 round1 F18）。回真的新增的那幾格
+-- 有格子被拿掉時連通塊整份重算（房號照舊分）；拿掉的格子從它登錄進的那一棟移除、不再算登錄過（之後又挖回來要重新登錄），
+-- 那一棟下一次登錄整棟重建；角那一格被拿掉的棟維持原狀（重建會換角，引擎找不到舊的那一棟，拿掉的格子在引擎裡留到下一次
+-- 進場）。回真的新增的那幾格
 function Basement.reset(tiles, ax, ay)
     local x0, y0, x1, y1 = range(ax, ay)
     local keep, inside = {}, {}
@@ -120,20 +121,28 @@ function Basement.reset(tiles, ax, ay)
             inside[#inside + 1] = t
         end
     end
-    local rest, gone, was = {}, false, {}
+    local rest, gone, was = {}, {}, {}
     for k, id in pairs(cells) do
         local b = blocks[id]
         local t = b.tiles[k]
         if keep[k] or t[1] < x0 or t[1] >= x1 or t[2] < y0 or t[2] >= y1 then
             rest[#rest + 1], was[k] = t, id .. ":" .. b.room[k]
         else
-            gone, regd[k] = true, nil
+            gone[#gone + 1] = k
         end
     end
-    if gone then
-        local old = main
-        cells, blocks, main = {}, {}, {}
+    if #gone > 0 then
+        for _, k in ipairs(gone) do
+            local r = bof[k]
+            if r then r.tiles[k], bof[k], redo[r] = nil, nil, true end
+        end
+        cells, blocks = {}, {}
         Basement.add(rest)
+        local frozen = {}
+        for r in pairs(redo) do
+            if not cells[key(r.cx, r.cy)] then frozen[#frozen + 1] = r end
+        end
+        for _, r in ipairs(frozen) do redo[r] = nil end
         for _, b in pairs(blocks) do
             local map, n = {}, 0
             for k in pairs(b.tiles) do
@@ -142,17 +151,6 @@ function Basement.reset(tiles, ax, ay)
                 b.room[k] = map[w]
             end
             b.rooms = n
-        end
-        -- 主建物接回時 tiles 只留還在同一塊的格子（建新表）：舊表帶著拿掉的格子，下一次登錄主建物會把它們又登錄進去
-        for _, m in pairs(old) do
-            local id = cells[key(m.cx, m.cy)]
-            if id and not main[id] then
-                local tiles = {}
-                for k, t in pairs(m.tiles) do
-                    if cells[k] == id then tiles[k] = t end
-                end
-                m.tiles, main[id] = tiles, m
-            end
         end
     end
     return Basement.add(inside)
@@ -217,8 +215,8 @@ Events.OnLoadedTileDefinitions.Add(function() MinidoracatBuilder.Basement.checkP
 -- 格子 → 不重疊的矩形 { { x, y, w, h }, ... }：每列切成連續段，由北往南把上一列同一段（同樣的 x0、x1）接下去，矩形數不超過
 -- 段數，整塊是矩形時只有 1 個。矩形要少：引擎查一格屬於哪個房間是逐一掃矩形（IsoMetaChunk.java:282-299），每個矩形還建一盞
 -- 房間燈（IsoRoom.java:532-534）。給了角 (cx, cy)：角那一列跨過 cx 的段在 cx 左邊切開，左上角是角的矩形排第一——引擎依序走
--- 矩形，左上角「x 不大於、y 小於」目前的角才換（BuildingDef.java:319-348），主建物沒有「x ≤ cx 而且 y < cy」的格子（那些另外
--- 登錄），角不變 metaID 就不變。沒給角時第一個矩形的左上角是最北那一列最西的格子，後面的矩形沒有更北的。
+-- 矩形，左上角「x 不大於、y 小於」目前的角才換（BuildingDef.java:319-348），一棟裡沒有「x ≤ cx 而且 y < cy」的格子（那些另起
+-- 一棟），角不變 metaID 就不變。沒給角時第一個矩形的左上角是最北那一列最西的格子，後面的矩形沒有更北的。
 -- 不排序（Kahlua 的 table.sort 會溢位）：每列照 x 的範圍掃。shortcut: 格子散得很開時多走空格；一塊最多 Basement.MAX 格、跨度在幾百格內
 function Basement.rects(tiles, ...)
     local cx, cy = ...
@@ -462,57 +460,40 @@ end
 
 -- 專用伺服器沒有本機玩家：applyChanges 補格子房間的那段只走本機玩家的 chunkMap（BuildingRoomsEditor.java:369-411,413-436），
 -- 已載入的格子照那段自己掛。setRoomID：不設 getRoom 回 null；接著 setRoom：Lua 的數字是 double，房間 ID 超過 2^53 時低位會丟，
--- setRoomID 可能拿到別的房間（IsoGridSquare.java:9414-9420），用房間物件蓋掉；開關加進房間：按一個連動整間
--- （IsoLightSwitch.java:518-524）；RecalcProperties：setRoomID 拿掉了室外旗標。房間燈、重畫不做（伺服器不算光照、不畫，
--- BuildingRoomsEditor.java:385-397）；尋路不看房間，新挖的格子能不能走由鋪地板、放牆時引擎自己通知
-local function hang(cell, def, rects)
+-- setRoomID 可能拿到別的房間（IsoGridSquare.java:9414-9420），用房間物件蓋掉；RecalcProperties：setRoomID 拿掉了室外旗標。
+-- 房間燈、重畫不做（伺服器不算光照、不畫，BuildingRoomsEditor.java:385-397）；尋路不看房間，新挖的格子能不能走由鋪地板、
+-- 放牆時引擎自己通知。
+-- 這一棟的開關格（sw＝{ { x, y }, ... }）已載入又掛著房間就摘掉：setRoomID(-1) 之後 getRoom 回 null（IsoGridSquare.java:
+-- 9220-9222），開關切換時不送房間燈（IsoLightSwitch.java:519-535）；舊建物被換掉後沒重掛的格子還指著 def 已清成 null 的
+-- 舊房間（BREBuilding.java:230-242、IsoRoom.java:672-674），切開關會丟 NPE（IsoLightSwitch.java:520），所以不能省
+local function hang(cell, def, rects, sw)
     local room, id = def:getIsoRoom(), def:getID()
     if not room then return end
-    local switches = room:getLightSwitches()
     for _, r in ipairs(rects) do
         for x = r[1], r[1] + r[3] - 1 do
             for y = r[2], r[2] + r[4] - 1 do
-                local sq = cell:getGridSquare(x, y, Z)
+                local sq = not swTiles[key(x, y)] and cell:getGridSquare(x, y, Z)
                 if sq then
                     sq:setRoomID(id)
                     sq:setRoom(room)
-                    local objects = sq:getObjects()
-                    for i = 0, objects:size() - 1 do
-                        local o = objects:get(i)
-                        if instanceof(o, "IsoLightSwitch") and not switches:contains(o) then switches:add(o) end
-                    end
                     sq:RecalcProperties()
                 end
             end
         end
     end
-end
-
--- 重新登錄的房間是新的 RoomDef，房間燈是關的（BRERoom 新建的 RoomDef 沒設 lightsActive，房間燈照它建，
--- BuildingRoomsEditor.java:383-384），開關卻還開著；伺服器上那個 chunk 重載時開關又照房間設回關（IsoLightSwitch.java:92-97）。
--- 有開著的開關就照它把整間切開（switchLight 連動整間的開關，IsoLightSwitch.java:518-524），其他開關的狀態照原值還原
-local function relight(room)
-    local list = room and room:getLightSwitches()
-    if not list then return end
-    local on, was = nil, {}
-    for i = 0, list:size() - 1 do
-        local o = list:get(i)
-        was[i + 1] = o:isActivated()
-        if was[i + 1] and not on then on = o end
-    end
-    if not on then return end
-    on:switchLight(true)
-    for i = 0, list:size() - 1 do
-        local o = list:get(i)
-        if o:isActivated() ~= was[i + 1] then o:setActivated(was[i + 1]) end
+    for _, t in ipairs(sw) do
+        local sq = cell:getGridSquare(t[1], t[2], Z)
+        if sq and sq:getRoom() then sq:setRoomID(-1) end
     end
 end
 
 -- 一批建物一次 applyChanges（成本是整張地圖的檢查與重算，BuildingRoomsEditor.java:216-267,269-325，和這批幾棟關係很小）。
--- plans＝{ rooms, ... }，每棟一組房間、每間一組矩形（rooms[1][1] 是 metaID 的角；一棟叫多次 createRoom，BREBuilding.java:50-58）。
+-- plans＝{ rooms, ... }，每棟一組房間、每間一組矩形（rooms[1][1] 是 metaID 的角；一棟叫多次 createRoom，BREBuilding.java:50-58）；
+-- sws[i]＝第 i 棟的開關格（伺服器 hang 摘掉）。
 -- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格是新的本 MOD 名稱房間、每一間的第一格都查得到本 MOD 名稱的房間；引擎沒建出來、
--- 角上是別的房間、原地重登錄時舊的那間還在都不算）
-local function apply(plans)
+-- 角上是別的房間、原地重登錄時舊的那間還在都不算。查的是 metaGrid，矩形裡的格子都查得到，不看格子有沒有掛房間）。
+-- 客戶端與單機有一棟登錄好了就呼叫 Basement.onApplied（新登錄的房間燈是暗的，BRERoom.java:9-15，由它照開關補）
+local function apply(plans, sws)
     local ok = {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
         print(LOG .. "BuildingRoomsEditor is missing; the game update may have changed it")
@@ -522,8 +503,8 @@ local function apply(plans)
     local editor = BuildingRoomsEditor.getInstance()
     editor:setCurrentBuilding(nil)
     -- 只用 createBuilding／createRoom／addRectangle：init() 會把 32×32 內的建物都拿出來編輯，非 userDefined 的記成移除
-    -- （BuildingRoomsEditor.java:81-93,220-229）。不呼叫 canAddRoomRectangle：它對相鄰的別棟回 false（:107-161），另外登錄的
-    -- 那幾格一定貼著主建物；改看 isValid
+    -- （BuildingRoomsEditor.java:81-93,220-229）。不呼叫 canAddRoomRectangle：它對相鄰的別棟回 false（:107-161），另起的棟
+    -- 一定貼著別棟；改看 isValid
     local done = {}
     for i, rooms in ipairs(plans) do
         local building = editor:createBuilding()
@@ -570,18 +551,25 @@ local function apply(plans)
             for j, rects in ipairs(plans[i]) do
                 local d = defs[j]
                 if vzm and not keepEmpty(vzm, d) then print(LOG .. "keepEmpty failed at " .. rects[1][1] .. "," .. rects[1][2]) end
-                if server then hang(cell, d, rects) end
-                relight(d:getIsoRoom())
+                if server then hang(cell, d, rects, sws[i]) end
             end
         else
             print(LOG .. "no RoomDef after register at " .. c[1] .. "," .. c[2])
+        end
+    end
+    if not server and Basement.onApplied then
+        local any = false
+        for _ in pairs(ok) do any = true break end
+        if any then
+            local fine, e = pcall(Basement.onApplied)
+            if not fine then print(LOG .. "onApplied failed: " .. tostring(e)) end
         end
     end
     return ok
 end
 
 -- 引擎找「同一棟」只在新建物外框左上角所在的地圖格裡照 metaID 找（BREBuilding.getLotHeader：BuildingDef.x／256、y／256，
--- BuildingRoomsEditor.java:233-248）：併進主建物的格子讓外框左上角換到西邊或北邊那一格時，舊的那棟找不到、留在引擎裡和新的疊在一起
+-- BuildingRoomsEditor.java:233-248）：併進一棟的格子讓外框左上角換到西邊或北邊那一格時，舊的那棟找不到、留在引擎裡和新的疊在一起
 local LOT = 256
 local function lotOf(v) return math.floor(v / LOT) end
 
@@ -616,12 +604,13 @@ local function nearIds(ps, N)
     return near
 end
 
--- 格子照房號分組：{ { { x, y }, ... }, ... }（每間一組，房間順序不定）
+-- 格子照房號分組：{ { { x, y }, ... }, ... }（每間一組，房間順序不定；不同塊的同一個房號是不同間）
 function Basement.byRoom(tiles)
     local at, out = {}, {}
     for _, t in ipairs(tiles) do
         local k = key(t[1], t[2])
-        local r = blocks[cells[k]].room[k]
+        local id = cells[k]
+        local r = id .. ":" .. blocks[id].room[k]
         local list = at[r]
         if not list then
             list = {}
@@ -632,40 +621,110 @@ function Basement.byRoom(tiles)
     return out
 end
 
--- 一棟的房間（ts＝它的格子）：照房號分組、各自切矩形，含角的那間排第一（引擎依序走每間的矩形取角，BuildingDef.java:319-348）。
--- 沒給角時角取最北那一列最西的格子（＝Basement.rects 不給角時第一個矩形的左上角）。回 { rects, ... }、角 x、y
-local function roomsOf(ts, ...)
-    local cx, cy = ...
-    if not cx then
-        cx, cy = BIG, BIG
-        for _, t in ipairs(ts) do
-            if t[2] < cy or (t[2] == cy and t[1] < cx) then cx, cy = t[1], t[2] end
-        end
-    end
+-- 客戶端與單機的一棟（ts＝它的格子，含角 (cx, cy)）：照房號分組、各自切矩形，含角的那間排第一（引擎依序走每間的矩形取角，
+-- BuildingDef.java:319-348）。回 { rects, ... }
+local function roomsOf(ts, cx, cy)
     local out = { false }
     for _, list in ipairs(Basement.byRoom(ts)) do
         local rects = Basement.rects(list, cx, cy)
         if rects[1][1] == cx and rects[1][2] == cy then out[1] = rects else out[#out + 1] = rects end
     end
-    return out, cx, cy
+    return out
 end
 
--- 集合裡還沒登錄的格子 list 照塊登錄：塊還沒有主建物 → 這些格子登錄成主建物；有 → 會換掉主建物 metaID 或地圖格的
--- （角的西北方：x ≤ cx 而且 y < cy，calculateMetaID 會換角；在主建物地圖格的西邊或北邊，審查 round1 F3）登錄成 1 格的 annex，
--- 其他併進主建物重登錄（同地圖格、同 metaID，引擎換掉舊的）。主建物照房號分房，annex 不分。每一棟登錄好了才記下它的格子
--- （apply 的 ok）。
+-- 格上有牆上開關（IsoLightSwitch、圖過 Rules.switchProps）
+local function wallSwitchOn(sq)
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local o = objects:get(i)
+        local spr = instanceof(o, "IsoLightSwitch") and o:getSprite()
+        if spr and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then return true end
+    end
+    return false
+end
+
+-- 專用伺服器的一棟 r（ts＝它的格子）：一間，矩形＝格子扣掉開關格。兩個例外照舊留在矩形裡：角那格是開關格（換角引擎就找不到
+-- 舊的那一棟）、扣掉開關格會讓外框左上角換到別的地圖格（同理）。已載入、格上已經沒有牆上開關的開關格不再算。
+-- 回 { rects }、這一棟的開關格（hang 摘房間）。shortcut: 換地圖格時開關格全部留著，只在外框剛好在地圖格邊上時發生
+local function serverRoom(ts, r, cell)
+    local keep, sw, x0, y0 = {}, {}, BIG, BIG
+    for _, t in ipairs(ts) do
+        local k = key(t[1], t[2])
+        if swTiles[k] then
+            local sq = cell:getGridSquare(t[1], t[2], Z)
+            if sq and not wallSwitchOn(sq) then swTiles[k] = nil end
+        end
+        if swTiles[k] then
+            sw[#sw + 1] = t
+        else
+            keep[#keep + 1] = t
+            x0, y0 = math.min(x0, t[1]), math.min(y0, t[2])
+        end
+    end
+    local moved = lotOf(x0) ~= r.lx or lotOf(y0) ~= r.ly
+    for _, t in ipairs(sw) do
+        if moved or (t[1] == r.cx and t[2] == r.cy) then keep[#keep + 1] = t end
+    end
+    return { Basement.rects(keep, r.cx, r.cy) }, sw
+end
+
+-- ts 照 (y, x) 由小到大逐一 fn(t)。不排序（Kahlua 的 table.sort 會溢位）：照 Basement.rects 逐列掃 x 的範圍。
+-- shortcut: 格子散得很開時多走空格；呼叫端一次只給一塊的格子
+local function inOrder(ts, fn)
+    local at, rows, y0, y1 = {}, {}, BIG, -BIG
+    for _, t in ipairs(ts) do
+        local x, y = t[1], t[2]
+        at[key(x, y)] = t
+        local r = rows[y]
+        if r then
+            r[1], r[2] = math.min(r[1], x), math.max(r[2], x)
+        else
+            rows[y] = { x, x }
+        end
+        y0, y1 = math.min(y0, y), math.max(y1, y)
+    end
+    for y = y0, y1 do
+        local r = rows[y]
+        for x = r and r[1] or 1, r and r[2] or 0 do
+            local t = at[key(x, y)]
+            if t then fn(t) end
+        end
+    end
+end
+
+-- (x, y) 併進棟 r 不會換掉它的 metaID 或地圖格：不在角的西北方（x ≤ cx 而且 y < cy，calculateMetaID 會換角）、不在它地圖格的
+-- 西邊或北邊
+local function canJoin(r, x, y)
+    return not (x <= r.cx and y < r.cy) and lotOf(x) >= r.lx and lotOf(y) >= r.ly
+end
+
+-- 棟 r 還能重建、收格子：角那格還在集合裡（角被拿掉的棟維持原狀）
+local function alive(r) return cells[key(r.cx, r.cy)] ~= nil end
+
+-- 集合裡還沒登錄的格子 list 與標成要重建的棟（redo）一次登錄。新格子照北、西、東、南看四鄰已登錄的棟，第一個收得下的
+-- （canJoin）就併進去，再從併進的格子往四鄰擴（四鄰含這一批剛併的格子，同樣照北、西、東、南找第一個收的棟）；擴不到的
+-- 照 (y, x) 取第一格自己起一棟（角＝它自己）再往外擴，直到每格都處理過。
+-- 有變的棟整棟重登錄（角不變：同地圖格、同 metaID，引擎換掉舊的，BuildingRoomsEditor.java:233-248）。每一棟登錄好了才記下
+-- 它的格子（apply 的 ok）。
+-- 專用伺服器一棟一間、扣掉開關格（serverRoom）；開關格不當新一棟的角，只會被擴進去，哪裡都併不進去的開關格不登錄。
+-- 客戶端與單機照房號分間（roomsOf）。
 -- 客戶端只登錄身邊的塊：包圍盒離任一位本機玩家 NEAR 格內。chunkMap 最寬 19 個 chunk＝152 格、半寬 76 格
 -- （IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk 載入時
 -- applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。遠的塊留著不登錄。
 -- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間
 Basement.NEAR = 128
 local function register(list)
+    local server, client, near = isServer(), isClient(), nil
+    local function close(id) -- 客戶端：塊 id 在身邊（用到才算，沒有要登錄的就不走玩家）
+        if not client then return true end
+        near = near or nearIds(players(), Basement.NEAR)
+        return near[id] == true
+    end
     local by, order, seen = {}, {}, {}
-    local near = isClient() and nearIds(players(), Basement.NEAR) or nil
     for _, t in ipairs(list) do
         local k = key(t[1], t[2])
         local id = cells[k]
-        if id and not regd[k] and not seen[k] and (not near or near[id]) then
+        if id and not bof[k] and not seen[k] and close(id) then
             seen[k] = true
             if not by[id] then
                 by[id] = {}
@@ -675,52 +734,89 @@ local function register(list)
             ts[#ts + 1] = t
         end
     end
-    -- plans[i]＝第 i 棟的房間；keys[i]＝它登錄的新格子；after[i]＝{ 塊編號, 新的主建物 }（annex 沒有）
-    local plans, keys, after = {}, {}, {}
-    local function plan(rooms, ks, a)
-        local i = #plans + 1
-        plans[i], keys[i], after[i] = rooms, ks, a
+    -- pend[鍵]＝這一批併進的棟；grown[棟]＝它這一批新加的格子；touched＝這一批要登錄的棟（照先後）
+    local pend, grown, touched = {}, {}, {}
+    local function take(r, t)
+        pend[key(t[1], t[2])] = r
+        local g = grown[r]
+        if not g then
+            g = {}
+            grown[r], touched[#touched + 1] = g, r
+        end
+        g[#g + 1] = t
     end
-    for _, id in ipairs(order) do
-        local ts, m = by[id], main[id]
-        if not m then
-            local rooms, cx, cy = roomsOf(ts)
-            local tiles, ks, x0, y0 = {}, {}, BIG, BIG
-            for _, t in ipairs(ts) do
-                local k = key(t[1], t[2])
-                tiles[k], ks[#ks + 1] = t, k
-                x0, y0 = math.min(x0, t[1]), math.min(y0, t[2])
-            end
-            plan(rooms, ks, { id, { cx = cx, cy = cy, lx = lotOf(x0), ly = lotOf(y0), tiles = tiles } })
-        else
-            local tiles, ks
-            for _, t in ipairs(ts) do
-                local k = key(t[1], t[2])
-                if (t[1] <= m.cx and t[2] < m.cy) or lotOf(t[1]) < m.lx or lotOf(t[2]) < m.ly then
-                    print(LOG .. "separate building at " .. t[1] .. "," .. t[2])
-                    plan({ { { t[1], t[2], 1, 1 } } }, { k }, nil)
-                else
-                    if not tiles then
-                        tiles, ks = {}, {}
-                        for k2, v in pairs(m.tiles) do tiles[k2] = v end
-                    end
-                    tiles[k], ks[#ks + 1] = t, k
-                end
-            end
-            if tiles then
-                local list = {}
-                for _, v in pairs(tiles) do list[#list + 1] = v end
-                local m2 = { cx = m.cx, cy = m.cy, lx = m.lx, ly = m.ly, tiles = tiles }
-                plan(roomsOf(list, m.cx, m.cy), ks, { id, m2 })
+    local function join(t, batch)
+        for _, d in ipairs(DIRS) do
+            local nk = key(t[1] + d[1], t[2] + d[2])
+            local r = bof[nk] or (batch and pend[nk])
+            if r and alive(r) and canJoin(r, t[1], t[2]) then
+                take(r, t)
+                return true
             end
         end
+        return false
     end
-    if #plans == 0 then return true end
-    local ok, all = apply(plans), true
-    for i = 1, #plans do
+    for _, id in ipairs(order) do
+        local rest, todo = {}, {}
+        local function spread(queue)
+            local i = 1
+            while queue[i] do
+                local q = queue[i]
+                i = i + 1
+                for _, d in ipairs(DIRS) do
+                    local nk = key(q[1] + d[1], q[2] + d[2])
+                    local u = todo[nk]
+                    if u and join(u, true) then
+                        todo[nk] = nil
+                        queue[#queue + 1] = u
+                    end
+                end
+            end
+        end
+        local joined = {}
+        for _, t in ipairs(by[id]) do
+            if join(t, false) then
+                joined[#joined + 1] = t
+            else
+                rest[#rest + 1] = t
+                todo[key(t[1], t[2])] = t
+            end
+        end
+        spread(joined)
+        inOrder(rest, function(t)
+            local k = key(t[1], t[2])
+            if todo[k] and not (server and swTiles[k]) then
+                todo[k] = nil
+                take({ cx = t[1], cy = t[2], lx = lotOf(t[1]), ly = lotOf(t[2]), tiles = {} }, t)
+                spread({ t })
+            end
+        end)
+    end
+    for r in pairs(redo) do
+        if not grown[r] and alive(r) and close(cells[key(r.cx, r.cy)]) then
+            grown[r], touched[#touched + 1] = {}, r
+        end
+    end
+    if #touched == 0 then return true end
+    local plans, sws, cell = {}, {}, server and getCell()
+    for i, r in ipairs(touched) do
+        local ts = {}
+        for _, t in pairs(r.tiles) do ts[#ts + 1] = t end
+        for _, t in ipairs(grown[r]) do ts[#ts + 1] = t end
+        if server then
+            plans[i], sws[i] = serverRoom(ts, r, cell)
+        else
+            plans[i], sws[i] = roomsOf(ts, r.cx, r.cy), {}
+        end
+    end
+    local ok, all = apply(plans, sws), true
+    for i, r in ipairs(touched) do
         if ok[i] then
-            if after[i] then main[after[i][1]] = after[i][2] end
-            for _, k in ipairs(keys[i]) do regd[k] = true end
+            redo[r] = nil
+            for _, t in ipairs(grown[r]) do
+                local k = key(t[1], t[2])
+                r.tiles[k], bof[k] = t, r
+            end
         else
             all = false
         end
@@ -728,12 +824,12 @@ local function register(list)
     return all
 end
 
--- 集合裡還沒登錄的格子全部登錄（開服載入帳本當下；客戶端收到 basements 後與每遊戲分鐘，只登錄身邊的塊），一次
+-- 集合裡還沒登錄的格子與要重建的棟全部登錄（開服載入帳本當下；客戶端收到 basements 後與每遊戲分鐘，只登錄身邊的塊），一次
 -- applyChanges。沒有要登錄的就不叫引擎。回成不成功
 function Basement.registerAll()
     local list = {}
     for k, id in pairs(cells) do
-        if not regd[k] then list[#list + 1] = blocks[id].tiles[k] end
+        if not bof[k] then list[#list + 1] = blocks[id].tiles[k] end
     end
     return register(list)
 end
@@ -757,14 +853,17 @@ local function samePart(a, c, tiles)
     return true
 end
 
--- 換掉塊 id 的房號；分法有變時主建物的格子標成未登錄（下一次登錄整棟照新的分法重建）。回分法有沒有變
+-- 換掉塊 id 的房號。回分法有沒有變。客戶端與單機分法變了，這一塊裡登錄過的每一棟下一次登錄照新的分法重建；專用伺服器一棟
+-- 一間，不重建（哪一格屬於哪一間只看 Basement.roomOf）
 local function renumber(id, room, n)
     local b = blocks[id]
     if samePart(b.room, room, b.tiles) then return false end
     b.room, b.rooms = room, n
-    local m = main[id]
-    if m then
-        for k in pairs(m.tiles) do regd[k] = nil end
+    if not isServer() then
+        for k in pairs(b.tiles) do
+            local r = bof[k]
+            if r and alive(r) then redo[r] = true end
+        end
     end
     return true
 end
@@ -821,20 +920,14 @@ function Basement.split(id)
     return room, n
 end
 
--- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，分法變了的主建物連同 list（新挖的格子）一次登錄，再推給附近的玩家
--- （BasementLedger.sendBlock）。回登錄成不成功
+-- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，list（新挖的格子）與要重建的棟一次登錄，分法變了的塊推給附近的玩家
+-- （BasementLedger.sendBlock）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
 local function refresh(ids, list)
     local changed = {}
     for id in pairs(ids) do
         local room, n = Basement.split(id)
-        if room and renumber(id, room, n) then
-            changed[#changed + 1] = id
-            for k, t in pairs(blocks[id].tiles) do
-                if not regd[k] then list[#list + 1] = t end
-            end
-        end
+        if room and renumber(id, room, n) then changed[#changed + 1] = id end
     end
-    if #list == 0 then return true end
     local done = Basement.grow(list)
     local L = MinidoracatBuilder.BasementLedger
     for _, id in ipairs(changed) do
@@ -845,11 +938,17 @@ local function refresh(ids, list)
     return done
 end
 
--- 開服載入帳本當下（BasementLedger.initSystem，登錄之前）：每塊試一次分房。專用伺服器這時沒有 chunk，先整塊一間，等巡查
+-- 開服載入帳本當下（BasementLedger.start，登錄之前）：每塊試一次分房。沒載入的塊（專用伺服器這時沒有 chunk）先整塊一間，
+-- 等巡查：帳本照雜湊順序加進集合，Basement.add 併塊時兩邊的房號各自保留，不整理的話一塊會帶著好幾間登錄、推給客戶端，
+-- 等巡查照牆分好又整棟重登錄一次
 function Basement.splitAll()
-    for id in pairs(blocks) do
+    for id, b in pairs(blocks) do
         local room, n = Basement.split(id)
-        if room then renumber(id, room, n) end
+        if not room then
+            room, n = {}, 1
+            for k in pairs(b.tiles) do room[k] = 1 end
+        end
+        renumber(id, room, n)
     end
 end
 
@@ -867,7 +966,7 @@ local function flushGrow()
     dueHooked = false
     local list, ids = {}, {}
     for k, v in pairs(due) do
-        if cells[k] and not regd[k] then list[#list + 1] = v end
+        if cells[k] and not bof[k] then list[#list + 1] = v end
     end
     for k in pairs(stale) do
         if cells[k] then ids[cells[k]] = true end
@@ -890,6 +989,31 @@ function Basement.growLater(tiles)
         local k = key(t[1], t[2])
         due[k] = t
         if server then stale[k] = true end
+    end
+    later()
+end
+
+-- 專用伺服器：(x, y) 裝上（on）或拆掉了牆上開關。裝上：記成開關格，格子掛著房間就當下摘掉（setRoomID(-1)，開關建構子才不會
+-- 把它收進房間，IsoLightSwitch.java:90-99；切換時不送房間燈，:519-535）。有增減時登錄過的那一棟排進延後批次重登錄（拆掉的
+-- 那格回到房間）；拆掉時還沒登錄的那格照新格子排。客戶端與單機不做事
+function Basement.setSwitchTile(x, y, on)
+    if not isServer() then return end
+    local k = key(x, y)
+    if not cells[k] then return end
+    if on then
+        local cell = getCell()
+        local sq = cell and cell:getGridSquare(x, y, Z)
+        if sq and sq:getRoom() then sq:setRoomID(-1) end
+    end
+    if (swTiles[k] == true) == (on == true) then return end
+    swTiles[k] = on and true or nil
+    local r = bof[k]
+    if r then
+        redo[r] = true
+    elseif on then
+        return
+    else
+        due[k] = blocks[cells[k]].tiles[k]
     end
     later()
 end
@@ -919,7 +1043,7 @@ function Basement.patrol()
 end
 
 -- 客戶端：伺服器分好的房間（{ { { x, y }, ... }, ... }，每間一組格子）換掉那一塊的房號；不在同一塊的格子不收（照舊）。
--- 分法有變時主建物標成未登錄，之後照 NEAR 登錄（呼叫端 registerAll）。回塊編號，或 nil（第一格不在集合裡）
+-- 分法有變時那一塊登錄過的每一棟標成要重建，之後照 NEAR 登錄（呼叫端 registerAll）。回塊編號，或 nil（第一格不在集合裡）
 function Basement.setRooms(rooms)
     local first = rooms[1] and rooms[1][1]
     local id = first and cells[key(first[1], first[2])]

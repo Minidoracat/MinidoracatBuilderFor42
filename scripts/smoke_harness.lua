@@ -9517,6 +9517,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                             for y = q[2], q[2] + q[4] - 1 do
                                 if eng.tile[tk(x, y)] then eng.overlap = eng.overlap + 1 end
                                 eng.tile[tk(x, y)], def.n = def, def.n + 1
+                                -- eng.hangLoaded：套用時替已載入的格子照 metaGrid 設房間（BuildingRoomsEditor.java:369-380 updateSquares）
+                                local sq = eng.hangLoaded and realCell():getGridSquare(x, y, Z)
+                                if sq then sq.roomID, sq.room = def.id, def:getIsoRoom() end
                             end
                         end
                     end
@@ -9750,8 +9753,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(annex ~= nil and annex.n == 1 and eng.live[tk(2000, 2000)].n == 7,
             "c4 往更北而且不更東加一格：登錄成 1 格的 annex，主建物的角不變")
         Basement.grow(Basement.add({ { 2001, 1999 } }))
-        check(eng.tile[tk(2001, 1999)] == eng.live[tk(2000, 2000)] and eng.live[tk(2000, 2000)].n == 8 and eng.overlap == 0,
-            "c4 更北但更東的一格：併進主建物；沒有一格登錄進兩棟")
+        check(eng.tile[tk(2001, 1999)] == eng.live[tk(2000, 1999)] and eng.live[tk(2000, 1999)].n == 2 and eng.live[tk(2000, 2000)].n == 7
+            and eng.overlap == 0,
+            "c4 更北但更東的一格：照北、西、東、南第一個收它又不換角的棟（西邊那棟）；沒有一格登錄進兩棟")
         -- 兩塊挖通：小的那塊併進大的，新格進大的那塊的主建物；小的那塊的建物留著
         local a = {}
         for x = 2100, 2104 do a[#a + 1] = { x, 2100 } end
@@ -9777,35 +9781,47 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local refreshed = Basement.registerAll()
         check(stale == false and refreshed and eng.tile[tk(2109, 2100)] ~= nil,
             "c4 applyChanges 沒改世界、角上還是舊的那間：回失敗不記成已登錄，之後 registerAll 補登錄")
-        -- 只建出含角那一間、別的房間沒建出來（那一格還是別棟的舊房間或沒有）：不算登錄好，之後 registerAll 補
-        eng.firstOnly = true
-        local partial = Basement.grow(Basement.add({ { 2110, 2100 } }))
-        eng.firstOnly = nil
-        local again2 = Basement.registerAll()
-        check(partial == false and again2 and eng.tile[tk(2110, 2100)] ~= nil,
-            "c4 只建出含角那一間、別的房間沒建出來：回失敗不記成已登錄，之後 registerAll 補登錄")
-        -- 重新登錄的房間燈是關的：有開著的開關就照它把整間切開（switchLight 連動整間），其他開關照原值還原
-        local group = {}
-        local function sw(on)
-            local o = { light = true, on = on, getSprite = function() return nil end, getProperties = function() return nil end }
-            function o:isActivated() return self.on end
-            function o:setActivated(v) self.on = v end
-            function o:switchLight(v)
-                self.switched = v
-                for _, s in ipairs(group) do s.on = v end
-            end
-            group[#group + 1] = o
-            return o
-        end
-        local onSw, offSw = sw(true), sw(false)
-        table.insert(ug(2200, 2200).objects, onSw)
-        table.insert(ug(2201, 2200).objects, offSw)
+        -- 只建出含角那一間、別的房間沒建出來：不算登錄好，之後 registerAll 補。一棟多間只在單機與客戶端（伺服器一棟一間）：
+        -- 單機挖兩格、中間有牆，延後批次分成兩間再登錄
+        ug(2300, 2300, Z)
+        ug(2301, 2300, Z, { flags = { cutW = true } })
         local realServer = isServer
-        isServer = function() return true end
-        Basement.grow(Basement.add({ { 2200, 2200 }, { 2201, 2200 } }))
+        isServer = function() return false end
+        eng.firstOnly = true
+        Basement.growLater(Basement.add({ { 2300, 2300 }, { 2301, 2300 } }))
+        nowMs = nowMs + Basement.GROW_QUIET
+        fire("OnTick")
+        eng.firstOnly = nil
+        local partial = eng.tile[tk(2300, 2300)] ~= nil and eng.tile[tk(2301, 2300)] == nil
+        local again2 = Basement.registerAll()
         isServer = realServer
-        check(onSw.switched == true and onSw.on == true and offSw.on == false and offSw.switched == nil,
-            "c4 重新登錄後補燈：開著的開關把房間燈切開，關著的開關照原值")
+        check(partial and again2 and eng.tile[tk(2301, 2300)] ~= nil and eng.tile[tk(2301, 2300)].bld == eng.tile[tk(2300, 2300)].bld,
+            "c4 只建出含角那一間、別的房間沒建出來：回失敗不記成已登錄，之後 registerAll 補登錄")
+        -- 單機與客戶端有一棟登錄好了才呼叫 Basement.onApplied（補房間燈）；伺服器、登錄失敗不叫；它丟錯只記 log
+        local calls = 0
+        Basement.onApplied = function() calls = calls + 1 end
+        Basement.grow(Basement.add({ { 2200, 2200 } }))
+        local onServer = calls
+        isServer = function() return false end
+        Basement.grow(Basement.add({ { 2201, 2200 } }))
+        local afterOk = calls
+        eng.noop = true
+        Basement.grow(Basement.add({ { 2202, 2200 } }))
+        eng.noop = nil
+        local afterFail = calls
+        Basement.onApplied = function() error("boom") end
+        local realPrint, logs2 = print, {}
+        print = function(s) logs2[#logs2 + 1] = tostring(s) end
+        local okAfterBoom = Basement.registerAll()
+        print = realPrint
+        isServer = realServer
+        Basement.onApplied = nil
+        local boomLog = false
+        for _, s in ipairs(logs2) do boomLog = boomLog or s:find("onApplied failed: ", 1, true) ~= nil end
+        check(onServer == 0 and afterOk == 1 and afterFail == 1 and okAfterBoom and boomLog
+            and eng.tile[tk(2202, 2200)] ~= nil,
+            "c4 單機與客戶端登錄好了才叫 Basement.onApplied：伺服器不叫、登錄失敗不叫、它丟錯只記 log、登錄照算（"
+            .. onServer .. afterOk .. afterFail .. tostring(okAfterBoom) .. tostring(boomLog) .. "）")
     end)()
 
     -- c5 帳本 commit、外邊土牆
@@ -9852,8 +9868,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local sq = realCell():getGridSquare(3001, 3001, Z)
         local lampOk = false
         for _, o in ipairs(def and def.switches or {}) do if o == lamp then lampOk = true end end
-        check(early == nil and def ~= nil and def.n == 9 and sq.roomID == def.id and sq.room == def:getIsoRoom() and lampOk,
-            "c5 登錄延後（安靜一陣子才跑）、登錄成一棟 9 格；伺服器上已載入的格子掛上房間、燈開關收進房間")
+        check(early == nil and def ~= nil and def.n == 9 and sq.roomID == def.id and sq.room == def:getIsoRoom() and not lampOk,
+            "c5 登錄延後（安靜一陣子才跑）、登錄成一棟 9 格；伺服器上已載入的格子掛上房間、燈開關不收進房間")
         local toNear, toFar
         for i = n0 + 1, #sent do
             if sent[i].cmd == "dug" and sent[i].player == near then toNear = sent[i].args end
@@ -9947,6 +9963,115 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "c5 basements：大區 (11,11) 周圍只有那一塊 10 格；遠處的玩家拿到空的")
         getOnlinePlayers, getNumActivePlayers, getSpecificPlayer = nil, nil, realSpecific
         H.near = near
+    end)()
+
+    -- 伺服器的開關格：房間不含裝了牆上開關的那一格（那格沒有房間 → 切換不送 metaGrid、重新讀進不蓋掉開關狀態，
+    -- IsoLightSwitch.java:356-359,519-535），只有角那格照舊留在矩形裡
+    ;(function()
+        local function flush()
+            nowMs = nowMs + Basement.GROW_QUIET
+            fire("OnTick")
+        end
+        local function press(o, n) for _ = 1, n do o:switchLight(not o:isActivated()) end end
+        local m0 = eng.metaSent
+        -- 3×3，中間那格有牆上開關：登錄、按 20 次、再挖一格重登錄、再按
+        for x = 8600, 8603 do for y = 8600, 8602 do ug(x, y) end end
+        local t = {}
+        for x = 8600, 8602 do for y = 8600, 8602 do t[#t + 1] = { x, y } end end
+        Basement.add(t)
+        local mid = realCell():getGridSquare(8601, 8601, Z)
+        local sw1 = eng.switch(mid)
+        Basement.setSwitchTile(8601, 8601, true)
+        Basement.registerAll()
+        local a1 = eng.applies
+        Basement.registerAll()
+        local again1 = eng.applies == a1
+        local function ring(extra)
+            local ok = eng.tile[tk(8601, 8601)] == nil and mid:getRoom() == nil
+            for x = 8600, extra and 8603 or 8602 do
+                for y = 8600, 8602 do
+                    local sq = realCell():getGridSquare(x, y, Z)
+                    if (x ~= 8601 or y ~= 8601) and (x < 8603 or y == 8601) then
+                        ok = ok and eng.tile[tk(x, y)] ~= nil and sq:getRoom() ~= nil
+                    end
+                end
+            end
+            return ok
+        end
+        local first = ring()
+        press(sw1, 20)
+        Basement.grow(Basement.add({ { 8603, 8601 } }))
+        local second = ring(true)
+        press(sw1, 1)
+        local st = sw1.on
+        eng.reload({ mid })
+        check(first and second and again1 and eng.metaSent == m0 and sw1.on == st and mid:getRoom() == nil,
+            "開關格（伺服器）：3×3 中間那格有牆上開關，登錄後那格不在房間、其餘 8 格有，再叫 registerAll 不重登錄；按 21 次、"
+                .. "再挖一格重登錄都不送 metaGrid；重新讀進開關狀態不變（" .. tostring(first) .. tostring(again1)
+                .. tostring(second) .. (eng.metaSent - m0) .. "）")
+        -- 拆掉開關：下一批那格回到房間
+        for i, o in ipairs(mid.objects) do if o == sw1 then table.remove(mid.objects, i) break end end
+        Basement.setSwitchTile(8601, 8601, false)
+        local still = eng.tile[tk(8601, 8601)] == nil
+        flush()
+        check(still and eng.tile[tk(8601, 8601)] ~= nil and eng.tile[tk(8601, 8601)] == eng.tile[tk(8600, 8600)]
+            and mid:getRoom() ~= nil,
+            "開關格（伺服器）：拆掉牆上開關，下一批那格回到同一棟的房間")
+        -- 本場已登錄，再把開關裝在角那格：那格留在矩形裡（換角引擎找不到舊的那棟）、當下摘掉房間；按不送 metaGrid；
+        -- 重新讀進後引擎照 metaGrid 掛回房間、開關照房間燈回到關（預期的限制：只到重開）
+        for x = 8700, 8702 do for y = 8700, 8701 do ug(x, y) end end
+        local t3 = {}
+        for x = 8700, 8702 do for y = 8700, 8701 do t3[#t3 + 1] = { x, y } end end
+        Basement.grow(Basement.add(t3))
+        local corner = realCell():getGridSquare(8700, 8700, Z)
+        local def3 = eng.live[tk(8700, 8700)]
+        Basement.setSwitchTile(8700, 8700, true)
+        local sw3 = eng.switch(corner)
+        local detached = corner:getRoom() == nil and sw3.on == true and #def3.switches == 0
+        press(sw3, 1)
+        local m3 = eng.metaSent
+        eng.hangLoaded = true -- 引擎套用時把已載入的角那格掛回房間，登錄完要再摘掉
+        flush()
+        eng.hangLoaded = nil
+        local def3b = eng.live[tk(8700, 8700)]
+        local kept = def3b ~= nil and def3b ~= def3 and eng.tile[tk(8700, 8700)] == def3b and corner:getRoom() == nil
+        press(sw3, 1)
+        local quiet = eng.metaSent == m0 and m3 == m0
+        sw3.on = true
+        eng.reload({ corner })
+        check(detached and kept and quiet and sw3.on == false and corner:getRoom() ~= nil,
+            "開關格（伺服器）：已登錄後開關裝在角那格，當下摘掉房間、不收進房間清單；重登錄角那格留在矩形裡、照樣摘掉；"
+                .. "按不送 metaGrid；重新讀進回到房間燈（關，預期的限制）（" .. tostring(detached) .. tostring(kept)
+                .. tostring(quiet) .. "）")
+    end)()
+
+    -- 開服帳本照雜湊順序加進集合：中間那格最後加時兩塊併成一塊、帶著兩個房號。沒載入時整塊一間登錄一次，再叫 registerAll、
+    -- 載入後照牆分法沒變都不重登錄（單機）
+    ;(function()
+        local keepS, keepN, keepP, keepO = isServer, getNumActivePlayers, getSpecificPlayer, getOnlinePlayers
+        local p = player({ id = 8801, x = 8801.5, y = 8800.5, z = Z })
+        getOnlinePlayers = function() return javaList({ p }) end
+        isServer = function() return false end
+        getNumActivePlayers = function() return 1 end
+        getSpecificPlayer = function() return getOnlinePlayers():get(0) end
+        local row = { { 8800, 8800 }, { 8801, 8800 }, { 8802, 8800 } }
+        Basement.add({ row[1], row[3] })
+        Basement.add({ row[2] })
+        local frag = #Basement.byRoom(row) == 2
+        Basement.splitAll()
+        local a0 = eng.applies
+        Basement.registerAll()
+        local a1, def = eng.applies, eng.live[tk(8800, 8800)]
+        Basement.registerAll()
+        local once = a1 == a0 + 1 and eng.applies == a1 and def ~= nil and def.n == 3
+        for x = 8800, 8802 do ug(x, 8800) end
+        Basement.splitAll()
+        Basement.registerAll()
+        local same = eng.applies == a1 and eng.live[tk(8800, 8800)] == def
+        isServer, getNumActivePlayers, getSpecificPlayer, getOnlinePlayers = keepS, keepN, keepP, keepO
+        check(frag and once and same, "開服載入：併塊帶著兩個房號的塊沒載入時整塊一間登錄一次；再叫 registerAll、載入後照牆重算"
+            .. "分法沒變都不重登錄（" .. tostring(frag) .. tostring(once) .. tostring(same) .. " applies " .. a0 .. "→"
+            .. eng.applies .. "）")
     end)()
 
     -- c6 Basement.pre 每個碼
@@ -10179,7 +10304,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local ov = eng.overlap
         local okW = Basement.grow(Basement.add({ { 4351, 4401 } }))
         local annexW = eng.tile[tk(4351, 4401)]
-        check(okW and eng.overlap == ov and annexW and annexW.n == 1 and eng.live[tk(4352, 4400)].n == 6,
+        local liveW = eng.live[tk(4352, 4400)]
+        Basement.registerAll() -- 主建物和 annex 都記成登錄好了：再叫不重建（別的情境留下沒登錄的格子可能讓它叫引擎）
+        check(okW and eng.tile[tk(4351, 4401)] == annexW and eng.live[tk(4352, 4400)] == liveW and eng.overlap == ov
+            and annexW and annexW.n == 1 and liveW.n == 6,
             "F3 往西挖過地圖格邊界（x＝4352＝17×256）：那格登錄成 1 格的 annex，主建物不變、沒有一格登錄進兩棟（overlap "
             .. ov .. "→" .. eng.overlap .. "）")
         local n = {}
@@ -10293,8 +10421,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "D7 大區查詢照包圍盒篩塊、結果照舊；客戶端包圍盒離本機玩家（看全部分割畫面玩家）129 格不登錄、走到 128 格內登錄成同一棟（"
             .. inRow .. " " .. tostring(farSkip) .. " " .. tostring(nearReg) .. "）")
 
-        -- D6 分房：牆把一塊隔成兩間 → 延後批次重算分房、整棟重登錄（每間一個房間，含角的那間排第一）、推給附近的玩家；
-        -- 拆牆之後巡查合回一間；有一格沒載入不分；巡查只看玩家 PATROL 格內的塊
+        -- D6 分房（單機：一棟多間）：牆把一塊隔成兩間 → 延後批次重算分房、整棟重登錄（每間一個房間，含角的那間排第一）；
+        -- 拆牆之後巡查合回一間；有一格沒載入不分；巡查只看玩家 PATROL 格內的塊。單機不推 block
         local wo = {}
         for x = 7200, 7203 do
             wo[x] = {}
@@ -10303,6 +10431,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local keepOnline = getOnlinePlayers
         local d6p = player({ id = 7201, x = 7201.5, y = 7200.5, z = Z })
         getOnlinePlayers = function() return javaList({ d6p }) end
+        local keepServer6, keepNum6, keepSpec6 = isServer, getNumActivePlayers, getSpecificPlayer
+        isServer = function() return false end
+        getNumActivePlayers = function() return 1 end
+        getSpecificPlayer = function() return getOnlinePlayers():get(0) end
         Basement.grow(Basement.add({ { 7200, 7200 }, { 7201, 7200 }, { 7202, 7200 }, { 7203, 7200 } }))
         local one = eng.live[tk(7200, 7200)]
         wo[7201].cutW = true -- 7200 與 7201 之間蓋了牆
@@ -10310,13 +10442,11 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local n6 = #sent
         nowMs = nowMs + Basement.GROW_QUIET
         fire("OnTick")
-        local c6, r6, blk = eng.live[tk(7200, 7200)], eng.tile[tk(7202, 7200)], sent[#sent]
-        local area6 = 0
-        for _, q in ipairs(blk and blk.args.r or {}) do
-            for i = 1, #q, 4 do area6 = area6 + q[i + 2] * q[i + 3] end
-        end
+        local c6, r6 = eng.live[tk(7200, 7200)], eng.tile[tk(7202, 7200)]
         local two = one and one.n == 4 and c6 ~= one and c6.n == 1 and r6 and r6.n == 3 and r6.bld == c6.bld
-            and #sent == n6 + 1 and blk.cmd == "block" and blk.player == d6p and #blk.args.r == 2 and area6 == 4
+            and #sent == n6
+        Basement.registerAll()
+        two = two and eng.live[tk(7200, 7200)] == c6 and eng.tile[tk(7202, 7200)] == r6
         local id6, roomA = Basement.roomOf(7200, 7200, Z)
         local _, roomB = Basement.roomOf(7201, 7200, Z)
         two = two and roomA ~= roomB
@@ -10324,9 +10454,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         n6 = #sent
         Basement.patrol()
         local back = eng.live[tk(7200, 7200)]
-        local merged = back ~= c6 and back.n == 4 and eng.tile[tk(7203, 7200)] == back and #sent == n6 + 1
+        local merged = back ~= c6 and back.n == 4 and eng.tile[tk(7203, 7200)] == back and #sent == n6
         Basement.patrol()
-        local idle = eng.live[tk(7200, 7200)] == back and #sent == n6 + 1
+        local idle = eng.live[tk(7200, 7200)] == back and #sent == n6
         wo[7201].cutW = true
         local keepSq = squares["7203,7200,-1"]
         squares["7203,7200,-1"] = nil
@@ -10365,13 +10495,37 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         nowMs = nowMs + Basement.GROW_QUIET
         fire("OnTick")
         getOnlinePlayers = keepOnline
+        isServer, getNumActivePlayers, getSpecificPlayer = keepServer6, keepNum6, keepSpec6
         local c8, bld8 = eng.live[tk(7300, 7300)], true
         for x = 7301, 7307 do bld8 = bld8 and eng.tile[tk(x, 7300)].bld == c8.bld and eng.tile[tk(x, 7300)] ~= c8 end
         nearSplit = nearSplit and c8.n == 1 and bld8 and eng.overlap == ov8
         check(two and merged and idle and gone and stay and farIdle and nearSplit,
-            "D6 牆隔開：批次重算分房、整棟重登錄成兩間（含角那間在前）、推 block 給附近玩家；拆牆巡查合回一間、分法沒變不重登錄；拆東西與重推排批次；"
+            "D6 單機牆隔開：批次重算分房、整棟重登錄成兩間（含角那間在前）、不推 block；拆牆巡查合回一間、分法沒變不重登錄；拆東西與重推排批次；"
             .. "沒載入不分；巡查只看 16 格內（" .. tostring(two) .. tostring(merged) .. tostring(idle) .. tostring(gone)
             .. tostring(stay) .. tostring(farIdle) .. tostring(nearSplit) .. "）")
+        -- 伺服器一棟一間：牆把一塊隔成兩間 → 只改分房號、推 block 給附近玩家，不重登錄（applyChanges 沒有多跑）
+        local w7 = {}
+        for x = 7500, 7503 do ug(x, 7500, Z, { flags = x == 7501 and w7 or {} }) end
+        local s7p = player({ id = 7501, x = 7501.5, y = 7500.5, z = Z })
+        getOnlinePlayers = function() return javaList({ s7p }) end
+        Basement.grow(Basement.add({ { 7500, 7500 }, { 7501, 7500 }, { 7502, 7500 }, { 7503, 7500 } }))
+        local s7 = eng.live[tk(7500, 7500)]
+        local a7, n7 = eng.applies, #sent
+        w7.cutW = true
+        Basement.dirty(7501, 7500, Z)
+        nowMs = nowMs + Basement.GROW_QUIET
+        fire("OnTick")
+        getOnlinePlayers = keepOnline
+        local blk7, area7 = sent[#sent], 0
+        for _, q in ipairs(blk7 and blk7.args.r or {}) do
+            for i = 1, #q, 4 do area7 = area7 + q[i + 2] * q[i + 3] end
+        end
+        local _, rA7 = Basement.roomOf(7500, 7500, Z)
+        local _, rB7 = Basement.roomOf(7501, 7500, Z)
+        check(s7 and s7.n == 4 and eng.live[tk(7500, 7500)] == s7 and eng.applies == a7 and #sent == n7 + 1
+            and blk7.cmd == "block" and blk7.player == s7p and #blk7.args.r == 2 and area7 == 4 and rA7 ~= rB7,
+            "D6 伺服器牆隔開：分房號變了、推 block 給附近玩家（兩間），引擎那棟不重登錄（applyChanges "
+            .. (eng.applies - a7) .. " 次）")
         -- 有一格沒載入時在兩間交界再挖一格：分不了房，兩間照舊各是一間（不先併房號），新格跟著它一個鄰格的那間
         for x = 7400, 7403 do ug(x, 7400, Z) end
         Basement.grow(Basement.add({ { 7400, 7400 }, { 7401, 7400 } }))
@@ -10472,6 +10626,62 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(Basement.has(3003, 3001, Z) and not Basement.has(2001, 2000, Z) and liveCount() == 7
             and def and def.n == 10 and select(2, Basement.blockOf(3000, 3000, Z)) == 10 and a1 == a0 + 1 and eng.applies == a1,
             "c4 重開服：集合照帳本重建，帳本載入當下每塊登錄成一棟（c5 的 10 格、D9 與 #5 那六塊，一次 applyChanges），之後不再登錄第二次")
+    end)()
+
+    -- 開服：開關格從燈的帳本算（Ledger.eachLight，圖是牆上開關才算，有光源的燈不算）。最北列最西那格（角）有牆上開關 → 角取下一格；
+    -- 之後往東、南挖重登錄，換掉同一棟。燈的帳本比地下室帳本晚開也一樣（兩邊的 initSystem 結尾都叫 BasementLedger.start）
+    ;(function()
+        local LL = MinidoracatBuilder.Ledger
+        spriteMap.t_lampR = sprite("t_lampR", 0, { keys = { lightR = "255" } })
+        local function keyed(o)
+            o.keyId = 0
+            function o:getKeyId() return self.keyId end
+            function o:setKeyId(v) self.keyId = v end
+            return o
+        end
+        local cSq, rSq, lSq = realCell():getGridSquare(3000, 3000, Z), realCell():getGridSquare(3002, 3002, Z),
+            realCell():getGridSquare(3001, 3002, Z)
+        local swC, swR = keyed(eng.switch(cSq)), keyed(eng.switch(rSq))
+        local lampR = keyed(obj(lSq, "t_lampR", false))
+        lampR.light = true
+        lSq.objects[#lSq.objects + 1] = lampR
+        spriteMap.t_roomswitch = swC:getSprite()
+        for _, o in ipairs({ swC, swR, lampR }) do LL.put(o, { ["Base.Screws"] = 1 }) end
+        local listed = {}
+        LL.eachLight(function(x, y, z, name) if z == Z then listed[tk(x, y)] = name end end)
+        local each = listed[tk(3000, 3000)] == "t_roomswitch" and listed[tk(3002, 3002)] == "t_roomswitch"
+            and listed[tk(3001, 3002)] == "t_lampR"
+        eng.tile, eng.live, eng.meta = {}, {}, {}
+        assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))()
+        local inst = LL.instance
+        LL.instance = nil
+        HARNESS_REOPEN(Ledger)
+        local early = liveCount() == 0
+        LL.instance = inst
+        squares["3001,3002,-1"] = nil -- 專用伺服器開服時 chunk 還沒載入：檯燈那格只能照帳本裡的圖判斷
+        HARNESS_REOPEN(LL)
+        squares["3001,3002,-1"] = lSq
+        local def = eng.live[tk(3001, 3000)]
+        local started = def ~= nil and eng.tile[tk(3000, 3000)] == nil and eng.tile[tk(3002, 3002)] == nil
+            and eng.tile[tk(3001, 3002)] == def and eng.tile[tk(3000, 3001)] == def and def.n == 8
+            and cSq:getRoom() == nil and rSq:getRoom() == nil
+        local live0, ov0 = liveCount(), eng.overlap
+        Basement.grow(Basement.add({ { 3003, 3000 }, { 3000, 3003 }, { 3001, 3003 } }))
+        local def2 = eng.live[tk(3001, 3000)]
+        local grown = def2 ~= def and def2.n == 11 and liveCount() == live0 and eng.overlap == ov0
+            and eng.tile[tk(3000, 3003)] == def2 and eng.tile[tk(3003, 3000)] == def2
+        swC.on = true
+        eng.reload({ cSq })
+        check(each and early and started and grown and swC.on == true and cSq:getRoom() == nil,
+            "開服的開關格：燈的帳本照圖分（牆上開關算、有光源的燈不算）；燈的帳本晚開才登錄；角那格有開關時角取下一格，開關格不在房間；"
+                .. "往東、南挖換掉同一棟、不重疊；重新讀進不動開關（" .. tostring(each) .. tostring(early) .. tostring(started)
+                .. tostring(grown) .. "）")
+        for _, o in ipairs({ swC, swR, lampR }) do
+            LL.forget(o)
+            local objs = o:getSquare().objects
+            for i, v in ipairs(objs) do if v == o then table.remove(objs, i) break end end
+        end
+        spriteMap.t_lampR, spriteMap.t_roomswitch = nil, nil
     end)()
 
     print("情境三十九之三：地下室的判斷、放置與伺服器（Check、Place、Server；plan.md §4.1 c11–c14）")
