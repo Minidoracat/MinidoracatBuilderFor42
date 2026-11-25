@@ -1804,6 +1804,35 @@ do
             "預覽：上一層的格子還沒建，牆也照座標查：什麼都沒撐的擋、正下方同一條邊有牆的放行（✗ 直接放行，伺服器才回放不下；"
                 .. tostring(wLone) .. "／" .. tostring(wHeld) .. "）")
     end
+    do -- 換一樓地板：拆舊放新之間那格沒有地板，正下方有地下一層的格子時站在上面的人會掉下去
+        local keep = {}
+        local function at(x, y, z, o)
+            local k = x .. "," .. y .. "," .. z
+            if keep[k] == nil then keep[k] = squares[k] or false end
+            return square(x, y, z, o)
+        end
+        at(55, 45, 0, { floor = {}, moving = { {} } }); at(55, 45, -1) -- 有地板、下面有格子、有人
+        at(55, 43, 0, { floor = {} }); at(55, 43, -1)                  -- 沒人
+        at(57, 45, 0, { floor = {}, moving = { {} } })                 -- 下面沒有格子
+        at(54, 44, 0, { moving = { {} } }); at(54, 44, -1)             -- 原本沒有地板（新鋪）
+        at(57, 43, 1, { floor = {}, moving = { {} } }); at(58, 43, 1, { flags = { solidfloor = true } }) -- 二樓
+        local cases = {
+            { { 55, 45, 0 }, "OCCUPIED", "有地板、正下方有地下一層、格上有人 → OCCUPIED" },
+            { { 55, 43, 0 }, nil, "格上沒人 → 可以換" },
+            { { 57, 45, 0 }, nil, "正下方沒有格子 → 可以換" },
+            { { 54, 44, 0 }, nil, "原本沒有地板（新鋪）→ 不擋" },
+            { { 57, 43, 1 }, nil, "二樓同樣情況 → 不擋" },
+        }
+        for _, c in ipairs(cases) do
+            local cS, eS = Check.item(K, "floor_01_0", 0, c[1])
+            local cP, eP = Check.item(K, "floor_01_0", 0, c[1], PV)
+            local cW = Check.item(K, "floor_01_0", 0, c[1], { preview = true, walk = true })
+            check(cS == c[2] and cP == c[2] and cW == c[2] and (eS and eS.x) == (c[2] and c[1][1])
+                and (eP and eP.x) == (eS and eS.x), "換地板掉進地下室：" .. c[3] .. "（伺服器、預覽、游標預覽同一個結果；"
+                .. tostring(cS) .. "／" .. tostring(cP) .. "／" .. tostring(cW) .. "）")
+        end
+        for k, v in pairs(keep) do squares[k] = v or nil end
+    end
     local WK = { preview = true, walk = true }
     check(Check.item(K, "walls_test_01_4", 0, { 56, 49, 0 }, WK) == nil and Check.item(K, "solid_01_0", 0, { 55, 44, 0 }, WK) == nil,
         "游標預覽（walk）：會先走過去，不看 MaxDistance、不查走不走得到")

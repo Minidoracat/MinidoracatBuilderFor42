@@ -290,6 +290,12 @@ function Check.item(player, name, d, anchor, ...)
                 return "INTERNAL", nil, info
             end
             if not fine then return yoff or "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
+            -- 換一樓地板是先拆舊的再放新的（Place.clearFloor），兩個封包之間那格沒有地板：正下方有地下一層的格子時，
+            -- 站在上面的人會掉下去受傷。格上有人、殭屍或動物照 Place.check 的佔用檢查回 OCCUPIED
+            if entry.kind == "floor" and c.z == 0 and c.sq:getFloor() and not c.sq:getMovingObjects():isEmpty()
+                and cell:getGridSquare(c.x, c.y, -1) then
+                return "OCCUPIED", { x = c.x, y = c.y, z = c.z }, info
+            end
             c.yoff, c.over = yoff, over == true or nil
             for k2 = j + 1, #cells do -- 多格之間不能隔著牆（ISMoveableSpriteProps.lua:1616-1716 的 isWallBetweenParts）
                 local o = cells[k2]
