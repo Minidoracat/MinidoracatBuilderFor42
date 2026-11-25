@@ -9519,9 +9519,15 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                             for y = q[2], q[2] + q[4] - 1 do
                                 if eng.tile[tk(x, y)] then eng.overlap = eng.overlap + 1 end
                                 eng.tile[tk(x, y)], def.n = def, def.n + 1
-                                -- eng.hangLoaded：套用時替已載入的格子照 metaGrid 設房間（BuildingRoomsEditor.java:369-380 updateSquares）
+                                -- eng.hangLoaded：套用時替已載入的格子照 metaGrid 設房間，格上的 IsoLightSwitch 收進房間的開關清單、
+                                -- 狀態不動（BuildingRoomsEditor.java:369-405 updateSquares）
                                 local sq = eng.hangLoaded and realCell():getGridSquare(x, y, Z)
-                                if sq then sq.roomID, sq.room = def.id, def:getIsoRoom() end
+                                if sq then
+                                    sq.roomID, sq.room = def.id, def:getIsoRoom()
+                                    for _, o in ipairs(sq.objects) do
+                                        if o.light then def.switches[#def.switches + 1] = o end
+                                    end
+                                end
                             end
                         end
                     end
@@ -9827,18 +9833,28 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     end)()
 
     -- 地下室的牆上開關：伺服器上那格不掛房間、同一間沒接燈的開關一起切、單機與客戶端照開關補切房間燈。
-    -- Basement.setSwitchTile 用測試裡的假函式：記參數，伺服器上把那格 setRoomID(-1)
+    -- 走真的 Basement.setSwitchTile 與登錄；calls 只記下參數，再交給真的
     ;(function()
         local Circuits, Place = B.Circuits, B.Place
         local realSet, realServer, realClient, realLS = Basement.setSwitchTile, isServer, isClient, IsoLightSwitch
         local calls = {}
         Basement.setSwitchTile = function(x, y, on)
             calls[#calls + 1] = x .. "," .. y .. "," .. tostring(on)
-            if isServer() then realCell():getGridSquare(x, y, Z):setRoomID(-1) end
+            return realSet(x, y, on)
         end
-        local function setMode(server, client)
+        local function flush()
+            nowMs = nowMs + Basement.GROW_QUIET
+            fire("OnTick")
+        end
+        -- 這一端的玩家（伺服器：連線玩家；單機與客戶端：本機玩家）＝here
+        local keepO, keepN, keepP, here = getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, {}
+        getOnlinePlayers = function() return javaList(here) end
+        getNumActivePlayers = function() return #here end
+        getSpecificPlayer = function(n) return here[n + 1] end
+        local function setMode(server, client, ...)
             isServer = function() return server end
             isClient = function() return client end
+            here = { ... }
         end
         local function cell(x, y)
             local sq = ug(x, y)
@@ -9861,7 +9877,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             function o:getContainerCount() return 0 end
             return o
         end
-        local function sw(sq, on)
+        -- 照 Place.newLight 的順序裝牆上開關：先記開關格（伺服器上當下摘掉房間）再建；on＝建好後的狀態
+        local function mount(sq, on)
+            Basement.setSwitchTile(sq:getX(), sq:getY(), true)
             local o = extend(eng.switch(sq))
             if on ~= nil then o.on = on end
             return o
@@ -9877,82 +9895,106 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             sq.objects[#sq.objects + 1] = o
             return o
         end
-        local function hang(def, list) -- 登錄好：格子掛上房間
-            for _, sq in ipairs(list) do sq.roomID, sq.room = def.id, def:getIsoRoom() end
-        end
         local function inList(def, o)
-            for _, s in ipairs(def.switches) do if s == o then return true end end
+            for _, s in ipairs(def and def.switches or {}) do if s == o then return true end end
             return false
         end
-        local LIGHT = { lightR = "200", lightG = "200", lightB = "200" }
-        setMode(true, false)
-
-        -- 同一間（6100..6102）兩個沒接燈的開關 A、B，一個接了燈的 W（＋燈 L）；隔壁間（6103..6104）一個 C
-        local xs = {}
-        local t = {}
-        for x = 6100, 6104 do xs[x], t[#t + 1] = cell(x, 6100), { x, 6100 } end
-        Basement.add(t)
-        Basement.setRooms({ { { 6100, 6100 }, { 6101, 6100 }, { 6102, 6100 } }, { { 6103, 6100 }, { 6104, 6100 } } })
-        local A, Bsw, C, W = sw(xs[6100], false), sw(xs[6101], false), sw(xs[6103], false), sw(xs[6102], false)
-        local L = lamp(xs[6102], false, "t_cellarlamp", LIGHT)
-        B.Ledger.put(W, {})
-        B.Ledger.put(L, {})
-        local p = player({ id = 2301, x = 6101.5, y = 6100.5, z = Z })
-        Circuits.placed(p, { W })
-        local function press(o)
+        local function press(p, o)
             nowMs = nowMs + 1000
             local act = { object = o, character = p }
             return Circuits.onToggle(act), act.mbldClaimed == true
         end
+        local LIGHT = { lightR = "200", lightG = "200", lightB = "200" }
+        local MOVABLE = { lightR = "200", lightG = "200", lightB = "200", IsMoveAble = "" }
+        local gone = {}
+
+        -- 伺服器，6100..6104 × 6100..6101：西三列一間、東兩列一間，先登錄好再裝開關。同一間兩個沒接燈的開關 A、B，
+        -- 一個接了燈的 W（＋燈 L）；隔壁間一個 C
+        local p = player({ id = 2301, x = 6101.5, y = 6100.5, z = Z })
+        local p4 = player({ id = 2302, x = 6201.5, y = 6200.5, z = Z })
+        setMode(true, false, p, p4)
+        local xs, t, west, east = {}, {}, {}, {}
+        for x = 6100, 6104 do
+            for y = 6100, 6101 do
+                xs[tk(x, y)], t[#t + 1] = cell(x, y), { x, y }
+                local side = x <= 6102 and west or east
+                side[#side + 1] = { x, y }
+            end
+        end
+        Basement.add(t)
+        Basement.setRooms({ west, east })
+        Basement.registerAll()
+        local sqA = xs[tk(6101, 6100)]
+        local def6 = eng.tile[tk(6101, 6100)]
+        local A, Bsw = mount(sqA, false), mount(xs[tk(6102, 6100)], false)
+        local C, W = mount(xs[tk(6104, 6100)], false), mount(xs[tk(6100, 6101)], false)
+        local L = lamp(xs[tk(6100, 6101)], false, "t_cellarlamp", LIGHT)
+        gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1] = A, Bsw, C, W, L
+        local hung = def6 ~= nil and sqA:getRoom() == nil and not inList(def6, A)
+        B.Ledger.put(W, {})
+        B.Ledger.put(L, {})
+        Circuits.placed(p, { W })
         local meta0 = eng.metaSent
-        local r1, c1 = press(A)
-        local both = r1 == true and c1 and A.on and Bsw.on and not C.on and not W.on and not L.on and #calls == 0
-        local r2 = press(Bsw)
+        -- 重登錄之前那一塊重新讀進（引擎照 metaGrid 把 A 那格掛回舊房間、A 收進清單）：切之前先摘掉，不連動整間、不送 meta
+        eng.reload({ sqA })
+        local rehung = sqA:getRoom() ~= nil and inList(def6, A)
+        local n5 = #calls
+        local r5 = press(p, A)
+        check(hung and rehung and r5 == true and #calls == n5 + 1 and calls[#calls] == "6101,6100,true"
+            and sqA:getRoom() == nil and A.on and Bsw.on and def6.lightsActive == false and eng.metaSent == meta0,
+            "地下室開關那格還掛著房間：切之前 setSwitchTile(x, y, true) 摘掉，房間燈不動、不送 meta（" .. tostring(hung)
+                .. tostring(rehung) .. tostring(r5) .. "）")
+        press(p, Bsw)
+        -- 下一批重登錄：開關格都不在矩形裡，其他格照樣在
+        flush()
+        local out = true
+        for k, sq in pairs(xs) do
+            local isSw = k == tk(6101, 6100) or k == tk(6102, 6100) or k == tk(6104, 6100) or k == tk(6100, 6101)
+            out = out and (eng.tile[k] == nil) == isSw and (sq:getRoom() == nil) == isSw
+        end
+        local r1, c1 = press(p, A)
+        local both = r1 == true and c1 and A.on and Bsw.on and not C.on and not W.on and not L.on
+        local r2 = press(p, Bsw)
         local off = r2 == true and not A.on and not Bsw.on and not C.on
-        local r3 = press(W)
+        local r3 = press(p, W)
         local wired = r3 == true and W.on and L.on and not A.on and not Bsw.on
-        press(W)
+        press(p, W)
         A.can = false
-        local r4 = press(A)
+        local r4 = press(p, A)
         A.can = true
         local refused = r4 == false and not A.on and not Bsw.on
-        check(both and off and wired and refused and eng.metaSent == meta0,
-            "地下室沒接燈的牆上開關：按一個同一間的一起切（開、再按另一個關），隔壁間與接了燈的不動；接了燈的照線路；"
-                .. "canSwitchLight 不過就不動（" .. tostring(r1) .. "," .. tostring(r2) .. "," .. tostring(r3) .. "," .. tostring(r4) .. "）")
-        -- 剛登錄過、格子還掛著房間：切之前先摘掉（不連動整間、不送 meta）
-        local def0 = eng.newDef(Basement.ROOM)
-        hang(def0, { xs[6100] })
-        def0.switches = { A }
-        local r5 = press(A)
-        check(r5 == true and calls[#calls] == "6100,6100,true" and xs[6100]:getRoom() == nil and A.on and Bsw.on
-            and def0.lightsActive == false and eng.metaSent == meta0,
-            "地下室開關那格還掛著房間：切之前 setSwitchTile(x, y, true) 摘掉，房間燈不動、不送 meta（假 setSwitchTile）")
-        press(A)
+        check(out and both and off and wired and refused and eng.metaSent == meta0,
+            "地下室沒接燈的牆上開關：重登錄後開關格不在矩形裡；按一個同一間的一起切（開、再按另一個關），隔壁間與接了燈的不動；"
+                .. "接了燈的照線路；canSwitchLight 不過就不動（" .. tostring(out) .. "," .. tostring(r1) .. "," .. tostring(r2)
+                .. "," .. tostring(r3) .. "," .. tostring(r4) .. "）")
 
-        -- 單機（一份世界、格子掛著房間）：同一間一個開著的獨立檯燈 L1、接在別條線路上關著的 L；按開關開再關，兩盞燈不變
-        local L1 = lamp(xs[6101], true, "t_cellarlamp_mov", { lightR = "200", lightG = "200", lightB = "200", IsMoveAble = "" })
-        setMode(false, false)
-        local def1 = eng.newDef(Basement.ROOM)
-        hang(def1, { xs[6100], xs[6101], xs[6102] })
-        def1.switches = { A, Bsw, W, L, L1 }
-        local s1 = press(A)
-        local lit1 = s1 == true and def1.lightsActive and A.on and Bsw.on and L1.on and not L.on and not W.on
-        local s2 = press(Bsw)
-        local lit2 = s2 == true and not def1.lightsActive and not A.on and not Bsw.on and L1.on and not L.on and not W.on
-        check(lit1 and lit2, "單機地下室：沒接燈的開關開、關房間燈，同一間的獨立檯燈（開）與別條線路的燈（關）不變")
-        L1.gone = true
-        setMode(true, false)
+        -- 拆掉地下室的牆上開關：那格還有別的牆上開關就不清；最後一個拆掉才 setSwitchTile(x, y, false)，下一批回到房間
+        local A2, n0 = mount(sqA, false), #calls
+        gone[#gone + 1] = A2
+        fire("OnObjectAboutToBeRemoved", A)
+        table.remove(sqA.objects, 1)
+        flush()
+        local kept = #calls == n0 and eng.tile[tk(6101, 6100)] == nil and sqA:getRoom() == nil
+        fire("OnObjectAboutToBeRemoved", A2)
+        table.remove(sqA.objects, 1)
+        local cleared = #calls == n0 + 1 and calls[#calls] == "6101,6100,false"
+        flush()
+        check(kept and cleared and eng.tile[tk(6101, 6100)] ~= nil and eng.tile[tk(6101, 6100)] == eng.tile[tk(6100, 6100)]
+            and sqA:getRoom() ~= nil,
+            "拆地下室的牆上開關：同一格還有別的牆上開關不清開關格，最後一個拆掉才 setSwitchTile(x, y, false)、下一批回到房間（"
+                .. tostring(kept) .. tostring(cleared) .. "）")
 
-        -- 伺服器上新裝的牆上開關：先摘掉那格的房間再建（不進房間的開關清單）、先關；同一間已有開著的沒接燈開關就跟著開
-        local ys = {}
-        local t2 = {}
+        -- 伺服器上新裝的牆上開關：先摘掉那格的房間再建（不進房間的開關清單）、先關；同一間已有開著的沒接燈開關就跟著開；
+        -- 下一批那格不在矩形裡
+        local ys, t2 = {}, {}
         for x = 6200, 6202 do ys[x], t2[#t2 + 1] = cell(x, 6200), { x, 6200 } end
         Basement.add(t2)
-        local E = sw(ys[6200], true)
-        local def2 = eng.newDef(Basement.ROOM)
-        hang(def2, { ys[6201], ys[6202] })
+        Basement.registerAll()
+        local E = mount(ys[6202], true)
+        gone[#gone + 1] = E
+        local def2 = eng.tile[tk(6201, 6200)]
         IsoLightSwitch = { new = function(_, sq)
-            local o = sw(sq)
+            local o = extend(eng.switch(sq))
             table.remove(sq.objects) -- finish 再加進格子
             return o
         end }
@@ -9964,50 +10006,70 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         Place.onLoaded = loaded
         IsoLightSwitch = realLS
         local N = placed[1]
-        local born = okB and N and calls[#calls] == "6201,6200,true" and ys[6201]:getRoom() == nil and not inList(def2, N)
-            and N.on == false
-        if N then Circuits.placed(p, { N }) end
-        check(born and N.on == true and E.on == true,
+        gone[#gone + 1] = N
+        local born = okB and N and def2 ~= nil and calls[#calls] == "6201,6200,true" and ys[6201]:getRoom() == nil
+            and not inList(def2, N) and N.on == false
+        if N then Circuits.placed(p4, { N }) end
+        local follow = N and N.on == true and E.on == true
+        flush()
+        check(born and follow and eng.tile[tk(6201, 6200)] == nil and eng.tile[tk(6202, 6200)] == nil
+            and eng.tile[tk(6200, 6200)] ~= nil and ys[6200]:getRoom() ~= nil and ys[6201]:getRoom() == nil,
             "伺服器上新裝的地下室牆上開關：先 setSwitchTile 摘掉房間（不進房間的開關清單）、建好是關的；同一間已有開著的"
-                .. "沒接燈開關，放好後跟著開（" .. tostring(errB) .. "）")
+                .. "沒接燈開關，放好後跟著開；下一批那格不在矩形裡（" .. tostring(errB) .. tostring(born) .. tostring(follow) .. "）")
 
-        -- 單機與客戶端：重新登錄後（onApplied）同一個呼叫內照開著的開關補切房間燈；關著的不切；只有檯燈的那間不切
+        -- 單機（一份世界）：一間裡一個沒接燈的牆上開關 A16、開著的獨立檯燈 L1、接在別條線路上關著的燈 L16（開關 W16）；
+        -- 登錄（引擎替已載入的格子掛房間、收開關）之後按 A16 開、再關，房間燈跟著變，兩盞燈不變
+        local p16 = player({ id = 2303, x = 6151.5, y = 6150.5, z = Z })
+        setMode(false, false, p16)
+        local zs, t3 = {}, {}
+        for x = 6150, 6152 do zs[x], t3[#t3 + 1] = cell(x, 6150), { x, 6150 } end
+        local A16, W16 = mount(zs[6150], false), mount(zs[6152], false)
+        local L1 = lamp(zs[6151], true, "t_cellarlamp_mov", MOVABLE)
+        local L16 = lamp(zs[6152], false, "t_cellarlamp", LIGHT)
+        gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1] = A16, W16, L1, L16
+        local ids16 = Basement.add(t3) -- 先挖好（自動接線認地下室的房間）、讀進後才登錄
+        B.Ledger.put(W16, {})
+        B.Ledger.put(L16, {})
+        Circuits.placed(p16, { W16 })
+        eng.hangLoaded = true
+        Basement.grow(ids16)
+        eng.hangLoaded = nil
+        local def16 = eng.tile[tk(6150, 6150)]
+        local s1 = press(p16, A16)
+        local lit1 = s1 == true and def16 and def16.lightsActive and A16.on and L1.on and not L16.on and not W16.on
+        local s2 = press(p16, A16)
+        local lit2 = s2 == true and def16 and not def16.lightsActive and not A16.on and L1.on and not L16.on and not W16.on
+        check(lit1 and lit2, "單機地下室：沒接燈的開關開、關房間燈，同一間的獨立檯燈（開）與別條線路的燈（關）不變（"
+            .. tostring(lit1) .. tostring(lit2) .. "）")
+
+        -- 單機與客戶端：讀進格子時登記的開關（關的 O 先、開的 S 後），登錄好的同一個呼叫內（Basement.apply → onApplied）
+        -- 照開著的開關把房間燈切開；關著的開關與燈照原值；只有檯燈的那間（另一塊）不切
         for i, mode in ipairs({ { false, false }, { false, true } }) do
-            local y = 6300 + i
-            local q = {}
-            for x = 6300, 6304 do q[x] = cell(x, y) end
-            local O, S = sw(q[6300], false), sw(q[6301], true)
+            local y = 6300 + 3 * i -- 兩輪不相鄰（不併成一塊）
+            local q, tq = {}, {}
+            for _, x in ipairs({ 6300, 6301, 6302, 6304 }) do q[x], tq[#tq + 1] = cell(x, y), { x, y } end
+            setMode(mode[1], mode[2], player({ id = 2310 + i, x = 6301.5, y = y + 0.5, z = Z }))
+            local O, S = mount(q[6300], false), mount(q[6301], true)
             O:getModData().builderEntry, S:getModData().builderEntry = "t_roomswitch", "t_roomswitch"
             local L3 = lamp(q[6302], false, "t_cellarlamp", LIGHT)
             local L4 = lamp(q[6304], true, "t_cellarlamp", LIGHT)
-            setMode(mode[1], mode[2])
+            gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1] = O, S, L3, L4
             Place.onLoaded(O) -- 關著的先登記：沒擋住的話它最後切、把房間燈熄掉
             Place.onLoaded(S)
-            local def3, def4 = eng.newDef(Basement.ROOM), eng.newDef(Basement.ROOM)
-            hang(def3, { q[6300], q[6301], q[6302] })
-            hang(def4, { q[6304] })
-            def3.switches, def4.switches = { O, S, L3 }, { L4 }
-            local f = Basement.onApplied
-            if f then f() end
-            check(def3.lightsActive == true and S.on and not O.on and not L3.on and L4.on and L4.lit == 0 and L3.lit == 0
-                and def4.lightsActive == false,
-                (mode[2] and "客戶端" or "單機") .. "地下室重新登錄（onApplied）：同一個呼叫內照開著的開關把房間燈切開，關著的"
-                    .. "開關與燈照原值；只有檯燈的那間不切")
-            O.gone, S.gone, L3.gone, L4.gone = true, true, true, true
+            local a0 = eng.applies
+            eng.hangLoaded = true
+            Basement.grow(Basement.add(tq))
+            eng.hangLoaded = nil
+            local def3, def4 = eng.tile[tk(6300, y)], eng.tile[tk(6304, y)]
+            check(eng.applies > a0 and def3 and def4 and def3 ~= def4 and def3.lightsActive == true and S.on and not O.on
+                and not L3.on and L4.on and L4.lit == 0 and L3.lit == 0 and def4.lightsActive == false,
+                (mode[2] and "客戶端" or "單機") .. "地下室登錄好（apply 呼叫 onApplied）：同一個呼叫內照開著的開關把房間燈切開，"
+                    .. "關著的開關與燈照原值；只有檯燈的那間不切")
         end
 
-        -- 拆掉地下室的牆上開關：那格還有別的牆上開關就不清，最後一個拆掉才 setSwitchTile(x, y, false)
-        local A2, n0 = sw(xs[6100], false), #calls
-        fire("OnObjectAboutToBeRemoved", A)
-        local kept = #calls == n0
-        table.remove(xs[6100].objects, 1)
-        fire("OnObjectAboutToBeRemoved", A2)
-        check(kept and #calls == n0 + 1 and calls[#calls] == "6100,6100,false",
-            "拆地下室的牆上開關：同一格還有別的牆上開關不清開關格，最後一個拆掉才 setSwitchTile(x, y, false)（假 setSwitchTile）")
-        A2.gone = true
-        A.gone, Bsw.gone, C.gone, W.gone, L.gone, E.gone = true, true, true, true, true, true
-        if N then N.gone = true end
+        for _, o in ipairs(gone) do o.gone = true end
         Basement.setSwitchTile, isServer, isClient = realSet, realServer, realClient
+        getOnlinePlayers, getNumActivePlayers, getSpecificPlayer = keepO, keepN, keepP
     end)()
 
     -- c5 帳本 commit、外邊土牆

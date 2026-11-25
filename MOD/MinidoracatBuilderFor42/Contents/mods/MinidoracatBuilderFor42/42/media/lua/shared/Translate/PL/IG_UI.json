@@ -899,6 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Aby je wykopać, stań na wykopanym polu tuż obok (północ, południe, wschód lub zachód).",
   "IGUI_MBLD_Refuse_DIG_DONE": "To pole jest już wykopane. Wybierz sąsiednie, które jeszcze nie jest.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Przy dodatkowym wejściu 3 pola schodów i pole przed końcem schodów muszą być już wykopane: najpierw wykop je przez „Wykop pole piwnicy”. Przy nowej piwnicy całe schody muszą być co najmniej jedno pole od tej piwnicy.",
-  "IGUI_MBLD_Basement_Partial": "Część tego kopania nie została ukończona (np. otwór wejścia lub zewnętrzne ściany z ziemi). Materiały i tak zostały zużyte. Administratorzy: zobaczcie wiersz \"basement ... failed\" w console.txt.",
+  "IGUI_MBLD_Basement_Partial": "Część tego kopania nie została ukończona (np. otwór wejścia lub zewnętrzne ściany z ziemi). Materiały i tak zostały zużyte. Powiedz administratorowi, kiedy to się stało: w logu jest wiersz \"basement ... failed\" (w grze wieloosobowej w logu serwera).",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Na tej ziemnej ścianie coś wisi (obraz, włącznik, dekoracja ścienna lub farba). Zdejmij to lub usuń, zanim zaczniesz tu kopać."
 }

@@ -899,6 +899,6 @@
   "IGUI_MBLD_Refuse_DIG_STAND": "Para cavá-lo, fique em um quadrado já cavado logo ao lado (norte, sul, leste ou oeste).",
   "IGUI_MBLD_Refuse_DIG_DONE": "Este quadrado já está cavado. Escolha um ao lado que ainda não esteja.",
   "IGUI_MBLD_Refuse_DIG_ENTRY": "Para uma entrada extra, os 3 quadrados da escada e o quadrado à frente do pé da escada já precisam estar cavados: cave-os antes com \"Cavar quadrado de porão\". Para um porão novo, deixe a escada inteira a pelo menos um quadrado deste.",
-  "IGUI_MBLD_Basement_Partial": "Parte desta escavação não foi concluída (por exemplo, a abertura da entrada ou as paredes de terra externas). Os materiais foram gastos mesmo assim. Admins: vejam a linha \"basement ... failed\" no console.txt.",
+  "IGUI_MBLD_Basement_Partial": "Parte desta escavação não foi concluída (por exemplo, a abertura da entrada ou as paredes de terra externas). Os materiais foram gastos mesmo assim. Avise um admin de quando aconteceu: o log tem uma linha \"basement ... failed\" (no multijogador, no log do servidor).",
   "IGUI_MBLD_Refuse_DIG_HUNG": "Há algo preso nesta parede de terra (um quadro, um interruptor, uma decoração de parede ou tinta). Tire ou remova antes de cavar por aqui."
 }
