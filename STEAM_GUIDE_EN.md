@@ -37,6 +37,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Placing keys[/b]: the eyedropper, toggle overlap, next recent item and undo last build are on the same page, see Quick pick bar and placing keys.
 [*] [b]Hide the toolbar button[/b]: untick Show toolbar button in OPTIONS > MODS > Build Anything, then use the hotkey.
 [*] [b]Window opacity[/b]: Window opacity in OPTIONS > MODS > Build Anything has three steps, 100%, 75% and 50%. Only the background of the Build Anything window fades; text and icons stay the same, and a change applies right away while the window is open.
+[*] [b]Show roofs on your level while building[/b]: off by default in OPTIONS > MODS > Build Anything. Tick it and, while you hold a Build Anything cursor, eaves and porch roofs on your level stay solid instead of fading out; they fade again when you put the cursor away. Only your own level counts, so the floors above are still hidden when you stand downstairs, and it changes only your own screen.
 [*] [b]First time[/b]: after you enter the game the tiles are cataloged and the window shows Cataloging tiles N%, but you can already search what is done so far.
 [/list]
 === 🧰 The build window
@@ -293,6 +294,8 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Floors from build recipes[/b]: floors and floor overlays used by build recipes from vanilla or other mods (Neat Building, for example) can be built too. They are built as tiles by this mod's rules, with no separate recipe item.
 [*] [b]Floor overlays[/b]: road markings, curbs, cracks, grime and other pictures on the ground are hung on that square's floor, the same way the map does it. The square needs a floor, and the same overlay can't go on the same floor twice (the map's own count too).
 [*] [b]Replacing or dismantling a floor, digging the ground or fire[/b]: overlays on it go with it, without refund. Rugs, ground clutter and rocks are still separate things.
+[*] [b]Half-tile (triangle) floors[/b]: triangle sidewalk tiles and other floors drawn on half a square count as floor overlays. Like the map's own, they sit on that square's floor and the other half shows the floor below, so the square needs a floor first.
+[*] [b]Half tiles with a black half[/b]: half tiles built before replaced the whole floor, leaving the other half black; lay a full floor on that square first, then place the half tile again. Half tiles built before can still be removed with Dismantle (Build Anything), refunding the floor materials you paid.
 [*] [b]Wall overlays[/b]: baseboards, grime, graffiti and other pictures that go on a wall stick to the wall (or window, or garage door) on that side of the square, the same way the map does it; with no wall there they are placed on their own. Signs and pictures you can pick up are still normal objects.
 [*] [b]When the wall is dismantled or destroyed[/b]: wall overlays on it go with it, without refund. Replacing the wall in place with Build Anything puts them on the new piece (tall wooden fences and other pieces with a wall edge hold them too); if the new piece can't hold them, such as a low fence, their materials are refunded in full. Vanilla Clean Graffiti and Clean Blood also wash them off, without refund.
 [*] [b]Wall overlays placed on their own before[/b]: ones built with 0.8.0 or earlier move onto the wall when their area loads, if that side has a wall, and dismantling them with Build Anything still refunds what you paid; ones without a wall stay as they are. If you build a wall on that side later, the overlay moves onto it the next time the area loads.
@@ -544,7 +547,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [list]
 [*] [b]Which level[/b]: each item needs the skill level of the matching vanilla recipe, see the table.
 [*] [b]Which skill[/b]: follows the kind of material it is costed as, so anything costed as wood needs Carpentry.
-[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights, floor overlays and water.
+[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights, floor overlays (half-tile floors included) and water.
 [*] [b]Wells and hand pumps[/b]: a well needs Masonry 4, a hand pump Welding 5.
 [*] [b]Skill too low[/b]: the cursor square turns red, and the box by the mouse and the notice say which skill and level you need.
 [*] [b]Details[/b]: an extra line such as Skill: Carpentry 2, with your level and a warning when it's too low.
@@ -602,6 +605,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [*] [b]Lights placed later[/b]: when the room has only one group of switches, lights placed in it later are wired too when possible.
 [*] [b]When it doesn't wire[/b]: several groups of switches in the room, a full circuit, too far from the switch, or no permission, with a notice saying why.
 [*] [b]Too big or not closed[/b]: placing a switch there gives a This isn't a closed room notice, so wire it by hand.
+[*] [b]Below ground[/b]: basements have no room data in the game, so lights are not wired automatically and placing a switch gives the same This isn't a closed room notice; right-click the switch, choose Wiring... (Build Anything) and click the lights one by one in wiring mode.
 [*] [b]When there is no notice[/b]: a light placed somewhere not closed, or with no switch within 16 tiles on the same level, is not wired and no notice appears.
 [*] [b]If it doesn't wire[/b]: wire it by hand, see the next section.
 [/list]
@@ -720,6 +724,8 @@ Draw a whole building on the ground as a blueprint first (only a ghost, nothing 
 [list]
 [*] [b]Select[/b]: hold the left button and drag a box; selected pieces turn cyan and the toolbar gets another row: Move, Rotate 90°, Copy, Delete, Save as new. Hold Shift to include every floor.
 [*] [b]Move, Copy[/b]: the selected pieces follow the mouse; click to drop, R to rotate 90°, right-click to cancel. What you drop matches the ghost; if some pieces can't turn, a notice says so as soon as you press R.
+[*] [b]Copy in a row[/b]: after pressing Copy, hold the left button where you want the copy and drag sideways; copies line up one after another along whichever way you dragged further (east-west or north-south), spaced by the width of the selection. Every copy shows a ghost, and the tooltip shows how many copies and pieces.
+[*] [b]Dropping the row[/b]: release to drop them all at once as one step; one Undo removes the whole row. The number of copies is capped to what fits (64 tiles per side, 4,096 pieces); a single click still drops one copy.
 [*] [b]Rotate 90°[/b]: walls, doors and windows move to the matching edge. Wall corners, stairs and furniture with only one facing move but keep their facing, and a notice says how many.
 [*] [b]Delete[/b]: the Delete button or the Delete key.
 [*] [b]Save as new[/b]: type a name to save the selected pieces as a new blueprint in the same place.
@@ -804,8 +810,11 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]Start[/b]: press Build from blueprint in the blueprint panel, and your character walks over and builds batch by batch. Materials and XP work as when you build by hand, and the server still checks distance, safehouse, materials and skill for every piece.
 [*] [b]Server owners can turn it off[/b]: with the sandbox option Allow building from blueprints off it can't start; planning, the library and the materials list still work. See Sandbox options and defaults.
-[*] [b]Order[/b]: floors first, then walls, posts, door frames, window frames and fences, then stairs, doors, windows and curtains, roofs, and finally furniture and everything else; within each step, lower floors and closer pieces first. A floor one level up waits until the walls below it are built.
-[*] [b]A batch[/b]: the nearest pieces of the same item on the same floor, up to Most items at once; each garage door is a batch of its own.
+[*] [b]Order[/b]: floors first, then walls, posts, door frames, window frames and fences, then stairs, doors, windows and curtains, roofs, and finally furniture and everything else; within each step, lower floors first, and apart from floors, closer pieces first. A floor one level up waits until the walls below it are built.
+[*] [b]Floors row by row[/b]: starting from the corner of the blueprint area nearest to you, one row is finished before the next, going back and forth. If it stops and you press Build from blueprint again, it starts over from whichever corner is nearest to you then.
+[*] [b]Very large blueprints[/b]: when sorting thousands of floor pieces takes more than 3 seconds, a short stretch near you is built first, then it goes back to the corner and continues row by row.
+[*] [b]Things laid on a floor[/b]: rugs, half-tile floors and the like on the same square wait until that square's floor is built; if the floor is short on materials or can't be built, they wait too.
+[*] [b]A batch[/b]: the next pieces of the same item on the same floor in the order above, up to Most items at once; each garage door is a batch of its own.
 [*] [b]Build recipes[/b]: built square by square as in vanilla; skipped when materials, tools or skill are missing or it's too dark.
 [*] [b]All built[/b]: a notice says it's done, and the blueprint on the ground is put away by itself. If the blueprint can't be saved, it stays on the ground and the notice asks you to check your disk space, then press Put away in the blueprint panel.
 [*] [b]What can't be built this round[/b]: pieces short on materials or skill, blocked, too far or not available here are skipped and the rest go on; when nothing more can be built, one summary says how many are left and why. Fix that and press Build from blueprint again to build only the rest.
@@ -880,6 +889,8 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]How[/b]: press Capture a building in the library, then hold the left button and drag a rectangle, up to 64 tiles per side; on release it reads 4 floors up from your floor. Buildings from the map and ones anyone built both work.
 [*] [b]Result[/b]: how many pieces of how many kinds can be kept, and how many were left out and why; type a name and press Save Blueprint, then place it from the library.
+[*] [b]Choosing floors[/b]: when two or more floors in the area have something on them, the result lists each floor with how many pieces were read, all ticked. Untick one and the piece count and reasons update right away; only the ticked floors are saved.
+[*] [b]Keeping only upper floors[/b]: the lowest ticked floor becomes floor 1 of the blueprint, and unticked floors in between stay empty; with only upper floors ticked, the landing at the top of the stairs is kept as a regular floor.
 [*] [b]Left out[/b]: things turned off on this server, fixtures with special functions, trees, plants and crops, natural ground (grass, dirt), multi-tile objects sticking out of the area, and tiles Build Anything can't build; items on the ground, what's inside containers, vehicles and corpses aren't kept either.
 [*] [b]Landings from ramps and stairs[/b]: when a whole ramp or staircase is inside the area, its landing isn't kept separately, and the ramp or stairs add it again when built from the blueprint; when only the top part is inside, the landing is kept as a regular floor.
 [*] [b]Over 4,096 pieces[/b]: only part is kept; select a smaller area and save it in parts to keep everything.
@@ -909,6 +920,7 @@ Pick a sloped roof, drag over the house's footprint on the ground, and the whole
 [list]
 [*] [b]Select and erase in planning[/b]: A sets the first corner, A again sets the other; B stops.
 [*] [b]Placing on the ground[/b]: LB/RB rotate 90°, A places, X goes back to the original spot, B cancels.
+[*] [b]Copy in planning[/b]: one copy at a time; it can't be dragged into a row.
 [*] [b]Blueprint panel[/b]: LB/RB switch tabs; on the floor plan, move with the D-pad and press A to see where that tile's pieces are.
 [*] [b]Capture a building[/b]: mouse only.
 [*] [b]Roof Helper[/b]: dragging an area needs a mouse.
@@ -987,7 +999,7 @@ The other page, Minidoracat Build Anything: what can be built, has 25 checkboxes
 [table]
 [tr][th]Option[/th][th]Covers[/th][/tr]
 [tr][td]Floor[/td][td]Floors, including flat roof floors[/td][/tr]
-[tr][td]Floor overlay[/td][td]Rugs, road markings and other overlays laid on a floor[/td][/tr]
+[tr][td]Floor overlay[/td][td]Rugs, road markings, half-tile (triangle) floors and other overlays laid on a floor[/td][/tr]
 [tr][td]Water[/td][td]Water dug into natural ground at ground level, off by default[/td][/tr]
 [tr][td]Wall[/td][td]Walls, including corner walls that cover two sides. Corner posts are under Post[/td][/tr]
 [tr][td]Fence[/td][td]Fences and railings you can climb over[/td][/tr]
