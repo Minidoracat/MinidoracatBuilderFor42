@@ -35,6 +35,7 @@ local OTHER = { N = "W", W = "N" }
 -- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
 -- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
+-- Basement.saved＝伺服器與單機的帳本記的房號（BasementLedger 設：get(x, y)＝房號或 nil、put(x, y, 房號)＝記成了沒）；客戶端是 nil
 local cells, blocks, bof, redo, swTiles, lastId = {}, {}, {}, {}, {}, 0
 
 local function inRange(x, y)
@@ -887,6 +888,48 @@ local function renumber(id, room, n)
     return true
 end
 
+-- 塊 id 照帳本記的房號分房（Basement.saved）：房號一樣又連在一起的格子算一間，沒記的格子當 0 號（只有一間的塊不記，整塊都是
+-- 0 號＝一間）。回 { [鍵]＝房號 }、房間數
+local function fromSaved(id)
+    local tiles, get = blocks[id].tiles, Basement.saved and Basement.saved.get
+    local label, room, n = {}, {}, 0
+    for k, t in pairs(tiles) do label[k] = get and get(t[1], t[2]) or 0 end
+    for k0, t0 in pairs(tiles) do
+        if not room[k0] then
+            n = n + 1
+            room[k0] = n
+            local stack = { t0 }
+            while #stack > 0 do
+                local t = stack[#stack]
+                stack[#stack] = nil
+                for _, d in ipairs(DIRS) do
+                    local nk = key(t[1] + d[1], t[2] + d[2])
+                    if tiles[nk] and not room[nk] and label[nk] == label[k0] then
+                        room[nk] = n
+                        stack[#stack + 1] = tiles[nk]
+                    end
+                end
+            end
+        end
+    end
+    return room, n
+end
+
+-- 塊 id 現在的分房記進帳本（Basement.saved）：和帳本記的是同一種分法就不寫，不同才把號碼不一樣的格子換掉（只有一間的塊
+-- 和沒記一樣，不寫）。寫不進去（帳本滿了）只記 log、帳本照舊：下一次開服那幾格照舊的號碼分，巡查照牆分好再推一次
+local function save(id)
+    local S, b = Basement.saved, blocks[id]
+    if not (S and b) then return end
+    local old = {}
+    for k, t in pairs(b.tiles) do old[k] = S.get(t[1], t[2]) or 0 end
+    if samePart(old, b.room, b.tiles) then return end
+    local failed = 0
+    for k, t in pairs(b.tiles) do
+        if old[k] ~= b.room[k] and not S.put(t[1], t[2], b.room[k]) then failed = failed + 1 end
+    end
+    if failed > 0 then print(LOG .. "rooms not saved for " .. failed .. " tiles") end
+end
+
 -- 照牆把塊 id 分成房間：兩格之間的邊照 Place.flagsOf（IsoRegions.calculateSquareFlags 同一份條件）算隔開，往北、往西看自己的
 -- 位元，往南、往東看鄰格的。門框、窗算隔開（門開著也算），和地面上的房子一樣。回 { [鍵]＝房號 }、房間數；有一格的格子不在
 -- （那裡沒載入）回 nil
@@ -940,8 +983,8 @@ function Basement.split(id)
 end
 
 -- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，list（新挖的格子）與要重建的棟一次登錄；專用伺服器上這一批有新格子或
--- 分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與分房，登錄失敗也推）。專用伺服器只隔間、沒挖新格時
--- 不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
+-- 分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與分房，登錄失敗也推），分房記進帳本（save）。專用伺服器
+-- 只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
 local function refresh(ids, list)
     local push = {}
     for id in pairs(ids) do
@@ -950,6 +993,7 @@ local function refresh(ids, list)
     end
     for _, t in ipairs(list) do push[cells[key(t[1], t[2])]] = true end
     local done = Basement.grow(list)
+    for id in pairs(push) do save(id) end
     local L = isServer() and MinidoracatBuilder.BasementLedger
     for id in pairs(L and push or {}) do
         local all = {}
@@ -959,17 +1003,14 @@ local function refresh(ids, list)
     return done
 end
 
--- 開服載入帳本當下（BasementLedger.start，登錄之前）：每塊試一次分房。沒載入的塊（專用伺服器這時沒有 chunk）先整塊一間，
--- 等巡查：帳本照雜湊順序加進集合，Basement.add 併塊時兩邊的房號各自保留，不整理的話一塊會帶著好幾間登錄、推給客戶端，
--- 等巡查照牆分好又整棟重登錄一次
+-- 開服載入帳本當下（BasementLedger.start，登錄之前）：每塊試一次分房。沒載入的塊（專用伺服器這時沒有 chunk）照帳本記的房號
+-- 分（fromSaved）：快照一開始就是上一次照牆分的那樣，巡查載入後算出同一種分法就不推 block，客戶端不會整棟再登錄一次
 function Basement.splitAll()
-    for id, b in pairs(blocks) do
+    for id in pairs(blocks) do
         local room, n = Basement.split(id)
-        if not room then
-            room, n = {}, 1
-            for k in pairs(b.tiles) do room[k] = 1 end
-        end
+        if not room then room, n = fromSaved(id) end
         renumber(id, room, n)
+        save(id)
     end
 end
 

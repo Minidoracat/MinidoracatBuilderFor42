@@ -1,5 +1,6 @@
 -- 本 MOD 挖的地下室的格子帳本（只在伺服器）：一格一筆，鍵＝Store.pos、
--- 值＝空表（整本共用一個對照表項）。算不算室內、哪裡是外邊以這裡為準；鍵只由伺服器寫（Server.complete → commit），
+-- 值＝{ r＝房號 }（同一塊裡號碼一樣又連在一起的格子是同一間，Basement.saved）或空表（沒記房號；只有一間的塊不記），同樣的值
+-- 整本共用一個對照表項。算不算室內、哪裡是外邊以這裡為準；鍵只由伺服器寫（Server.complete → commit），
 -- 不收客戶端指令。開服載入進 Basement 的集合、當下登錄進引擎；挖了就延後一起登錄、推給附近的玩家。
 -- 存檔在 Store（gos_MinidoracatBuilderBasements_<n>.bin，跟世界一起存檔、一起回溯）。
 if isClient() then return end
@@ -24,13 +25,34 @@ function BasementLedger:new()
     return SGlobalObjectSystem.new(self, NAME)
 end
 
--- 值只收空表
-local function valid(v)
-    if type(v) ~= "table" then return false end
-    for _ in pairs(v) do return false end
-    return true
+-- 值收任何表：r 不是正整數的當成沒記房號（不因為讀不懂房號丟掉那一格）
+local function valid(v) return type(v) == "table" end
+local function roomOf(v)
+    local r = v.r
+    return type(r) == "number" and r >= 1 and r == math.floor(r) and r or nil
 end
-local function sig() return "b" end
+local function sig(v)
+    local r = roomOf(v)
+    return r and "b" .. r or "b"
+end
+local ROOM = {} -- 房號 → 值（共用，記進去之後不改）
+
+-- 開服分房與分房變了之後寫回（Basement.splitAll、refresh）用的房號讀寫。只換帳本裡已經有的格子（鍵只由 commit 加）
+local function savedRooms()
+    return {
+        get = function(x, y)
+            local k = Store.pos(x, y, Z)
+            local v = k and S:get(k)
+            return v and roomOf(v)
+        end,
+        put = function(x, y, r)
+            local k = Store.pos(x, y, Z)
+            if not (k and S:get(k)) then return true end
+            ROOM[r] = ROOM[r] or { r = r }
+            return S:put(k, ROOM[r])
+        end,
+    }
+end
 
 -- 開服登錄，兩本帳本（本帳本與燈的帳本 Ledger）都開了才做一次：兩邊的 initSystem 結尾各叫一次，不靠系統的啟動順序。
 -- 專用伺服器先從燈的帳本記下開關格（z＝-1、在集合裡、圖是牆上開關 Rules.switchProps，Basement.setSwitchTile），再分房、
@@ -64,6 +86,7 @@ function BasementLedger:initSystem()
     self.system:setObjectModDataKeys({})
     self.system:setObjectSyncKeys({})
     S = Store.open(NAME, { id = "basements", label = "basement", valid = valid, sig = sig })
+    Basement.saved = savedRooms()
     local tiles = {}
     S:each(function(k)
         local x, y, z, edge = Store.unpos(k)

@@ -27383,11 +27383,68 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "兩端：同一份快照晚到時還在等 block 的格子一起登錄 1 次；block 只含一部分新格時剩下的重新計時、新格全到了不再計時"
         .. "（之後的 dug 不會一來就逾時）（" .. tostring(late) .. tostring(partial) .. tostring(fresh) .. "）")
 
+    -- 重開服：一塊照牆分成三間（房號記進帳本），重開時 chunk 還沒載入 → 開服照帳本記的房號分、快照一開始就是三間；客戶端照快照
+    -- 登錄 1 次，載入後巡查算出同一種分法、不推 block，客戶端不再登錄；只有一間的塊不記房號（值照舊是空表）
+    local X5 = 200 * AR + 100
+    local w5, dig5 = {}, {}
+    for x = X5, X5 + 5 do
+        w5[x] = {}
+        ug(x, X5, Z, { flags = w5[x] })
+        dig5[#dig5 + 1] = { x = x, y = X5, z = Z, role = "dig" }
+    end
+    w5[X5 + 2].cutW, w5[X5 + 4].cutW = true, true
+    ug(X5, X5 + 3, Z)
+    dig5[#dig5 + 1] = { x = X5, y = X5 + 3, z = Z, role = "dig" }
+    sp = player({ id = 9501, x = X5 + 2.5, y = X5 + 0.5, z = Z })
+    cx, cy = X5 + 2, X5
+    enter("s")
+    Ledger.commit(sp, dig5, { X5, X5, Z })
+    flush()
+    local function rooms5(BMx)
+        local seen, n = {}, 0
+        for x = X5, X5 + 5 do
+            local id, r = BMx.roomOf(x, X5, Z)
+            local k = tostring(id) .. ":" .. tostring(r)
+            if id and not seen[k] then seen[k], n = true, n + 1 end
+        end
+        return n
+    end
+    local saved5 = SB.saved.get(X5, X5) ~= nil and SB.saved.get(X5, X5) == SB.saved.get(X5 + 1, X5)
+        and SB.saved.get(X5 + 1, X5) ~= SB.saved.get(X5 + 2, X5) and SB.saved.get(X5 + 3, X5) ~= SB.saved.get(X5 + 4, X5)
+        and SB.saved.get(X5, X5 + 3) == nil and rooms5(SB) == 3 and HARNESS_DRIFT() == ""
+    ES.tile, ES.live, ES.meta = {}, {}, {}
+    local hide5 = {}
+    for x = X5, X5 + 5 do
+        hide5[x] = squares[x .. "," .. X5 .. ",-1"]
+        squares[x .. "," .. X5 .. ",-1"] = nil
+    end
+    assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))()
+    HARNESS_REOPEN(Ledger)
+    local s5 = snap()
+    local cold = rooms5(SB) == 3 and #s5 == 1
+    local a5 = EC.applies
+    for _, m in ipairs(s5) do deliver(m, 0) end
+    local once5 = EC.applies == a5 + 1 and rooms5(CB) == 3 and same(X5 - 1, X5 + 6, X5, 0)
+    for x = X5, X5 + 5 do squares[x .. "," .. X5 .. ",-1"] = hide5[x] end
+    enter("s")
+    take()
+    SB.patrol()
+    local pushed5 = take()
+    for _, m in ipairs(pushed5) do deliver(m, 0) end
+    enter("c")
+    CB.registerNear(nil)
+    local quiet5 = #pushed5 == 0 and EC.applies == a5 + 1 and rooms5(SB) == 3 and same(X5 - 1, X5 + 6, X5, 0)
+    check(saved5 and cold and once5 and quiet5,
+        "兩端：重開服前照牆分成三間（房號記進帳本、一間的塊不記），重開時沒載入照帳本分三間、快照就是三間，客戶端登錄 1 次；"
+        .. "載入後巡查分法一樣、不推 block，客戶端不再登錄（" .. tostring(saved5) .. tostring(cold) .. tostring(once5)
+        .. tostring(quiet5) .. " applies +" .. (EC.applies - a5) .. " block " .. #pushed5 .. "）")
+
     enter("s")
     SB.reset({}, 120, 120)
     SB.reset({}, 180, 180)
     SB.reset({}, 141, 140)
     SB.reset({}, 160, 160)
+    SB.reset({}, 200, 200)
     isServer, isClient, getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, sendServerCommand =
         keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
     MinidoracatBuilder.Basement = SB
