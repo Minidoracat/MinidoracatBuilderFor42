@@ -29,7 +29,9 @@ local EDGE = { N = { 0, -1 }, W = { -1, 0 } }
 local OTHER = { N = "W", W = "N" }
 
 -- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } }, box＝{ x0, y0, x1, y1 } 包圍盒（含邊），
--- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號 }
+-- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號, todo＝有還沒登錄的格子或要重建的棟
+-- （客戶端 registerNear 只看它、不走格子）；客戶端另有 v＝套用過的伺服器修訂號（block、快照）, wait＝開始等 block 的時間,
+-- fresh＝{ [鍵]＝true } 收到 dug 之後還沒等到 block 或快照的格子 }
 -- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
 -- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
@@ -56,16 +58,22 @@ function Basement.near(sq)
     return z == Z and (has(x, y, z) or has(x, y - 1, z) or has(x - 1, y, z))
 end
 
--- 兩塊併成一塊：小的那塊重標成大的。兩邊登錄過的棟都留著（bof 照格子記）
+-- 兩塊併成一塊：小的那塊重標成大的。兩邊登錄過的棟都留著（bof 照格子記）；修訂號取大的、開始等的時間取早的
 local function merge(a, b)
     if blocks[a].n < blocks[b].n then a, b = b, a end
     local A, B = blocks[a], blocks[b]
     for k, t in pairs(B.tiles) do
         A.tiles[k], cells[k], A.room[k] = t, a, B.room[k] + A.rooms
     end
-    A.n, A.rooms = A.n + B.n, A.rooms + B.rooms
+    A.n, A.rooms, A.todo = A.n + B.n, A.rooms + B.rooms, A.todo or B.todo
     local p, q = A.box, B.box
     p[1], p[2], p[3], p[4] = math.min(p[1], q[1]), math.min(p[2], q[2]), math.max(p[3], q[3]), math.max(p[4], q[4])
+    if B.v and not (A.v and A.v >= B.v) then A.v = B.v end
+    if B.wait and not (A.wait and A.wait <= B.wait) then A.wait = B.wait end
+    if B.fresh then
+        A.fresh = A.fresh or {}
+        for k in pairs(B.fresh) do A.fresh[k] = true end
+    end
     blocks[b] = nil
     return a
 end
@@ -93,7 +101,7 @@ function Basement.add(tiles)
                 local o = key(x + d[1], y + d[2])
                 r = r or (cells[o] == id and b.room[o])
             end
-            cells[k], b.n, b.tiles[k], b.room[k] = id, b.n + 1, xy, r or 1
+            cells[k], b.n, b.tiles[k], b.room[k], b.todo = id, b.n + 1, xy, r or 1, true
             local box = b.box
             box[1], box[2], box[3], box[4] = math.min(box[1], x), math.min(box[2], y), math.max(box[3], x), math.max(box[4], y)
             added[#added + 1] = xy
@@ -108,7 +116,8 @@ local function range(ax, ay)
     return (ax - 1) * A, (ay - 1) * A, (ax + 2) * A, (ay + 2) * A
 end
 
--- 客戶端收到 basements：大區 (ax, ay) 周圍 3×3 範圍內的格子整份換成 tiles（範圍外的不動、tiles 裡範圍外的不收）。
+-- 客戶端收到 basements：大區 (ax, ay) 周圍 3×3 範圍內的格子整份換成 tiles（範圍外的不動、tiles 裡範圍外的不收）；還在等
+-- block 的格子（fresh，比這份快照新的 dug）留著，範圍內的塊不再等（這一次登錄含它們）。
 -- 有格子被拿掉時連通塊整份重算（房號照舊分）；拿掉的格子從它登錄進的那一棟移除、不再算登錄過（之後又挖回來要重新登錄），
 -- 那一棟下一次登錄整棟重建；角那一格被拿掉的棟維持原狀（重建會換角，引擎找不到舊的那一棟，拿掉的格子在引擎裡留到下一次
 -- 進場）。回真的新增的那幾格
@@ -125,7 +134,7 @@ function Basement.reset(tiles, ax, ay)
     for k, id in pairs(cells) do
         local b = blocks[id]
         local t = b.tiles[k]
-        if keep[k] or t[1] < x0 or t[1] >= x1 or t[2] < y0 or t[2] >= y1 then
+        if keep[k] or (b.fresh and b.fresh[k]) or t[1] < x0 or t[1] >= x1 or t[2] < y0 or t[2] >= y1 then
             rest[#rest + 1], was[k] = t, id .. ":" .. b.room[k]
         else
             gone[#gone + 1] = k
@@ -152,6 +161,10 @@ function Basement.reset(tiles, ax, ay)
             end
             b.rooms = n
         end
+    end
+    for _, b in pairs(blocks) do
+        local box = b.box
+        if box[1] < x1 and box[3] >= x0 and box[2] < y1 and box[4] >= y0 then b.fresh, b.wait = nil, nil end
     end
     return Basement.add(inside)
 end
@@ -459,12 +472,14 @@ local function keepEmpty(vzm, def)
 end
 
 -- 專用伺服器沒有本機玩家：applyChanges 補格子房間的那段只走本機玩家的 chunkMap（BuildingRoomsEditor.java:369-411,413-436），
+-- 伺服器的 chunk 不放進 chunkMap（CellLoader.java:423、IsoCell.java:4005、IsoChunkMap.java:407-410，走 ServerMap），
 -- 已載入的格子照那段自己掛。setRoomID：不設 getRoom 回 null；接著 setRoom：Lua 的數字是 double，房間 ID 超過 2^53 時低位會丟，
 -- setRoomID 可能拿到別的房間（IsoGridSquare.java:9414-9420），用房間物件蓋掉；RecalcProperties：setRoomID 拿掉了室外旗標。
 -- 房間燈、重畫不做（伺服器不算光照、不畫，BuildingRoomsEditor.java:385-397）；尋路不看房間，新挖的格子能不能走由鋪地板、
 -- 放牆時引擎自己通知。
--- 這一棟的開關格（sw＝{ { x, y }, ... }）已載入又掛著房間就摘掉：setRoomID(-1) 之後 getRoom 回 null（IsoGridSquare.java:
--- 9220-9222），開關切換時不送房間燈（IsoLightSwitch.java:519-535）；舊建物被換掉後沒重掛的格子還指著 def 已清成 null 的
+-- 這一棟的開關格（sw＝{ { x, y }, ... }）已載入又掛著房間就摘掉（矩形裡留著的開關格：角、換地圖格，上面照樣掛，在這裡摘；
+-- chunk 重新讀進時照 metaGrid 掛回的也在下一次登錄摘）：setRoomID(-1) 之後 getRoom 回 null（IsoGridSquare.java:9220-9222），
+-- 開關切換時不送房間燈（IsoLightSwitch.java:519-535）；舊建物被換掉後沒重掛的格子還指著 def 已清成 null 的
 -- 舊房間（BREBuilding.java:230-242、IsoRoom.java:672-674），切開關會丟 NPE（IsoLightSwitch.java:520），所以不能省
 local function hang(cell, def, rects, sw)
     local room, id = def:getIsoRoom(), def:getID()
@@ -472,7 +487,7 @@ local function hang(cell, def, rects, sw)
     for _, r in ipairs(rects) do
         for x = r[1], r[1] + r[3] - 1 do
             for y = r[2], r[2] + r[4] - 1 do
-                local sq = not swTiles[key(x, y)] and cell:getGridSquare(x, y, Z)
+                local sq = cell:getGridSquare(x, y, Z)
                 if sq then
                     sq:setRoomID(id)
                     sq:setRoom(room)
@@ -711,11 +726,14 @@ local function alive(r) return cells[key(r.cx, r.cy)] ~= nil end
 -- 客戶端只登錄身邊的塊：包圍盒離任一位本機玩家 NEAR 格內。chunkMap 最寬 19 個 chunk＝152 格、半寬 76 格
 -- （IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk 載入時
 -- applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。遠的塊留著不登錄。
--- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間
+-- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間。選用的第二個參數 only＝{ [編號]＝true }：只登錄
+-- 這幾塊的格子與棟（Basement.registerNear 已經挑過身邊的）
 Basement.NEAR = 128
-local function register(list)
+local function register(list, ...)
+    local only = ...
     local server, client, near = isServer(), isClient(), nil
     local function close(id) -- 客戶端：塊 id 在身邊（用到才算，沒有要登錄的就不走玩家）
+        if only then return only[id] == true end
         if not client then return true end
         near = near or nearIds(players(), Basement.NEAR)
         return near[id] == true
@@ -824,7 +842,7 @@ local function register(list)
     return all
 end
 
--- 集合裡還沒登錄的格子與要重建的棟全部登錄（開服載入帳本當下；客戶端收到 basements 後與每遊戲分鐘，只登錄身邊的塊），一次
+-- 集合裡還沒登錄的格子與要重建的棟全部登錄（伺服器與單機開服載入帳本當下；客戶端用 registerNear），一次
 -- applyChanges。沒有要登錄的就不叫引擎。回成不成功
 function Basement.registerAll()
     local list = {}
@@ -860,6 +878,7 @@ local function renumber(id, room, n)
     if samePart(b.room, room, b.tiles) then return false end
     b.room, b.rooms = room, n
     if not isServer() then
+        b.todo = true
         for k in pairs(b.tiles) do
             local r = bof[k]
             if r and alive(r) then redo[r] = true end
@@ -920,20 +939,22 @@ function Basement.split(id)
     return room, n
 end
 
--- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，list（新挖的格子）與要重建的棟一次登錄，分法變了的塊推給附近的玩家
--- （BasementLedger.sendBlock）。專用伺服器只隔間、沒挖新格時不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
+-- 伺服器與單機：塊 ids（{ [編號]＝true }）重算分房，list（新挖的格子）與要重建的棟一次登錄；專用伺服器上這一批有新格子或
+-- 分法變了的塊推給附近的玩家（BasementLedger.sendBlock，內容是集合與分房，登錄失敗也推）。專用伺服器只隔間、沒挖新格時
+-- 不叫引擎（一棟一間，renumber 不重建）。回登錄成不成功
 local function refresh(ids, list)
-    local changed = {}
+    local push = {}
     for id in pairs(ids) do
         local room, n = Basement.split(id)
-        if room and renumber(id, room, n) then changed[#changed + 1] = id end
+        if room and renumber(id, room, n) then push[id] = true end
     end
+    for _, t in ipairs(list) do push[cells[key(t[1], t[2])]] = true end
     local done = Basement.grow(list)
-    local L = MinidoracatBuilder.BasementLedger
-    for _, id in ipairs(changed) do
+    local L = isServer() and MinidoracatBuilder.BasementLedger
+    for id in pairs(L and push or {}) do
         local all = {}
         for _, t in pairs(blocks[id].tiles) do all[#all + 1] = t end
-        if L then L.sendBlock(Basement.byRoom(all)) end
+        L.sendBlock(Basement.byRoom(all))
     end
     return done
 end
@@ -952,11 +973,12 @@ function Basement.splitAll()
     end
 end
 
--- 挖好的新格子延後一起登錄（伺服器 BasementLedger.commit、客戶端收到 dug）：每次登錄整塊重建一次房間，一次拖曳每挖好一格
+-- 伺服器與單機（BasementLedger.commit）挖好的新格子延後一起登錄：每次登錄整塊重建一次房間，一次拖曳每挖好一格
 -- 就登錄一次會越挖越慢（實機拖 32 格每次最多 177 ms）。集合、帳本、土牆照舊當下就做（呼叫端），這裡只排登錄：最後一批
 -- 加進來之後 GROW_QUIET 毫秒內沒有新的（挖一格 5 秒，Entry.duration），或第一批已經排了 GROW_MAX 毫秒（長的拖曳中途也
--- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄。伺服器與單機同一批也重算新格與 Basement.dirty 標過的塊的分房
--- （牆蓋到一半還沒圍起來時分法沒變，不重登錄）。出錯只記 log，沒登錄的格子下一次 registerAll（開服、客戶端收到 basements）補上
+-- 登錄），才把排著、還在集合裡又還沒登錄的格子一次登錄，同一批也重算新格與 Basement.dirty 標過的塊的分房
+-- （牆蓋到一半還沒圍起來時分法沒變，不重登錄）。出錯只記 log，沒登錄的格子下一次開服補上。客戶端不排：等伺服器那一批的
+-- block（Basement.await、Basement.registerNear）
 Basement.GROW_QUIET, Basement.GROW_MAX = 10000, 60000
 local due, stale, dueFirst, dueLast, dueHooked = {}, {}, 0, 0, false
 local function flushGrow()
@@ -984,13 +1006,49 @@ local function later()
 end
 function Basement.growLater(tiles)
     if #tiles == 0 then return end
-    local server = not isClient()
     for _, t in ipairs(tiles) do
         local k = key(t[1], t[2])
-        due[k] = t
-        if server then stale[k] = true end
+        due[k], stale[k] = t, true
     end
     later()
+end
+
+-- 客戶端收到 dug：新格子（Basement.add 回的）記成等 block（伺服器延後批次登錄完推來）；塊開始等的時間已經有就不動
+function Basement.await(tiles)
+    local now = getTimestampMs()
+    for _, t in ipairs(tiles) do
+        local k = key(t[1], t[2])
+        local b = blocks[cells[k]]
+        b.fresh = b.fresh or {}
+        b.fresh[k], b.wait = true, b.wait or now
+    end
+end
+
+-- 客戶端：身邊（NEAR 格內）有還沒登錄的格子或要重建的棟（todo）、而且沒在等 block 或等超過 WAIT_MS（伺服器一批最晚
+-- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）一次登錄。只走塊、不走格子；沒有
+-- 要登錄的塊不走玩家、不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。回成不成功
+Basement.WAIT_MS = Basement.GROW_MAX + 30000
+function Basement.registerNear(ids)
+    local now, pick, list, near, any = getTimestampMs(), {}, {}, nil, false
+    for id, b in pairs(blocks) do
+        if b.todo and ((ids and ids[id]) or not b.wait or now - b.wait > Basement.WAIT_MS) then
+            near = near or nearIds(players(), Basement.NEAR)
+            if near[id] then
+                pick[id], any = true, true
+                for k, t in pairs(b.tiles) do
+                    if not bof[k] then list[#list + 1] = t end
+                end
+            end
+        end
+    end
+    if not any then return true end
+    local ok = register(list, pick)
+    for id in pairs(pick) do
+        local b = blocks[id]
+        if ok then b.todo = nil end
+        if b.wait and now - b.wait > Basement.WAIT_MS then b.wait = nil end
+    end
+    return ok
 end
 
 -- 專用伺服器：(x, y) 裝上（on）或拆掉了牆上開關。裝上：記成開關格，格子掛著房間就當下摘掉（setRoomID(-1)，開關建構子才不會
@@ -1042,23 +1100,39 @@ function Basement.patrol()
     if not (ok and done) then print(LOG .. "patrol failed: " .. tostring(done)) end
 end
 
--- 客戶端：伺服器分好的房間（{ { { x, y }, ... }, ... }，每間一組格子）換掉那一塊的房號；不在同一塊的格子不收（照舊）。
--- 分法有變時那一塊登錄過的每一棟標成要重建，之後照 NEAR 登錄（呼叫端 registerAll）。回塊編號，或 nil（第一格不在集合裡）
-function Basement.setRooms(rooms)
-    local first = rooms[1] and rooms[1][1]
-    local id = first and cells[key(first[1], first[2])]
-    if not id then return nil end
-    local b = blocks[id]
-    local room, n = {}, b.rooms + #rooms
-    for k, r in pairs(b.room) do room[k] = r end
+-- 客戶端：伺服器分好的一塊房間（{ { { x, y }, ... }, ... }，每間一組格子；不在集合裡的格子不收）與修訂號 v。格子照本機的塊
+-- 分開套用（同步範圍會把一塊裁成幾個本機塊）：本機塊沒記過修訂號、或 v 比它記的大，才換房號、記下 v（較舊與重複的略過）。
+-- 分法有變時那一塊登錄過的每一棟標成要重建。訊息裡的格子不再等 block：那一塊等的格子都到了就不再等，還有沒到的從現在起
+-- 再等。回換過房號的本機塊 { [編號]＝true }（呼叫端交給 registerNear）
+function Basement.setRooms(rooms, v)
+    local at, out, now = {}, {}, getTimestampMs()
     for i, list in ipairs(rooms) do
         for _, t in ipairs(list) do
             local k = key(t[1], t[2])
-            if cells[k] == id then room[k] = b.rooms + i end
+            local id = cells[k]
+            if id then
+                at[id] = at[id] or {}
+                at[id][k] = i
+            end
         end
     end
-    renumber(id, room, n)
-    return id
+    for id, got in pairs(at) do
+        local b = blocks[id]
+        if not (b.v and b.v >= v) then
+            local room = {}
+            for k, r in pairs(b.room) do room[k] = r end
+            for k, i in pairs(got) do room[k] = b.rooms + i end
+            renumber(id, room, b.rooms + #rooms)
+            b.v, out[id] = v, true
+        end
+        if b.fresh then
+            for k in pairs(got) do b.fresh[k] = nil end
+            local left = false
+            for _ in pairs(b.fresh) do left = true break end
+            if left then b.wait = now else b.fresh, b.wait = nil, nil end
+        end
+    end
+    return out
 end
 
 -- 這格所在的塊、房號（同一塊而且同一個房號才是同一間）、塊的格數；不在集合裡回 nil

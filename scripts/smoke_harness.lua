@@ -8663,7 +8663,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r25:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r26:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -9540,6 +9540,25 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     VirtualZombieManager = { instance = { addIndoorZombiesToChunk = function(_, chunk, room)
         eng.zombie[#eng.zombie + 1] = room.def.name
     end } }
+    -- 後面的情境（客戶端同步、兩端各一份世界）要一份乾淨的假引擎：換上新的 eng 與 getWorld、BuildingRoomsEditor、
+    -- VirtualZombieManager（同一套假的），回 eng、還原函式、ug、tk、use（use(e) 換成另一份 eng，兩端各用一份 metaGrid）
+    HARNESS_ENGINE = function()
+        local keep = { eng, getWorld, BuildingRoomsEditor, VirtualZombieManager }
+        eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0,
+            newDef = newDef }
+        getWorld = function()
+            local w = realWorld()
+            w.getMetaGrid = function() return grid end
+            return w
+        end
+        BuildingRoomsEditor = { Reset = function() ed = newEditor() end, getInstance = function() return ed end }
+        VirtualZombieManager = { instance = { addIndoorZombiesToChunk = function(_, _, room)
+            eng.zombie[#eng.zombie + 1] = room.def.name
+        end } }
+        return eng, function()
+            eng, getWorld, BuildingRoomsEditor, VirtualZombieManager = keep[1], keep[2], keep[3], keep[4]
+        end, ug, tk, function(e) eng = e end
+    end
     local function liveCount()
         local n = 0
         for _, d in pairs(eng.live) do if d.n > 0 then n = n + 1 end end
@@ -10137,9 +10156,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         getSpecificPlayer = function(i) return i == 0 and near or nil end
         local n1 = #sent
         Ledger.commit(near, { { x = 3003, y = 3001, z = Z, role = "dig" } }, { 3003, 3001, Z })
-        getCell, isServer = realCell, realS
         nowMs = nowMs + Basement.GROW_QUIET
-        fire("OnTick")
+        fire("OnTick") -- 延後批次也在單機跑完（單機不推 block）
+        getCell, isServer = realCell, realS
         check(#sent == n1 and cm.n == 1 and dirtAt(3003, 3001) == "N" and dirtAt(3004, 3001) == "W"
             and dirtAt(3003, 3002) == "NW" and dirtAt(3003, 3000) == "W" and Ledger.stats().n == 10,
             "c5 單機往東挖一格：兩格之間的土牆拆掉、新外邊補上（南鄰換成西北角那張），不送 dug、重算畫面高度")
@@ -10291,6 +10310,26 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "開關格（伺服器）：已登錄後開關裝在角那格，當下摘掉房間、不收進房間清單；重登錄角那格留在矩形裡、照樣摘掉；"
                 .. "按不送 metaGrid；重新讀進回到房間燈（關，預期的限制）（" .. tostring(detached) .. tostring(kept)
                 .. tostring(quiet) .. "）")
+    end)()
+
+    -- 開關格（伺服器）：哪一棟都併不進去的開關格不登錄；拆掉開關，它照新格子排進下一批、自己起一棟
+    ;(function()
+        ug(8900, 8900)
+        local sq = realCell():getGridSquare(8900, 8900, Z)
+        local sw = eng.switch(sq)
+        Basement.add({ { 8900, 8900 } })
+        Basement.setSwitchTile(8900, 8900, true)
+        Basement.registerAll()
+        local skipped = eng.tile[tk(8900, 8900)] == nil
+        for i, o in ipairs(sq.objects) do if o == sw then table.remove(sq.objects, i) break end end
+        Basement.setSwitchTile(8900, 8900, false)
+        local keepOnline = getOnlinePlayers
+        getOnlinePlayers = function() return javaList({}) end -- 新格那一批也推 block（沒人在附近）
+        nowMs = nowMs + Basement.GROW_QUIET
+        fire("OnTick")
+        getOnlinePlayers = keepOnline
+        check(skipped and eng.live[tk(8900, 8900)] ~= nil and sq:getRoom() ~= nil,
+            "開關格（伺服器）：沒有棟可併的開關格不登錄；拆掉開關，下一批它自己起一棟、掛上房間（" .. tostring(skipped) .. "）")
     end)()
 
     -- 開服帳本照雜湊順序加進集合：中間那格最後加時兩塊併成一塊、帶著兩個房號。沒載入時整塊一間登錄一次，再叫 registerAll、
@@ -10770,10 +10809,18 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         end
         local _, rA7 = Basement.roomOf(7500, 7500, Z)
         local _, rB7 = Basement.roomOf(7501, 7500, Z)
-        check(s7 and s7.n == 4 and eng.live[tk(7500, 7500)] == s7 and eng.applies == a7 and #sent == n7 + 1
+        -- 拆牆後巡查合回一間：再推一則 block，修訂號比上一則大
+        w7.cutW = nil
+        getOnlinePlayers = function() return javaList({ s7p }) end
+        Basement.patrol()
+        getOnlinePlayers = keepOnline
+        local blk7b = sent[#sent]
+        local newer = #sent == n7 + 2 and blk7b.cmd == "block" and type(blk7.args.v) == "number"
+            and blk7b.args.v > blk7.args.v and eng.applies == a7
+        check(s7 and s7.n == 4 and eng.live[tk(7500, 7500)] == s7 and #sent == n7 + 2 and newer
             and blk7.cmd == "block" and blk7.player == s7p and #blk7.args.r == 2 and area7 == 4 and rA7 ~= rB7,
             "D6 伺服器牆隔開：分房號變了、推 block 給附近玩家（兩間），引擎那棟不重登錄（applyChanges "
-            .. (eng.applies - a7) .. " 次）")
+            .. (eng.applies - a7) .. " 次）；拆牆巡查合回一間再推一則，修訂號 v 比上一則大")
         -- 有一格沒載入時在兩間交界再挖一格：分不了房，兩間照舊各是一間（不先併房號），新格跟著它一個鄰格的那間
         for x = 7400, 7403 do ug(x, 7400, Z) end
         Basement.grow(Basement.add({ { 7400, 7400 }, { 7401, 7400 } }))
@@ -10782,7 +10829,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         squares["7403,7400,-1"] = nil
         Basement.growLater(Basement.add({ { 7402, 7400 } }))
         nowMs = nowMs + Basement.GROW_QUIET
+        getOnlinePlayers = function() return javaList({}) end -- 新格那一批也推 block（沒人在附近）
         fire("OnTick")
+        getOnlinePlayers = keepOnline
         squares["7403,7400,-1"] = keep3
         local _, ra = Basement.roomOf(7400, 7400, Z)
         local _, ra2 = Basement.roomOf(7401, 7400, Z)
@@ -26873,51 +26922,62 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "挖這一格的拖框：鋪滿；從貼著已挖格子的那格一圈圈往外排，接不上的照原順序放最後 " .. table.concat(got, " "))
     BM.reset({}, math.floor(90100 / BM.AREA), math.floor(90100 / BM.AREA))
 
-    -- 同步（審查 F8、F11）：多人收 dug／分段的 basements 驗資料、更新集合、登錄、重算高度；壞資料整則丟；單機只重算高度
-    local realIsClient, realGrow, realAll, realZ = isClient, BM.growLater, BM.registerAll, BM.recalcZ
-    local calls = {}
-    BM.growLater = function(t) calls[#calls + 1] = "grow" .. #t end
-    BM.registerAll = function() calls[#calls + 1] = "all" end
+    -- 同步（F8、F11、修訂號）：多人收 dug／分段的 basements／block 驗資料、更新集合、重算高度；客戶端只在快照收齊、收到 block、
+    -- 每分鐘檢查到走近的或等 block 等太久的塊時叫引擎（數假引擎的 applyChanges）；壞資料整則丟；單機只重算高度
+    ;(function()
+    local E, undoEngine, _, tk = HARNESS_ENGINE()
+    local realIsClient, realIsServer, realNum, realZ, realApplied = isClient, isServer, getNumActivePlayers, BM.recalcZ,
+        BM.onApplied
+    local calls, a0 = {}, 0
     BM.recalcZ = function() calls[#calls + 1] = "z" end
+    BM.onApplied = nil -- 房間燈另有測試
     local function log()
         local s = table.concat(calls, ",")
         calls = {}
         return s
     end
-    isClient = function() return true end
+    local function ap() -- 上次問過之後叫了幾次 applyChanges
+        local d = E.applies - a0
+        a0 = E.applies
+        return d
+    end
+    isClient, isServer = function() return true end, function() return false end
+    getNumActivePlayers = function() return 1 end
     local AR = BM.AREA
     local A = math.floor(90000 / AR)
-    local function seg(ax, i, n, b) -- b 一塊給一組矩形，包成一間的房間清單
+    local cur = 0
+    local function seg(ax, i, n, b, v) -- b 一塊給一組矩形，包成一間的房間清單；v 沒給用 cur
         local w = {}
         for j, blk in ipairs(b) do w[j] = { blk } end
-        C.onServerCommand("basements", { ax = ax, ay = ax, i = i, n = n, b = w })
+        C.onServerCommand("basements", { ax = ax, ay = ax, i = i, n = n, v = v or cur, b = w })
     end
     local realSend, realGet = sendClientCommand, getSpecificPlayer
     local sent, px = {}, 90000
     sendClientCommand = function(_, module, cmd) sent[#sent + 1] = module .. ":" .. cmd end
     getSpecificPlayer = function() return { getX = function() return px end, getY = function() return px end } end
 
-    -- 快照前的 dug 不登錄（Claude residual 2）；進場（OnGameStart）當下要一次，回覆沒到（伺服器限速丟掉）下一分鐘再要
+    -- 快照前的 dug 不加；進場（OnGameStart）當下要一次，回覆沒到（伺服器限速丟掉）下一分鐘再要；沒有塊時不叫引擎
     C.onServerCommand("dug", { t = { 90000, 90000, 90001, 90000 } })
-    local early = log() == "" and not BM.has(90000, 90000, -1)
+    local early = log() == "" and not BM.has(90000, 90000, -1) and ap() == 0
     fire("OnGameStart")
     local onStart = #sent
     C.askEveryMinute()
-    local asked = onStart == 1 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements" and log() == "all,all"
-    -- 快照到（一段）：含剛才那兩格，整塊一起登錄、同一塊；之後大區沒變不再要；範圍內的 dug 照登錄
+    local asked = onStart == 1 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements" and ap() == 0
+    -- 快照到（一段）：含剛才那兩格，整塊一起登錄一次、同一塊；之後大區沒變不再要；範圍內的 dug 照加、不登錄（等 block）
     seg(A, 1, 1, { { 90000, 90000, 3, 1 } })
     local sx, sy = C.basementSynced()
     local id0 = BM.blockOf(90000, 90000, -1)
-    local whole = log() == "all,z" and sx == A and sy == A and id0 ~= nil and BM.blockOf(90002, 90000, -1) == id0
+    local whole = log() == "z" and ap() == 1 and sx == A and sy == A and id0 ~= nil and BM.blockOf(90002, 90000, -1) == id0
     C.askEveryMinute()
-    local quiet = #sent == 2 and log() == "all"
+    local quiet = #sent == 2 and ap() == 0
     C.onServerCommand("dug", { t = { 90003, 90000 } })
-    local dugOk = log() == "grow1,z" and BM.has(90003, 90000, -1)
-    -- 換大區：再要；沒回再要；舊範圍外的 dug 不登錄；分兩段的快照收齊才換掉、記成新的一區，之後不再要
+    C.askEveryMinute()
+    local dugOk = log() == "z" and BM.has(90003, 90000, -1) and ap() == 0
+    -- 換大區：再要；沒回再要；舊範圍外的 dug 不加；分兩段的快照收齊才換掉、記成新的一區，之後不再要；還在等 block 的格子留著
     px = 90000 + AR
     C.askEveryMinute()
     C.askEveryMinute()
-    local moved = #sent == 4 and log() == "all,all"
+    local moved = #sent == 4 and ap() == 0
     local far = (A + 2) * AR + 10
     C.onServerCommand("dug", { t = { far, 90000 } })
     local farDrop = log() == "" and not BM.has(far, 90000, -1)
@@ -26925,52 +26985,74 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     local half = log() == "" and not BM.has(far, 90000, -1) and BM.has(90000, 90000, -1)
     seg(A + 1, 2, 2, { { 90010, 90010, 2, 1 } })
     sx = C.basementSynced()
-    local two = log() == "all,z" and BM.has(far, 90000, -1) and BM.has(90011, 90010, -1) and not BM.has(90000, 90000, -1)
-        and sx == A + 1
+    local two = log() == "z" and BM.has(far, 90000, -1) and BM.has(90011, 90010, -1) and not BM.has(90000, 90000, -1)
+        and BM.has(90003, 90000, -1) and sx == A + 1 and ap() == 0
     C.askEveryMinute()
-    local quiet2 = #sent == 4 and log() == "all"
+    local quiet2 = #sent == 4 and ap() == 0
     check(asked and quiet and moved and quiet2,
         "F8 多人：進場（OnGameStart）當下要 basements；沒收到快照（請求被限速丟掉）下一分鐘再要；收到後大區沒變不再要；換大區再要、沒回再要；"
-        .. "收到新的一區後不再要（" .. tostring(asked) .. tostring(quiet) .. tostring(moved) .. tostring(quiet2) .. " " .. #sent .. "）")
+        .. "收到新的一區後不再要；每分鐘檢查沒有走近的塊不叫引擎（" .. tostring(asked) .. tostring(quiet) .. tostring(moved)
+        .. tostring(quiet2) .. " " .. #sent .. "）")
     check(early and whole and dugOk and farDrop,
-        "F8 快照前的 dug 不登錄；快照到了含它的整塊一起登錄成同一塊（不會一格一棟）；收到的範圍內的 dug 照登錄、範圍外的不登錄")
-    check(half and two, "F11 分兩段的快照：第 1 段不動集合；收齊才換掉那一區、全部登錄、重算、記成已收到")
+        "F8 快照前的 dug 不加；快照到了含它的整塊一起登錄一次（同一塊）；範圍內的 dug 照加、不叫引擎（等 block），範圍外的不加")
+    check(half and two, "F11 分兩段的快照：第 1 段不動集合；收齊才換掉那一區、重算、記成已收到；還在等 block 的格子留著；身邊沒有塊不叫引擎")
 
-    -- block：已同步範圍內的塊換上伺服器分好的房間、重新登錄；有一格在範圍外或壞資料整則丟
-    C.onServerCommand("block", { r = { { 90010, 90010, 1, 1 }, { 90011, 90010, 1, 1 } } })
+    -- block：已同步範圍內的格子換上伺服器分好的房間、身邊的當下登錄；範圍外的格子略過（不加進集合）；壞資料、沒有 v 的丟；
+    -- 修訂號較舊的不套用
+    px = 90010
+    C.onServerCommand("block", { v = 1, r = { { 90010, 90010, 1, 1 }, { 90011, 90010, 1, 1 } } })
     local id9, ra = BM.roomOf(90010, 90010, -1)
     local id9b, rb = BM.roomOf(90011, 90010, -1)
-    local splitOk = log() == "all" and id9 ~= nil and id9 == id9b and ra ~= rb
-    C.onServerCommand("block", { r = { { 90010, 90010, 2, 1 } } })
+    local splitOk = log() == "z" and ap() == 1 and id9 ~= nil and id9 == id9b and ra ~= rb
+    C.onServerCommand("block", { v = 2, r = { { 90010, 90010, 2, 1 } } })
     local _, rc = BM.roomOf(90010, 90010, -1)
     local _, rd = BM.roomOf(90011, 90010, -1)
-    local mergeOk = log() == "all" and rc == rd
-    C.onServerCommand("block", { r = { { 90010, 90010, 1, 1 }, { (A + 3) * AR + 10, 90000, 1, 1 } } })
-    C.onServerCommand("block", { r = { { 90010, 90010, 1 }, { 90011, 90010, 1, 1 } } })
+    local mergeOk = log() == "z" and ap() == 1 and rc == rd
+    local far3 = (A + 3) * AR + 10
+    C.onServerCommand("block", { v = 3, r = { { 90010, 90010, 1, 1 }, { far3, 90000, 1, 1 } } })
     local _, re = BM.roomOf(90010, 90010, -1)
     local _, rf = BM.roomOf(90011, 90010, -1)
-    local dropOk = log() == "" and re == rf
-    check(splitOk and mergeOk and dropOk, "D6 客戶端 block：換上伺服器分好的房間並重新登錄；合回一間照收；有一格在同步範圍外、壞資料整則丟（"
-        .. tostring(splitOk) .. tostring(mergeOk) .. tostring(dropOk) .. "）")
+    local clipOk = log() == "z" and ap() == 1 and re ~= rf and not BM.has(far3, 90000, -1)
+    C.onServerCommand("block", { v = 4, r = { { 90010, 90010, 1 }, { 90011, 90010, 1, 1 } } })
+    C.onServerCommand("block", { r = { { 90010, 90010, 2, 1 } } })
+    C.onServerCommand("block", { v = 4, r = { { far3, 90000, 1, 1 } } })
+    local dropOk = log() == "" and ap() == 0 and not BM.has(far3, 90000, -1)
+    C.onServerCommand("block", { v = 2, r = { { 90010, 90010, 2, 1 } } })
+    local _, rg = BM.roomOf(90010, 90010, -1)
+    local _, rh = BM.roomOf(90011, 90010, -1)
+    local oldOk = ap() == 0 and rg == re and rh == rf and log() == "z"
+    check(splitOk and mergeOk and clipOk and dropOk and oldOk,
+        "D6 客戶端 block：換上伺服器分好的房間並登錄一次；合回一間照收；範圍外的格子略過、範圍內的照收；壞資料、沒有 v、全在範圍外的丟；"
+        .. "修訂號較舊的不套用（" .. tostring(splitOk) .. tostring(mergeOk) .. tostring(clipOk) .. tostring(dropOk)
+        .. tostring(oldOk) .. "）")
 
-    -- 段落亂掉：沒有第 1 段、跳號、大區不同、段數不同、中間一段壞 → 丟掉暫存，集合不動
-    seg(A + 1, 2, 2, { { 90020, 90020, 1, 1 } })
-    seg(A + 1, 1, 3, { { 90020, 90020, 1, 1 } })
-    seg(A + 1, 3, 3, { { 90021, 90020, 1, 1 } })
-    seg(A + 1, 2, 3, { { 90022, 90020, 1, 1 } })
-    seg(A + 1, 1, 2, { { 90020, 90020, 1, 1 } })
-    C.onServerCommand("basements", { ax = A + 1, ay = A, i = 2, n = 2, b = { { { 90021, 90020, 1, 1 } } } })
-    seg(A + 1, 1, 2, { { 90020, 90020, 1, 1 } })
-    seg(A + 1, 2, 3, { { 90021, 90020, 1, 1 } })
-    seg(A + 1, 1, 2, { { 90020, 90020, 1, 1 } })
-    seg(A + 1, 2, 2, { { 90021, 90020, 21, 20 } })
-    seg(A + 1, 2, 2, { { 90021, 90020, 1, 1 } })
+    -- 快照分段不保序：(ax, ay, n, v) 一樣的是同一份，先第 2 段再第 1 段照樣收齊；收到一半時來了較舊的另一份，那一段丟掉；
+    -- 同一區修訂號較舊的整份丟掉；重複的段只算一次；中間一段壞 → 丟掉暫存，集合與已收到的區不動
+    seg(A + 1, 2, 2, { { 90020, 90020, 1, 1 } }, 5)
+    seg(A + 1, 1, 3, { { 90022, 90020, 1, 1 } }, 4)
+    seg(A + 1, 1, 2, { { 90021, 90020, 1, 1 } }, 5)
+    local ooo = log() == "z" and BM.has(90020, 90020, -1) and BM.has(90021, 90020, -1) and not BM.has(90022, 90020, -1)
+    seg(A + 1, 1, 1, { { 90030, 90030, 1, 1 } }, 4)
+    local stale = log() == "" and not BM.has(90030, 90030, -1) and BM.has(90020, 90020, -1)
+    seg(A + 1, 1, 2, { { 90020, 90020, 1, 1 } }, 6)
+    seg(A + 1, 1, 2, { { 90020, 90020, 1, 1 } }, 6)
+    local dupWait = log() == ""
+    seg(A + 1, 2, 2, { { 90040, 90040, 1, 1 } }, 6)
+    local dup = dupWait and log() == "z" and BM.has(90040, 90040, -1) and not BM.has(90021, 90020, -1)
+    seg(A + 1, 1, 2, { { 90050, 90050, 1, 1 } }, 7)
+    seg(A + 1, 2, 2, { { 90051, 90050, 21, 20 } }, 7)
+    seg(A + 1, 2, 2, { { 90052, 90050, 1, 1 } }, 7)
     sx = C.basementSynced()
-    check(log() == "" and not BM.has(90020, 90020, -1) and not BM.has(90021, 90020, -1) and BM.has(90011, 90010, -1)
-        and sx == A + 1, "F11 段落亂掉（沒有第 1 段、跳號、大區不同、段數不同、中間一段壞）：丟掉暫存，集合與已收到的區不動")
+    local broken = log() == "" and not BM.has(90050, 90050, -1) and not BM.has(90052, 90050, -1)
+        and BM.has(90040, 90040, -1) and sx == A + 1
+    check(ooo and stale and dup and broken,
+        "F11 快照分段不保序：先 2 後 1 照樣收齊；收到一半時較舊的另一份丟掉；同一區較舊的整份丟掉；重複的段只算一次；中間一段壞丟掉暫存（"
+        .. tostring(ooo) .. tostring(stale) .. tostring(dup) .. tostring(broken) .. "）")
 
-    -- 壞資料整則丟：超過 400 格、長度不是 4 的倍數、出了範圍、大區不是整數、舊格式（沒有 i／n）、i 大於 n、
+    -- 壞資料整則丟：超過 400 格、長度不是 4 的倍數、出了範圍、大區不是整數、舊格式（沒有 i／n、沒有 v）、i 大於 n、
     -- 一段超過 500 個長方形；剛好 500 個照收；空的快照清掉那一區
+    cur = 7
+    ap() -- 上面幾份快照的登錄不算
     local function rects(count, y)
         local r = {}
         for j = 0, count - 1 do
@@ -26981,23 +27063,324 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     seg(A + 1, 1, 1, { { 90020, 90020, 21, 20 } })
     seg(A + 1, 1, 1, { { 90020, 90020, 1, 1, 90030 } })
     seg(A + 1, 1, 1, { { 1, 1, 1, 1 } })
-    C.onServerCommand("basements", { ax = A + 0.5, ay = A, i = 1, n = 1, b = {} })
-    C.onServerCommand("basements", { ax = A + 1, ay = A + 1, b = {} })
+    C.onServerCommand("basements", { ax = A + 0.5, ay = A, i = 1, n = 1, v = cur, b = {} })
+    C.onServerCommand("basements", { ax = A + 1, ay = A + 1, v = cur, b = {} })
+    C.onServerCommand("basements", { ax = A + 1, ay = A + 1, i = 1, n = 1, b = {} })
     seg(A + 1, 2, 1, {})
-    C.onServerCommand("basements", { ax = A + 1, ay = A + 1, i = 1, n = 1, b = { { 90020, 90020, 1, 1 } } }) -- 沒分房的舊格式
+    C.onServerCommand("basements", { ax = A + 1, ay = A + 1, i = 1, n = 1, v = cur, b = { { 90020, 90020, 1, 1 } } }) -- 沒分房的舊格式
     seg(A + 1, 1, 1, { rects(251, 90102), rects(250, 90104) })
-    local badArea = log() == "" and BM.has(90010, 90010, -1) and not BM.has(90020, 90020, -1)
-        and not BM.has(90000, 90102, -1)
+    local badArea = log() == "" and BM.has(90040, 90040, -1) and not BM.has(90000, 90102, -1)
     seg(A + 1, 1, 1, { rects(250, 90102), rects(250, 90104) })
-    local full500 = log() == "all,z" and BM.has(90249, 90104, -1) and not BM.has(90010, 90010, -1)
+    local full500 = log() == "z" and ap() == 1 and BM.has(90249, 90104, -1) and not BM.has(90040, 90040, -1)
     seg(A + 1, 1, 1, {})
-    local emptied = log() == "all,z" and not BM.has(90249, 90104, -1)
+    local emptied = log() == "z" and ap() == 0 and not BM.has(90249, 90104, -1)
     isClient = function() return false end
     C.onServerCommand("dug", { t = { 90040, 90040 } })
     local sp = log() == "z" and not BM.has(90040, 90040, -1)
+    isClient = function() return true end
     check(badArea and full500 and emptied and sp,
-        "dug／basements 壞資料整則丟（超過 400 格、長度、範圍、非整數、舊格式、i>n、一段 501 個長方形）；500 個照收；空快照清掉那一區；單機只重算高度")
+        "dug／basements 壞資料整則丟（超過 400 格、長度、範圍、非整數、舊格式、沒有 v、i>n、一段 501 個長方形）；500 個照收、登錄一次；"
+        .. "空快照清掉那一區、不叫引擎；單機只重算高度")
+
+    -- 叫引擎的時機：快照 1 次；挖 8 格（每格 dug、5 秒、每分鐘檢查兩次）0 次；伺服器那一批的 block 1 次；走近一座沒登錄過的
+    -- 地下室，下一次每分鐘檢查 1 次；挖了之後一直沒等到 block：等滿 WAIT_MS 之前的每分鐘檢查 0 次，過了那一次 1 次
+    local AQ = A + 10
+    local Q = AQ * AR + 100
+    px = Q
+    seg(AQ, 1, 1, { { Q, Q, 4, 1 }, { Q + 200, Q + 200, 2, 1 } }, 0)
+    local t8 = { ap() }
+    for r = 1, 8 do
+        C.onServerCommand("dug", { t = { Q + 3 + r, Q } })
+        nowMs = nowMs + 5000
+        C.askEveryMinute()
+        C.askEveryMinute()
+    end
+    t8[2] = ap()
+    C.onServerCommand("block", { v = 8, r = { { Q, Q, 12, 1 } } })
+    t8[3] = ap()
+    local one = E.live[tk(Q, Q)]
+    px = Q + 200
+    C.askEveryMinute()
+    t8[4] = ap()
+    C.onServerCommand("dug", { t = { Q + 202, Q + 200 } })
+    for _, dt in ipairs({ 30000, 30000, 29000 }) do
+        nowMs = nowMs + dt
+        C.askEveryMinute()
+    end
+    t8[5] = ap()
+    nowMs = nowMs + 2000
+    C.askEveryMinute()
+    t8[6] = ap()
+    C.askEveryMinute()
+    t8[7] = ap()
+    check(table.concat(t8, ",") == "1,0,1,1,0,1,0" and one and one.n == 12 and BM.has(Q + 202, Q + 200, -1)
+            and E.live[tk(Q + 200, Q + 200)] and E.live[tk(Q + 200, Q + 200)].n == 3,
+        "客戶端叫引擎的時機：快照 1 次、挖 8 格 0 次、block 1 次（整棟 12 格）、走近沒登錄過的那座 1 次、等 block 90 秒內 0 次、"
+        .. "過了 1 次、之後不再叫（" .. table.concat(t8, ",") .. "）")
+
+    -- 兩塊各自登錄後挖一格接起來：dug 與每分鐘檢查都不叫引擎，等到 block 才登錄一次（不會先各自登錄、block 到了再登錄一次）
+    local R = (A + 20) * AR + 100
+    local ov0 = E.overlap
+    px = R
+    seg(A + 20, 1, 1, { { R, R, 2, 1 }, { R + 3, R, 2, 1 } }, 0)
+    local j1 = ap()
+    C.onServerCommand("dug", { t = { R + 2, R } })
+    C.askEveryMinute()
+    local j2 = ap()
+    C.onServerCommand("block", { v = 9, r = { { R, R, 5, 1 } } })
+    local j3 = ap()
+    local nj = (E.live[tk(R, R)] or { n = 0 }).n + (E.live[tk(R + 3, R)] or { n = 0 }).n
+    check(j1 == 1 and j2 == 0 and j3 == 1 and nj == 5 and E.overlap == ov0,
+        "挖通客戶端兩塊：dug、每分鐘檢查 0 次，block 到了登錄 1 次（新格併進貼著的那一棟，兩棟共 5 格、沒有重疊登錄）（"
+        .. j1 .. j2 .. j3 .. " " .. nj .. "）")
+
+    BM.reset({}, A, A)
+    BM.reset({}, A + 10, A + 10)
+    BM.reset({}, A + 20, A + 20)
     sendClientCommand, getSpecificPlayer = realSend, realGet
+    isClient, isServer, getNumActivePlayers, BM.recalcZ, BM.onApplied = realIsClient, realIsServer, realNum, realZ, realApplied
+    undoEngine()
+    end)()
+
+    -- 兩端各一份世界：伺服器（B.Basement、BasementLedger，一份假引擎）產生 dug／block／basements，客戶端（另載一份
+    -- Basement.lua、Client.onServerCommand，另一份假引擎）收。指令不保序（PacketTypes.java:508）
+    ;(function()
+    local SB, Ledger, Z = B.Basement, B.BasementLedger, -1
+    local ES, undoS, ug, tk, use = HARNESS_ENGINE()
+    local EC, undoC = HARNESS_ENGINE()
+    MinidoracatBuilder.Basement = nil
+    assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))()
+    local CB = MinidoracatBuilder.Basement
+    MinidoracatBuilder.Basement = SB
+    CB.recalcZ = function() end
+    local keep = { isServer, isClient, getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, sendServerCommand }
+    local yes, no = function() return true end, function() return false end
+    local q, cx, cy, sp = {}, 0, 0, nil
+    sendServerCommand = function(_, _, cmd, args) if args then q[#q + 1] = { cmd = cmd, args = args } end end
+    getOnlinePlayers = function() return javaList({ sp }) end
+    getNumActivePlayers = function() return 1 end
+    getSpecificPlayer = function(i)
+        return i == 0 and { getX = function() return cx end, getY = function() return cy end } or nil
+    end
+    local function enter(w)
+        if w == "s" then
+            MinidoracatBuilder.Basement, isServer, isClient = SB, yes, no
+            use(ES)
+        else
+            MinidoracatBuilder.Basement, isServer, isClient = CB, no, yes
+            use(EC)
+        end
+    end
+    local function take()
+        local m = q
+        q = {}
+        return m
+    end
+    local function snap() -- 伺服器送 sp 那一區的快照
+        enter("s")
+        take()
+        Ledger.send(sp)
+        return take()
+    end
+    local function dig(tiles) -- 伺服器挖好 tiles：回 dug（BasementLedger.commit 的格式）、排延後批次
+        enter("s")
+        local t = {}
+        for _, p in ipairs(tiles) do t[#t + 1], t[#t + 2] = p[1], p[2] end
+        SB.growLater(SB.add(tiles))
+        return { cmd = "dug", args = { t = t } }
+    end
+    local function flush() -- 伺服器那一批跑完：回推出去的 block
+        enter("s")
+        take()
+        nowMs = nowMs + SB.GROW_QUIET
+        fire("OnTick")
+        return take()
+    end
+    local AR = SB.AREA
+    local function shift(a, d) -- 座標平移 d 格（大區平移 d / AREA）
+        local function rects(r)
+            local o = {}
+            for i = 1, #r do o[i] = r[i] + ((i % 4 == 1 or i % 4 == 2) and d or 0) end
+            return o
+        end
+        if a.t then
+            local o = {}
+            for i = 1, #a.t do o[i] = a.t[i] + d end
+            return { t = o }
+        end
+        if a.r then
+            local o = {}
+            for i, r in ipairs(a.r) do o[i] = rects(r) end
+            return { v = a.v, r = o }
+        end
+        local b = {}
+        for i, blk in ipairs(a.b) do
+            b[i] = {}
+            for j, r in ipairs(blk) do b[i][j] = rects(r) end
+        end
+        local dA = math.floor(d / AR)
+        return { ax = a.ax + dA, ay = a.ay + dA, i = a.i, n = a.n, v = a.v, b = b }
+    end
+    local function deliver(m, d)
+        enter("c")
+        B.Client.onServerCommand(m.cmd, shift(m.args, d))
+    end
+    local function same(x0, x1, y, d) -- 這一列伺服器的格子與分間（平移 d）和客戶端的一樣
+        local f, g = {}, {}
+        for x = x0, x1 do
+            local sid, sr = SB.roomOf(x, y, Z)
+            local cid, cr = CB.roomOf(x + d, y + d, Z)
+            if (sid == nil) ~= (cid == nil) then return false end
+            if sid then
+                local a, b = sid .. ":" .. sr, cid .. ":" .. cr
+                if f[a] == nil and g[b] == nil then
+                    f[a], g[b] = b, a
+                elseif f[a] ~= b or g[b] ~= a then
+                    return false
+                end
+            end
+        end
+        return true
+    end
+
+    -- 任意順序（含重複投遞）收 dug1、dug2、block v1、block v2、快照 v0、之後的快照：最後的格子與分間都和伺服器一樣，
+    -- 叫引擎的次數不超過訊息數
+    local X0 = 120 * AR + 100
+    local w2 = {}
+    for x = X0, X0 + 4 do ug(x, X0, Z, { flags = x == X0 + 4 and w2 or {} }) end
+    sp = player({ x = X0 + 2.5, y = X0 + 0.5, z = Z })
+    enter("s")
+    SB.grow(SB.add({ { X0, X0 }, { X0 + 1, X0 }, { X0 + 2, X0 } }))
+    local msg = { s0 = snap()[1] }
+    msg.d1 = dig({ { X0 + 3, X0 } })
+    msg.b1 = flush()[1]
+    w2.cutW = true
+    msg.d2 = dig({ { X0 + 4, X0 } })
+    msg.b2 = flush()[1]
+    msg.s3 = snap()[1]
+    local made = msg.s0 and msg.b1 and msg.b2 and msg.s3 and msg.b1.cmd == "block" and msg.b2.cmd == "block"
+        and #msg.b2.args.r == 2 and msg.b1.args.v > msg.s0.args.v and msg.b2.args.v > msg.b1.args.v
+        and msg.s3.args.v >= msg.b2.args.v
+    local perms = { { "s0", "d1", "b1", "d2", "b2", "s3" }, { "s3", "s0", "b2", "b1", "d2", "d1" },
+        { "d1", "d2", "b1", "b2", "s0", "s3" }, { "s0", "b2", "d1", "b1", "d2", "s3" },
+        { "s0", "d2", "d1", "s3", "b1", "b2", "s0" }, { "b1", "b2", "s0", "d1", "d2", "s3", "b1" },
+        { "s0", "d1", "d2", "s3", "b1", "b2" }, { "b2", "s3", "s0", "b1", "d1", "d2", "b2" } }
+    local bad = {}
+    for k, p in ipairs(perms) do
+        local d = k * 3 * AR
+        cx, cy = X0 + 2 + d, X0 + d
+        local a = EC.applies
+        for _, name in ipairs(p) do if made then deliver(msg[name], d) end end
+        if not (made and same(X0 - 1, X0 + 5, X0, d) and EC.applies - a <= #p) then bad[#bad + 1] = k end
+    end
+    check(made and #bad == 0, "兩端：dug、block、快照任意順序（8 種，含重複投遞）收完，客戶端的格子與分間都和伺服器一樣、"
+        .. "叫引擎不超過訊息數（不對的排列：" .. table.concat(bad, ",") .. "）")
+
+    -- 伺服器的一塊跨過客戶端同步範圍的邊（範圍內裁成兩個本機塊）：牆隔開後的 block 兩塊都換上新分間，範圍外的格子不加
+    local E = 142 * AR
+    local Y1 = 140 * AR + 100
+    local wa, wb, U = {}, {}, {}
+    for x = E - 2, E + 1 do
+        U[#U + 1], U[#U + 2] = { x, Y1 }, { x, Y1 + 2 }
+        ug(x, Y1, Z, { flags = x == E - 1 and wa or {} })
+        ug(x, Y1 + 2, Z, { flags = x == E - 1 and wb or {} })
+    end
+    U[#U + 1] = { E + 1, Y1 + 1 }
+    ug(E + 1, Y1 + 1, Z)
+    sp = player({ x = E - 2 * AR + 10.5, y = Y1 + 0.5, z = Z }) -- 快照的大區＝E / AR - 2：同步範圍的東邊界剛好是 E
+    enter("s")
+    SB.grow(SB.add(U))
+    cx, cy = E - 2, Y1
+    for _, m in ipairs(snap()) do deliver(m, 0) end
+    local cut = CB.has(E - 1, Y1, Z) and CB.blockOf(E - 2, Y1, Z) ~= CB.blockOf(E - 2, Y1 + 2, Z) and not CB.has(E, Y1, Z)
+    wa.cutW, wb.cutW = true, true
+    enter("s")
+    SB.dirty(E - 1, Y1, Z)
+    local b10 = flush()
+    local a10 = EC.applies
+    for _, m in ipairs(b10) do deliver(m, 0) end
+    local _, r1 = CB.roomOf(E - 2, Y1, Z)
+    local _, r2 = CB.roomOf(E - 1, Y1, Z)
+    local _, r3 = CB.roomOf(E - 2, Y1 + 2, Z)
+    local _, r4 = CB.roomOf(E - 1, Y1 + 2, Z)
+    check(cut and #b10 == 1 and r1 ~= r2 and r3 ~= r4 and not CB.has(E, Y1, Z) and not CB.has(E + 1, Y1 + 1, Z)
+        and EC.applies - a10 == 1,
+        "兩端：跨過同步範圍邊的一塊（客戶端裁成兩塊）隔間後，block 讓兩塊都換上新分間、一起登錄 1 次，範圍外的格子不加（"
+        .. tostring(cut) .. #b10 .. tostring(r1 ~= r2) .. tostring(r3 ~= r4) .. (EC.applies - a10) .. "）")
+
+    -- 客戶端兩塊各自登錄後挖通，再在原本小的那塊裡隔間：小的那一棟換成兩間，大的那一棟照新的分法（新格併進它、一間）
+    local X2 = 160 * AR + 100
+    local w11 = {}
+    for x = X2, X2 + 6 do ug(x, X2, Z, { flags = x == X2 + 6 and w11 or {} }) end
+    sp = player({ x = X2 + 3.5, y = X2 + 0.5, z = Z })
+    enter("s")
+    SB.grow(SB.add({ { X2, X2 }, { X2 + 1, X2 }, { X2 + 2, X2 }, { X2 + 3, X2 }, { X2 + 5, X2 }, { X2 + 6, X2 } }))
+    cx, cy = X2 + 3, X2
+    for _, m in ipairs(snap()) do deliver(m, 0) end
+    local tL0, tS0 = EC.tile[tk(X2, X2)], EC.tile[tk(X2 + 5, X2)]
+    local twoB = tL0 and tS0 and tL0.bld ~= tS0.bld
+    w11.cutW = true
+    local d11 = dig({ { X2 + 4, X2 } })
+    local b11 = flush()
+    deliver(d11, 0)
+    local a11 = EC.applies
+    for _, m in ipairs(b11) do deliver(m, 0) end
+    local tL, t4, t5, t6 = EC.tile[tk(X2, X2)], EC.tile[tk(X2 + 4, X2)], EC.tile[tk(X2 + 5, X2)], EC.tile[tk(X2 + 6, X2)]
+    check(twoB and #b11 == 1 and #b11[1].args.r == 2 and EC.applies - a11 == 1 and tL and t4 == tL and t5 and t6
+        and t5 ~= t6 and t5.bld == t6.bld and t5.bld ~= tL.bld and same(X2 - 1, X2 + 7, X2, 0),
+        "兩端：客戶端兩塊各自登錄後挖通、在小的那塊隔間：block 到了登錄 1 次，小的那一棟換成兩間、大的那一棟（含新格）一間，"
+        .. "分間和伺服器一樣")
+
+    -- 等 block 的計時：同一份快照晚到（修訂號一樣照收）時，還在等 block 的格子留著、那一塊不再等，這一次一起登錄；
+    -- block 只含一部分新格：剩下的從收到它起重新計時；新格全到了不再計時（之後的 dug 從頭算）
+    local X3 = 180 * AR + 100
+    for x = X3, X3 + 7 do ug(x, X3, Z) end
+    sp = player({ x = X3 + 1.5, y = X3 + 0.5, z = Z })
+    enter("s")
+    SB.grow(SB.add({ { X3, X3 }, { X3 + 1, X3 }, { X3 + 2, X3 } }))
+    cx, cy = X3 + 1, X3
+    local s15 = snap()
+    for _, m in ipairs(s15) do deliver(m, 0) end
+    deliver(dig({ { X3 + 3, X3 } }), 0)
+    local a15 = EC.applies
+    for _, m in ipairs(s15) do deliver(m, 0) end
+    local late = EC.applies - a15 == 1 and CB.has(X3 + 3, X3, Z) and EC.tile[tk(X3 + 3, X3)] ~= nil
+    for _, m in ipairs(flush()) do deliver(m, 0) end
+    local d4 = dig({ { X3 + 4, X3 } })
+    local b4 = flush()
+    deliver(d4, 0)
+    nowMs = nowMs + SB.WAIT_MS
+    deliver(dig({ { X3 + 5, X3 } }), 0)
+    for _, m in ipairs(b4) do deliver(m, 0) end
+    nowMs = nowMs + 1000
+    deliver(dig({ { X3 + 6, X3 } }), 0)
+    local a16 = EC.applies
+    enter("c")
+    CB.registerNear(nil)
+    local partial = EC.applies == a16
+    for _, m in ipairs(flush()) do deliver(m, 0) end
+    nowMs = nowMs + SB.WAIT_MS + 1000
+    deliver(dig({ { X3 + 7, X3 } }), 0)
+    local a17 = EC.applies
+    enter("c")
+    CB.registerNear(nil)
+    local fresh = EC.applies == a17
+    for _, m in ipairs(flush()) do deliver(m, 0) end
+    check(late and partial and fresh and #b4 == 1 and same(X3 - 1, X3 + 8, X3, 0),
+        "兩端：同一份快照晚到時還在等 block 的格子一起登錄 1 次；block 只含一部分新格時剩下的重新計時、新格全到了不再計時"
+        .. "（之後的 dug 不會一來就逾時）（" .. tostring(late) .. tostring(partial) .. tostring(fresh) .. "）")
+
+    enter("s")
+    SB.reset({}, 120, 120)
+    SB.reset({}, 180, 180)
+    SB.reset({}, 141, 140)
+    SB.reset({}, 160, 160)
+    isServer, isClient, getOnlinePlayers, getNumActivePlayers, getSpecificPlayer, sendServerCommand =
+        keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
+    MinidoracatBuilder.Basement = SB
+    undoC()
+    undoS()
+    end)()
 
     -- F9 「把缺的換成…」：挖掘項目被擋（PlanLibrary.swap 回 SwapBad；種類下拉也不列 dig）
     local Lib = B.PlanLibrary
@@ -27010,9 +27393,6 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     getText = realGT
     check(sw == nil and swWhy == "IGUI_MBLD_Imp_SwapBad" and swPlan.items[swIt].id == "pcf_01_0",
         "F9 藍圖的「把缺的換成…」不能換成挖掘項目（" .. tostring(swWhy) .. "）")
-
-    BM.reset({}, A, A)
-    isClient, BM.growLater, BM.registerAll, BM.recalcZ = realIsClient, realGrow, realAll, realZ
 
     -- F7 挖這一格的站位：只站四個正交鄰格裡已挖的（伺服器 Check.item 照同一條驗，不符回 DIG_STAND）；斜角、沒挖的不站；
     -- 已經站在已挖的鄰格就不走；沒有這種鄰格不原地挖（記 noRoom）；排第 2 格起的站位要等前一格進了地下室集合
@@ -27030,7 +27410,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         end
     end
     local function sqAt(x, y) return squares[x .. "," .. y .. ",-1"] end
-    local AT = math.floor(TX / AR)
+    local AT = math.floor(TX / BM.AREA)
     BM.reset({ { TX - 1, TY }, { TX + 1, TY + 1 } }, AT, AT)
     local P7 = player({ x = TX + 5.5, y = TY + 0.5, z = -1 })
     local entry7 = Entry.resolve(CELL)

@@ -577,11 +577,12 @@ Events.OnTick.Add(Client.tickUnbuild)
 
 -- ---------------------------------------------------------------- 地下室同步（伺服器 BasementLedger）
 -- dug＝{ t = { x1, y1, x2, y2, ... } }：剛挖好的格子。basements＝大區 (ax, ay) 周圍 3×3 範圍內全部連通塊的快照，
--- 分 n 段送：每段 { ax, ay, i, n, b = { 塊, ... } }，一塊是房間清單 { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形；
--- 一塊不拆開；一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。block＝{ r = 房間清單 }：伺服器重分了一塊的房間。
+-- 分 n 段送：每段 { ax, ay, i, n, v, b = { 塊, ... } }，一塊是房間清單 { { x, y, w, h, x, y, w, h, ... }, ... }（每間一組矩形；
+-- 一塊不拆開；一段最多 SEG_RECTS 個長方形；沒有地下室時送一段、b 是空表）。block＝{ v, r = 房間清單 }：伺服器那一批之後一塊
+-- 的整份現況。v＝伺服器的修訂號（每推一次 block 加 1，快照帶當下的值）：指令不保序（PacketTypes.java:508），較舊的照它略過。
 -- 座標都在地下一層。收到的數字逐個驗（整數、範圍；一塊最多 Basement.MAX 格），有一個不合整則丟掉
 local COORD_MAX = 99999 -- Place.key 每軸只留 5 位數
-local SEG_RECTS, SEG_MAX = 500, 1000
+local SEG_RECTS, SEG_MAX, V_MAX = 500, 1000, 2147483647
 local function int(v, lo, hi)
     return type(v) == "number" and v == math.floor(v) and v >= lo and v <= hi
 end
@@ -643,7 +644,8 @@ local function areaTiles(args, out)
     return out
 end
 
--- synced＝已經收齊快照的大區（之後 dug 只收這個 3×3 範圍內的）；part＝收到一半的快照（ax, ay, i, n, tiles）
+-- synced＝已經收齊快照的大區與修訂號（之後 dug、block 只收這個 3×3 範圍內的）；part＝收到一半的快照（ax, ay, n, v,
+-- got＝收到幾段, seg＝{ [段號]＝塊 }）
 local synced, part = nil, nil
 function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
 
@@ -655,46 +657,62 @@ local function inSynced(t)
         and t[2] < (synced.ay + 2) * A
 end
 
--- 一段快照：i＝1 開新的暫存；不是下一段、或 ax／ay／n 和暫存不同就丟掉暫存（當成沒收到，EveryOneMinute 會再要）；
--- 收到最後一段才換掉那一區、全部登錄，並記成已收到。回 true＝收齊了
+-- 一段快照：(ax, ay, n, v) 一樣的是同一份，照段號收、不要求順序。和已套用的同一區、修訂號比較小的丟掉；收到一半時來了另一份：
+-- 修訂號比較小的那一段丟掉，否則丟掉收到一半的、改收新的。重複的段丟掉；壞資料連收到一半的一起丟（EveryOneMinute 會再要）。
+-- 收齊了才換掉那一區（Basement.reset 留著還在等 block 的格子）、照本機的塊套用分房、登錄身邊的塊，並記成已收到。回 true＝收齊了
 local function onSegment(args)
-    local i, n = args.i, args.n
-    if not (int(n, 1, SEG_MAX) and int(i, 1, n)) then part = nil return print(LOG .. "basements: bad data, dropped") end
-    if i == 1 then
-        part = { ax = args.ax, ay = args.ay, n = n, i = 0, blocks = {} }
-    elseif not (part and part.i == i - 1 and part.ax == args.ax and part.ay == args.ay and part.n == n) then
+    local i, n, v = args.i, args.n, args.v
+    if not (int(n, 1, SEG_MAX) and int(i, 1, n) and int(v, 0, V_MAX)) then
         part = nil
-        return print(LOG .. "basements: segment out of order, dropped")
+        return print(LOG .. "basements: bad data, dropped")
     end
-    if not areaTiles(args, part.blocks) then part = nil return print(LOG .. "basements: bad data, dropped") end
-    part.i = i
-    if i < n then return false end
+    if synced and synced.ax == args.ax and synced.ay == args.ay and v < synced.v then return false end
+    if not (part and part.ax == args.ax and part.ay == args.ay and part.n == n and part.v == v) then
+        if part and v < part.v then return false end
+        part = { ax = args.ax, ay = args.ay, n = n, v = v, got = 0, seg = {} }
+    end
+    if part.seg[i] then return false end
+    local blocks = areaTiles(args, {})
+    if not blocks then part = nil return print(LOG .. "basements: bad data, dropped") end
+    part.seg[i], part.got = blocks, part.got + 1
+    if part.got < n then return false end
     local BM, done = MinidoracatBuilder.Basement, part
     part = nil
     local tiles = {}
-    for _, rooms in ipairs(done.blocks) do
-        for _, room in ipairs(rooms) do
-            for _, t in ipairs(room) do tiles[#tiles + 1] = t end
+    for s = 1, done.n do
+        for _, rooms in ipairs(done.seg[s]) do
+            for _, room in ipairs(rooms) do
+                for _, t in ipairs(room) do tiles[#tiles + 1] = t end
+            end
         end
     end
     BM.reset(tiles, done.ax, done.ay)
-    for _, rooms in ipairs(done.blocks) do BM.setRooms(rooms) end
-    BM.registerAll()
-    synced = { ax = done.ax, ay = done.ay }
+    for s = 1, done.n do
+        for _, rooms in ipairs(done.seg[s]) do BM.setRooms(rooms, done.v) end
+    end
+    BM.registerNear(nil)
+    synced = { ax = done.ax, ay = done.ay, v = done.v }
     return true
 end
 
--- block：已同步的範圍內的塊換上伺服器分好的房間，照 Basement.NEAR 重新登錄（伺服器已經等過延後批次）；範圍外的、壞資料丟掉
+-- block：已同步範圍內的格子（範圍外的略過）還沒有的先加進集合，照本機的塊套用伺服器分好的房間（Basement.setRooms 照 v 略過
+-- 較舊的），換過房號的塊當下登錄（身邊的，Basement.registerNear）；壞資料丟掉。回 true＝有範圍內的格子
 local function onBlock(args)
     local BM = MinidoracatBuilder.Basement
-    local rooms = blockRooms(args.r, 0, 0, COORD_MAX, COORD_MAX, 0)
+    local rooms = int(args.v, 0, V_MAX) and blockRooms(args.r, 0, 0, COORD_MAX, COORD_MAX, 0)
     if not rooms then return print(LOG .. "block: bad data, dropped") end
-    for _, room in ipairs(rooms) do
+    local tiles = {}
+    for i, room in ipairs(rooms) do
+        local keep = {}
         for _, t in ipairs(room) do
-            if not inSynced(t) then return end
+            if inSynced(t) then keep[#keep + 1], tiles[#tiles + 1] = t, t end
         end
+        rooms[i] = keep
     end
-    if BM.setRooms(rooms) then BM.registerAll() end
+    if #tiles == 0 then return false end
+    BM.add(tiles)
+    BM.registerNear(BM.setRooms(rooms, args.v))
+    return true
 end
 
 -- 單機：集合與登錄伺服器那一半已經做了（同一個 Lua），只重算畫面高度範圍
@@ -709,9 +727,9 @@ function Client.onBasement(cmd, args)
             if inSynced(t) then keep[#keep + 1] = t end
         end
         if #keep == 0 then return end
-        BM.growLater(BM.add(keep)) -- 登錄等挖完一陣子再一次做（Basement.growLater）；高度範圍當下重算
+        BM.await(BM.add(keep)) -- 登錄等伺服器那一批推來的 block（Basement.await）；高度範圍當下重算
     elseif cmd == "block" then
-        return onBlock(args)
+        if not onBlock(args) then return end
     elseif not onSegment(args) then
         return
     end
@@ -720,7 +738,7 @@ end
 
 -- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
 -- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要），
--- 並登錄走近了的地下室（Basement.registerAll 在客戶端只登錄身邊的塊）
+-- 並登錄走近了的、等 block 等太久的地下室（Basement.registerNear）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return end
@@ -732,7 +750,7 @@ end
 function Client.askEveryMinute()
     if not isClient() then return end
     askBasements()
-    MinidoracatBuilder.Basement.registerAll()
+    MinidoracatBuilder.Basement.registerNear(nil)
 end
 Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)

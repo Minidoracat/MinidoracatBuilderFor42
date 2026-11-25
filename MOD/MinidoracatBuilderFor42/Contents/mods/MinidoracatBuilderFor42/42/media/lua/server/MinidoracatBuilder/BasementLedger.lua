@@ -266,8 +266,13 @@ local function roomRects(rooms)
     return out, n
 end
 
+-- 修訂號：每推一次 block 加 1，快照帶當下的值；客戶端照它略過較舊的（指令不保序，PacketTypes.java:508）。不存檔：客戶端連線時
+-- Lua 整個重來（ConnectToServerState.java:126），伺服器重開後沒有客戶端留著舊的
+local rev = 0
+
 -- 這位玩家所在大區與周圍一圈（3×3）的地下室，一塊一個房間清單 { { x, y, w, h, ... }, ... }（每間一組矩形），分段送（指令
--- basements：{ ax, ay, i＝第幾段, n＝共幾段, b＝這一段的塊 }；沒有地下室也送一段空的 i＝1、n＝1、b＝{}）。位置只用連線玩家自己的座標
+-- basements：{ ax, ay, i＝第幾段, n＝共幾段, v＝修訂號（每段一樣）, b＝這一段的塊 }；沒有地下室也送一段空的 i＝1、n＝1、
+-- b＝{}）。位置只用連線玩家自己的座標
 function BasementLedger.send(player)
     local ax, ay = areaOf(player:getX(), player:getY())
     local segs, cur, count = {}, {}, 0
@@ -281,19 +286,20 @@ function BasementLedger.send(player)
     segs[#segs + 1] = cur
     local Server = MinidoracatBuilder.Server
     for i, b in ipairs(segs) do
-        Server.send(player, "basements", { ax = ax, ay = ay, i = i, n = #segs, b = b })
+        Server.send(player, "basements", { ax = ax, ay = ay, i = i, n = #segs, v = rev, b = b })
     end
 end
 
--- 一塊的分房變了、伺服器重登錄之後（Basement.growLater／patrol）：推給附近的玩家（指令 block：{ r = { 每間一組矩形 } }）。
--- 單機的集合與登錄是同一份，不送
+-- 一塊有新格子或分房變了、伺服器那一批登錄之後（Basement.growLater／patrol）：修訂號加 1，整塊推給附近的玩家（指令 block：
+-- { v＝修訂號, r = { 每間一組矩形 } }）。單機的集合與登錄是同一份，不送
 function BasementLedger.sendBlock(rooms)
     if not isServer() then return end
     local all = {}
     for _, list in ipairs(rooms) do
         for _, t in ipairs(list) do all[#all + 1] = t end
     end
-    sendNear("block", { r = (roomRects(rooms)) }, all)
+    rev = rev + 1
+    sendNear("block", { v = rev, r = (roomRects(rooms)) }, all)
 end
 
 Events.EveryOneMinute.Add(function() Basement.patrol() end)
