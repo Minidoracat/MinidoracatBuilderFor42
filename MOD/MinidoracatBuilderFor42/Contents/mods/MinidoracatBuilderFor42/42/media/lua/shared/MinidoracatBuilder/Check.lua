@@ -145,6 +145,13 @@ function Check.near(player, cells, edge, preview)
     return nil
 end
 
+-- 格上有會動的東西（人、殭屍、動物）。me＝不算的那個角色：游標預覽（walk）時下指令的玩家本人，Client.build 會先走到
+-- 旁邊的格子再動手（walkTo 的站位不挑這件佔的格子）。伺服器與建造作弊（原地蓋、不走開）不帶，站在上面照樣算
+local function occupied(sq, me)
+    local list = sq:getMovingObjects()
+    return not list:isEmpty() and not (me ~= nil and list:size() == 1 and list:get(0) == me)
+end
+
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
 --   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools
 --   ／SKILL 的 perk, level, have）。
@@ -158,7 +165,8 @@ end
 -- opts.preview：客戶端預覽（見檔頭）；opts.summary＝Materials.summary 的結果，有才查材料（建造作弊不查，照伺服器；
 -- 替換時只查要補的料與新舊工具）。
 -- opts.walk（配 preview）：游標預覽，Client.build 會先走到旁邊再蓋，所以距離只照 Server.intent 收請求的規則
--- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）。
+-- （Check.inReach），不看 MaxDistance、不查走不走得到（伺服器 complete 時照樣查；建造作弊兩邊都不查）；換地板的佔用檢查
+-- 不算玩家本人（occupied）。
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂或地板格（Place.roofAt、Place.floorAt），後面的格子可以靠它撐著。
 -- opts.overlap：疊放模式（Place.check 的 overlap；只對 Place.OVERLAP 的種類有用）。玩家在建造視窗打開，隨請求送到伺服器
 -- （Server.intent 的 o），伺服器只帶這一欄（沒有 preview，照樣補格子、不查摘要）。開著時不找原地替換：玩家要的是疊上去。
@@ -290,10 +298,10 @@ function Check.item(player, name, d, anchor, ...)
                 return "INTERNAL", nil, info
             end
             if not fine then return yoff or "BLOCKED", { x = c.x, y = c.y, z = c.z }, info end
-            -- 換一樓地板是先拆舊的再放新的（Place.clearFloor），兩個封包之間那格沒有地板：正下方有地下一層的格子時，
-            -- 站在上面的人會掉下去受傷。格上有人、殭屍或動物照 Place.check 的佔用檢查回 OCCUPIED
-            if entry.kind == "floor" and c.z == 0 and c.sq:getFloor() and not c.sq:getMovingObjects():isEmpty()
-                and cell:getGridSquare(c.x, c.y, -1) then
+            -- 換地板是先拆舊的再放新的（Place.clearFloor），兩個封包之間那格沒有地板：正下方那一層有格子時（樓上的樓板、
+            -- 地下室正上方的一樓地板），站在上面的人會掉下去受傷。格上有人、殭屍或動物回 OCCUPIED
+            if entry.kind == "floor" and c.sq:getFloor() and cell:getGridSquare(c.x, c.y, c.z - 1)
+                and occupied(c.sq, walk and not Materials.cheat(player) and player or nil) then
                 return "OCCUPIED", { x = c.x, y = c.y, z = c.z }, info
             end
             c.yoff, c.over = yoff, over == true or nil

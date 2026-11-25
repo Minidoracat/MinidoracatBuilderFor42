@@ -317,7 +317,10 @@ square = function(x, y, z, o)
     function sq:getFloor() return o.floor end
     function sq:hasFloor() return o.floor ~= nil end
     function sq:isSomethingTo() return false end
-    function sq:getMovingObjects() return { isEmpty = function() return #sq.moving == 0 end } end
+    function sq:getMovingObjects()
+        return { isEmpty = function() return #sq.moving == 0 end, size = function() return #sq.moving end,
+            get = function(_, i) return sq.moving[i + 1] end }
+    end
     function sq:isSolid() return o.solid == true end
     function sq:isFree() return flags.solidfloor == true and o.solid ~= true end
     function sq:isSolidTrans() return false end
@@ -1804,31 +1807,47 @@ do
             "預覽：上一層的格子還沒建，牆也照座標查：什麼都沒撐的擋、正下方同一條邊有牆的放行（✗ 直接放行，伺服器才回放不下；"
                 .. tostring(wLone) .. "／" .. tostring(wHeld) .. "）")
     end
-    do -- 換一樓地板：拆舊放新之間那格沒有地板，正下方有地下一層的格子時站在上面的人會掉下去
+    do -- 換地板：拆舊放新之間那格沒有地板，正下方那一層有格子時站在上面的會掉下去
         local keep = {}
         local function at(x, y, z, o)
             local k = x .. "," .. y .. "," .. z
             if keep[k] == nil then keep[k] = squares[k] or false end
             return square(x, y, z, o)
         end
-        at(55, 45, 0, { floor = {}, moving = { {} } }); at(55, 45, -1) -- 有地板、下面有格子、有人
+        local KO = player({ id = 64, x = 57.5, y = 46.5 })                       -- 別的玩家（多人、分割畫面另一位）
+        local KC = player({ id = 65, x = 58.5, y = 44.5, cheat = true })         -- 建造作弊：原地蓋、不走開
+        at(55, 45, 0, { floor = {}, moving = { {} } }); at(55, 45, -1) -- 有地板、下面有地下室、有人
         at(55, 43, 0, { floor = {} }); at(55, 43, -1)                  -- 沒人
         at(57, 45, 0, { floor = {}, moving = { {} } })                 -- 下面沒有格子
         at(54, 44, 0, { moving = { {} } }); at(54, 44, -1)             -- 原本沒有地板（新鋪）
-        at(57, 43, 1, { floor = {}, moving = { {} } }); at(58, 43, 1, { flags = { solidfloor = true } }) -- 二樓
-        local cases = {
-            { { 55, 45, 0 }, "OCCUPIED", "有地板、正下方有地下一層、格上有人 → OCCUPIED" },
-            { { 55, 43, 0 }, nil, "格上沒人 → 可以換" },
-            { { 57, 45, 0 }, nil, "正下方沒有格子 → 可以換" },
-            { { 54, 44, 0 }, nil, "原本沒有地板（新鋪）→ 不擋" },
-            { { 57, 43, 1 }, nil, "二樓同樣情況 → 不擋" },
+        at(57, 43, 1, { floor = {}, moving = { {} } }); at(58, 43, 1, { flags = { solidfloor = true } }) -- 二樓樓板
+        at(56, 43, 1, { floor = {}, moving = { K } }); at(56, 42, 1, { flags = { solidfloor = true } }) -- 二樓，只有自己站著
+        at(54, 46, -1, { floor = {}, moving = { {} } }); at(53, 46, -1, { flags = { solidfloor = true } }) -- 地下室，下面沒有 -2
+        at(56, 46, 0, { floor = {}, moving = { K } }); at(56, 46, -1)       -- 只有自己
+        at(55, 46, 0, { floor = {}, moving = { K, {} } }); at(55, 46, -1)   -- 自己和殭屍
+        at(57, 46, 0, { floor = {}, moving = { KO } }); at(57, 46, -1)      -- 別的玩家
+        at(58, 44, 0, { floor = {}, moving = { KC } }); at(58, 44, -1)      -- 建造作弊的自己
+        local O = "OCCUPIED"
+        local cases = { -- 位置、伺服器、預覽（沒有 walk）、游標預覽（walk）的結果、說明、誰下指令
+            { { 55, 45, 0 }, O, O, O, "一樓有地板、正下方有地下室、格上有人 → 擋" },
+            { { 55, 43, 0 }, nil, nil, nil, "格上沒人 → 可以換" },
+            { { 57, 45, 0 }, nil, nil, nil, "一樓正下方沒有格子 → 可以換" },
+            { { 54, 44, 0 }, nil, nil, nil, "原本沒有地板（新鋪）→ 不擋" },
+            { { 57, 43, 1 }, O, O, O, "二樓樓板（正下方是一樓）格上有人 → 擋" },
+            { { 54, 46, -1 }, nil, nil, nil, "地下室裡換地板、下面沒有更深一層 → 不擋" },
+            { { 56, 46, 0 }, O, O, nil, "只有下指令的人自己站著：游標預覽不算（會先走開），伺服器照算" },
+            { { 56, 43, 1 }, O, O, nil, "二樓只有自己站著：同上" },
+            { { 55, 46, 0 }, O, O, O, "自己和殭屍一起站著 → 游標預覽也擋" },
+            { { 57, 46, 0 }, O, O, O, "別的玩家站著 → 游標預覽也擋" },
+            { { 58, 44, 0 }, O, O, O, "建造作弊的自己站著（原地蓋、不走開）→ 游標預覽也擋", KC },
         }
         for _, c in ipairs(cases) do
-            local cS, eS = Check.item(K, "floor_01_0", 0, c[1])
-            local cP, eP = Check.item(K, "floor_01_0", 0, c[1], PV)
-            local cW = Check.item(K, "floor_01_0", 0, c[1], { preview = true, walk = true })
-            check(cS == c[2] and cP == c[2] and cW == c[2] and (eS and eS.x) == (c[2] and c[1][1])
-                and (eP and eP.x) == (eS and eS.x), "換地板掉進地下室：" .. c[3] .. "（伺服器、預覽、游標預覽同一個結果；"
+            local who = c[6] or K
+            local cS, eS = Check.item(who, "floor_01_0", 0, c[1])
+            local cP, eP = Check.item(who, "floor_01_0", 0, c[1], PV)
+            local cW = Check.item(who, "floor_01_0", 0, c[1], { preview = true, walk = true })
+            check(cS == c[2] and cP == c[3] and cW == c[4] and (eS and eS.x) == (c[2] and c[1][1])
+                and (eP and eP.x) == (c[3] and c[1][1]), "換地板會掉下一層：" .. c[5] .. "（伺服器／預覽／游標預覽："
                 .. tostring(cS) .. "／" .. tostring(cP) .. "／" .. tostring(cW) .. "）")
         end
         for k, v in pairs(keep) do squares[k] = v or nil end
