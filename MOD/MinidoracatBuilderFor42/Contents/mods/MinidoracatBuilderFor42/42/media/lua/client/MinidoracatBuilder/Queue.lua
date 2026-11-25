@@ -171,6 +171,12 @@ function Queue.last(player)
     return l
 end
 
+-- 上一組手拖的是挖掘：挖開的地拆不回去，不進 Queue.last；「拆掉剛蓋的」照這個說為什麼沒東西可拆
+function Queue.lastDig(player)
+    local s = slots[player:getPlayerNum()]
+    return s ~= nil and s.lastDig == true
+end
+
 -- 那一格上這張圖的物件；沒有回 nil
 local function objAt(sq, name)
     local objects = sq:getObjects()
@@ -393,11 +399,14 @@ function Queue.onResult(cmd, args)
         j.placed, g.placed = j.placed + 1, g.placed + 1
         local a = args.i and j.anchors[args.i]
         if args.i and j.parts then j.parts[args.i] = nil end
-        local p = a and g.owner == "drag" and piece(g, a)
+        local dig = g.owner == "drag" and B.Rules.DIG[g.name] or nil
+        local p = a and g.owner == "drag" and not dig and piece(g, a)
         if p then
             g.built[#g.built + 1] = p
             s.last = g.built
         end
+        if g.owner == "drag" then s.lastDig = dig end
+        if dig then s.last = nil end
         if j.placed >= j.count then
             if s.list[1] == j then table.remove(s.list, 1) end
             -- 下一筆等角色的動作佇列空了才送（Queue.tick）：MP 這時這一格的動作常還在佇列裡
@@ -420,7 +429,7 @@ local function halt(s, g, noRoom, ...)
     local p = s.player
     local title = g.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
     if noRoom then
-        tell(p, "NO_ROOM", { i = noRoom, n = g.count }, title)
+        tell(p, g.name == Entry.DIG_CELL and "DIG_STAND" or "NO_ROOM", { i = noRoom, n = g.count }, title)
     elseif g.placed > 0 or byUser then
         Messages.toast(p, getText("IGUI_MBLD_Stopped", tostring(g.placed), tostring(g.count)),
             title or getText("IGUI_MBLD_Interrupted"))

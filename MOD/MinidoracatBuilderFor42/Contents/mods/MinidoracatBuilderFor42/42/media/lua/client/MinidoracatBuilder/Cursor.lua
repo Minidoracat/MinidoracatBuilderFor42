@@ -77,7 +77,7 @@ local ICON, PAD = 16, 6
 local AT_CELL = { BLOCKED = true, NOT_LOADED = true, SAFEHOUSE = true, PERM_DENIED = true, OUTSIDE_SAFEHOUSE = true,
     UNREACHABLE = true, SAME_TILE = true, VEHICLE = true, OCCUPIED = true, STACK_FULL = true, NOT_SURFACE = true,
     NOT_NATURAL = true, NO_UPPER = true, SQUARE_FULL = true, NOT_EMPTY = true, ATTACHED = true, DIG_ROOM = true,
-    DIG_CLEAR = true }
+    DIG_CLEAR = true, DIG_STAND = true, DIG_DONE = true, DIG_ENTRY = true, DIG_HUNG = true }
 local SHORT = { NO_MATERIAL = true, NO_TOOL = true }
 
 -- 從按下那格 (ax, ay) 拉到 (ex, ey) 的一排：同一列或同一欄（取位移大的那一軸），最多 max 格。回 { { x, y, z }, ... }
@@ -809,6 +809,14 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     end
     self.g, self.gn, self.swapN = g, g.n, swapN
     self:texts()
+    -- 掛鉤（規劃模式）說不能放：整片照不能蓋畫，第一格加警告記號，不只標籤寫原因（掛鉤看的原因在 texts 的 label 裡算）
+    local v, failed = hook("valid", self)
+    if failed or v == false then
+        for i = 1, g.n do
+            g.tr[i], g.tg[i], g.tb[i], g.fr[i], g.fg[i], g.fb[i] = RED.r, RED.g, RED.b, bad.r, bad.g, bad.b
+        end
+        if g.n > 0 then g.m[1] = MARK_BAD end
+    end
 end
 
 -- 疊放的那一格是第幾層：格上原版算桌面的物件（IsTable，ISMoveableSpriteProps.lua:94）數＋1。沒有疊（yoff 都是 0）回 nil
@@ -956,6 +964,11 @@ function Cursor:texts()
     else
         self.label3, self.label3warn = cut > 0
             and getText(cut == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(cut)) or nil, true
+    end
+    -- 挖掘拆不回去：沒有別的第 3 行時用警告行先說（入口另說會拆掉樓梯上方的地板與草）
+    if not self.label3 and self.entry and self.entry.kind == "dig" then
+        self.label3 = getText(self.name == Entry.DIG_CELL and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Dig_Warn")
+        self.label3warn = true
     end
     self.tip = self:reasons()
     local hint
@@ -1191,7 +1204,8 @@ function Cursor:layout()
     if not (o and src) then return end
     local font, tm = o.font, getTextManager()
     local fh = tm:getFontHeight(font)
-    local maxW = fh * 32
+    -- 最寬 32 個字高，也不超過畫面寬的 4 成（1280×720、大字型時 32 個字高會佔掉大半個畫面）
+    local maxW = math.min(fh * 32, math.floor(getPlayerScreenWidth(self.player) * 0.4))
     local lines, w = { n = 0 }, 0
     for i = 1, #src, 2 do
         for _, line in ipairs(o.UI.Text.wrap(src[i], maxW, font)) do

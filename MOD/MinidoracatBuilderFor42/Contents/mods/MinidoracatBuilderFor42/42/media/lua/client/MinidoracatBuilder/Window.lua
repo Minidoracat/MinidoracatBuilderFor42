@@ -854,7 +854,7 @@ local function texOf(v, name)
         local tex
         if r then
             tex = Recipes.icon(r) -- 原版建造視窗的圖示
-        elseif B.Rules.DIG[name] then -- 挖地下室：圖是借來的（看不見的格子、BD 的圖），改畫挖一格的泥土地板、入口的樓梯底片
+        elseif B.Rules.DIG[name] then -- 挖地下室：ID 是原版的隱形地板、地圖的地下土塊，看不出用途，改畫挖一格的泥土地板、入口的樓梯底片
             local spr = Entry.sprite(name)
             local cells = spr and Entry.cells(spr)
             local part = cells and (cells[3] or cells[1])[4]
@@ -1236,8 +1236,13 @@ function W.whyText(code, detail, ...)
         end
     end
     if code == "DISABLED_KIND" then
-        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）
-        if Entry.KIND_OFF[detail] then code = "OFF_DEFAULT" end
+        -- 預設就關著的種類（水井）：沒有人關它，說「預設關閉、管理員可以打開」（審查 1113 Claude）。
+        -- 挖掘開著卻還是關著＝土牆圖塊沒載入（Entry.kindOn），說真正的原因
+        if detail == "dig" and Entry.kindSet("dig", nil) then
+            code = "DIG_PATCH"
+        elseif Entry.KIND_OFF[detail] then
+            code = "OFF_DEFAULT"
+        end
         detail = Names.kind(detail)
     elseif code == "DISABLED_SOURCE" and detail then
         detail = W.modName(detail)
@@ -1584,15 +1589,19 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         y = y + fhM + 2
     end
     y = y + 2
-    -- 來源寫完整的 tileset ID（搜尋要用）：放不下就換行、不截字（詳情可以捲動）
-    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset), dw, v.font)) do
-        text(ops, line, 0, y, c.textMuted, v.font)
-        y = y + lh
-    end
-    -- 完整圖塊名（審查 1031 MEDIUM：畫面上只看得到「blends street 01 #101」，玩家回報時給不出名稱；和 pzmap、TileZed 同寫法）
-    for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Tile", e.name), dw, v.font)) do
-        text(ops, line, 0, y, c.textMuted, v.font)
-        y = y + lh
+    -- 來源寫完整的 tileset ID（搜尋要用）：放不下就換行、不截字（詳情可以捲動）。挖掘的三個項目借用原版圖名，
+    -- 圖名與 tileset 對玩家沒有意義，這兩列都不寫
+    if e.kind ~= "dig" then
+        local src = getText("IGUI_MBLD_Detail_Source", W.sourceLabel(W.sourceOf(e.tileset)), e.tileset)
+        for _, line in ipairs(Text.wrap(src, dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
+        -- 完整圖塊名（審查 1031 MEDIUM：畫面上只看得到「blends street 01 #101」，玩家回報時給不出名稱；和 pzmap、TileZed 同寫法）
+        for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Detail_Tile", e.name), dw, v.font)) do
+            text(ops, line, 0, y, c.textMuted, v.font)
+            y = y + lh
+        end
     end
     -- 朝向數照游標實際輪流的那份（Turn.states）；只有一個朝向的屋頂另有鏡像片
     local n = B.Turn.states(e).n
@@ -1644,6 +1653,10 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     local refund = Cost.refund and Cost.refund(e.kind, e.spr)
     if refund == "none" then -- 挖掉的地不能填回，另寫一句（砸也砸不回去）
         y = warnLines(v, ops, getText(e.kind == "dig" and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Refund_none"), y, dw)
+        -- 裝了 Basement Building 時兩邊都挖不了（Basement.pre 回 DIG_BD）：放之前就在詳情說
+        if e.kind == "dig" and B.Basement and B.Basement.bd() then
+            y = warnLines(v, ops, getText("IGUI_MBLD_Refuse_DIG_BD"), y, dw)
+        end
     elseif refund and e.kind ~= "water" then -- 水面不收料、填平是換回原本的地面，種類說明已經寫了
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
@@ -2752,12 +2765,14 @@ function W.nextRecent(playerNum)
     end
 end
 
--- 拆掉剛蓋的（按鍵與視窗按鈕）：最後一次送出的那一批（Queue.undoLast，退料照拆除）；沒有就說一聲
+-- 拆掉剛蓋的（按鍵與視窗按鈕）：最後一次送出的那一批（Queue.undoLast，退料照拆除）；沒有就說一聲（上一批是挖掘時說挖開的拆不回去）
 function W.undoLast(playerNum)
     local Q, p = B.Queue, getSpecificPlayer(playerNum or W.playerNum or 0)
     if not (Q and p) then return 0 end
     local n = Q.last(p) and Q.undoLast(p) or 0
-    if n == 0 then Messages.toast(p, getText("IGUI_MBLD_Undo_None"), getText("IGUI_MBLD_Title")) end
+    if n == 0 then
+        Messages.toast(p, getText(Q.lastDig(p) and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Undo_None"), getText("IGUI_MBLD_Title"))
+    end
     if W.v then W.syncEntry(W.v) end
     return n
 end
@@ -2832,7 +2847,7 @@ function W.syncEntry(v)
         v.planBtn:setActive(on)
     end
     local p = getSpecificPlayer(W.playerNum)
-    local can = Q ~= nil and p ~= nil and Q.last(p) ~= nil
+    local can = Q ~= nil and p ~= nil and (Q.last(p) ~= nil or Q.lastDig(p))
     if can ~= v.undoOn then
         v.undoOn = can
         v.undoBtn:setEnabled(can)

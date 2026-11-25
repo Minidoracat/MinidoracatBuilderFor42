@@ -203,7 +203,7 @@ end
 
 -- 樓上往外還沒蓋的那一格沒有格子（walkNear 回 nil；2026-11-24 實機）：站到它四周已有、能站的格子（通常是剛蓋好的前一格），
 -- 挑離玩家最近的；已經站在它旁邊就不走。回 true（不必走或排了走路）或 false（四周沒有能站的格子）。
--- dug＝挖這一格：只看四個正交、已挖（Basement.has）的鄰格；伺服器 Check.item 照同一條驗站的位置，不符回 UNREACHABLE
+-- dug＝挖這一格：只看四個正交、已挖（Basement.has）的鄰格；伺服器 Check.item 照同一條驗站的位置，不符回 DIG_STAND
 standBeside = function(player, x, y, z, dug)
     if z > math.floor(player:getZ()) then z = z - 1 end
     local cell, here, best, far = getCell(), player:getCurrentSquare(), nil, math.huge
@@ -225,7 +225,7 @@ standBeside = function(player, x, y, z, dug)
 end
 
 -- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
--- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。挖這一格不原地挖：伺服器要站在已挖的鄰格（回 UNREACHABLE）。
+-- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。挖這一格不原地挖：伺服器要站在已挖的鄰格（回 DIG_STAND）。
 -- 都不行時記 noRoom、回 false
 function Client.stand(n, i)
     local b = Client.pending

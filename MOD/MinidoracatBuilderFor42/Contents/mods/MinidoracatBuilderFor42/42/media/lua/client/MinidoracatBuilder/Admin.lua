@@ -427,6 +427,10 @@ end
 function Panel:kindItem(k)
     local label = Names.kind(k)
     if self.ready then label = counted(label, Index.kindCount[k] or 0) end
+    -- 挖掘開著也挖不了（土牆圖塊沒載入）：列上接原因；名稱放不下時停在列上看全文（NavList 截字提示）
+    if k == "dig" and B.Basement and not B.Basement.patched() then
+        label = label .. getText("IGUI_MBLD_Sep") .. getText("IGUI_MBLD_Why_DIG_PATCH")
+    end
     return { id = k, label = label, switch = {
         get = function() return self:kindOn(k) end,
         set = function(on) self:put("kinds", k, on == true, self.base.kinds[k] ~= false) end,

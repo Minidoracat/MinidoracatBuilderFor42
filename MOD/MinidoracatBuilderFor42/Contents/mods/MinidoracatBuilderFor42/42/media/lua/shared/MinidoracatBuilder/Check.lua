@@ -170,7 +170,14 @@ function Check.item(player, name, d, anchor, ...)
     local planned = preview and opts.planned or nil
     local info = {}
     local entry, code = Entry.resolve(name) -- 設定可能在施工途中被改
-    if not entry then return code, nil, info end
+    if not entry then
+        -- 挖掘開著、但土牆圖塊沒載入（Basement.patched）：說真正的原因，不說「管理員關掉了」
+        local BM = MinidoracatBuilder.Basement
+        if code == "DISABLED" and Rules.DIG[name] and Entry.kindSet("dig", nil) and BM and not BM.patched() then
+            return "DIG_PATCH", nil, info
+        end
+        return code, nil, info
+    end
     local overlap = opts ~= nil and opts.overlap == true and Place.OVERLAP[entry.kind] == true
     info.entry = entry
     local spr = Entry.face(entry, d)
@@ -216,7 +223,7 @@ function Check.item(player, name, d, anchor, ...)
             local c = cells[1]
             local px, py, pz = math.floor(player:getX()), math.floor(player:getY()), math.floor(player:getZ())
             if pz ~= c.z or math.abs(px - c.x) + math.abs(py - c.y) ~= 1 or not B.has(px, py, pz) then
-                return "UNREACHABLE", { x = c.x, y = c.y, z = c.z }, info
+                return "DIG_STAND", { x = c.x, y = c.y, z = c.z }, info
             end
         end
         if skip then
