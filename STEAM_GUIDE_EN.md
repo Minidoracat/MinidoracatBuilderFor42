@@ -281,7 +281,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
-[*] [b]Floors with someone on them[/b]: an upper-level floor, or a ground-floor floor right above a basement (including one tile around it), can't be replaced while a person, zombie or animal stands on it; that tile turns red on the cursor and you're told someone is standing there. The tile has no floor for a moment while it's replaced, and whoever stands there falls to the level below and gets hurt, so wait until they move off. You can still place one on the tile you're standing on: your character steps aside first. With build cheat on your character doesn't move, so step off yourself. Ground floors with no basement below, and floors inside a basement, can still be replaced with someone on them.
+[*] [b]Floors with someone on them[/b]: an upper-level floor, or a ground-floor floor right above a basement (including one tile around it), can't be replaced while a person, zombie or animal stands on it; that tile turns red on the cursor and you're told someone is standing there. The tile has no floor for a moment while it's replaced, and whoever stands there falls to the level below and gets hurt, so wait until they move off. You can still place one on the tile you're standing on, also when you drag an area: your character steps aside first. If there's no free tile around to step to, that tile isn't replaced and no materials are used, so step off yourself. With build cheat on your character doesn't move, so step off yourself. Ground floors with no basement below, and floors inside a basement, can still be replaced with someone on them.
 [*] [b]Walls from the second floor up[/b]: a floor underneath is enough; without one, a wall can still go up when the square right below has a wall on the same edge (stacked on the wall below), or when the squares on both sides of that edge have roof pieces on the same level (gable walls, for example). Otherwise it still needs a floor first.
 [*] [b]Walls one level up[/b]: walls, fences, posts, door frames, window frames, doors and windows can also switch between one level up and this level with PgUp/PgDn; they start on this level. You can build second-floor walls while standing downstairs: your character walks to that edge on the level below. What holds them up: walls follow the line above; fences, posts, door frames and window frames need a floor on this square or on the square across that edge; whether a door or window needs a frame is unchanged (see the door and window entries below). Walls from building recipes work as in vanilla and can't change level.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
@@ -431,7 +431,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [list]
 [*] [b]Dirt walls[/b]: dirt walls form around what you dig, the ground is dirt, and it counts as indoors.
 [*] [b]Replacing the outer dirt walls[/b]: build a solid wall on an outer edge (the side against undug earth) with Build Anything and the dirt wall there moves aside; dismantle that wall later and the dirt wall comes back by itself.
-[*] [b]No openings on the outer edge[/b]: door frames, window frames and see-through walls can't go on an outer edge; the cursor turns red.
+[*] [b]No openings on the outer edge[/b]: door frames, window frames, see-through walls, and things you can climb over such as low walls and fences can't go on an outer edge; the cursor turns red. A wall with the same tile as the dirt wall says This tile already has the same piece, because that edge already is that dirt wall.
 [*] [b]Beside the entrance stairs[/b]: walls, doors and windows can't go on the stair tiles, so the outer dirt walls beside the stairs can't be replaced.
 [*] [b]Vanilla build menu and paint[/b]: walls from the vanilla build menu can't go on an outer edge, so use Build Anything to replace a dirt wall; vanilla paint and signs can be painted on dirt walls.
 [*] [b]Corner posts[/b]: an inward corner of an L-shaped basement gets a dirt-colored corner post by itself; when you build a wall beside that corner, the post moves aside.
@@ -1016,12 +1016,12 @@ Players who can change sandbox options can turn what can be built on or off for 
 [*] [b]Changes by other admins[/b]: changes you have already received are kept; if two admins press Apply at almost the same time, the later one overwrites the earlier one.
 [*] [b]If the server doesn't apply them[/b]: the panel says why, and Try again sends them again.
 [*] [b]Kinds turned off[/b]: players can't see or build them, and things already built stay and can still be dismantled.
-[*] [b]Sources and tilesets turned off[/b]: players can't see or build those tiles.
+[*] [b]Sources and tilesets turned off[/b]: players can't see or build those tiles. The three basement digging items aren't affected by these two pages; only the Basements kind on the Kinds page counts.
 [*] [b]The base game[/b]: can't be turned off as a whole, so turn off its tilesets or kinds instead.
 [/list]
 [h3]Shortcuts in the details[/h3]
 [list]
-[*] [b]Where[/b]: when an admin selects an item, Turn off this tileset and Turn off this source appear above Build in the details.
+[*] [b]Where[/b]: when an admin selects an item, Turn off this tileset and Turn off this source appear above Build in the details. Both are grayed out for the three basement digging items; turn off Basements on the Kinds page of the admin panel instead.
 [*] [b]Confirm first[/b]: a confirmation says how many items it turns off, and pressing Turn off applies it for every player.
 [*] [b]Turning it back on[/b]: use the admin panel.
 [*] [b]Narrow window[/b]: the two buttons are hidden.
