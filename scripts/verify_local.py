@@ -381,7 +381,7 @@ def check_tiles():
     with open(gen.OUT, "rb") as fh:
         same = fh.read() == gen.build()
     if not same:
-        print(f"  FAIL  {TILES_TITLE}\n        改圖塊屬性要改腳本，再跑 python scripts/gen_basement_tiles.py")
+        print(f"  FAIL  {TILES_TITLE}\n        原版磚牆屬性變了，或補丁檔被手改：重跑 python scripts/gen_basement_tiles.py 再看差異")
         return 1
     print(f"  PASS  {TILES_TITLE}")
     return 0
