@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Builder 專屬的靜態檢查：scripts/verify_mod.py 第 19 項會呼叫；單獨跑 `python scripts/verify_local.py`。
-三項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）、
-地下室土牆的圖塊補丁檔與 scripts/gen_basement_tiles.py 的輸出相同（check_tiles）。
+四項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）、
+地下室土牆的圖塊補丁檔與 scripts/gen_basement_tiles.py 的輸出相同（check_tiles）、Steam 指南每章不超過上限（check_guide）。
 
 管理面板規則頁的選項名稱放得下（client/MinidoracatBuilder/Admin.lua 的 Panel:buildRules，字型 UIFont.Small）：
   數字列（SliderRow）標籤寬 floor(cw*0.45)；下拉列 cw - floor(cw*0.45) - GAP；勾選列照 E2E admin-mp 的估計 cw - 28。
@@ -387,6 +387,62 @@ def check_tiles():
     return 0
 
 
+GUIDE_TITLE = "Steam 指南每章 ≤8000 bytes、章名與標題 ≤128 bytes"
+GUIDE_FILES = ("STEAM_GUIDE.md", "STEAM_GUIDE_EN.md")
+GUIDE_MAX_TEXT, GUIDE_MAX_TITLE = 8000, 128
+
+
+def guide_sections(path):
+    """照上傳工具 ../pz-family-docs/scripts/steam_guide.js 的 parse 切章、算長度（改那邊就要照著改這裡）：
+    整行 <!-- --> 的註解不送；以行首「=== 」切章，第一行是章名；內文頭尾去空白，章內 [h3] 前補一個空行；
+    {{img:名}} 以最長的 previewicon 標籤估算。上限出處：pz-family-docs/release.md「長度上限都算 UTF-8 位元組」
+    （2026-10-11 用臨時指南實測：章內文 ≤8000 bytes，8001 被拒；章名、指南標題 ≤128；摘要 ≤8000）。
+    回 (標題, 摘要, [(章名, 內文 bytes)])"""
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().replace("\r\n", "\n").split("\n")
+    meta = {}
+    for line in lines:
+        m = re.match(r"^<!--\s*(指南網址|標題|摘要)：(.*?)\s*-->$", line)
+        if m:
+            meta[m[1]] = m[2].strip()
+    text = "\n".join(line for line in lines if not re.match(r"^<!--.*-->$", line))
+    out = []
+    for chunk in re.split(r"^=== ", text, flags=re.M)[1:]:
+        title, _, body = chunk.partition("\n")
+        body = re.sub(r"([^\n])\n\[h3\]", r"\1\n\n[h3]", body.strip())
+        body = re.sub(r"\{\{img:([^}]+)\}\}", lambda m: f"[previewicon=000000000000;sizeOriginal,inline;{m[1]}][/previewicon]", body)
+        out.append((title.strip(), len(body.encode("utf-8"))))
+    return meta.get("標題", ""), meta.get("摘要", ""), out
+
+
+def check_guide():
+    bad, n = [], 0
+    for name in GUIDE_FILES:
+        path = os.path.join(REPO, name)
+        if not os.path.isfile(path):
+            bad.append(f"{name}：找不到")
+            continue
+        title, summary, sections = guide_sections(path)
+        if len(title.encode("utf-8")) > GUIDE_MAX_TITLE:
+            bad.append(f"{name} 指南標題 {len(title.encode('utf-8'))} bytes")
+        if len(summary.encode("utf-8")) > GUIDE_MAX_TEXT:
+            bad.append(f"{name} 摘要 {len(summary.encode('utf-8'))} bytes")
+        for sec, size in sections:
+            n += 1
+            if len(sec.encode("utf-8")) > GUIDE_MAX_TITLE:
+                bad.append(f"{name} 章名超過 {GUIDE_MAX_TITLE} bytes：「{sec}」")
+            if size > GUIDE_MAX_TEXT:
+                bad.append(f"{name}「{sec}」：{size} bytes")
+    if bad:
+        print(f"  FAIL  {GUIDE_TITLE}")
+        for b in bad:
+            print(f"        {b}")
+        print("        縮短或照功能拆章（中文字 3 bytes、emoji 4）")
+        return 1
+    print(f"  PASS  {GUIDE_TITLE}（{n} 章）")
+    return 0
+
+
 def check_rules():
     if not os.path.isfile(WIDTH):
         print(f"  SKIP  {TITLE} — 找不到 {WIDTH}")
@@ -452,4 +508,4 @@ if __name__ == "__main__":
                 print(where)
         print(f"另有 {sum(1 for h in found if not h[2])} 處是這些檔自己的函式被少傳（沒列）")
         sys.exit(0)
-    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv) | check_tiles())
+    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv) | check_tiles() | check_guide())
