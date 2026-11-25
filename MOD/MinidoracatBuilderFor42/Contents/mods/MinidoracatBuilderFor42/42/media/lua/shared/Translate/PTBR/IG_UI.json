@@ -798,6 +798,7 @@
   "IGUI_MBLD_Admin_DisableSource": "Desativar esta origem",
   "IGUI_MBLD_Admin_VanillaSource": "O jogo base não pode ser desativado inteiro. Desative os tilesets ou tipos dele.",
   "IGUI_MBLD_Admin_DigKind": "Os porões só são ativados ou desativados pelo tipo Porões (aba Tipos).",
+  "IGUI_MBLD_Admin_DigPatch": "Não dá para cavar: tiles 5886 em conflito, veja console.txt",
   "IGUI_MBLD_Admin_Title": "Build Anything · Gerenciar",
   "IGUI_MBLD_Admin_Tab_kinds": "Tipos",
   "IGUI_MBLD_Admin_Tab_sources": "Origens",

@@ -798,6 +798,7 @@
   "IGUI_MBLD_Admin_DisableSource": "Bu kaynağı kapat",
   "IGUI_MBLD_Admin_VanillaSource": "Temel oyun bütünüyle kapatılamaz. Bunun yerine tile setlerini veya türleri kapat.",
   "IGUI_MBLD_Admin_DigKind": "Bodrumlar yalnızca Türler sekmesindeki Bodrumlar türüyle açılıp kapatılır.",
+  "IGUI_MBLD_Admin_DigPatch": "Kazılamaz: karo dosyası 5886 çakışıyor, bkz. console.txt",
   "IGUI_MBLD_Admin_Title": "Build Anything · Yönet",
   "IGUI_MBLD_Admin_Tab_kinds": "Türler",
   "IGUI_MBLD_Admin_Tab_sources": "Kaynaklar",

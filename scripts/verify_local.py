@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Builder 專屬的靜態檢查：scripts/verify_mod.py 第 19 項會呼叫；單獨跑 `python scripts/verify_local.py`。
-四項：管理面板規則頁的標籤寬（下面）、呼叫自己的 Lua 函式時固定參數傳齊（檔尾 check_args 的說明）、
-地下室土牆的圖塊補丁檔與 scripts/gen_basement_tiles.py 的輸出相同（check_tiles）、Steam 指南每章不超過上限（check_guide）。
+五項：管理面板規則頁的標籤寬（下面）、種類頁地下室那列的短句放得下（check_dig_note）、呼叫自己的 Lua 函式時
+固定參數傳齊（檔尾 check_args 的說明）、地下室土牆的圖塊補丁檔與 scripts/gen_basement_tiles.py 的輸出相同（check_tiles）、
+Steam 指南每章不超過上限（check_guide）。
 
 管理面板規則頁的選項名稱放得下（client/MinidoracatBuilder/Admin.lua 的 Panel:buildRules，字型 UIFont.Small）：
   數字列（SliderRow）標籤寬 floor(cw*0.45)；下拉列 cw - floor(cw*0.45) - GAP；勾選列照 E2E admin-mp 的估計 cw - 28。
@@ -500,6 +501,66 @@ def check_rules():
     return 0
 
 
+DIG_NOTE = "管理面板種類頁：地下室那列的短句放得下"
+
+
+def check_dig_note():
+    """Admin.kindLabel：圖塊沒載入時地下室那列是「地下室（3） · 短句 · 全文」，NavList 截字成「前段...」。
+    短句（檔號、console.txt）要整句留在截字後的前段：名稱＋分隔＋短句＋「...」≤ 列的名稱寬。
+    名稱寬＝NavList 寬 - 左內距 8 - 圖示 16 - 間距 6 - 右內距 8 - 開關 32 - 間距 6（MinidoracatUIFor42 Widgets/NavList.lua
+    的 refit），NavList 寬＝innerW - 捲軸槽 12，innerW＝視窗寬 - 2*PAD；視窗寬同 check_rules 取 floor(560*s)（下限）。"""
+    if not os.path.isfile(WIDTH):
+        print(f"  SKIP  {DIG_NOTE} — 找不到 {WIDTH}")
+        return 0
+    spec = importlib.util.spec_from_file_location("i18n_width", WIDTH)
+    iw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(iw)
+    if not os.path.isdir(iw.FONTS):
+        print(f"  SKIP  {DIG_NOTE} — 找不到遊戲字型 {iw.FONTS}（設定 PZ_PATH）")
+        return 0
+    with open(ADMIN, encoding="utf-8") as fh:
+        src = fh.read()
+    pad = re.search(r"local PAD, GAP = (\d+), (\d+)", src)
+    base = re.search(r"math\.max\(math\.floor\((\d+) \* s\)", src)
+    if not (pad and base and 'getText("IGUI_MBLD_Admin_DigPatch") .. sep .. getText("IGUI_MBLD_Why_DIG_PATCH")' in src):
+        print(f"  FAIL  {DIG_NOTE}\n        Admin.lua 的版面或 Admin.kindLabel 的寫法改了：照新寫法更新 scripts/verify_local.py")
+        return 1
+    texts = {}
+    for tdir in iw.translate_dirs(REPO):
+        for lang in LANGS:
+            path = os.path.join(tdir, lang, "IG_UI.json")
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as fh:
+                    texts.setdefault(lang, {}).update(json.load(fh))
+    bad, n, tags = [], 0, []
+    for fonts, tag in (([], "原版字型"), ([iw.CATLANG_FONTS], "CatLang")):
+        if fonts and not os.path.isdir(iw.CATLANG_FONTS):
+            print(f"  note  {DIG_NOTE}：找不到 {iw.CATLANG_FONTS}，只量原版字型")
+            continue
+        iw.MOD_FONTS[:] = fonts
+        tags.append(tag)
+        iw._font_paths.clear()
+        for lang, t in texts.items():
+            keys = ("IGUI_MBLD_Count", "IGUI_MBLD_Kind_dig", "IGUI_MBLD_Sep", "IGUI_MBLD_Admin_DigPatch")
+            if any(k not in t for k in keys):
+                continue   # 缺鍵歸 verify_mod 第 3 項
+            room = int(base[1]) * line_height(iw.font_file(lang, "Small")) // 16 - 2 * int(pad[1]) - GUTTER - 76
+            head = t["IGUI_MBLD_Count"].replace("%1", t["IGUI_MBLD_Kind_dig"]).replace("%2", "3") \
+                + t["IGUI_MBLD_Sep"] + t["IGUI_MBLD_Admin_DigPatch"]
+            w = iw.width(head, lang, "Small") + iw.width("...", lang, "Small")
+            n += 1
+            if w + 1 > room:
+                bad.append(f"{lang}（{tag}）：{w} px，放得下 {room - 1} px「{head}」")
+    if bad:
+        print(f"  FAIL  {DIG_NOTE}")
+        for b in bad:
+            print(f"        {b}")
+        print("        改短 IGUI_MBLD_Admin_DigPatch（關鍵放前面：檔號 5886、console.txt）")
+        return 1
+    print(f"  PASS  {DIG_NOTE}（{n} 筆，{'與'.join(tags)}）")
+    return 0
+
+
 if __name__ == "__main__":
     if "--args-also" in sys.argv:   # 盤點用：連 harness、E2E 情境裡的呼叫一起列（只列對到 MOD 定義的），只列不判
         found = short_calls(sys.argv[sys.argv.index("--args-also") + 1:])
@@ -508,4 +569,4 @@ if __name__ == "__main__":
                 print(where)
         print(f"另有 {sum(1 for h in found if not h[2])} 處是這些檔自己的函式被少傳（沒列）")
         sys.exit(0)
-    sys.exit(check_rules() | check_args("--rebase-args" in sys.argv) | check_tiles() | check_guide())
+    sys.exit(check_rules() | check_dig_note() | check_args("--rebase-args" in sys.argv) | check_tiles() | check_guide())

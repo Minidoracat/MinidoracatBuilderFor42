@@ -798,6 +798,7 @@
   "IGUI_MBLD_Admin_DisableSource": "停用這個來源",
   "IGUI_MBLD_Admin_VanillaSource": "原版不能整個停用，請改停用圖塊組或種類。",
   "IGUI_MBLD_Admin_DigKind": "地下室只能在「種類」頁用「地下室」開關。",
+  "IGUI_MBLD_Admin_DigPatch": "不能挖：圖塊檔號 5886 撞號，見 console.txt",
   "IGUI_MBLD_Admin_Title": "建造工坊 · 管理",
   "IGUI_MBLD_Admin_Tab_kinds": "種類",
   "IGUI_MBLD_Admin_Tab_sources": "來源",

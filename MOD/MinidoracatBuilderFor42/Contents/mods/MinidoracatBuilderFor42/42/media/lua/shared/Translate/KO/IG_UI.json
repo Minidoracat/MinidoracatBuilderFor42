@@ -798,6 +798,7 @@
   "IGUI_MBLD_Admin_DisableSource": "이 출처 비활성화",
   "IGUI_MBLD_Admin_VanillaSource": "바닐라는 통째로 비활성화할 수 없습니다. 대신 타일셋이나 종류를 비활성화하세요.",
   "IGUI_MBLD_Admin_DigKind": "지하실은 '종류' 탭의 '지하실'로만 켜고 끌 수 있습니다.",
+  "IGUI_MBLD_Admin_DigPatch": "굴착 불가: 타일 파일 5886 충돌, console.txt 참고",
   "IGUI_MBLD_Admin_Title": "자유 건축 · 관리",
   "IGUI_MBLD_Admin_Tab_kinds": "종류",
   "IGUI_MBLD_Admin_Tab_sources": "출처",

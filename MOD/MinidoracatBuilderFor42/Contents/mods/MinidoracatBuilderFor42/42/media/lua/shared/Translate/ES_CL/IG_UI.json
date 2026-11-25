@@ -798,6 +798,7 @@
   "IGUI_MBLD_Admin_DisableSource": "Desactivar este origen",
   "IGUI_MBLD_Admin_VanillaSource": "El juego original no se puede desactivar completo. Desactiva sus tilesets o tipos.",
   "IGUI_MBLD_Admin_DigKind": "Los sótanos solo se activan o desactivan con el tipo Sótanos (pestaña Tipos).",
+  "IGUI_MBLD_Admin_DigPatch": "No se puede cavar: tiles 5886 en conflicto, ver console.txt",
   "IGUI_MBLD_Admin_Title": "Build Anything · Administrar",
   "IGUI_MBLD_Admin_Tab_kinds": "Tipos",
   "IGUI_MBLD_Admin_Tab_sources": "Orígenes",
