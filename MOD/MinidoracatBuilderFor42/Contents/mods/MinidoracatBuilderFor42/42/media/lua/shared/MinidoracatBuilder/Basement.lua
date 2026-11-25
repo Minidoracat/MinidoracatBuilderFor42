@@ -27,7 +27,7 @@ local DIRS = { { 0, -1 }, { -1, 0 }, { 1, 0 }, { 0, 1 } }
 local EDGE = { N = { 0, -1 }, W = { -1, 0 } }
 local OTHER = { N = "W", W = "N" }
 
--- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } } }
+-- cells[鍵]＝連通塊編號；blocks[編號]＝{ n＝格數, tiles＝{ [鍵]＝{ x, y } }, box＝{ x0, y0, x1, y1 } 包圍盒（含邊） }
 -- main[編號]＝這一場登錄過的主建物 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }；regd[鍵]＝這一格已登錄進某一棟
 local cells, blocks, main, regd, lastId = {}, {}, {}, {}, 0
@@ -61,6 +61,8 @@ local function merge(a, b)
         A.tiles[k], cells[k] = t, a
     end
     A.n = A.n + B.n
+    local p, q = A.box, B.box
+    p[1], p[2], p[3], p[4] = math.min(p[1], q[1]), math.min(p[2], q[2]), math.max(p[3], q[3]), math.max(p[4], q[4])
     main[a] = main[a] or main[b]
     blocks[b], main[b] = nil, nil
     return a
@@ -81,10 +83,12 @@ function Basement.add(tiles)
             if not id then
                 lastId = lastId + 1
                 id = lastId
-                blocks[id] = { n = 0, tiles = {} }
+                blocks[id] = { n = 0, tiles = {}, box = { x, y, x, y } }
             end
             local b, xy = blocks[id], { x, y }
             cells[k], b.n, b.tiles[k] = id, b.n + 1, xy
+            local box = b.box
+            box[1], box[2], box[3], box[4] = math.min(box[1], x), math.min(box[2], y), math.max(box[3], x), math.max(box[4], y)
             added[#added + 1] = xy
         end
     end
@@ -137,20 +141,18 @@ function Basement.reset(tiles, ax, ay)
     return Basement.add(inside)
 end
 
--- 大區 (ax, ay) 周圍 3×3 範圍內的格子，照連通塊分：{ { { x, y }, ... }, ... }。
--- shortcut: 每次走過整個集合（帳本 5 秒限一次、伺服器上幾萬格以內），慢了再照大區建索引
+-- 大區 (ax, ay) 周圍 3×3 範圍內的格子，照連通塊分：{ { { x, y }, ... }, ... }。包圍盒碰不到範圍的塊不逐格看
 function Basement.area(ax, ay)
     local x0, y0, x1, y1 = range(ax, ay)
-    local by, out = {}, {}
-    for k, id in pairs(cells) do
-        local t = blocks[id].tiles[k]
-        if t[1] >= x0 and t[1] < x1 and t[2] >= y0 and t[2] < y1 then
-            local list = by[id]
-            if not list then
-                list = {}
-                by[id], out[#out + 1] = list, list
+    local out = {}
+    for _, b in pairs(blocks) do
+        local box = b.box
+        if box[1] < x1 and box[3] >= x0 and box[2] < y1 and box[4] >= y0 then
+            local list = {}
+            for _, t in pairs(b.tiles) do
+                if t[1] >= x0 and t[1] < x1 and t[2] >= y0 and t[2] < y1 then list[#list + 1] = t end
             end
-            list[#list + 1] = t
+            if #list > 0 then out[#out + 1] = list end
         end
     end
     return out
@@ -552,15 +554,40 @@ end
 local LOT = 256
 local function lotOf(v) return math.floor(v / LOT) end
 
+-- 客戶端只登錄身邊的塊：包圍盒離任一位本機玩家 NEAR 格內。chunkMap 最寬 19 個 chunk＝152 格、半寬 76 格
+-- （IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk 載入時
+-- applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。遠的塊留著不登錄。
+-- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間。回 nil＝不篩
+Basement.NEAR = 128
+local function nearIds()
+    if not isClient() then return nil end
+    local ps, near, N = {}, {}, Basement.NEAR
+    for n = 0, getNumActivePlayers() - 1 do
+        local p = getSpecificPlayer(n)
+        if p then ps[#ps + 1] = p end
+    end
+    for id, b in pairs(blocks) do
+        local box = b.box
+        for _, p in ipairs(ps) do
+            local x, y = p:getX(), p:getY()
+            if x >= box[1] - N and x <= box[3] + N and y >= box[2] - N and y <= box[4] + N then
+                near[id] = true
+                break
+            end
+        end
+    end
+    return near
+end
+
 -- 集合裡還沒登錄的格子 list 照塊登錄：塊還沒有主建物 → 這些格子登錄成主建物；有 → 會換掉主建物 metaID 或地圖格的
 -- （角的西北方：x ≤ cx 而且 y < cy，calculateMetaID 會換角；在主建物地圖格的西邊或北邊，審查 round1 F3）登錄成 1 格的 annex，
--- 其他併進主建物重登錄（同地圖格、同 metaID，引擎換掉舊的）。每一棟登錄好了才記下它的格子（apply 的 ok）
+-- 其他併進主建物重登錄（同地圖格、同 metaID，引擎換掉舊的）。每一棟登錄好了才記下它的格子（apply 的 ok）。客戶端只登錄身邊的塊
 local function register(list)
-    local by, order, seen = {}, {}, {}
+    local by, order, seen, near = {}, {}, {}, nearIds()
     for _, t in ipairs(list) do
         local k = key(t[1], t[2])
         local id = cells[k]
-        if id and not regd[k] and not seen[k] then
+        if id and not regd[k] and not seen[k] and (not near or near[id]) then
             seen[k] = true
             if not by[id] then
                 by[id] = {}
@@ -623,7 +650,8 @@ local function register(list)
     return all
 end
 
--- 集合裡還沒登錄的格子全部登錄（開服載入帳本當下、客戶端收到 basements 後），一次 applyChanges。回成不成功
+-- 集合裡還沒登錄的格子全部登錄（開服載入帳本當下；客戶端收到 basements 後與每遊戲分鐘，只登錄身邊的塊），一次
+-- applyChanges。沒有要登錄的就不叫引擎。回成不成功
 function Basement.registerAll()
     local list = {}
     for k, id in pairs(cells) do

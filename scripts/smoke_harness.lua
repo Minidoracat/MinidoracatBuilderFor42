@@ -10055,6 +10055,34 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(keys <= 20000 and accepted == 100,
             "D8 拖 512 個錨點的預覽：Place.key " .. keys .. " 次（上限 20,000）；300 格的塊接 100 格到上限（" .. accepted .. "）")
 
+        -- D7 大區查詢照包圍盒篩塊：300 格那一排整塊回來、別的大區的塊不混進來；客戶端只登錄身邊的塊（包圍盒 128 格內）
+        local A6 = math.floor(6000 / Basement.AREA)
+        local rowList = Basement.area(A6, A6)
+        local inRow = 0
+        for _, list in ipairs(rowList) do
+            for _, t in ipairs(list) do
+                if t[2] == 6001 then inRow = inRow + 1 end
+                if t[1] < (A6 - 1) * Basement.AREA or t[1] >= (A6 + 2) * Basement.AREA then inRow = -9999 end
+            end
+        end
+        local keepIsClient, keepNum, keepSpec = isClient, getNumActivePlayers, getSpecificPlayer
+        local px7 = 7000 - 129
+        isClient = function() return true end
+        getNumActivePlayers = function() return 2 end
+        getSpecificPlayer = function(n)
+            return n == 1 and { getX = function() return px7 end, getY = function() return 7000 end } or nil
+        end
+        Basement.add({ { 7000, 7000 }, { 7001, 7000 } })
+        Basement.registerAll()
+        local farSkip = eng.tile[tk(7000, 7000)] == nil
+        px7 = 7000 - 128
+        Basement.registerAll()
+        local nearReg = eng.tile[tk(7000, 7000)] ~= nil and eng.tile[tk(7001, 7000)] == eng.tile[tk(7000, 7000)]
+        isClient, getNumActivePlayers, getSpecificPlayer = keepIsClient, keepNum, keepSpec
+        check(inRow == 300 and farSkip and nearReg,
+            "D7 大區查詢照包圍盒篩塊、結果照舊；客戶端包圍盒離本機玩家（看全部分割畫面玩家）129 格不登錄、走到 128 格內登錄成同一棟（"
+            .. inRow .. " " .. tostring(farSkip) .. " " .. tostring(nearReg) .. "）")
+
         local calls, keepMods = 0, getActivatedMods
         getActivatedMods = function() calls = calls + 1 return keepMods() end
         Basement.bdOn = nil
@@ -26043,21 +26071,21 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     fire("OnGameStart")
     local onStart = #sent
     C.askEveryMinute()
-    local asked = onStart == 1 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements"
+    local asked = onStart == 1 and #sent == 2 and sent[1] == "MinidoracatBuilder:basements" and log() == "all,all"
     -- 快照到（一段）：含剛才那兩格，整塊一起登錄、同一塊；之後大區沒變不再要；範圍內的 dug 照登錄
     seg(A, 1, 1, { { 90000, 90000, 3, 1 } })
     local sx, sy = C.basementSynced()
     local id0 = BM.blockOf(90000, 90000, -1)
     local whole = log() == "all,z" and sx == A and sy == A and id0 ~= nil and BM.blockOf(90002, 90000, -1) == id0
     C.askEveryMinute()
-    local quiet = #sent == 2
+    local quiet = #sent == 2 and log() == "all"
     C.onServerCommand("dug", { t = { 90003, 90000 } })
     local dugOk = log() == "grow1,z" and BM.has(90003, 90000, -1)
     -- 換大區：再要；沒回再要；舊範圍外的 dug 不登錄；分兩段的快照收齊才換掉、記成新的一區，之後不再要
     px = 90000 + AR
     C.askEveryMinute()
     C.askEveryMinute()
-    local moved = #sent == 4
+    local moved = #sent == 4 and log() == "all,all"
     local far = (A + 2) * AR + 10
     C.onServerCommand("dug", { t = { far, 90000 } })
     local farDrop = log() == "" and not BM.has(far, 90000, -1)
@@ -26068,7 +26096,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     local two = log() == "all,z" and BM.has(far, 90000, -1) and BM.has(90011, 90010, -1) and not BM.has(90000, 90000, -1)
         and sx == A + 1
     C.askEveryMinute()
-    local quiet2 = #sent == 4
+    local quiet2 = #sent == 4 and log() == "all"
     check(asked and quiet and moved and quiet2,
         "F8 多人：進場（OnGameStart）當下要 basements；沒收到快照（請求被限速丟掉）下一分鐘再要；收到後大區沒變不再要；換大區再要、沒回再要；"
         .. "收到新的一區後不再要（" .. tostring(asked) .. tostring(quiet) .. tostring(moved) .. tostring(quiet2) .. " " .. #sent .. "）")

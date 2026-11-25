@@ -674,7 +674,8 @@ function Client.onBasement(cmd, args)
 end
 
 -- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
--- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要）
+-- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要），
+-- 並登錄走近了的地下室（Basement.registerAll 在客戶端只登錄身邊的塊）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return end
@@ -684,7 +685,9 @@ local function askBasements()
     sendClientCommand(p, MODULE, "basements", {})
 end
 function Client.askEveryMinute()
-    if isClient() then askBasements() end
+    if not isClient() then return end
+    askBasements()
+    MinidoracatBuilder.Basement.registerAll()
 end
 Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)
