@@ -3491,6 +3491,170 @@ local function dismantleScenario()
         for _, k in ipairs({ "70,71,-1", "71,70,-1", "70,72,-1", "70,70,1" }) do squares[k] = nil end
     end
 
+    -- 拆自己腳下的地板（fix3 A）：本工具拆的地板先排站位動作，輪到那一件才看人是不是站在上面，是就先走到旁邊再拆。
+    -- 排隊當下的位置不準（前面幾件的走路把人帶到後一件上，1.6 格內原版不排走路），伺服器把自己也算進 OCCUPIED。
+    -- 單機：請求、回覆都在同一個 Lua 狀態；佇列照原版（站位動作開著 beginAddingActions 時插在它後面），走路就是換所在格。
+    -- 字：W<x>＝走到 x、S<i>／D<i>＝第 i 件的站位、拆除動作（D 後面接伺服器跳過的碼）
+    do
+        local C = MinidoracatBuilder.Client
+        local keep = { isServer, isClient, ISTimedActionQueue, luautils, AdjacentFreeTileFinder, ISWalkToTimedAction,
+            sb.MaxCellsPerDrag }
+        isServer, isClient, sb.MaxCellsPerDrag = function() return false end, function() return false end, 32
+        for x = 259, 267 do for y = 259, 263 do engineSq(x, y, 0) end end
+        for x = 260, 266 do engineSq(x, 261, -1) end
+        local queued, blocked, here = {}, {}, nil
+        ISTimedActionQueue = { clear = function() queued = {} end, isPlayerDoingAction = function() return false end,
+            add = function(x)
+                local cur = queued[1]
+                if cur and cur._isAddingActions then
+                    cur._numAddedActions = cur._numAddedActions + 1
+                    table.insert(queued, 1 + cur._numAddedActions, x)
+                else
+                    queued[#queued + 1] = x
+                end
+            end,
+            getTimedActionQueue = function() return { queue = queued } end }
+        ISWalkToTimedAction = { new = function(_, _, sq) return { walk = sq } end }
+        -- 照原版找站位：上下左右、不在排除清單、離玩家最近（同距取先看到的）；blocked＝站不了的格子
+        AdjacentFreeTileFinder = { Find = function(sq, p, skip)
+            local best, far
+            for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+                local n = getCell():getGridSquare(sq:getX() + d[1], sq:getY() + d[2], sq:getZ())
+                local ok = n ~= nil and not blocked[n]
+                for _, s in ipairs(skip or {}) do if s == n then ok = false end end
+                if ok then
+                    local dist = math.abs(n:getX() + 0.5 - p:getX()) + math.abs(n:getY() + 0.5 - p:getY())
+                    if not far or dist < far then best, far = n, dist end
+                end
+            end
+            return best
+        end }
+        -- 照原版 luautils.walkAdj（luautils.lua:119-150）：站在排除清單上一定找站位；1.6 格內不排走路
+        luautils = { getCorrectSquareForWall = harnessWallSquare, walkAdjWall = function() return true end,
+            walkAdj = function(p, sq, _, ex)
+                local on = false
+                for _, t in ipairs(ex or {}) do if p:getCurrentSquare() == t then on = true end end
+                if not on and math.abs(sq:getX() + 0.5 - p:getX()) <= 1.6 and math.abs(sq:getY() + 0.5 - p:getY()) <= 1.6 then
+                    return true
+                end
+                local adj = AdjacentFreeTileFinder.Find(sq, p, ex)
+                if adj then ISTimedActionQueue.add(ISWalkToTimedAction:new(p, adj)) end
+                return adj ~= nil
+            end }
+        local P = hammerer(2250, 0, 0, nil)
+        function P:getCurrentSquare() return here end
+        local function moveTo(sq)
+            if here then
+                for k, v in ipairs(here.moving) do if v == P then table.remove(here.moving, k) break end end
+            end
+            here = sq
+            sq.moving[#sq.moving + 1] = P
+            P.pos.x, P.pos.y, P.pos.z = sq:getX() + 0.5, sq:getY() + 0.5, sq:getZ()
+        end
+        local floors = {}
+        local function lay()
+            for x = 261, 265 do
+                local sq = at(x, 261, 0)
+                sq.objects, sq.moving = {}, {}
+                floors[x] = ours(sq, floorS, {})
+                floors[x].dism = false -- 一樓的地板照地板帳本認（同上面「一樓的地板拆了換泥土」）
+                MinidoracatBuilder.Floors.put(floors[x], { ["Base.Plank"] = 1 })
+            end
+            here, blocked, queued, Server.unbuilds, C.pendingUnbuild = nil, {}, {}, {}, nil
+        end
+        local function piece(x, own)
+            local sq = at(x, 261, 0)
+            return { x = x, y = 261, z = 0, name = "df_01_0", kind = "floor", route = "builder", own = own or { sq },
+                obj = floors[x] }
+        end
+        local function shape()
+            local out = {}
+            for k, a in ipairs(queued) do
+                out[k] = a.walk and ("W" .. a.walk:getX()) or (a.Type == "MinidoracatBuilderStandAction" and "S" or "D") .. a.i
+            end
+            return table.concat(out, " ")
+        end
+        local function run()
+            local log, guard = {}, 0
+            while queued[1] and guard < 100 do
+                guard = guard + 1
+                local a = queued[1]
+                if a.walk then
+                    table.remove(queued, 1)
+                    moveTo(a.walk)
+                    log[#log + 1] = "W" .. a.walk:getX()
+                elseif a.Type == "MinidoracatBuilderStandAction" then
+                    if not a:waitToStart() then a:start() end
+                    table.remove(queued, 1)
+                    log[#log + 1] = "S" .. a.i
+                else
+                    table.remove(queued, 1)
+                    a:complete()
+                    local r = C.results[#C.results]
+                    log[#log + 1] = "D" .. a.i .. (r and r.cmd == "dismantleSkipped" and (":" .. tostring(r.code)) or "")
+                end
+            end
+            return table.concat(log, " ")
+        end
+        local function gone(xs)
+            for _, x in ipairs(xs) do if has(at(x, 261, 0), floors[x]) then return false end end
+            return true
+        end
+        local function go(xs, own, start)
+            lay()
+            moveTo(at(start, 261, 0))
+            local items, sum = {}, nil
+            for k, x in ipairs(xs) do items[k] = piece(x, own) end
+            nowMs = nowMs + 6000
+            C.dismantleMany(P, items, function(s) sum = s end)
+            return shape(), function() local r = run() return r, sum end
+        end
+        -- (a) 單件、站在那塊地板上：own 帶那一格（Area.item 照 plan.remove）時原版走路排隊當下就走開；own 沒帶到也在輪到時走開
+        local qa1, ra1 = go({ 263 }, nil, 263)
+        local la1 = ra1()
+        local okA1 = gone({ 263 })
+        local qa2, ra2 = go({ 263 }, {}, 263)
+        local la2 = ra2()
+        local okA2 = gone({ 263 })
+        check(qa1 == "W262 S1" and la1 == "W262 S1 D1" and okA1 and qa2 == "S1" and la2 == "S1 W262 D1" and okA2,
+            "拆自己腳下的地板（單件）：先走到旁邊再拆，伺服器不回 OCCUPIED；own 沒帶到那一格也在輪到時走開（"
+                .. qa1 .. " → " .. la1 .. " / " .. qa2 .. " → " .. la2 .. "）")
+        -- (b) 一排 5 格、站在倒數第二格復原（後蓋的先拆）：拆第 2 件時走到第 3 件上，排隊當下它在 1.6 格內沒排走路
+        local qb, rb = go({ 265, 264, 263, 262, 261 }, nil, 264)
+        local lb, sb = rb()
+        check(not lb:find("OCCUPIED", 1, true) and lb:find("S3 W262 D3", 1, true) ~= nil and gone({ 261, 262, 263, 264, 265 })
+            and sb and sb.done == 5,
+            "復原一排 5 格、站在倒數第二格：輪到被前面的走路帶上去的那一件時先走開，5 件都拆、伺服器沒有 OCCUPIED（"
+                .. qb .. " → " .. lb .. "）")
+        -- (c) 沒站在上面：不多走路（排隊與輪到時都沒有走路，站位動作直接排拆除）
+        local qc, rc = go({ 263 }, nil, 262)
+        local lc = rc()
+        check(qc == "S1" and lc == "S1 D1" and gone({ 263 }), "拆地板、人沒站在上面：不多走一趟（" .. qc .. " → " .. lc .. "）")
+        -- (d) 輪到時站在上面、四周站不了：那一件 NO_ROOM 跳過、不送，後面照拆
+        local qd, rd = go({ 265, 264, 262 }, nil, 263)
+        blocked = { [at(263, 261, 0)] = true, [at(265, 261, 0)] = true, [at(264, 260, 0)] = true, [at(264, 262, 0)] = true }
+        local ld, sd = rd()
+        check(qd == "W264 S1 S2 S3" and ld == "W264 S1 D1 S2 S3 D3" and gone({ 265, 262 }) and has(at(264, 261, 0), floors[264])
+            and sd and sd.done == 2 and sd.skipped.NO_ROOM == 1 and not sd.stopped,
+            "輪到時站在那一件上、四周沒有能站的：NO_ROOM 跳過（不送、地板還在），後面的件照拆（" .. qd .. " → " .. ld .. "）")
+        -- 建造作弊照舊原地拆、不走開：伺服器照算自己 OCCUPIED
+        local keepMenu = ISBuildMenu
+        ISBuildMenu = { cheat = true }
+        local qe, re = go({ 263 }, nil, 263)
+        local le = re()
+        ISBuildMenu = keepMenu
+        check(qe == "D1" and le == "D1:OCCUPIED" and has(at(263, 261, 0), floors[263]),
+            "建造作弊拆自己腳下的地板：照舊不排站位、不走開，伺服器回 OCCUPIED、地板還在（" .. qe .. " → " .. le .. "）")
+        for x = 259, 267 do
+            for y = 259, 263 do squares[x .. "," .. y .. ",0"] = nil end
+            squares[x .. ",261,-1"] = nil
+        end
+        C.pendingUnbuild, Server.unbuilds = nil, {}
+        isServer, isClient, ISTimedActionQueue, luautils, AdjacentFreeTileFinder, ISWalkToTimedAction =
+            keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
+        sb.MaxCellsPerDrag = keep[7]
+    end
+
     -- 一樓的地板退料在伺服器的地板帳本：本工具照它退，不看 modData；圖和蓋的時候不同的地板不退
     local FP = hammerer(2230, 75.5, 76.5, at(75, 76, 0))
     FP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
@@ -3765,6 +3929,58 @@ local function dismantleScenario()
     check(sendN == 2 and over == 2 and marked == 1,
         "預覽：上限 2 時兩格要拆、超過上限的兩格 over（不畫三角）、不空的容器照舊標（" .. sendN .. "／" .. over .. "／" .. marked .. "）")
     check(previewTracks(function() return "same" end) == false, "植入違規（世界戳記不變）：拆掉、放東西都不重算，上一條抓得到")
+    -- 預覽戳記含地板防護格的佔用（fix3 B）：地下室正上方的地板（z<=0、正下方有格子）上有別人站上、走開都重算，件數跟著變；
+    -- 只有自己（walk 時不算本人）和沒人同一份。z>0 或正下方沒格子的地方 Dismantle.check 不看人，有人走動不重算。
+    do
+        sb.MaxCellsPerDrag = 32
+        for x = 90, 92 do engineSq(x, 93, 0) end
+        for x = 90, 91 do engineSq(x, 93, -1) end -- (92,93) 正下方沒有格子
+        local up = engineSq(91, 93, 1) -- 上一層（範圍掃 z、z+1）：二樓以上不防護
+        for x = 90, 92 do
+            local f = withBox(ours(at(x, 93, 0), floorS, {}))
+            f.dism = false
+            MinidoracatBuilder.Floors.put(f, { ["Base.Plank"] = 1 })
+        end
+        local OP = player({ id = 2291, x = 90.5, y = 93.5, here = at(90, 93, 0) })
+        local function occTracks(stamp)
+            local realStamp = Area.stamp
+            if stamp then Area.stamp = stamp end
+            local function go(p)
+                local n = 0
+                for _, c in ipairs(p.cells) do if not c.bad then n = n + 1 end end
+                return n
+            end
+            local guard = at(90, 93, 0)
+            local p1 = Area.preview(AP, 90, 93, 92, 93, 0) -- 沒人
+            guard.moving = { OP }
+            local p2 = Area.preview(AP, 90, 93, 92, 93, 0) -- 別人站上
+            guard.moving = {}
+            local p3 = Area.preview(AP, 90, 93, 92, 93, 0) -- 走開
+            guard.moving = { AP }
+            local p4 = Area.preview(AP, 90, 93, 92, 93, 0) -- 只有自己
+            guard.moving = { OP }
+            local p5 = Area.preview(AP, 90, 93, 92, 93, 0) -- 換成只有別人
+            guard.moving = {}
+            local p6 = Area.preview(AP, 90, 93, 92, 93, 0)
+            at(92, 93, 0).moving, up.moving = { OP }, { OP }
+            local p7 = Area.preview(AP, 90, 93, 92, 93, 0) -- 下面沒格子的、二樓的有人
+            at(92, 93, 0).moving, up.moving = {}, {}
+            Area.stamp = realStamp
+            local counts = go(p1) .. go(p2) .. go(p3) .. go(p4) .. go(p5) .. go(p6) .. go(p7)
+            return p1 ~= p2 and p2 ~= p3 and p3 == p4 and p4 ~= p5 and p5 ~= p6 and p6 == p7 and counts == "3233233", counts
+        end
+        local occOk, occN = occTracks()
+        check(occOk, "預覽：地下室正上方的地板有別人站上、走開都重算（件數 3→2→3），只有自己和沒人同一份、只有別人分得出來；"
+            .. "下面沒格子的、二樓的有人不重算（" .. occN .. "）")
+        local Chk, realStampB = MinidoracatBuilder.Check, Area.stamp
+        check(occTracks(function(...) -- 植入違規：戳記不看佔用
+            local real = Chk.occupied
+            Chk.occupied = function() return false end
+            local s = realStampB(...)
+            Chk.occupied = real
+            return s
+        end) == false, "植入違規（戳記不看佔用）：別人站上、走開都不重算，上一條抓得到")
+    end
     Area.collect = realCollect
     sb.MaxCellsPerDrag = realMax
     -- 游標：範圍變了只畫外框、停住 200 ms 才問預覽、不動時每秒問一次；吸管（沒有 outline）馬上問；三角最多 128 個
@@ -10286,14 +10502,16 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         check(hooked == h0 + 1 and count("OnTick") == h0 and dirtAt(3001, 3003) == "N",
             "c5 拆掉玩家的牆 → touch → 下一個 tick 補回土牆（同一格排兩次只掛一次 OnTick，跑完摘掉）")
         -- fix 拆土牆、柱時（Place.onAboutToBeRemoved）又 touch：照引擎走訪 OnTick（Event.java:52-64：照索引走、size 每圈重讀，
-        -- 處理器跑完不在清單裡才 n--），處理器數量不變、排在 flush 後面的那一個同一個 tick 照樣被叫到；下一個 tick 跑完才摘
+        -- 處理器跑完不在清單裡才 n--），處理器數量不變、排在 flush 後面的那一個同一個 tick 照樣被叫到；下一個 tick 跑完才摘。
+        -- 重入時排的是另一格（遠處、不在任何地下室外邊，fixEdges 直接回）：第一個 tick 不處理它、第二個 tick 恰好處理一次
         do
-            local keepFix, again, after = Basement.fixEdges, true, 0
+            local keepFix, again, after, done = Basement.fixEdges, true, 0, {}
             Basement.fixEdges = function(x, y, z)
+                done[#done + 1] = x .. "," .. y
                 keepFix(x, y, z)
                 if again then
                     again = false
-                    Basement.touch(x, y, z)
+                    Basement.touch(3900, 3900, z)
                 end
             end
             local function tail() after = after + 1 end
@@ -10313,15 +10531,17 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             Events.OnTick.Add(tail)
             local before = count("OnTick")
             tick()
-            local mid, midAfter = count("OnTick"), after
+            local mid, midAfter, midDone = count("OnTick"), after, table.concat(done, " ")
             tick()
-            local done = count("OnTick")
+            local over = count("OnTick")
             Events.OnTick.Remove(tail)
             Basement.fixEdges = keepFix
-            check(before == t0 + 2 and mid == before and midAfter == 1 and done == t0 + 1 and after == 2
-                and dirtAt(3001, 3003) == "N",
-                "c5 flush 裡又 touch：OnTick 處理器數量不變、排在後面的同一個 tick 照樣被叫到，下一個 tick 跑完才摘（" .. before - t0
-                    .. "," .. mid - t0 .. "," .. midAfter .. "," .. done - t0 .. "," .. after .. "）")
+            local all = table.concat(done, " ")
+            check(before == t0 + 2 and mid == before and midAfter == 1 and over == t0 + 1 and after == 2
+                and midDone == "3001,3003" and all == "3001,3003 3900,3900" and dirtAt(3001, 3003) == "N",
+                "c5 flush 裡又 touch 另一格：第一個 tick 不處理它、第二個 tick 恰好處理一次；OnTick 處理器數量不變、排在後面的同一個"
+                    .. " tick 照樣被叫到，下一個 tick 跑完才摘（" .. before - t0 .. "," .. mid - t0 .. "," .. midAfter .. ","
+                    .. over - t0 .. "," .. after .. "；" .. all .. "）")
         end
         local s0 = realCell():getGridSquare(3000, 3000, Z)
         s0.objects[#s0.objects + 1] = obj(s0, "t_wallN", true)
@@ -27715,16 +27935,38 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "挖通客戶端兩塊：dug、每分鐘檢查 0 次，block 到了登錄 1 次（新格併進貼著的那一棟，兩棟共 5 格、沒有重疊登錄）（"
         .. j1 .. j2 .. j3 .. " " .. nj .. "）")
 
-    -- 亂序：block（v=9，五格一間）先到、修訂號較小的快照（v=5，還分兩間）後到：房號不被舊快照蓋回；較新的快照（v=10）照套
-    seg(A + 20, 1, 1, { { R, R, 2, 1 }, { R + 2, R, 3, 1 } }, 5)
-    local _, o1 = BM.roomOf(R, R, -1)
-    local _, o2 = BM.roomOf(R + 4, R, -1)
-    seg(A + 20, 1, 1, { { R, R, 2, 1 }, { R + 2, R, 3, 1 } }, 10)
-    local _, n1 = BM.roomOf(R, R, -1)
-    local _, n2 = BM.roomOf(R + 4, R, -1)
-    check(o1 ~= nil and o1 == o2 and n1 ~= n2,
-        "亂序：block 先到、修訂號較小的快照後到，房號不被舊快照蓋回（還是一間）；較新的快照照套（分兩間）（" .. tostring(o1) .. ","
-            .. tostring(o2) .. "／" .. tostring(n1) .. "," .. tostring(n2) .. "）")
+    -- 亂序：block（v=9，五格一間）先到、修訂號較小的快照（v=5，還分兩間）後到：房號不被舊快照蓋回；較新的快照（v=10）照套。
+    -- 快照照伺服器的正式格式（BasementLedger.send：b＝塊的清單，一塊＝每間一組 { x, y, w, h, ... }）送一塊兩間，直接進
+    -- onServerCommand；五格都要在同一塊、都有房號（一端是 nil 也算不過）
+    local function snap(v)
+        C.onServerCommand("basements",
+            { ax = A + 20, ay = A + 20, i = 1, n = 1, v = v, b = { { { R, R, 2, 1 }, { R + 2, R, 3, 1 } } } })
+        local ids, rs = {}, {}
+        for d = 1, 5 do ids[d], rs[d] = BM.roomOf(R + d - 1, R, -1) end
+        return { ids = ids, rs = rs }
+    end
+    local function seen(s) -- 「塊:房」五格
+        local out = {}
+        for d = 1, 5 do out[d] = tostring(s.ids[d]) .. ":" .. tostring(s.rs[d]) end
+        return table.concat(out, ",")
+    end
+    local function orderOk(old, new) -- 舊快照後仍是一間、新快照後前二後三兩間；每格都在同一塊、房號都不是 nil
+        for _, s in ipairs({ old, new }) do
+            for d = 1, 5 do
+                if s.ids[d] == nil or s.ids[d] ~= s.ids[1] or s.rs[d] == nil then return false end
+            end
+        end
+        local o, n = old.rs, new.rs
+        return o[1] == o[2] and o[2] == o[3] and o[3] == o[4] and o[4] == o[5]
+            and n[1] == n[2] and n[3] == n[4] and n[4] == n[5] and n[2] ~= n[3]
+    end
+    local old = snap(5)
+    local new = snap(10)
+    check(orderOk(old, new),
+        "亂序：block 先到、修訂號較小的快照（一塊兩間）後到，房號不被舊快照蓋回（五格同一塊、還是一間）；較新的快照照套（前二後三"
+            .. "兩間）（" .. seen(old) .. "／" .. seen(new) .. "）")
+    check(not orderOk(old, { ids = new.ids, rs = { new.rs[1], new.rs[2], nil, nil, nil } }),
+        "植入違規（新快照後一端房號是 nil）：上一條不過（舊寫法只比兩端不相等，會過）")
 
     BM.reset({}, A, A)
     BM.reset({}, A + 10, A + 10)

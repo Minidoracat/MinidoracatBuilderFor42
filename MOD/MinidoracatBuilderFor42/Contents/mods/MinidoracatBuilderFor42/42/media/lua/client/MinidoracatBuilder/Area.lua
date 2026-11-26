@@ -214,11 +214,15 @@ end
 local cache = { key = nil, stamp = nil, out = nil }
 
 -- 世界戳記：範圍（玩家那層與上一層）每格的物件數、每件容器裡的件數、每件掛的附加圖張數（地板的地面覆蓋、牆上的疊圖），
--- 加上玩家背包件數與建造作弊。
+-- 地板防護會看的格子有沒有人站著，加上玩家背包件數與建造作弊。
 -- 拆完、別人蓋了或拆了、容器放進拿出、工具進出背包都會變，預覽照它決定要不要重算。整區 3,200 格約幾毫秒，比重算便宜。
+-- 有沒有人站著只看 Dismantle.check 地板分支會查的格子（那一格 z <= 0、正下方那一層有格子），用和預覽同一個 me
+-- （沒開建造作弊＝玩家本人不算，作弊＝全算），所以「只有自己」和「只有別人」分得出來；別處有人走動不重算。
 -- ponytail：同一格的東西原地換成別款（件數不變）認不出來，要等範圍變了才重算；放開時一律重新 collect、伺服器也一件一件重查
 function Area.stamp(x1, y1, x2, y2, z, player)
     local cell, s = getCell(), 0
+    local cheat = player ~= nil and B.Materials.cheat(player)
+    local me, occupied = not cheat and player or nil, B.Check.occupied
     for x = x1, x2 do
         for y = y1, y2 do
             for dz = 0, 1 do
@@ -234,13 +238,15 @@ function Area.stamp(x1, y1, x2, y2, z, player)
                         local list = o:getAttachedAnimSprite()
                         if list then n = n + 4096 * list:size() end
                     end
+                    local guarded = z + dz <= 0 and cell:getGridSquare(x, y, z + dz - 1) ~= nil
+                    n = n * 2 + ((guarded and occupied(sq, me)) and 1 or 0)
                 end
                 s = (s * 31 + n) % 2147483629
             end
         end
     end
     local inv = player and player:getInventory()
-    return s .. ":" .. (inv and inv:getItems():size() or -1) .. ":" .. tostring(B.Materials.cheat(player))
+    return s .. ":" .. (inv and inv:getItems():size() or -1) .. ":" .. tostring(cheat)
 end
 
 -- Cursor.startArea 的 preview：要拆的格子（bad＝false，游標畫紅）與不拆的東西的格子（bad＝true）；只是超過一次上限

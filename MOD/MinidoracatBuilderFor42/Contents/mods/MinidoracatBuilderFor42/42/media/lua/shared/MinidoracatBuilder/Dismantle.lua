@@ -431,8 +431,9 @@ end
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
 --   一樓以下的地板、正下方那一層有格子（地下室正上方）：格上有人、殭屍或動物 OCCUPIED（Check.occupied）。拆了到補泥土
---     （Server 的 removeAll）之間那格沒有地板，站在上面的會掉下去。preview 不算下指令的人自己（選了會先走到旁邊，
---     Client 的 walkNear 不站 own），伺服器與建造作弊（原地拆）照算。二樓以上拆樓板不看人（原版同樣）。
+--     （Server 的 removeAll）之間那格沒有地板，站在上面的會掉下去。preview 不算下指令的人自己（輪到那一件時站在上面會先
+--     走到旁邊，Client 的 unbuildStand），伺服器與建造作弊（原地拆）照算。二樓以上拆樓板不看人（原版同樣）。
+--     一區拆除的游標預覽照同一個條件把佔用併進快取戳記（Area.stamp），改條件要一起改。
 --   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
 function Dismantle.check(player, kind, plan, ...)
     local preview, toolMemo = ...

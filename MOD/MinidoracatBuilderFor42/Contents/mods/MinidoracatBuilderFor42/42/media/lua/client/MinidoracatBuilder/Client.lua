@@ -234,8 +234,11 @@ end
 
 -- 輪到第 i 格才找站位、排走路（站位動作開著 beginAddingActions，走路插在它後面）。找不到站位但伺服器的距離檢查原地就過
 -- （屋頂站位算在下一層，前面蓋好的屋頂片不會變出站位），原地蓋。挖這一格不原地挖：伺服器要站在已挖的鄰格（回 DIG_STAND）。
--- 都不行時記 noRoom、回 false
+-- 都不行時記 noRoom、回 false。n 是還沒輪完的拆除那一筆時，改照拆除的規則（unbuildStand）
+local unbuildStand
 function Client.stand(n, i)
+    local u = Client.pendingUnbuild
+    if u and u.n == n then return unbuildStand(u, i) end
     local b = Client.pending
     if not (b and b.n == n) then return false end
     local c = b.cells[i]
@@ -400,6 +403,34 @@ local function finish(b, ...)
     if b.onDone then b.onDone(s) else tell(b, s) end
 end
 
+-- 拆本工具的地板（不開作弊）：輪到第 i 件才看下指令的人是不是站在那一件上（站位動作，Client.stand）。伺服器把自己也算進
+-- 「有人站著」（Dismantle.check 的地板分支；二樓以上拆了會掉下去），排隊當下的位置不準：前面幾件的走路可能把人帶到這一件上，
+-- 1.6 格內 luautils.walkAdj 就不排走路（luautils.lua:136-142）。站在上面先走到旁邊（排除這一件的格子），拆除動作插在走路後面；
+-- 旁邊沒有能站的照 NO_ROOM 跳過這一件、後面照走。沒站在上面直接排拆除，不多走一趟。回 true（站位動作照常結束）
+unbuildStand = function(b, i)
+    local it = b.list[i]
+    if not it then return false end
+    local sq = getCell():getGridSquare(it.x, it.y, it.z)
+    local here, skip = b.player:getCurrentSquare(), { sq }
+    local on = sq ~= nil and here == sq
+    for _, o in ipairs(it.own or {}) do
+        skip[#skip + 1] = o
+        on = on or o == here
+    end
+    if on then
+        local adj = AdjacentFreeTileFinder.Find(sq, b.player, skip)
+        if not adj then
+            print(LOG .. "dismantle not queued at " .. it.x .. "," .. it.y .. "," .. it.z .. ": NO_ROOM")
+            resolve(b, i, "NO_ROOM", { code = "NO_ROOM" })
+            if b.got >= #b.list and #b.scrapping == 0 then finish(b) end
+            return true
+        end
+        ISTimedActionQueue.add(ISWalkToTimedAction:new(b.player, adj))
+    end
+    ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n, i))
+    return true
+end
+
 -- 斜面格上的地板（舊版照地板一片一片蓋的坡道片）要站哪：原版找站位不分斜面（AdjacentFreeTileFinder），挑到隔壁的坡道格時
 -- 角色得繞到坡底爬上去，路斷了走路當場停、整串佇列清空（玩家 2026-11-21 回報舊片拆不了；E2E ramp-legacy-mp）。
 -- 先找緊鄰、不是斜面的空格：排除清單放 own 與緊鄰的斜面格。回站位的格子；nil＝緊鄰的都是斜面
@@ -467,7 +498,8 @@ end
 
 -- 伺服器收下才走過去、照 items 的順序排動作（同 Client.build）。旁邊沒空位、原版拆解現在不能拆的那一件跳過，照排下一件。
 -- 建造作弊時本工具拆的不走過去（同 queue；原版 ISDestroyCursor.lua:24），原版拆解的照原版走（它看搬運作弊，不看建造作弊）。
--- 水面超過一格、斜面格上的地板（舊版照地板蓋的坡道片，一片也算）留到最後一起排（queueFill）
+-- 水面超過一格、斜面格上的地板（舊版照地板蓋的坡道片，一片也算）留到最後一起排（queueFill）。本工具拆的地板先排站位動作，
+-- 輪到時才看人是不是站在那一件上（unbuildStand），拆除動作由它排
 local function queueUnbuild(b)
     b.queued = true
     local walk = not Materials.cheat(b.player)
@@ -495,6 +527,8 @@ local function queueUnbuild(b)
         elseif walk and walkNear(b.player, it.north, it.x, it.y, it.z, it.own or {}) == false then
             code = "NO_ROOM"
             resolve(b, b.index[it], code, { code = code })
+        elseif walk and it.kind == "floor" then
+            ISTimedActionQueue.add(MinidoracatBuilderStandAction:new(b.player, b.n, b.index[it]))
         else
             ISTimedActionQueue.add(MinidoracatBuilderDismantleAction:new(b.player, b.n, b.index[it]))
         end
