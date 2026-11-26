@@ -99,8 +99,8 @@ end
 -- 和建造分開：同一個碼的補救不同（「再蓋一次」對拆除是錯的）。
 Messages.UNBUILD_CODES = { OFF = true, NOT_ALLOWED = true, STATE = true, BAD_REQUEST = true, NO_INTENT = true,
     TOO_FAR = true, UNREACHABLE = true, NOT_LOADED = true, GONE = true, NOT_OURS = true, SAFEHOUSE = true,
-    PERM_DENIED = true, NOT_EMPTY = true, ATTACHED = true, FLOOR_IN_USE = true, STAIRS_TOP = true, NO_TOOL = true,
-    INTERNAL = true, NO_ROOM = true, SCRAP = true }
+    PERM_DENIED = true, NOT_EMPTY = true, ATTACHED = true, FLOOR_IN_USE = true, STAIRS_TOP = true, OCCUPIED = true,
+    NO_TOOL = true, INTERNAL = true, NO_ROOM = true, SCRAP = true }
 
 function Messages.unbuildRefusal(code, ...)
     local extra = ...

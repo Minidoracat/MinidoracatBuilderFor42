@@ -430,6 +430,9 @@ end
 --     NOT_EMPTY（集水的不列，Rules 的 COLLECTOR，所以不查有沒有水）。門框裝著門、窗框裝著窗、框上釘著木板：ATTACHED。
 --     二樓以上、樓梯頂端接著的地板：STAIRS_TOP。
 --   二樓以上的地板：格上有別的東西（牆、家具、地上物品）不拆，不然會懸空。
+--   一樓以下的地板、正下方那一層有格子（地下室正上方）：格上有人、殭屍或動物 OCCUPIED（Check.occupied）。拆了到補泥土
+--     （Server 的 removeAll）之間那格沒有地板，站在上面的會掉下去。preview 不算下指令的人自己（選了會先走到旁邊，
+--     Client 的 walkNear 不站 own），伺服器與建造作弊（原地拆）照算。二樓以上拆樓板不看人（原版同樣）。
 --   工具：和蓋的時候一樣；建造作弊不查（Server.complete 同一條）。toolMemo 見 missingTools（伺服器不傳，照舊每件查）。
 function Dismantle.check(player, kind, plan, ...)
     local preview, toolMemo = ...
@@ -458,10 +461,13 @@ function Dismantle.check(player, kind, plan, ...)
     if code then return code, at end
     if kind == "floor" then
         for _, c in ipairs(cells) do
+            local at2 = { x = c.x, y = c.y, z = c.z }
             if c.z > 0 then
-                local at2 = { x = c.x, y = c.y, z = c.z }
                 if stairsTop(c) then return "STAIRS_TOP", at2 end
                 if c.sq:getObjects():size() > 1 then return "FLOOR_IN_USE", at2 end
+            elseif getCell():getGridSquare(c.x, c.y, c.z - 1)
+                and Check.occupied(c.sq, preview and not Materials.cheat(player) and player or nil) then
+                return "OCCUPIED", at2
             end
         end
     end

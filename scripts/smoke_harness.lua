@@ -3457,6 +3457,40 @@ local function dismantleScenario()
     c, a = lastSent()
     check(c == "dismantleSkipped" and a.code == "FLOOR_IN_USE" and has(up, F1), "二樓的地板上還有牆：FLOOR_IN_USE、不拆")
 
+    -- 地下室正上方的一樓地板（正下方那一層有格子）：格上有人、殭屍或動物 OCCUPIED（拆了到補泥土之間那格沒有地板）。
+    -- 預覽不算下指令的人自己（會先走開），伺服器與建造作弊（原地拆）照算；下面沒有格子照拆；二樓以上不看人
+    do
+        local K = hammerer(2240, 71.5, 70.5, at(71, 70, 0))
+        local KC = hammerer(2241, 70.5, 72.5, at(70, 72, 0), { cheat = true })
+        local function fl(x, y, z, moving, below)
+            local sq = at(x, y, z) or engineSq(x, y, z)
+            sq.moving = moving
+            if below then engineSq(x, y, z - 1) end
+            return ours(sq, floorS, {})
+        end
+        local FZ = fl(70, 71, 0, { {} }, true) -- 殭屍
+        local FN = fl(72, 70, 0, { {} }, false) -- 下面沒有格子
+        local FS = fl(71, 70, 0, { K }, true) -- 只有下指令的人自己
+        local FC = fl(70, 72, 0, { KC }, true) -- 建造作弊的自己
+        local FU = fl(70, 70, 1, { {} }, false) -- 二樓樓板（正下方的一樓格本來就有）
+        local function chk(p, o, pv) return tostring((Dismantle.check(p, "floor", Dismantle.plan(o, "floor"), pv))) end
+        local got = table.concat({ chk(K, FZ, true), chk(K, FZ), chk(K, FN, true), chk(K, FN), chk(K, FS, true), chk(K, FS),
+            chk(KC, FC, true), chk(K, FU, true) }, ",")
+        unbuild(K, 23, 70, 71, 0, "df_01_0")
+        Server.dismantle(K, 23, 1)
+        local c1, a1 = lastSent()
+        check(got == "OCCUPIED,OCCUPIED,nil,nil,nil,OCCUPIED,OCCUPIED,nil" and c1 == "dismantleSkipped" and a1.code == "OCCUPIED"
+            and has(at(70, 71, 0), FZ),
+            "拆地下室正上方的一樓地板：格上有殭屍 OCCUPIED（預覽、伺服器），伺服器跳過不拆；下面沒有格子照拆；只有自己站著時預覽"
+                .. "不算（會先走開）、伺服器照算；建造作弊的自己照算；二樓樓板不看人（" .. got .. "）")
+        for _, o in ipairs({ FZ, FN, FS, FC, FU }) do
+            local s = o:getSquare()
+            for i, v in ipairs(s.objects) do if v == o then table.remove(s.objects, i) break end end
+            s.moving = {}
+        end
+        for _, k in ipairs({ "70,71,-1", "71,70,-1", "70,72,-1", "70,70,1" }) do squares[k] = nil end
+    end
+
     -- 一樓的地板退料在伺服器的地板帳本：本工具照它退，不看 modData；圖和蓋的時候不同的地板不退
     local FP = hammerer(2230, 75.5, 76.5, at(75, 76, 0))
     FP.inv:add(item("Base.Screwdriver", { SCREWDRIVER = true }))
@@ -10010,6 +10044,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         end
         Basement.add(t)
         Basement.setRooms({ west, east })
+        -- 分房裡有不在集合的格子（兩個呼叫端都先加進集合，這裡防萬一）：略過，不丟錯、不建塊
+        local okR, outR = pcall(Basement.setRooms, { { { 6190, 6190 } } }, 1)
+        check(okR and type(outR) == "table" and next(outR) == nil and Basement.blockOf(6190, 6190, Z) == nil,
+            "Basement.setRooms 收到不在集合的格子：略過，不丟錯、不建塊（" .. type(outR) .. "）")
         Basement.registerAll()
         local sqA = xs[tk(6101, 6100)]
         local def6 = eng.tile[tk(6101, 6100)]
@@ -10247,6 +10285,44 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         fire("OnTick")
         check(hooked == h0 + 1 and count("OnTick") == h0 and dirtAt(3001, 3003) == "N",
             "c5 拆掉玩家的牆 → touch → 下一個 tick 補回土牆（同一格排兩次只掛一次 OnTick，跑完摘掉）")
+        -- fix 拆土牆、柱時（Place.onAboutToBeRemoved）又 touch：照引擎走訪 OnTick（Event.java:52-64：照索引走、size 每圈重讀，
+        -- 處理器跑完不在清單裡才 n--），處理器數量不變、排在 flush 後面的那一個同一個 tick 照樣被叫到；下一個 tick 跑完才摘
+        do
+            local keepFix, again, after = Basement.fixEdges, true, 0
+            Basement.fixEdges = function(x, y, z)
+                keepFix(x, y, z)
+                if again then
+                    again = false
+                    Basement.touch(x, y, z)
+                end
+            end
+            local function tail() after = after + 1 end
+            local function tick()
+                local list, n = handlers.OnTick, 1
+                while n <= #list do
+                    local f = list[n]
+                    f()
+                    local still = false
+                    for _, g in ipairs(list) do if g == f then still = true end end
+                    if not still then n = n - 1 end
+                    n = n + 1
+                end
+            end
+            local t0 = count("OnTick")
+            Basement.touch(3001, 3003, Z)
+            Events.OnTick.Add(tail)
+            local before = count("OnTick")
+            tick()
+            local mid, midAfter = count("OnTick"), after
+            tick()
+            local done = count("OnTick")
+            Events.OnTick.Remove(tail)
+            Basement.fixEdges = keepFix
+            check(before == t0 + 2 and mid == before and midAfter == 1 and done == t0 + 1 and after == 2
+                and dirtAt(3001, 3003) == "N",
+                "c5 flush 裡又 touch：OnTick 處理器數量不變、排在後面的同一個 tick 照樣被叫到，下一個 tick 跑完才摘（" .. before - t0
+                    .. "," .. mid - t0 .. "," .. midAfter .. "," .. done - t0 .. "," .. after .. "）")
+        end
         local s0 = realCell():getGridSquare(3000, 3000, Z)
         s0.objects[#s0.objects + 1] = obj(s0, "t_wallN", true)
         Basement.clearDirt(s0, "N")
@@ -11794,6 +11870,15 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 and Basement.has(tx, ty, Z) and cheat == "OK",
                 "F7 挖這一格：站在正上方、斜角、沒挖的鄰格 → DIG_STAND；站在已挖的東南西北鄰格 → 挖好；建造作弊不管（"
                 .. above .. " " .. diag .. " " .. undug .. " " .. side .. " " .. cheat .. "）")
+            -- 走不到那一格（實機：沒挖的格子是土，找路進不去）：挖一格照挖（Check.near 對 dig 不查走得到）；一般地板照查，UNREACHABLE
+            local far = at(tx + 1, ty)
+            far.noReach = true
+            local fp = player({ id = 7126, x = tx + 0.5, y = ty + 0.5, z = Z })
+            local floorFar = tostring((B.Check.item(fp, Entry.STAIR_FLOOR, 0, { tx + 1, ty, Z, 0 })))
+            local digFar = try(7127, tx + 1, ty, tx, ty, Z)
+            far.noReach = nil
+            check(digFar == "OK" and floorFar == "UNREACHABLE" and Basement.has(tx + 1, ty, Z),
+                "F7 走不到要挖的那一格：挖一格照挖（站在已挖的鄰格）；同一格放一般地板 UNREACHABLE（" .. digFar .. " " .. floorFar .. "）")
         end)()
 
         -- c13 basements：只限速、不查建造權限；只回玩家自己大區周圍的地下室
@@ -27629,6 +27714,17 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(j1 == 1 and j2 == 0 and j3 == 1 and nj == 5 and E.overlap == ov0,
         "挖通客戶端兩塊：dug、每分鐘檢查 0 次，block 到了登錄 1 次（新格併進貼著的那一棟，兩棟共 5 格、沒有重疊登錄）（"
         .. j1 .. j2 .. j3 .. " " .. nj .. "）")
+
+    -- 亂序：block（v=9，五格一間）先到、修訂號較小的快照（v=5，還分兩間）後到：房號不被舊快照蓋回；較新的快照（v=10）照套
+    seg(A + 20, 1, 1, { { R, R, 2, 1 }, { R + 2, R, 3, 1 } }, 5)
+    local _, o1 = BM.roomOf(R, R, -1)
+    local _, o2 = BM.roomOf(R + 4, R, -1)
+    seg(A + 20, 1, 1, { { R, R, 2, 1 }, { R + 2, R, 3, 1 } }, 10)
+    local _, n1 = BM.roomOf(R, R, -1)
+    local _, n2 = BM.roomOf(R + 4, R, -1)
+    check(o1 ~= nil and o1 == o2 and n1 ~= n2,
+        "亂序：block 先到、修訂號較小的快照後到，房號不被舊快照蓋回（還是一間）；較新的快照照套（分兩間）（" .. tostring(o1) .. ","
+            .. tostring(o2) .. "／" .. tostring(n1) .. "," .. tostring(n2) .. "）")
 
     BM.reset({}, A, A)
     BM.reset({}, A + 10, A + 10)

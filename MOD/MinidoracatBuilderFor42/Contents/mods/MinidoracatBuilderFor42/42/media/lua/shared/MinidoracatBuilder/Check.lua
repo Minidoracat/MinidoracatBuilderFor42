@@ -146,8 +146,9 @@ function Check.near(player, cells, edge, preview)
 end
 
 -- 格上有會動的東西（人、殭屍、動物）。me＝不算的那個角色：游標預覽（walk）時下指令的玩家本人，Client.build 會先走到
--- 旁邊的格子再動手（walkTo 的站位不挑這件佔的格子）。伺服器與建造作弊（原地蓋、不走開）不帶，站在上面照樣算
-local function occupied(sq, me)
+-- 旁邊的格子再動手（walkTo 的站位不挑這件佔的格子）。伺服器與建造作弊（原地蓋、不走開）不帶，站在上面照樣算。
+-- 拆地下室正上方的地板（Dismantle.check）也用這一份
+function Check.occupied(sq, me)
     local list = sq:getMovingObjects()
     return not list:isEmpty() and not (me ~= nil and list:size() == 1 and list:get(0) == me)
 end
@@ -302,7 +303,7 @@ function Check.item(player, name, d, anchor, ...)
             -- 換地板是先拆舊的再放新的（Place.clearFloor），兩個封包之間那格沒有地板：正下方那一層有格子時（樓上的樓板、
             -- 地下室正上方的一樓地板），站在上面的人會掉下去受傷。格上有人、殭屍或動物回 OCCUPIED
             if entry.kind == "floor" and c.sq:getFloor() and cell:getGridSquare(c.x, c.y, c.z - 1)
-                and occupied(c.sq, walk and not Materials.cheat(player) and player or nil) then
+                and Check.occupied(c.sq, walk and not Materials.cheat(player) and player or nil) then
                 return "OCCUPIED", { x = c.x, y = c.y, z = c.z }, info
             end
             c.yoff, c.over = yoff, over == true or nil

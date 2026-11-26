@@ -484,14 +484,17 @@ function Basement.fixEdges(x, y, z)
     fix(sq, nil)
 end
 
--- 排到下一個 tick 跑 fixEdges（移除事件裡還在拆的物件這時已經不在）；沒有待辦時不掛 OnTick
+-- 排到下一個 tick 跑 fixEdges（移除事件裡還在拆的物件這時已經不在）；沒有待辦時不掛 OnTick。
+-- fix 拆土牆、柱時經 Place.onAboutToBeRemoved 又 touch：hooked 還是 true、不重掛，留到下一個 tick 跑完才摘
+-- （引擎走訪 OnTick 時，處理器在自己裡面先摘再掛，排在它後面的那一個這個 tick 會被跳過，Event.java:45-47）
 local pending, hooked = {}, false
 local function flush()
-    Events.OnTick.Remove(flush)
-    hooked = false
     local list = pending
     pending = {}
     for _, p in pairs(list) do Basement.fixEdges(p[1], p[2], p[3]) end
+    for _ in pairs(pending) do return end -- Kahlua 沒有全域 next
+    Events.OnTick.Remove(flush)
+    hooked = false
 end
 function Basement.touch(x, y, z)
     if isClient() then return end
@@ -646,14 +649,20 @@ local function players()
     return ps
 end
 
--- 包圍盒離 ps 任一位 N 格內的塊：{ [編號]＝true }
+-- 包圍盒離 ps 任一位 N 格內的塊：{ [編號]＝true }。玩家座標先取進陣列：內圈是（塊 × 玩家），不在那裡叫 Java
 local function nearIds(ps, N)
+    local xs, ys, n = {}, {}, 0
+    for _, p in ipairs(ps) do
+        n = n + 1
+        xs[n], ys[n] = p:getX(), p:getY()
+    end
     local near = {}
     for id, b in pairs(blocks) do
         local box = b.box
-        for _, p in ipairs(ps) do
-            local x, y = p:getX(), p:getY()
-            if x >= box[1] - N and x <= box[3] + N and y >= box[2] - N and y <= box[4] + N then
+        local x1, y1, x2, y2 = box[1] - N, box[2] - N, box[3] + N, box[4] + N
+        for i = 1, n do
+            local x, y = xs[i], ys[i]
+            if x >= x1 and x <= x2 and y >= y1 and y <= y2 then
                 near[id] = true
                 break
             end
