@@ -3637,6 +3637,13 @@ local function dismantleScenario()
         check(qd == "W264 S1 S2 S3" and ld == "W264 S1 D1 S2 S3 D3" and gone({ 265, 262 }) and has(at(264, 261, 0), floors[264])
             and sd and sd.done == 2 and sd.skipped.NO_ROOM == 1 and not sd.stopped,
             "輪到時站在那一件上、四周沒有能站的：NO_ROOM 跳過（不送、地板還在），後面的件照拆（" .. qd .. " → " .. ld .. "）")
+        -- NO_ROOM 是最後一件還沒結果的：站位動作自己結案（finish），總結照樣出來
+        local qf, rf = go({ 265, 264 }, nil, 263)
+        blocked = { [at(263, 261, 0)] = true, [at(265, 261, 0)] = true, [at(264, 260, 0)] = true, [at(264, 262, 0)] = true }
+        local lf, sf = rf()
+        check(qf == "W264 S1 S2" and lf == "W264 S1 D1 S2" and sf ~= nil and sf.done == 1 and sf.skipped.NO_ROOM == 1
+            and C.pendingUnbuild == nil,
+            "最後一件輪到時 NO_ROOM：這一批照樣結案、出總結（拆 1、跳過 1）（" .. qf .. " → " .. lf .. "）")
         -- 建造作弊照舊原地拆、不走開：伺服器照算自己 OCCUPIED
         local keepMenu = ISBuildMenu
         ISBuildMenu = { cheat = true }
@@ -3980,6 +3987,12 @@ local function dismantleScenario()
             Chk.occupied = real
             return s
         end) == false, "植入違規（戳記不看佔用）：別人站上、走開都不重算，上一條抓得到")
+        -- 玩家在地下室（z=-1）：上一層（地面）只收屋頂、不走地板分支，正下方雖然有格子也不算防護格，地面有人走動不重算
+        local b1 = Area.preview(AP, 90, 93, 92, 93, -1)
+        at(90, 93, 0).moving = { OP }
+        local b2 = Area.preview(AP, 90, 93, 92, 93, -1)
+        at(90, 93, 0).moving = {}
+        check(b1 == b2, "預覽：站在地下室拖拆除一區，頭頂地面有人走動不重算（上一層只收屋頂，不看佔用）")
     end
     Area.collect = realCollect
     sb.MaxCellsPerDrag = realMax
