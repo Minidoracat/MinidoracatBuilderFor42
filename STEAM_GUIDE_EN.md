@@ -281,7 +281,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Ground floors[/b]: dismantling one turns the square back into dirt.
 [*] [b]Floors one level up[/b]: while placing a floor, PgUp/PgDn switches between one level up and this level; it starts on this level.
 [*] [b]What holds up a floor one level up[/b]: a wall right below it, or a floor beside it on the same level; when dragging a row, each tile holds up the next. Not allowed right above stairs. In basements it works as in vanilla and needs a floor beside it.
-[*] [b]Floors with someone on them[/b]: an upper-level floor, or a ground-floor floor over a basement (or one tile around it), can't be replaced while a person, zombie or animal stands on it: the tile turns red and you're told someone is there. Replacing leaves the tile floorless for a moment, and they'd fall and get hurt. On your own tile it still works, even when dragging: you step aside first; with no free tile around, that tile is skipped and uses no materials. With build cheat you don't step aside, so move off yourself. Ground floors with no basement below and floors inside a basement aren't affected.
+[*] [b]Floors with someone on them[/b]: an upper-level floor, or a ground-floor floor over a basement (plus the tile east or south of it), can't be replaced while a person, zombie or animal stands on it: the tile turns red. A floor over a basement can't be dismantled then either. The tile would be briefly floorless, and they'd fall and get hurt. On your own tile it still works, even when dragging: you step aside first; with no free tile around, that tile is skipped and uses no materials. With build cheat you don't step aside, so move off yourself. Other ground floors and floors inside a basement aren't affected.
 [*] [b]Walls from the second floor up[/b]: a floor underneath is enough; without one, a wall can still go up when the square right below has a wall on the same edge (stacked on the wall below), or when the squares on both sides of that edge have roof pieces on the same level (gable walls, for example). Otherwise it still needs a floor first.
 [*] [b]Walls one level up[/b]: walls, fences, posts, door frames, window frames, doors and windows can also switch between one level up and this level with PgUp/PgDn; they start on this level. You can build second-floor walls while standing downstairs: your character walks to that edge on the level below. What holds them up: walls follow the line above; fences, posts, door frames and window frames need a floor on this square or on the square across that edge; whether a door or window needs a frame is unchanged (see the door and window entries below). Walls from building recipes work as in vanilla and can't change level.
 [*] [b]Posts[/b]: the Post kind on the Walls tab has corner posts from wall corners, fence posts, and the corner posts wall recipes use. After you wall off a rectangle, the south-east corner (the one lowest on screen) shows a gap between the two walls: put a post from the same set on the square just outside that corner. Select the wall and press Set to find it; the tool doesn't add it for you.
@@ -419,7 +419,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Something on a dirt wall[/b]: you can't dig through a dirt wall with a picture, switch, wall decoration or paint on it; take it down or remove it first.
 [*] [b]The dug-out dirt[/b]: doesn't turn into items.
 [*] [b]Digging into someone else's area[/b]: digging a tile removes the dirt walls between it and the dug tiles next to it, so you also need permission to dismantle on those tiles.
-[*] [b]Floors right above a basement[/b]: can't be replaced while a person, zombie or animal stands on them; see "Floors with someone on them" under Walls, floors and fences.
+[*] [b]Floors right above a basement[/b]: can't be replaced or dismantled while a person, zombie or animal stands on them; see "Floors with someone on them" under Walls, floors and fences.
 [/list]
 [h3]Materials and tools[/h3]
 [list]
@@ -1178,6 +1178,7 @@ end)
 [*] [b]Basement console messages[/b]: invalid room metaID and invalid building metaID appearing in pairs where there are basements when loading, and duplicate BuildingDef.metaID ERROR after expanding a basement, are expected; the basements still count as indoors.
 [*] [b]Vanilla actions underground[/b]: moving the vanilla Dig Graves cursor past the dirt walls, or moving multi-tile furniture past a wall underground, prints vanilla errors in the console without affecting the game.
 [*] [b]Areas outside the map[/b]: digging basements inside mods that open areas outside the map, such as RV interiors, hasn't been tested.
+[*] [b]Safehouses[/b]: if the server turns on SafehouseAllowNonResidential (off by default), a basement can be claimed as a safehouse. A vanilla safehouse covers the building plus 2 tiles around it on every level, so it also covers the ground right above the basement.
 [/list]
 === ⚠️ Before removing this mod
 You can add the mod mid-save. When you remove it, everything you built stays, but a few things change.
