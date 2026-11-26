@@ -1,33 +1,56 @@
-[h1]Minidoracat Build Anything for B42 42.22.2-1.4.0[/h1]
-[i]2026-11-25[/i]
+[h1]Minidoracat Build Anything for B42 42.22.2-1.5.0[/h1]
+[i]2026-11-27[/i]
 
 [b]English summary[/b]
 [list]
-[*] Changed: Build from blueprint now lays floors row by row, starting from the corner of the blueprint nearest to you. Walls, stairs, doors, roofs and furniture still go nearest first.
-[*] New: in blueprint Edit, press Copy and then hold the left button and drag to drop a whole row of copies in one go. One Undo (Ctrl+Z) removes the row.
-[*] New: Capture a building lists every level it read. Untick the levels you do not want and the blueprint keeps only the ticked ones.
-[*] New option (Options > Mods > Build Anything): Show roofs on your level while building. Off by default; it only changes your own screen.
-[*] Fixed: dragging a row of floors or roofs outward on an upper level stopped after one to three tiles (since 1.0.0). Half-tile (triangle) floors no longer leave the other half black: they are now a Floor overlay laid on the floor already on that tile. Placing switches and wiring below ground no longer throws errors; lights there are wired by hand in Wiring mode.
-[*] Server and players must update together (placement rule version 21). No new sandbox options.
+[*] New (off by default): dig basements. An admin turns on Basements in the sandbox page "what can be built" or in the Manage panel. The Stairs & ramps tab then has a Basements kind.
+[*] Place a South or East Basement Entrance on the ground floor, then use Dig Basement Tile on the level below. Digging needs only a shovel. One basement holds at most 400 tiles, and dug tiles cannot be filled back.
+[*] Changed: switches placed in a basement now wire themselves to the lights in the same room. With Basement Building installed, you can replace the outer walls it made; the old wall is removed without a refund.
+[*] Fixed: replacing an upstairs floor no longer drops whoever stands on it. The tile turns red until they move away.
+[*] Fixed: wall overlays on a room's east or south wall can now be placed and removed from indoors, also on upper levels and in basements.
+[*] Server and players must update together (placement rule version 26). New sandbox option: Basements.
 [/list]
 
 [h3]✨ 新增[/h3]
 [list]
-[*] [b]框選現成房子可以只收某幾層[/b]：框到兩層以上有東西時，結果框會列出每一層讀到幾片，預設全勾。取消勾選後，收到的片數、收不到的原因馬上跟著變，存下來的藍圖只有勾著的那幾層，最低勾選的那層當成藍圖的第 1 層（例如只勾二樓，存下來就是一張一層的藍圖）。中間沒勾的層照樣留空，不會把上下層壓在一起。只勾樓上時，樓梯口那塊平台照一般地板收，樓梯口不會缺一塊
-[*] [b]規劃時複製可以一次排好幾份[/b]：以前規劃裡選幾片按「複製」，一次只能放一份。現在按「複製」後，在要放的地方按住左鍵往旁邊拖，會沿著拖的方向（東西或南北，看哪邊拖得遠）一份接一份排開，間距是選到那幾片的寬度；提示會寫排了幾份、共幾片，每一份都有虛影。放開就一次放下，算一步，按一次「上一步」（Ctrl＋Z）整列拿掉。份數會自動限制在放得下的數量（每邊 64 格、整張 4,096 片）。只點一下照舊放一份；用手把時照舊一次一份
-[*] [b]建造時可以看到同一層的屋簷[/b]：以前站在二樓房間裡拿著建造工坊的游標，窗外同一層的屋簷、門廊屋頂會變透明，看不清要接在哪裡。「選項 > 模組」的「自由建造」多了「建造時顯示同層屋頂」（預設關）：勾起來後，拿著游標時你這一層的屋頂照常畫出來，收起游標就恢復原本的透明。只管同一層，站在樓下時樓上照舊整層隱藏。只改你自己的畫面，不影響其他玩家，蓋下去的屋頂、材料、屋頂下補地板都和平常一樣
+[*] [b]挖地下室[/b]（預設關）：服主在沙盒「Minidoracat 自由建造：能蓋的種類」或「管理」面板打開「地下室」後，建造工坊的「樓梯與坡道」頁多一個「地下室」種類。完整規則與已知限制見指南「各種東西的規則：地下室」
+[list]
+[*] [b]開入口[/b]：在一樓地面放「往南下的地下室入口」或「往東下的地下室入口」，會開出一座往下的木樓梯，和樓梯下去前方一塊 3×2 格的空間
+[*] 樓梯上方 3 格原本的地板與草會拆掉（本工具鋪的地板照拆除退料）；上面有家具、地毯、地面覆蓋或掉在地上的東西時要先清掉
+[*] [b]往外挖[/b]：站在地下一層用「地下室挖一格」，可以拖一片；角色要站在旁邊已經挖開的格子上，一格一格挖過去
+[*] [b]花費[/b]：挖只要鏟子，鏟子會隨著挖掘磨損，不要求技能。入口另收一組木樓梯的材料，經驗也照木樓梯給；入口的樓梯之後可以照一般樓梯拆掉、退料
+[*] [b]牆與房間[/b]：挖開的地方四周會長出土牆、算室內，外圍的土牆可以用建造工坊直接換成實牆。用牆和門隔開後每一間各算一個房間，每一間要各自裝開關或燈，沒有的那間是暗的
+[*] [b]限制[/b]：只能挖到地下一層，一塊連通的地下室最多 400 格；挖開的地方不能填回，挖出的土也不會變成物品；地下室的三個項目不能記進藍圖
+[*] 新入口不能貼著別的地下室，要接起來就從裡面挖過去；地圖原有的地下室、其他 MOD 的地下房間旁邊一格內不能挖
+[*] 有裝 Basement Building 時這三項照樣列出但不能用，請用它挖
+[/list]
 [/list]
 
 [h3]🔄 變更[/h3]
 [list]
-[*] [b]照圖蓋的地板改成一排一排蓋[/b]：以前地板是挑離你最近的先蓋，看起來從身邊一圈一圈往外鋪。現在從藍圖範圍離你最近的那個角開始，一排蓋完換下一排、來回蓋過去；藍圖剛擺好就按「照圖蓋」也是從角落開始。幾千片的大藍圖要整理比較久，超過 3 秒還沒整理完時會先蓋你身邊的一小段，再回到角落一排一排蓋（實測 64×64 的地板先蓋了身邊 3～14 片）。牆、樓梯、門、屋頂、家具的順序沒變，照舊挑離你最近的先蓋。樓上的地板要有東西撐著，照舊只能從撐得住的那一圈往外蓋。中途停下再按「照圖蓋」，會從你那時候最近的角重新開始排。同一格還有地毯、半格地板這類鋪在地板上的東西時，會等那格的地板蓋好才蓋；地板缺料或蓋不了時它們也先不蓋，結束時照那片地板的原因說明。同一排交錯鋪兩種地板（棋盤、條紋）時，角色會先把同一種蓋一趟、再回頭蓋另一種，比以前多走一些（實測 48 片多花約 17% 的時間）；只用一種地板時時間和以前一樣
+[*] [b]裝了 Basement Building 時，它挖出來的地下室外牆可以直接換[/b]：選別的牆蓋在那條邊上，蓋好後原本那面牆就拆掉，[b]不退材料[/b]。以前它在外圍放的木牆、原木牆擋著，建造工坊蓋不上別的牆
+[list]
+[*] 轉角那面牆一件同時擋北、西兩邊：只換其中一邊時，另一邊會換成同款、同等級的單面牆留著（之前升級過的不會變回土牆）
+[*] 外圍照舊只能蓋實牆，門框、窗框、牆框這類開口照舊不能蓋；和原本那面同一張圖的牆照舊提示「這格已經有同一張圖了」
+[*] 玩家自己用建造工坊或原版建造蓋在外圍的牆不算它的牆，照一般規則處理
+[/list]
+[*] [b]地下室的開關會自動接燈[/b]：本工具挖的地下室、地圖原有的地下室和 Basement Building 挖的地下室，放開關時照一般房間自動接上同一間的燈（一間不超過 400 格）；其他沒有房間的地下格子照舊提示「不是封閉的房間」，要手動接線
 [/list]
 
 [h3]🔧 修正[/h3]
 [list]
-[*] [b]在樓上往外拖一排地板或屋頂，角色蓋了一兩格就停下[/b]（1.0.0 起）：從二樓的地板邊往外拖一排新地板或屋頂，以前只蓋 1～3 格就提示「旁邊沒有空位」或「太遠了」，預覽卻整排都能蓋。現在輪到那一格、前一格已經蓋好時才找站的位置，可以一路蓋出去。多人遊戲會等前一格同步，最多約 2 秒。真的沒地方站、又離角色太遠的格子，照舊停在那一格並提示
-[*] [b]在地下室放開關、接線時伺服器跳錯誤[/b]（0.1.0 起）：在地面以下放開關、按「接同一房間」、按開關或放燈時會跳一串錯誤。現在不再出錯。地下室沒有遊戲的房間資料，所以不會自動接燈，會提示「不是封閉的房間」；要接燈請右鍵開關選「接線...（建造工坊）」，在接線模式一盞一盞點
-[*] [b]半格（三角形）地板蓋下去，另一半變黑[/b]（0.1.0 起）：人行道邊的三角磚這類只畫半格的地板，以前會把整格地板換掉，另一半就露出黑色。現在和地圖上原本的一樣疊在那格的地板上，另一半看得到下面的地板，所以那一格要先有地板。已經變黑的格子：先在那格鋪一整格地板，再放半格。更新前蓋的半格照舊能用「拆除（建造工坊）」拆掉，退的是當初付的地板材料。疊在地圖原有地板上的半格，之後把那格換成別款地板時會跟著舊地板消失、材料不退（和標線、污漬一樣），要再放一次
+[*] [b]隔著牆把東西放進隔壁那間時，角色不走過去、提示旁邊沒有空位[/b]（0.1.0 起）：現在會走到那一格旁邊再蓋。會遇到的情況：開關、家具這類東西貼著牆放在牆的另一邊，那一格的南邊或東邊又是牆或還沒挖的土，例如一格寬的地下室、窄走廊
+[*] [b]換樓上的樓板時，站在上面的人會掉到樓下受傷[/b]（0.1.0 起）：現在樓上的樓板有人、殭屍、動物或車在上面時不能換，游標那格變紅、提示這格有人站著，等他走開再換
+[list]
+[*] 地下室正上方（含東、南外側一格）的一樓地板也一樣，換和拆都要等上面的人、殭屍、動物或車離開；「拆除一區」的游標會即時標出來
+[*] 你自己站在要換的那一格照樣能放，角色會先走到旁邊再換。拆也一樣；一次復原或拆好幾塊時，旁邊沒地方站的那一塊跳過，其他照拆
+[*] 開著建造作弊時角色不走開，要先自己走開。底下沒有地下室的一樓地板、地下室裡的地板不受影響
+[/list]
+[*] [b]從室內掛東牆、南牆的牆面疊圖，角色要繞到屋外；二樓以上和地下室掛不上[/b]（0.1.0 起）：現在和蓋牆一樣，站在牆的哪一側都能掛、能拆，角色走到牆的這一側動手
+[list]
+[*] 受影響的是地腳線、污垢、塗鴉這類貼在牆上的圖。以前二樓以上的外牆、地下室還沒挖開那一側的牆從室內掛不上，還會跳出錯誤
+[*] 最遠距離、上下最多差一層、別人的安全屋照舊檢查；畫、招牌這類能撿起來的掛牆物和貼牆放的家具不變，照舊要走得到
+[/list]
 [/list]
 
-[b]伺服器管理員[/b]：伺服器與玩家要一起更新（放置規則版本 21），版本不同時伺服器會拒絕放置並提示更新。原版有 76 張半格地板從「地板」改歸「地面覆蓋」：材料、工具、經驗不變；用沙盒關掉「地面覆蓋」種類時這幾張也不能蓋。沒有新的沙盒選項。
+[b]伺服器管理員[/b]：伺服器與玩家要一起更新（放置規則版本 26），版本不同時伺服器會拒絕放置並提示更新。新的沙盒選項「地下室」（預設關）：關掉後玩家看不到也挖不了，已經挖好的地下室照舊。挖過地下室的存檔，移除本 MOD 前先看指南「移除本 MOD 前」。
