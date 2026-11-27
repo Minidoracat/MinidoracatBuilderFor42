@@ -90,19 +90,19 @@ function Index.names(kind)
     return out
 end
 
+-- 加一條名稱搜尋鍵（key 已轉小寫）：命中就列 item
+function Index.addKey(key, item, kind, tileset)
+    local keys, items, kinds, sets = Index.nameKey, Index.nameItem, Index.nameKind, Index.nameSet
+    local i = keys.n + 1
+    keys.n, items.n, kinds.n, sets.n = i, i, i, i
+    keys[i], items[i], kinds[i], sets[i] = key, item, kind, tileset
+end
+
 -- 第二段：有名稱項目的搜尋鍵＝小寫「顯示名|原名」。顯示名用原版移動物件翻譯，
 -- 先自己去掉 "."（Translator.getMoveableDisplayName 的 replace 不吃 regex，名稱有點就查不到）
 function Index.addNameKey(g)
     local shown = Translator.getMoveableDisplayNameOrNull((g.raw:gsub("%.", "")))
-    local keys = Index.nameKey
-    local i = keys.n + 1
-    keys.n = i
-    keys[i] = string.lower((shown or "") .. "|" .. g.raw)
-    local items, kinds, sets = Index.nameItem, Index.nameKind, Index.nameSet
-    items.n, kinds.n, sets.n = i, i, i
-    items[i] = g.arr[g.slot]
-    kinds[i] = g.kind
-    sets[i] = g.tileset
+    Index.addKey(string.lower((shown or "") .. "|" .. g.raw), g.arr[g.slot], g.kind, g.tileset)
 end
 
 -- 第 i 個 tileset 的搜尋鍵＝小寫「顯示名|原名|來源 MOD 名」；命中 tileset＝該 tileset 的全部項目。

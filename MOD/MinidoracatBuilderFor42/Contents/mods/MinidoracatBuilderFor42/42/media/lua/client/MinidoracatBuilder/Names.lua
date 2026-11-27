@@ -52,6 +52,15 @@ for i = 0, 7 do SWITCH["lighting_indoor_01_" .. i] = i end
 local DIG_NAME = { [Entry.DIG_S] = "IGUI_MBLD_Dig_EntranceS", [Entry.DIG_E] = "IGUI_MBLD_Dig_EntranceE",
     [Entry.DIG_CELL] = "IGUI_MBLD_Dig_Cell" }
 
+-- 挖掘項目的縮圖（建造視窗、快選列共用）：借來的原版圖看不出用途，挖一格畫泥土地板、入口畫樓梯底片（Entry.cells 第 3 格）
+function Names.digTex(name)
+    local spr = Entry.sprite(name)
+    local cells = spr and Entry.cells(spr)
+    local part = cells and (cells[3] or cells[1])[4]
+    local tex = part and getTexture(part:getName())
+    return tex and tex:splitIcon() or nil
+end
+
 local function compose(name, kind, short)
     if DIG_NAME[name] then return getText(DIG_NAME[name]) end
     local r = Recipes.get(name)

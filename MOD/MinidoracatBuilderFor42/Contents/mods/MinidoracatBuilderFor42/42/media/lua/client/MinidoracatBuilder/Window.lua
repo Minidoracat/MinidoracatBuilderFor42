@@ -857,12 +857,8 @@ local function texOf(v, name)
         local tex
         if r then
             tex = Recipes.icon(r) -- 原版建造視窗的圖示
-        elseif B.Rules.DIG[name] then -- 挖地下室：ID 是原版的隱形地板、地圖的地下土塊，看不出用途，改畫挖一格的泥土地板、入口的樓梯底片
-            local spr = Entry.sprite(name)
-            local cells = spr and Entry.cells(spr)
-            local part = cells and (cells[3] or cells[1])[4]
-            tex = part and getTexture(part:getName())
-            if tex then tex = tex:splitIcon() end
+        elseif B.Rules.DIG[name] then -- 挖地下室：ID 是原版的隱形地板、地圖的地下土塊，看不出用途（Names.digTex）
+            tex = Names.digTex(name)
         else
             tex = getTexture(name) -- 世界圖塊的貼圖；splitIcon 裁掉透明邊，引擎自己快取（Texture.java:1193-1215）
             if tex then tex = tex:splitIcon() end
@@ -1672,6 +1668,15 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         if e.kind == "dig" and B.Basement and B.Basement.bd() then
             y = warnLines(v, ops, getText("IGUI_MBLD_Refuse_DIG_BD"), y, dw)
         end
+        -- 地下室三項的種類說明接在這裡（入口那段約 5 行，放最後預設大小要捲才看得到；使用者 2026-11-27 選）
+        if e.kind == "dig" then
+            y = y + 4
+            local note = getText(e.name == Entry.DIG_CELL and "IGUI_MBLD_Note_digCell" or "IGUI_MBLD_Note_digEntry")
+            for _, line in ipairs(Text.wrap(note, dw, v.font)) do
+                text(ops, line, 0, y, c.textMuted, v.font)
+                y = y + lh
+            end
+        end
     elseif refund and e.kind ~= "water" then -- 水面不收料、填平是換回原本的地面，種類說明已經寫了
         for _, line in ipairs(Text.wrap(getText("IGUI_MBLD_Refund_" .. refund), dw, v.font)) do
             text(ops, line, 0, y, c.textMuted, v.font)
@@ -1720,6 +1725,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
             if lacking[t] then add(ops, { t = "icon", key = "warning", x = 0, y = y + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
             y = para(v, ops, toolName(t), 20, y, dw - 20, col)
         end
+        if e.kind == "dig" then y = para(v, ops, getText("IGUI_MBLD_Detail_ToolWear"), 0, y, dw, c.textMuted) end
     end
     local sk, enough = skillInfo(e)
     if sk then
@@ -1739,7 +1745,8 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
         text(ops, line, 0, y, c.textMuted, v.font)
         y = y + lh
     end
-    -- 種類說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動），
+    -- 其他種類的說明（樓梯、屋頂、燈、窗簾）放最後：預設大小的中版要捲動才看得到（使用者 2026-10-30 選詳情可以捲動；地下室
+    -- 三項的說明在拆除那句後面，上面），
     -- 擋得住的限制游標也會標。屋頂約一半的片不擋雨（沒有 BlockRain 也不是地板，IsoGridSquare.java:2656-2657 的
     -- hasRainBlockingTile），換一句；路燈與發光招牌（sprite 帶 streetlight）引擎只在夜裡點亮（LightingJNI.java:282-294），
     -- 本工具接發電機的補亮也照這條（Lights.lua），換一句。接水管的（sprite 帶 waterPiped：水槽、馬桶、浴缸、淋浴）
@@ -1761,7 +1768,7 @@ local function detailFull(v, ops, e, total, costs, missing, tools)
     elseif p:has(IsoFlagType.waterPiped) then
         key = "plumb"
     end
-    local note = getTextOrNull("IGUI_MBLD_Note_" .. key)
+    local note = e.kind ~= "dig" and getTextOrNull("IGUI_MBLD_Note_" .. key) or nil
     if note and key:sub(1, 4) == "roof" then note = MinidoracatBuilder.Cursor.keyText(note) end
     if note then
         y = y + 4
@@ -1808,6 +1815,8 @@ local function detailRow(v, ops, e, total, missing, tools)
     end
     local line = getText("IGUI_MBLD_Size", tostring(fw), tostring(fd))
     if #parts > 0 then line = line .. getText("IGUI_MBLD_Sep") .. table.concat(parts, getText("IGUI_MBLD_ListSep")) end
+    -- 裝了 Basement Building 時挖不了（Basement.pre 回 DIG_BD）：窄版沒有完整詳情，這一行換成那句
+    if e.kind == "dig" and B.Basement and B.Basement.bd() then line, short = getText("IGUI_MBLD_Refuse_DIG_BD"), true end
     if short then add(ops, { t = "icon", key = "warning", x = x, y = y + fh + 4 + math.floor((fh - 16) / 2), size = 16, c = c.warning }) end
     local tx = short and x + 20 or x
     text(ops, Text.fit(line, dw - tx, v.font), tx, y + fh + 4, short and c.warning or c.textMuted, v.font)
@@ -2752,6 +2761,7 @@ function W.pickSwap(playerNum, obj)
     local M = B.Menu
     if not (M and obj) then return end
     local function item(name)
+        if B.Rules.DIG[name] then return nil end -- 挖掘三項借用的原版圖：點到的是地圖上的東西，不是要挖（同 Menu 的 why）
         local code, _, alt = Entry.why(name)
         if not code then return name end
         if alt then return alt end

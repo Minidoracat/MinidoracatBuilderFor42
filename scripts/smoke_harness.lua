@@ -26655,6 +26655,34 @@ end)()
         H.current = real.current
     end
 
+    do -- 快選列的挖掘項目縮圖和建造視窗同一份（Names.digTex）：挖一格畫泥土地板、入口畫樓梯底片，不畫借來的原版圖
+        local keepMap, keepOrder, realTex, realGrid = spriteMap, spriteOrder, getTexture, UI.TileGrid.new
+        local S, CELL, DIRT = Entry.DIG_S, Entry.DIG_CELL, B.Place.DIRT
+        world({ sprite(S, 9960, { flags = { "cutW", "solid" } }), sprite(CELL, 9961, { flags = { "solidfloor", "attachedFloor" } }),
+            sprite("carpentry_02_96", 9962, { type = T.stairsBN }), sprite(DIRT, 9963, { flags = { "solidfloor" } }) })
+        getTexture = function(n) return { name = n, splitIcon = function(t) return t end } end
+        local draw
+        UI.TileGrid.new = function(o)
+            draw = o.drawTile
+            return realGrid(o)
+        end
+        H.current = function() return S end
+        H.show(0)
+        local drawn = {}
+        local tile = { drawTextureScaledAspect = function(_, t) drawn[#drawn + 1] = t.name end, drawTextCentre = noop }
+        local okD, err = pcall(function()
+            draw(nil, tile, CELL, 0, 0, 60, 60)
+            draw(nil, tile, S, 0, 0, 60, 60)
+        end)
+        H.hide()
+        local own = B.Names.digTex and B.Names.digTex(CELL)
+        H.current, UI.TileGrid.new, getTexture = real.current, realGrid, realTex
+        spriteMap, spriteOrder = keepMap, keepOrder
+        check(okD and own and own.name == DIRT and drawn[1] == DIRT and drawn[2] == "carpentry_02_96",
+            "快選列：挖一格的縮圖是泥土地板、入口是樓梯底片（Names.digTex，和建造視窗同一份），不是 invisible_01_0／underground_01_0（"
+            .. tostring(drawn[1]) .. " " .. tostring(drawn[2]) .. " " .. tostring(err) .. "）")
+    end
+
     do -- 匯入框文字欄
         B.PlanCheck = { item = function() return "ok" end }
         local clip = ""
@@ -27392,6 +27420,77 @@ print("情境（介面零星）：屋頂、門框、窗框子種類；坡道進�
                 .. "寫兩個朝向和旋轉提示（" .. tostring(sG) .. " / " .. tostring(eG) .. "）")
             check(okD and okAll and line(cT, "IGUI_MBLD_Detail_Size|1,1,1") and not line(cT, "ROT") and cG == "none",
                 "詳情：地下室挖一格 1×1、一個朝向、不畫格線、不寫旋轉提示（" .. tostring(cG) .. "）")
+            -- 地下室三項的種類說明（入口、挖一格各一段）接在「拆除：挖開的地方不能填回」那句後面、材料前面（入口段約 5 行，
+            -- 放最後預設大小要捲才看得到；使用者 2026-11-27 選），工具列後多一句鏟子會磨損；寬版、中版都一樣。其他種類的說明
+            -- 照舊放最後（使用者 2026-10-30 選的版面）。窄版裝了 Basement Building 時，第二行整行換成 DIG_BD 那句、帶警告圖示
+            local realBd, realOrNull = B.Basement.bd, getTextOrNull
+            local layout, narrow = {}, {}
+            local okU3, errU3 = pcall(function()
+                world(dl)
+                sb.KindDig = true
+                getText = function(k, ...)
+                    local a = { ... }
+                    for i = 1, #a do a[i] = tostring(a[i]) end
+                    return #a > 0 and k .. "|" .. table.concat(a, ",") or k
+                end
+                getTextOrNull = function(k) return k:find("^IGUI_MBLD_Note_") and k or nil end -- 每個種類都當成有說明
+                W.turnHint = function() return nil end
+                B.Basement.bd = function() return false end
+                local function lines(name)
+                    local t = {}
+                    for s in (detail(name) .. "\n"):gmatch("(.-)\n") do t[#t + 1] = s end
+                    return t
+                end
+                local function at(t, s)
+                    for i, x in ipairs(t) do if x == s then return i end end
+                    return nil
+                end
+                -- 回：說明緊接在拆除句後、在材料前；沒有另一段；工具標題後有磨損那句；最後一行不是說明
+                local function digOk(name, note, other)
+                    local t = lines(name)
+                    local r, n, m = at(t, "IGUI_MBLD_Refund_dig"), at(t, note), at(t, "IGUI_MBLD_Detail_Materials")
+                    local tl, wear = at(t, "IGUI_MBLD_Detail_Tools"), at(t, "IGUI_MBLD_Detail_ToolWear")
+                    return r ~= nil and n == r + 1 and m ~= nil and m > n and at(t, other) == nil and tl ~= nil
+                        and wear ~= nil and wear > tl and not t[#t]:find("_Note_", 1, true)
+                        or table.concat(t, " / ")
+                end
+                for _, size in ipairs({ { 1100, 700 }, { 700, 600 } }) do
+                    place(size[1], size[2])
+                    local fl = lines("floors_dt_01_0")
+                    layout[#layout + 1] = { mode = v.mode, s = digOk(S, "IGUI_MBLD_Note_digEntry", "IGUI_MBLD_Note_digCell"),
+                        e = digOk(E, "IGUI_MBLD_Note_digEntry", "IGUI_MBLD_Note_digCell"),
+                        c = digOk(C, "IGUI_MBLD_Note_digCell", "IGUI_MBLD_Note_digEntry"),
+                        floorLast = fl[#fl] == "IGUI_MBLD_Note_floor" }
+                end
+                place(380, 400)
+                for _, on in ipairs({ false, true }) do
+                    B.Basement.bd = function() return on end
+                    detail(S)
+                    local bdText, bdY, iconY
+                    for i = 1, v.ops.n do
+                        local o = v.ops[i]
+                        if o.t == "text" and o.s == "IGUI_MBLD_Refuse_DIG_BD" then bdText, bdY = true, o.y end
+                        if o.t == "icon" and o.key == "warning" then iconY = o.y end
+                    end
+                    narrow[#narrow + 1] = { mode = v.mode, bd = bdText == true, icon = iconY ~= nil and bdY ~= nil and iconY >= bdY
+                        and iconY < bdY + v.fh }
+                end
+            end)
+            getText, getTextOrNull, sb.KindDig, W.turnHint, B.Basement.bd = realText, realOrNull, realDig, realTurn, realBd
+            world(wl)
+            place(1100, 700)
+            local function u3(i)
+                local L = layout[i]
+                return L and L.s == true and L.e == true and L.c == true and L.floorLast
+            end
+            check(okU3 and okAll and u3(1) and u3(2) and layout[1].mode ~= layout[2].mode,
+                "詳情（寬版、中版）：入口、挖一格各自的說明緊接在「挖開的地方不能填回」後面、材料前面，工具後寫鏟子會磨損；"
+                .. "其他種類（地板）的說明照舊在最後（" .. tostring(errU3) .. " "
+                .. tostring(layout[1] and (layout[1].mode .. " " .. tostring(layout[1].s) .. " | " .. tostring(layout[1].c)))
+                .. " " .. tostring(layout[2] and (layout[2].mode .. " " .. tostring(layout[2].s))) .. "）")
+            check(okU3 and narrow[2] and narrow[1].mode == "narrow" and not narrow[1].bd and narrow[2].bd and narrow[2].icon,
+                "窄版：裝了 Basement Building 時地下室那一行換成 DIG_BD 那句、帶警告圖示；沒裝時不寫（"
+                .. tostring(errU3) .. " " .. tostring(narrow[2] and narrow[2].bd) .. tostring(narrow[2] and narrow[2].icon) .. "）")
         end
         -- 找可用的框（使用者 2026-11-23 選；Workshop fairytale：橫條在牆面疊圖裡難找）：選著滑門或全高窗時整套鈕換成
         -- 「找可用的框」，清單只列牆面疊圖、門框兩個種類裡形狀合的框；條件鈕 ✕ 回原本的清單並選回那扇門
@@ -27760,6 +27859,12 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(codes and Messages.refusal("DIG_FULL", {}) == "IGUI_MBLD_Refuse_DIG_FULL(" .. BM.MAX .. ")"
         and Messages.refusal("DIG_FULL", { max = 7 }) == "IGUI_MBLD_Refuse_DIG_FULL(7)",
         "c17 十一個挖掘碼都在 Messages.CODES、各說自己的句子；DIG_FULL 照伺服器帶的上限，沒帶退回 Basement.MAX")
+    -- DIG_LEVEL 入口、挖一格各一句（Basement.pre 的 extra 帶 entry）；沒帶 entry 的舊伺服器：z＝0 被擋的只會是挖一格
+    check(Messages.refusal("DIG_LEVEL", { entry = true, z = -1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL()"
+        and Messages.refusal("DIG_LEVEL", { entry = false, z = 1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL_Cell()"
+        and Messages.refusal("DIG_LEVEL", { x = 1, y = 2, z = 0 }) == "IGUI_MBLD_Refuse_DIG_LEVEL_Cell()"
+        and Messages.refusal("DIG_LEVEL", { x = 1, y = 2, z = -1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL()",
+        "DIG_LEVEL：入口（entry＝true）說入口要放在一樓地面，挖一格（entry＝false，或沒帶 entry 而 z＝0）說要在地下一層用")
     B.Names.reset()
     local named = B.Names.of(CELL, "dig") == "IGUI_MBLD_Dig_Cell()" and B.Names.short(S) == "IGUI_MBLD_Dig_EntranceS()"
     B.Names.reset()
@@ -27805,6 +27910,78 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         and noteNoCount == "IGUI_MBLD_Kind_dig | IGUI_MBLD_Admin_DigPatch | IGUI_MBLD_Why_DIG_PATCH"
         and noteWall == "IGUI_MBLD_Kind_wall(2)" and noteOn == "IGUI_MBLD_Kind_dig(3)",
         "管理面板種類頁：土牆圖塊沒載入時地下室那列是「名稱 · 短句 · 全文」，載入了只有名稱 " .. noteOff)
+    -- 裝了 Basement Building（Basement.bd）：地下室那列接 DIG_BD 那句（和詳情同一句）；圖塊沒載入時照舊只說補丁
+    do
+        local realBd = B.Basement.bd
+        getText = function(k, a, b)
+            if k == "IGUI_MBLD_Count" then return a .. "(" .. b .. ")" end
+            if k == "IGUI_MBLD_Sep" then return " | " end
+            return k
+        end
+        B.Basement.bd = function() return true end
+        B.Basement.patched = function() return true end
+        local bdOn, wallBd = B.Admin.kindLabel("dig", 3), B.Admin.kindLabel("wall", 2)
+        B.Basement.patched = function() return false end
+        local bdOff = B.Admin.kindLabel("dig", 3)
+        B.Basement.patched, B.Basement.bd, getText = realPatched, realBd, gt
+        check(bdOn == "IGUI_MBLD_Kind_dig(3) | IGUI_MBLD_Refuse_DIG_BD" and wallBd == "IGUI_MBLD_Kind_wall(2)"
+            and bdOff == "IGUI_MBLD_Kind_dig(3) | IGUI_MBLD_Admin_DigPatch | IGUI_MBLD_Why_DIG_PATCH",
+            "管理面板種類頁：裝了 Basement Building 時地下室那列接 DIG_BD 那句；圖塊沒載入時只說補丁；別的種類不接 " .. tostring(bdOn))
+    end
+
+    -- 吸管點到挖掘三項借用的原版圖（挖掘開著，Entry.why 回 nil）：不換成挖掘項目，交給 Menu.pickAt（同 Menu 的 why）
+    do
+        local W, realMenu, realSwap = B.Window, B.Menu, B.Window.swapTo
+        local swapped, asked = {}, 0
+        local okWhy = Entry.why(S) == nil and Entry.why(E) == nil and Entry.why(CELL) == nil
+        W.swapTo = function(_, name) swapped[#swapped + 1] = name end
+        B.Menu = { tiles = function(objs) return { objs[1]:getSprite():getName() } end,
+            pickAt = function() asked = asked + 1 end }
+        local okP, err = pcall(function()
+            for _, n in ipairs({ S, E, CELL }) do
+                local spr = Entry.sprite(n)
+                W.pickSwap(0, { getSprite = function() return spr end })
+            end
+        end)
+        B.Menu, W.swapTo = realMenu, realSwap
+        check(okP and okWhy and #swapped == 0 and asked == 3,
+            "吸管點到 underground_01_0／1、invisible_01_0：不換成挖掘項目（不叫 swapTo），交給挑圖塊清單（"
+            .. table.concat(swapped, ",") .. " " .. tostring(err) .. "）")
+    end
+
+    -- 目錄整理完：挖掘三項有搜尋鍵（自己的名稱、種類名、挖一格的名稱、basement dig），「basement／dig／地下室」三項都中、
+    -- 往南入口的名稱只中那一項；地下室分頁照往南、往東、挖一格排（namedMap 先遇到 invisible_01_0 也一樣）
+    do
+        local Ix, Cat, W = B.Index, B.Catalog, B.Window
+        local keepIx, keepState, keepStats, keepSrc = {}, Cat.state, Cat.stats, B.Sources.byFile
+        for k, val in pairs(Ix) do if type(val) ~= "function" then keepIx[k] = val end end
+        local wm, wo, gt2 = spriteMap, spriteOrder, getText
+        local CH = { IGUI_MBLD_Kind_dig = "地下室", IGUI_MBLD_Dig_EntranceS = "往南下的地下室入口",
+            IGUI_MBLD_Dig_EntranceE = "往東下的地下室入口", IGUI_MBLD_Dig_Cell = "地下室挖一格" }
+        getText = function(k) return CH[k] or k end
+        B.Names.reset()
+        world({ wm[CELL], wm[E], wm[S] })
+        local hits, south, order, named = {}, { n = 0 }, { n = 0 }, nil
+        local okCat, err = pcall(function()
+            Cat.state = "idle"
+            Cat.start()
+            for _ = 1, 50 do if Cat.step(nil) then break end end
+            order, named = Ix.names("dig"), Cat.stats and Cat.stats.named
+            local function q(s) return W.filter({ query = s, tab = "all", cat = "all", source = "all", recent = { n = 0 } }) end
+            for i, s in ipairs({ "basement", "Dig", CH.IGUI_MBLD_Kind_dig }) do hits[i] = q(s).n end
+            south = q(B.Names.of(S))
+        end)
+        for k, val in pairs(keepIx) do Ix[k] = val end
+        Cat.state, Cat.stats, B.Sources.byFile = keepState, keepStats, keepSrc
+        spriteMap, spriteOrder, getText = wm, wo, gt2
+        B.Names.reset()
+        check(okCat and order.n == 3 and order[1] == S and order[2] == E and order[3] == CELL,
+            "目錄：地下室分頁照往南、往東、挖一格排（namedMap 先遇到 invisible_01_0）" .. tostring(err) .. " "
+            .. table.concat(order, ","))
+        check(okCat and named == 3 and hits[1] == 3 and hits[2] == 3 and hits[3] == 3 and south.n == 1 and south[1] == S,
+            "目錄：挖掘三項有搜尋鍵，搜 basement／Dig／地下室都列出三項、搜往南入口的名稱只列那一項（"
+            .. tostring(named) .. " " .. table.concat(hits, ",") .. " " .. south.n .. "）")
+    end
 
     -- c18 每個種類都有排程段、設定摘要含挖掘開關、頁籤與帳本清單有新項目、MOD 樹沒有自我檢查或示範檔
     local seg = true
