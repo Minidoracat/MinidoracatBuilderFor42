@@ -29367,6 +29367,78 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "有 lotheader 的對照（照 metaGrid 掛好）：LoadChunk 之後三端都不登錄、房間不變（伺服器 " .. tostring(ctl1) .. "、客戶端 "
         .. tostring(ctl3) .. "、單機 " .. tostring(ctl5) .. "）")
 
+    -- 4 單機在 70 格：每分鐘檢查、巡查（Basement.patrol）、延後批次（dirty → flushGrow）都不叫引擎（單機的 register 沒有
+    -- only 時 close 一律算身邊，要掛回的棟不能放進 redo）；走進 60 格下一次每分鐘檢查登錄 1 次。每一步前都再讀進一次
+    -- （前一步掛回了的話下一步照樣看得出來）
+    local X8 = 324 * AR + 9
+    local R8 = fresh("1")
+    cx, cy = X8 + 1, X8 + 1
+    local w8 = dig3(R8, X8, "1")
+    R8.registerAll()
+    E.reload(w8.sqs, true)
+    cx = X8 + 2 + 70
+    local a8, t8 = E.applies, {}
+    fire("LoadChunk", w8.mid:getChunk())
+    HARNESS_REG_TICK()
+    minute()
+    t8[1] = E.applies - a8
+    local function again8()
+        E.reload(w8.sqs, true)
+        fire("LoadChunk", w8.mid:getChunk())
+        HARNESS_REG_TICK()
+    end
+    again8()
+    R8.patrol()
+    t8[2] = E.applies - a8 - t8[1]
+    again8()
+    R8.dirty(X8, X8, Z)
+    nowMs = nowMs + R8.GROW_QUIET
+    fire("OnTick")
+    t8[3] = E.applies - a8 - t8[1] - t8[2]
+    local bare8 = bare(w8)
+    cx = X8 + 2 + 60
+    minute()
+    t8[4] = E.applies - a8 - t8[1] - t8[2] - t8[3]
+    check(table.concat(t8, ",") == "0,0,0,1" and bare8 and hung(w8),
+        "無 lotheader 重載（單機）：站在 70 格每分鐘檢查、巡查、延後批次都不登錄、格子還沒房間（" .. tostring(bare8)
+        .. "）；走進 60 格下一次每分鐘檢查登錄 1 次、掛回房間（" .. table.concat(t8, ",") .. "）")
+
+    -- 5 同一塊在 64 格內本來就要登錄（單機延後批次的新格、多人 todo）：同一次 applyChanges 順便重建要掛回的那一棟，之後
+    -- Basement.rehang 不再登錄。新格在角的正北（併不進那一棟，自己起一棟），只靠「角上那一塊本來就要登錄」順便重建
+    local X9 = 328 * AR + 9
+    local R9 = fresh("1")
+    cx, cy = X9 + 1, X9 + 1
+    local w9 = dig3(R9, X9, "1")
+    R9.registerAll()
+    E.reload(w9.sqs, true)
+    ug(X9, X9 - 1, Z)
+    R9.growLater(R9.add({ { X9, X9 - 1 } }))
+    nowMs = nowMs + R9.GROW_QUIET
+    local a9 = E.applies
+    fire("LoadChunk", w9.mid:getChunk())
+    fire("OnTick") -- 延後批次（先排的）、再 registerSoon
+    local d9, back9, new9 = E.applies - a9, hung(w9), E.tile[tk(X9, X9 - 1)] ~= nil
+    minute()
+    local again9 = E.applies - a9 - d9
+    local X10 = 332 * AR + 9
+    local R10 = fresh("c")
+    cx, cy = X10 + 1, X10 + 1
+    local w10 = dig3(R10, X10, "c")
+    R10.registerNear(nil)
+    E.reload(w10.sqs, true)
+    ug(X10, X10 - 1, Z)
+    R10.add({ { X10, X10 - 1 } })
+    local a10 = E.applies
+    fire("LoadChunk", w10.mid:getChunk())
+    HARNESS_REG_TICK()
+    local d10, back10, new10 = E.applies - a10, hung(w10), E.tile[tk(X10, X10 - 1)] ~= nil
+    minute()
+    local again10 = E.applies - a10 - d10
+    check(d9 == 1 and back9 and new9 and again9 == 0 and d10 == 1 and back10 and new10 and again10 == 0,
+        "無 lotheader 重載：同一塊本來就要登錄時順便掛回、只叫引擎 1 次，之後不再登錄（單機延後批次 " .. d9 .. "／"
+        .. tostring(back9) .. tostring(new9) .. "／" .. again9 .. "，多人 todo " .. d10 .. "／" .. tostring(back10)
+        .. tostring(new10) .. "／" .. again10 .. "）")
+
     -- 6 零成本：沒有地下室的那一份不掛 LoadChunk；第一次加格子才掛 1 個，之後再加不再掛
     local c0 = count("LoadChunk")
     local R6 = fresh("s")
