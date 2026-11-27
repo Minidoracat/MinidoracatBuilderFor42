@@ -66,7 +66,7 @@ local SIDE_MAX = 64   -- 拖出的範圍每邊最多離按下那格幾格（MaxC
 local DRAW_MAX = 512  -- ponytail：一次拖曳最多排 512 格（超過 MaxCellsPerDrag 的分批送，Queue.push），量到卡頓再縮
 local AREA_SIDE = 40  -- 一區拆除每邊最多幾格（Area 每次預覽掃整區）
 local AREA_SETTLE_MS = 200 -- 一區拆除：範圍停住這麼久才算預覽，拖曳中只畫外框
-local AREA_MARKS = 128 -- ponytail：一區拆除最多畫幾個警告三角（每個每幀約 6 µs），玩家嫌少再加
+local AREA_MARKS = 128 -- ponytail：一區拆除與拖曳預覽最多畫幾個警告記號（每個每幀約 6 µs），玩家嫌少再加
 local SUMMARY_MS = 1000 -- 材料摘要多久重查一次；一區拆除同時再問一次預覽（Area.preview 世界沒變就不重算）
 -- 虛影染色：可蓋白、不能蓋照原版紅（ISBuildingObject.lua:576-580）；多格物件被擋時沒出問題的那幾格地框中性灰
 local WHITE, RED, NEUTRAL = { r = 1, g = 1, b = 1 }, { r = 0.65, g = 0.2, b = 0.2 }, { r = 0.6, g = 0.6, b = 0.6 }
@@ -206,7 +206,8 @@ local cautionBroken = false -- Place.caution 丟過錯：印一次、之後不�
 -- 的範圍（Check.inReach），不看 MaxDistance、不查走不走得到（走到一半停下由送出後的 Queue.tick 提示）。
 -- 錨點已帶 code（游標自己判斷的 NO_FACE、配方拖一排的 OVER_MAX）的不跑 Check.item，照那個碼。
 -- overlap：疊放模式（Check.item 的 opts.overlap），放開時隨請求送給伺服器。
--- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數。
+-- 回 { { a, code, extra, cells, info }, ... }（info 只在可蓋時有）、可蓋格數、缺料格數、planned（挖一格時給 Basement.sizeAt）。
+-- 每格共用一張 opts（Check.item 的 opts.memo：每格都一樣的結果一次拖曳只算一次）
 function Cursor.preview(player, name, d, anchors, S, ...)
     local overlap = ...
     local work
@@ -217,13 +218,13 @@ function Cursor.preview(player, name, d, anchors, S, ...)
         work.uses = setmetatable({}, { __index = S.uses })
     end
     local out, ok, short, planned = {}, 0, 0, {}
+    local opts = { preview = true, walk = true, summary = work, planned = planned, overlap = overlap, memo = {} }
     for i, a in ipairs(anchors) do
         local fine, code, extra, info
         if a.code then
             fine, code, extra = true, a.code, a.extra
         else
-            fine, code, extra, info = pcall(Check.item, player, name, a[4] or d, a,
-                { preview = true, walk = true, summary = work, planned = planned, overlap = overlap })
+            fine, code, extra, info = pcall(Check.item, player, name, a[4] or d, a, opts)
         end
         if not fine then
             print(LOG .. "preview failed e=" .. tostring(name) .. ": " .. tostring(code))
@@ -267,7 +268,7 @@ function Cursor.preview(player, name, d, anchors, S, ...)
         end
         out[i] = { a = a, code = code, extra = extra, cells = info and info.cells, info = code == nil and info or nil }
     end
-    return out, ok, short
+    return out, ok, short, planned
 end
 
 -- ---------------------------------------------------------------- 游標物件
@@ -780,7 +781,8 @@ end
 -- ponytail：拖曳時每換一格整片重算（最多 DRAW_MAX 次 Check.item）；量到卡頓再改成只算新增的格子。
 function Cursor:refresh(ax, ay, az, ex, ey)
     local anchors = self:anchors(ax, ay, az, ex, ey)
-    self.res, self.okN, self.shortN = Cursor.preview(self.character, self.name, self.d, anchors, self.S, self.overlap)
+    self.res, self.okN, self.shortN, self.planned = Cursor.preview(self.character, self.name, self.d, anchors, self.S,
+        self.overlap)
     -- 標籤框預設在滑鼠右下（panelRender）。地下室入口的洞從原點往東（畫面右下）延伸 2 格以上時改放右上，不蓋住預覽：
     -- 洞與室是平的，往上不會長進框裡。樓梯、坡道、家具的虛影有高度，往東那幾片會往上長進右上那塊，照舊放右下
     local east, offs0 = 0, self.d ~= nil and self:offsOf(self.d)
@@ -792,7 +794,13 @@ function Cursor:refresh(ax, ay, az, ex, ey)
     local good, bad = coreColors()
     local tint = hook("tint", self) -- 規劃模式換可蓋格子的地框色
     if type(tint) == "table" then good = { r = tint.r or tint[1], g = tint.g or tint[2], b = tint.b or tint[3] } end
-    local swapN = 0
+    local swapN, marks = 0, 0
+    -- 記號最多 AREA_MARKS 個（每個每幀都要畫）；超過的格子照樣畫顏色與地框
+    local function mark(m)
+        if not m or marks >= AREA_MARKS then return nil end
+        marks = marks + 1
+        return m
+    end
     for _, r in ipairs(self.res) do
         local a, code, e = r.a, r.code, r.extra
         local at = code and AT_CELL[code] and e and e.x
@@ -817,9 +825,9 @@ function Cursor:refresh(ax, ay, az, ex, ey)
                 marked = marked or hit
                 local gz = role == "dig" and o[3] < 0 and a[3] or z -- 地下的室畫在正上方的地面
                 if code == nil then
-                    ghost(g, x, y, gz, spr, yoff, swap and warn or WHITE, swap and warn or good, swap and MARK_SWAP)
+                    ghost(g, x, y, gz, spr, yoff, swap and warn or WHITE, swap and warn or good, mark(swap and MARK_SWAP))
                 elseif not at or hit then
-                    ghost(g, x, y, gz, spr, yoff, RED, bad, MARK_BAD)
+                    ghost(g, x, y, gz, spr, yoff, RED, bad, mark(MARK_BAD))
                 else
                     ghost(g, x, y, gz, spr, yoff, RED, NEUTRAL)
                 end
@@ -839,7 +847,7 @@ function Cursor:refresh(ax, ay, az, ex, ey)
         -- 另外畫壞色地框＋記號，不然畫面上看不出是哪裡擋住。在游標那層底下的畫在正上方（同地下的室）
         if at and not marked then
             local ez = math.max(e.z or a[3], a[3])
-            ghost(g, e.x, e.y, ez, nil, 0, RED, bad, MARK_BAD)
+            ghost(g, e.x, e.y, ez, nil, 0, RED, bad, mark(MARK_BAD))
         end
     end
     self.g, self.gn, self.swapN = g, g.n, swapN
@@ -956,14 +964,15 @@ function Cursor:texts()
     end
     self.label = name
     local res, n, ok, swap = self.res, #self.res, self.okN, self.swapN
+    local dig = self.entry ~= nil and self.entry.kind == "dig" -- 挖掘說「挖」不說「蓋」
     -- 跳過＝被擋＋缺料，數字加得起來；有替換時新蓋＋替換＋跳過＝全部
     local label2
     if n > 1 and swap > 0 then
         label2 = ok == n and getText("IGUI_MBLD_DragSwap", tostring(n), tostring(ok - swap), tostring(swap))
             or getText("IGUI_MBLD_DragSwapSkip", tostring(n), tostring(ok - swap), tostring(swap), tostring(n - ok))
     elseif n > 1 then
-        label2 = ok == n and getText("IGUI_MBLD_DragAll", tostring(n))
-            or getText("IGUI_MBLD_DragSummary", tostring(n), tostring(ok), tostring(n - ok))
+        label2 = ok == n and getText(dig and "IGUI_MBLD_DragAllDig" or "IGUI_MBLD_DragAll", tostring(n))
+            or getText(dig and "IGUI_MBLD_DragSummaryDig" or "IGUI_MBLD_DragSummary", tostring(n), tostring(ok), tostring(n - ok))
     elseif swap > 0 then
         local rep = res[1].info.replace
         local spr = rep.obj and rep.obj:getSprite()
@@ -973,7 +982,8 @@ function Cursor:texts()
     self.label2 = label2
     -- 超過一次上限（MaxCellsPerDrag）：放開後分幾批依序送
     local batches = self.perBatch and math.ceil(ok / self.perBatch) or 1
-    self.batch = batches > 1 and getText("IGUI_MBLD_Batches", tostring(batches), tostring(self.perBatch)) or nil
+    self.batch = batches > 1 and getText(dig and "IGUI_MBLD_BatchesDig" or "IGUI_MBLD_Batches", tostring(batches),
+        tostring(self.perBatch)) or nil
     local level = n == 1 and ok == 1 and stackLevel(res[1])
     local over, max = nil, nil
     if n == 1 and ok == 1 then over, max = overlapLevel(res[1]) end
@@ -995,28 +1005,40 @@ function Cursor:texts()
     if run > 0 then
         self.label3, self.label3warn = getText("IGUI_MBLD_PausesRun", tostring(run)), true
     elseif ahead > 0 then
-        self.label3, self.label3warn = getText("IGUI_MBLD_Append", tostring(ahead)), false
+        self.label3, self.label3warn = getText(dig and "IGUI_MBLD_AppendDig" or "IGUI_MBLD_Append", tostring(ahead)), false
     else
         self.label3, self.label3warn = cut > 0
             and getText(cut == 1 and "IGUI_MBLD_ReplaceOne" or "IGUI_MBLD_Replace", tostring(cut)) or nil, true
     end
     -- 挖掘拆不回去：每次放之前都說，和排隊、取代那一行各佔一行（入口另說會拆掉樓梯上方的地板與草）
-    self.digWarn = self.entry and self.entry.kind == "dig"
-        and getText(self.name == Entry.DIG_CELL and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Dig_Warn") or nil
+    self.digWarn = dig and getText(self.name == Entry.DIG_CELL and "IGUI_MBLD_Refund_dig" or "IGUI_MBLD_Dig_Warn") or nil
+    -- 挖一格：這座地下室挖完這次可挖的格子後有幾格（上限 Basement.MAX），照第一個可挖的格子所在的那座算
+    self.digSize = nil
+    if dig and self.name == Entry.DIG_CELL and ok > 0 and self.planned then
+        for _, r in ipairs(res) do
+            local c = r.code == nil and r.cells and r.cells[1]
+            if c then
+                self.digSize = getText("IGUI_MBLD_Dig_Size", tostring(B.Basement.sizeAt(self.planned, c.x, c.y)),
+                    tostring(B.Basement.MAX))
+                break
+            end
+        end
+    end
     self.tip = self:reasons()
     local hint
     if not self.joypad then -- 手把用原版按鈕提示（getAPrompt 等）
         local parts = {}
         if ok > 0 and self.canDrag and self.lineX then -- 已經在拖：說放開會蓋幾格、換幾格，不再教拖
             if swap == 0 then
-                parts[#parts + 1] = getText(ok == 1 and "IGUI_MBLD_HintReleaseOne" or "IGUI_MBLD_HintRelease", tostring(ok))
+                parts[#parts + 1] = getText(dig and "IGUI_MBLD_HintReleaseDig"
+                    or ok == 1 and "IGUI_MBLD_HintReleaseOne" or "IGUI_MBLD_HintRelease", tostring(ok))
             elseif swap == ok then
                 parts[#parts + 1] = getText("IGUI_MBLD_HintReleaseSwap", tostring(swap))
             else
                 parts[#parts + 1] = getText("IGUI_MBLD_HintReleaseMix", tostring(ok - swap), tostring(swap))
             end
         elseif ok > 0 then
-            parts[#parts + 1] = getText(swap > 0 and "IGUI_MBLD_HintSwap" or "IGUI_MBLD_HintBuild")
+            parts[#parts + 1] = getText(swap > 0 and "IGUI_MBLD_HintSwap" or dig and "IGUI_MBLD_HintDig" or "IGUI_MBLD_HintBuild")
             if self.canDrag then parts[#parts + 1] = getText("IGUI_MBLD_HintDrag") end
         end
         if (self.states.n > 1 or self.mirrorName) and self.rotateName then
@@ -1042,6 +1064,7 @@ function Cursor:texts()
     add(self.stack, col.text)
     add(self.swap, col.text)
     add(self.label3, self.label3warn and col.warning or col.text)
+    add(self.digSize, col.text)
     add(self.digWarn, col.warning)
     -- 預覽提醒（Cursor.preview 的 info.warn）：每種碼寫一次。長句照其他段由 layout 斷行
     local warned = {}

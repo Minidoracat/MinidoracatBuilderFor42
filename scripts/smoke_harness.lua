@@ -9110,7 +9110,7 @@ print("情境三十八之二：2026-11-21 回饋：全高窗放進同形狀的�
     IsoWindow = realWindow
     check(made and bq.objects[1] == o1 and bq.objects[2] == o2 and bq.objects[3] == made and bq.objects[4] == o3,
         "蓋全高窗：插在同形狀的牆飾後面")
-    check(B.Entry.digest():sub(1, 4) == "r26:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
+    check(B.Entry.digest():sub(1, 4) == "r27:", "放置規則改了：設定摘要換版（舊視窗的請求回 STALE，不會兩端判斷不一）")
 
     -- 預覽提醒 RAMP_EXIT：坡道頂的出口那條邊（這一層與上一層）要放會擋路的牆、門、窗框、柵欄時提醒；門框、柱子不擋路不提醒
     local function top(dir, id)
@@ -9889,9 +9889,13 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     -- BuildingRoomsEditor.java:233-248、BREBuilding.getLotHeader）、殭屍補充。meta[地圖格:相對角]＝那一棟；live[角]＝第一間
     local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0 }
     local function tk(x, y) return x .. "," .. y end
+    -- getCellData：地圖格有 metaCell（預設都有；eng.noCell[lx,ly] 的沒有，像還沒載入的荒野格）
     local grid = { getRoomAt = function(_, x, y, z)
         if z ~= Z then return nil end
         return eng.foreign[tk(x, y)] or eng.tile[tk(x, y)]
+    end, getCellData = function(_, lx, ly)
+        if eng.noCell and eng.noCell[lx .. "," .. ly] then return nil end
+        return {}
     end }
     getWorld = function()
         local w = realWorld()
@@ -9931,7 +9935,8 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 self.rooms[#self.rooms + 1] = r
                 return r
             end
-            function b:isValid() return #self.rooms > 0 and #self.rooms[1].rects > 0 end
+            -- eng.reject(b) 回 true 的建物引擎不收（登錄失敗）
+            function b:isValid() return #self.rooms > 0 and #self.rooms[1].rects > 0 and not (eng.reject and eng.reject(self)) end
             self.list[#self.list + 1] = b
             return b
         end
@@ -11677,6 +11682,102 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             H.digger = p
         end)()
 
+        -- P1 拖一片挖一格的游標預覽（剛挖好的 9 格往南拖 3 格）：項目解析、成本一次拖曳只算一次，結果和不帶 memo 逐格呼叫
+        -- 相同；不帶 opts 的呼叫不記（中間關掉種類照回 DISABLED）；pre 的外來房間只查一次（3×3＝9 次 getRoomAt），
+        -- Basement.opens 單獨呼叫照查。U8 拖曳中的挖完格數照併查集算（9＋3＝12）；U4 DIG_LEVEL 帶 entry；游標的挖掘版文案
+        ;(function()
+            local Cur, Cost, CELL = MinidoracatBuilder.Cursor, MinidoracatBuilder.Cost, Entry.DIG_CELL
+            local q = player({ id = 7120, x = X0 + 0.5, y = Y0 + 4.5, z = Z })
+            local A = { { X0, Y0 + 5, Z }, { X0, Y0 + 6, Z }, { X0, Y0 + 7, Z } }
+            local realResolve, realFor = Entry.resolve, Cost.forCells
+            local nRes, nFor = 0, 0
+            Entry.resolve = function(...) nRes = nRes + 1 return realResolve(...) end
+            Cost.forCells = function(...) nFor = nFor + 1 return realFor(...) end
+            local res, okN, _, planned = Cur.preview(q, CELL, 0, A, nil)
+            Entry.resolve, Cost.forCells = realResolve, realFor
+            local function tot(t)
+                if not t then return "-" end
+                local s = {}
+                for ft, n in pairs(t.items or {}) do s[#s + 1] = ft .. "=" .. n end
+                table.sort(s)
+                return table.concat(s, ",") .. "/" .. #(t.tools or {})
+            end
+            local pl, same = {}, okN == 3
+            for i, a in ipairs(A) do
+                local code, _, info = Check.item(q, CELL, 0, a, { preview = true, walk = true, planned = pl })
+                if code == nil then
+                    for _, c in ipairs(info.cells) do Basement.plan(pl, c.x, c.y, c.z) end
+                end
+                local r = res[i]
+                same = same and code == r.code and tot(info.total) == tot(r.info and r.info.total)
+                    and #info.cells == #(r.cells or {})
+            end
+            check(okN == 3 and nRes == 1 and nFor == 1 and same,
+                "P1 拖 3 格挖一格：Entry.resolve、Cost.forCells 各只叫 1 次（opts.memo），結果和不帶 memo 逐格呼叫相同（ok=" .. okN
+                .. " resolve=" .. nRes .. " forCells=" .. nFor .. " same=" .. tostring(same) .. "）")
+            local first = Check.item(q, CELL, 0, A[1])
+            sb.KindDig = false
+            local second = Check.item(q, CELL, 0, A[1])
+            local offRes = Cur.preview(q, CELL, 0, A, nil)
+            sb.KindDig = true
+            check(first ~= "DISABLED" and second == "DISABLED" and offRes[1].code == "DISABLED" and offRes[3].code == "DISABLED",
+                "P1 不帶 opts 連叫兩次、中間關掉種類：第二次回 DISABLED（不記到別次呼叫）；預覽也照當下設定（" .. tostring(first)
+                .. " " .. tostring(second) .. "）")
+            local keepW, rooms = getWorld, 0
+            getWorld = function()
+                local w = keepW()
+                local g = w:getMetaGrid()
+                w.getMetaGrid = function()
+                    return setmetatable({ getRoomAt = function(_, ...) rooms = rooms + 1 return g:getRoomAt(...) end },
+                        { __index = g })
+                end
+                return w
+            end
+            local one = Check.item(q, CELL, 0, A[1], { preview = true, walk = true })
+            local nPre = rooms
+            local fk = tk(X0 + 1, Y0 + 6)
+            eng.foreign[fk] = eng.newDef("harness_foreign")
+            local alone = Basement.opens(q, { x = X0, y = Y0 + 5, z = Z }, true, nil)
+            eng.foreign[fk] = nil
+            getWorld = keepW
+            check(one == nil and nPre == 9 and alone == "DIG_ROOM",
+                "P1 挖一格的 pre：外來房間只查一次（getRoomAt 9 次）；Basement.opens 單獨呼叫照查（DIG_ROOM）（" .. tostring(one)
+                .. " " .. nPre .. " " .. tostring(alone) .. "）")
+            local size = Basement.sizeAt and Basement.sizeAt(planned, X0, Y0 + 7)
+            check(size == 12, "U8 9 格的塊加上這次拖的 3 格：Basement.sizeAt 回 12（" .. tostring(size) .. "）")
+            local lvC, exC = Check.item(q, CELL, 0, { X0, Y0 + 5, 0 }, { preview = true, walk = true })
+            local lvS, exS = Check.item(q, S, 0, { X0 + 10, Y0, Z, 0 }, { preview = true, walk = true })
+            check(lvC == "DIG_LEVEL" and exC.entry == false and lvS == "DIG_LEVEL" and exS.entry == true,
+                "U4 DIG_LEVEL 帶 entry：挖一格放在一樓是 false、入口放在地下一層是 true（" .. tostring(lvC) .. " "
+                .. tostring(exC and exC.entry) .. " " .. tostring(lvS) .. " " .. tostring(exS and exS.entry) .. "）")
+            -- 游標標籤：挖掘的拖曳摘要、分批、接在後面、按鍵說明都用挖掘版的字；挖完格數那行排在拆不回去那行前面
+            local realGT, realLeft = getText, B.Queue.left
+            getText = function(k, ...) return k .. "(" .. table.concat({ ... }, ",") .. ")" end
+            B.Queue.left = function(_, kind) return kind == "drag" and 5 or 0 end
+            local eCell = Entry.resolve(CELL)
+            local cur = setmetatable({ res = res, okN = okN, shortN = 0, swapN = 0, planned = planned, states = { n = 1 },
+                entry = eCell, name = CELL, d = 0, colors = { text = {}, warning = {}, textMuted = {} }, player = 7,
+                joypad = false, canDrag = true, lineX = 1, perBatch = 1, character = q, reasons = function() end,
+                swapText = function() end, layout = function() end }, { __index = Cur })
+            cur:texts()
+            local drag = { cur.label2, cur.batch, cur.label3, cur.hint, cur.digSize }
+            local at = {}
+            for i = 1, #cur.src, 2 do at[cur.src[i]] = i end
+            local before = cur.digSize ~= nil and cur.digWarn ~= nil and at[cur.digSize] ~= nil and at[cur.digSize] < at[cur.digWarn]
+            cur.lineX, cur.okN, cur.perBatch = nil, 2, nil
+            B.Queue.left = function() return 0 end
+            cur:texts()
+            local idle = { cur.label2, cur.hint }
+            getText, B.Queue.left = realGT, realLeft
+            check(drag[1] == "IGUI_MBLD_DragAllDig(3)" and drag[2] == "IGUI_MBLD_BatchesDig(3,1)"
+                and drag[3] == "IGUI_MBLD_AppendDig(5)" and tostring(drag[4]):find("IGUI_MBLD_HintReleaseDig(3)", 1, true)
+                and idle[1] == "IGUI_MBLD_DragSummaryDig(3,2,1)" and tostring(idle[2]):find("IGUI_MBLD_HintDig()", 1, true),
+                "游標挖掘版文案：拖曳摘要、分批、接在後面、放開與左鍵說明（" .. table.concat({ tostring(drag[1]), tostring(drag[2]),
+                    tostring(drag[3]), tostring(drag[4]), tostring(idle[1]), tostring(idle[2]) }, " ") .. "）")
+            check(drag[5] == "IGUI_MBLD_Dig_Size(12," .. Basement.MAX .. ")" and before,
+                "U8 游標標籤：挖一格拖曳中寫這座地下室挖完後幾格（上限），排在拆不回去那行前面（" .. tostring(drag[5]) .. "）")
+        end)()
+
         -- 加開入口：樓梯 3 格都在已挖的塊裡 → 兩旁的 6 格不再挖（Check.item 拿掉 role＝dig 的格子）；樓梯底前面那格也要
         -- 已經挖開，不然下了樓梯面對土牆（審查 round1 F6）
         ;(function()
@@ -11829,6 +11930,22 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                     and xc.m == 1 and xc.fr == 0.9 and xc.s == "-",
                     "被擋的位置不在預覽裡（土牆在鄰格、樓梯底前面那格）：那一格另外畫壞色地框與警告記號，在地下一層的畫在正上方的地面（"
                     .. hN .. " " .. xN .. "）")
+                -- P1 記號上限：拖 200 格挖一格都被擋，紅框照畫，警告記號最多 AREA_MARKS（128）個
+                do
+                    local e = Entry.resolve(Entry.DIG_CELL)
+                    local cur = setmetatable({ character = q, name = e.name, entry = e, d = 0, canDrag = false, offsBy = {},
+                        colors = { warning = good }, texts = function() end }, { __index = Cursor })
+                    RES = {}
+                    for i = 1, 200 do RES[i] = { a = { X + i, Y, 0, 0 }, code = "BLOCKED" } end
+                    cur:refresh(X, Y, 0, X, Y)
+                    local marks, red = 0, 0
+                    for i = 1, cur.g.n do
+                        if cur.g.m[i] ~= 0 then marks = marks + 1 end
+                        if cur.g.fr[i] == 0.9 then red = red + 1 end
+                    end
+                    check(cur.g.n == 200 and red == 200 and marks == 128,
+                        "P1 拖 200 格都被擋：紅框 200 格照畫、警告記號只畫前 128 個（" .. cur.g.n .. " " .. red .. " " .. marks .. "）")
+                end
                 -- 挖地下室借用原版圖名（underground_01、invisible_01）：管理員關掉這兩個圖塊組或來源不影響挖掘（只照沙盒
                 -- KindDig），建造視窗照樣列、左邊不列這兩個圖塊組，詳情的「關掉這套圖塊」對它們不做事
                 do
@@ -28243,8 +28360,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "dug／basements 壞資料整則丟（超過 400 格、長度、範圍、非整數、舊格式、沒有 v、i>n、一段 501 個長方形）；500 個照收、登錄一次；"
         .. "空快照清掉那一區、不叫引擎；單機只重算高度")
 
-    -- 叫引擎的時機：快照 1 次；挖 8 格（每格 dug、5 秒、每分鐘檢查兩次）0 次；伺服器那一批的 block 1 次；走近一座沒登錄過的
-    -- 地下室，下一次每分鐘檢查 1 次；挖了之後一直沒等到 block：等滿 WAIT_MS 之前的每分鐘檢查 0 次，過了那一次 1 次
+    -- 叫引擎的時機：快照 1 次（身邊那座觸發，200 格外那座搭便車一起登錄）；挖 8 格（每格 dug、5 秒、每分鐘檢查兩次）0 次；
+    -- 伺服器那一批的 block 1 次；走近已經搭便車登錄過的那座 0 次；挖了之後一直沒等到 block：等滿 WAIT_MS 之前的每分鐘檢查
+    -- 0 次，過了那一次 1 次
     local AQ = A + 10
     local Q = AQ * AR + 100
     px = Q
@@ -28274,10 +28392,10 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     t8[6] = ap()
     C.askEveryMinute()
     t8[7] = ap()
-    check(table.concat(t8, ",") == "1,0,1,1,0,1,0" and one and one.n == 12 and BM.has(Q + 202, Q + 200, -1)
+    check(table.concat(t8, ",") == "1,0,1,0,0,1,0" and one and one.n == 12 and BM.has(Q + 202, Q + 200, -1)
             and E.live[tk(Q + 200, Q + 200)] and E.live[tk(Q + 200, Q + 200)].n == 3,
-        "客戶端叫引擎的時機：快照 1 次、挖 8 格 0 次、block 1 次（整棟 12 格）、走近沒登錄過的那座 1 次、等 block 90 秒內 0 次、"
-        .. "過了 1 次、之後不再叫（" .. table.concat(t8, ",") .. "）")
+        "客戶端叫引擎的時機：快照 1 次（遠的那座搭便車）、挖 8 格 0 次、block 1 次（整棟 12 格）、走近搭便車登錄過的那座 0 次、"
+        .. "等 block 90 秒內 0 次、過了 1 次、之後不再叫（" .. table.concat(t8, ",") .. "）")
 
     -- 兩塊各自登錄後挖一格接起來：dug 與每分鐘檢查都不叫引擎，等到 block 才登錄一次（不會先各自登錄、block 到了再登錄一次）
     local R = (A + 20) * AR + 100
@@ -28328,6 +28446,85 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(not orderOk(old, { ids = new.ids, rs = { new.rs[1], new.rs[2], nil, nil, nil } }),
         "植入違規（新快照後一端房號是 nil）：上一條不過（舊寫法只比兩端不相等，會過）")
 
+    -- P2a 搭便車（Basement.registerNear）：身邊有要登錄的塊時，NEAR 外合格的塊同一次 applyChanges 一起登錄；全部都遠不叫引擎；
+    -- 在等 block、在快照範圍外（stale）、地圖格沒有 metaCell（getCellData 是 nil，todo 留著、走近再登錄）的不帶；搭便車登錄
+    -- 失敗的塊之後不再搭（hitch＝false：下一輪身邊的塊照舊、不叫引擎），走近照登錄
+    do
+        local AP = A - 20 -- 往上 40 個大區會超出 Basement.LIMIT
+        local G = AP * AR + 100
+        local function two(i) -- 第 i 輪：身邊一塊 (g, g) 兩格、300 格外一塊 (f, f) 兩格，玩家站在 (g, g)；回兩塊的角
+            local g, f = G + 10 * i, G + 300 + 10 * i
+            BM.add({ { g, g }, { g + 1, g } })
+            BM.add({ { f, f }, { f + 1, f } })
+            px = g
+            return g, f
+        end
+        local function lot(v) return math.floor(v / 256) end
+        local function clear()
+            BM.reset({}, AP, AP)
+            E.noCell, E.reject = nil, nil
+        end
+        local function on(x) return E.live[tk(x, x)] ~= nil end
+        ap()
+        local g, f = two(1)
+        BM.registerNear(nil)
+        local r1 = { ap(), on(g), on(f) }
+        px = f
+        BM.registerNear(nil)
+        r1[4] = ap()
+        clear()
+        g, f = two(2)
+        px = G - 1000
+        BM.registerNear(nil)
+        local r2 = { ap() }
+        clear()
+        g, f = two(3)
+        BM.await({ { f, f }, { f + 1, f } })
+        BM.registerNear(nil)
+        local r3 = { ap(), on(g), not on(f) }
+        clear()
+        g, f = two(4)
+        BM.reset({ { g, g }, { g + 1, g } }, AP - 1, AP - 1) -- f 在這份快照範圍外：stale
+        BM.registerNear(nil)
+        local r4 = { ap(), on(g), not on(f) }
+        clear()
+        g, f = two(5)
+        E.noCell = { [lot(f) .. "," .. lot(f)] = true }
+        BM.registerNear(nil)
+        local r5 = { ap(), on(g), not on(f) }
+        E.noCell = nil
+        px = f
+        BM.registerNear(nil)
+        r5[4], r5[5] = ap(), on(f)
+        clear()
+        g, f = two(6)
+        E.reject = function(b) return b.rooms[1].rects[1][2] >= f end
+        BM.registerNear(nil)
+        local r6 = { ap(), on(g), not on(f) }
+        E.reject = nil
+        BM.registerNear(nil)
+        r6[4] = ap()
+        px = f
+        BM.registerNear(nil)
+        r6[5], r6[6] = ap(), on(f)
+        clear()
+        local function s(r)
+            local o = {}
+            for i, v in ipairs(r) do o[i] = tostring(v) end
+            return table.concat(o, ",")
+        end
+        local got = s(r1) .. "|" .. s(r2) .. "|" .. s(r3) .. "|" .. s(r4) .. "|" .. s(r5) .. "|" .. s(r6)
+        check(s(r1) == "1,true,true,0" and s(r2) == "0",
+            "P2a ① 身邊一塊、300 格外一塊都要登錄：同一次 applyChanges 兩塊都登錄，走到遠的那塊旁邊不再叫引擎；② 全部都遠不叫引擎（"
+            .. got .. "）")
+        check(s(r3) == "1,true,true" and s(r4) == "1,true,true",
+            "P2a ③ 遠處在等 block、④ 在快照範圍外（stale）：不搭便車，身邊的照登錄（" .. got .. "）")
+        check(s(r5) == "1,true,true,1,true",
+            "P2a ⑤ 遠處的地圖格沒有 metaCell：不搭便車、todo 留著，走近照登錄（" .. got .. "）")
+        check(s(r6) == "1,true,true,0,1,true",
+            "P2a ⑥ 搭便車的塊登錄失敗：之後不再搭（下一輪不叫引擎），走近照登錄（" .. got .. "）")
+    end
+
     BM.reset({}, A, A)
     BM.reset({}, A + 10, A + 10)
     BM.reset({}, A + 20, A + 20)
@@ -28355,6 +28552,23 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     getNumActivePlayers = function() return 1 end
     getSpecificPlayer = function(i)
         return i == 0 and { getX = function() return cx end, getY = function() return cy end } or nil
+    end
+    -- P7：這份 Basement 還沒加過任何格子時，每分鐘檢查不排登錄（不掛 OnTick）、Basement.near 直接回 false（不讀格子）
+    do
+        local keepSend = sendClientCommand
+        MinidoracatBuilder.Basement, isServer, isClient = CB, no, yes
+        sendClientCommand = function() end
+        local n0 = #(handlers.OnTick or {})
+        HARNESS_RAW_ASK()
+        local hooked = #(handlers.OnTick or {}) - n0
+        if hooked > 0 then HARNESS_REG_TICK() end
+        local okN, nearV = pcall(CB.near, {})
+        local any = CB.any and CB.any()
+        sendClientCommand = keepSend
+        MinidoracatBuilder.Basement, isServer, isClient = SB, keep[1], keep[2]
+        check(hooked == 0 and okN and nearV == false and any == false,
+            "P7 還沒有地下室：每分鐘檢查不掛 OnTick、Basement.near 回 false 不讀格子、Basement.any() 是 false（" .. hooked .. " "
+            .. tostring(nearV) .. " " .. tostring(any) .. "）")
     end
     local function enter(w)
         if w == "s" then
@@ -28935,7 +29149,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     at(XF + 1, XF + 3)
     enter("s")
     SB.grow(SB.add({ { XF, XF }, { XF + 1, XF }, { XF + 2, XF }, { XF + 200, XF }, { XF + 201, XF }, { XF + 202, XF } }))
+    EC.noCell = { [math.floor((XF + 200) / AR) .. "," .. math.floor(XF / AR)] = true } -- 遠的那座不搭便車：留給走近時登錄
     for _, m in ipairs(snap()) do deliver(m, 0) end
+    EC.noCell = nil
     local farR = EC.tile[tk(XF + 200, XF)] == nil
     at(XF + 100, XF + 3)
     local d1 = dig({ { XF + 3, XF } })
@@ -29119,7 +29335,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
             Qm.left = realLeft
             local both = { queued = false, warn = false }
             for i = 1, #(c.src or {}), 2 do
-                if c.src[i] == "IGUI_MBLD_Append" and c.src[i + 1] == c.colors.text then both.queued = true end
+                if c.src[i] == "IGUI_MBLD_AppendDig" and c.src[i + 1] == c.colors.text then both.queued = true end
                 if c.src[i] == c.digWarn and c.src[i + 1] == c.colors.warning then both.warn = true end
             end
             return ok and c.digWarn and c.digWarn .. (both.warn and "!" or "") or "nil", both

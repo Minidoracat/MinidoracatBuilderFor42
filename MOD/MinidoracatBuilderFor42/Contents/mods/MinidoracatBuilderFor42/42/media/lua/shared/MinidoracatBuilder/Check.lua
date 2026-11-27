@@ -154,6 +154,18 @@ function Check.occupied(sq, me)
     return not list:isEmpty() and not (me ~= nil and list:size() == 1 and list:get(0) == me)
 end
 
+-- fn(a, b) 的單一回傳值照 memo[slot][key] 記（nil 記成 false）；沒有 memo（或鍵是 nil）照算
+local function once(memo, slot, key, fn, a, b)
+    if not memo or key == nil then return fn(a, b) end
+    local t = memo[slot]
+    local v = t[key]
+    if v == nil then
+        v = fn(a, b) or false
+        t[key] = v
+    end
+    return v or nil
+end
+
 -- 蓋 name（項目 ID）朝向 d、原點 anchor＝{ x, y, z }。回 code, extra, info：
 --   code＝nil 通過；否則伺服器的拒絕碼（Place.check 的原因碼照傳，沒有時 BLOCKED）。extra＝拒絕附帶的欄位（x, y, z／need, tools
 --   ／SKILL 的 perk, level, have）。
@@ -172,18 +184,29 @@ end
 -- opts.planned（配 preview）：游標一排裡前面可蓋的屋頂或地板格（Place.roofAt、Place.floorAt），後面的格子可以靠它撐著。
 -- opts.overlap：疊放模式（Place.check 的 overlap；只對 Place.OVERLAP 的種類有用）。玩家在建造視窗打開，隨請求送到伺服器
 -- （Server.intent 的 o），伺服器只帶這一欄（沒有 preview，照樣補格子、不查摘要）。開著時不找原地替換：玩家要的是疊上去。
+-- opts.memo（配 preview）：游標一次拖曳共用的空表（Cursor.preview 每次拖曳一張），每格都一樣的結果（項目解析、朝向、佔地、
+-- 技能、單格的成本）只算一次。別次呼叫不帶它，照當下的設定重算。
 -- 伺服器（opts 為 nil 或只有 overlap）不查材料：Server.complete 自己 plan。
 function Check.item(player, name, d, anchor, ...)
     local opts = ...
     local preview = opts ~= nil and opts.preview == true
     local walk = preview and opts.walk == true
     local planned = preview and opts.planned or nil
+    local memo = preview and opts.memo or nil
     local info = {}
-    local entry, code = Entry.resolve(name) -- 設定可能在施工途中被改
+    local entry, code
+    if memo and memo.entry ~= nil then
+        entry, code = memo.entry or nil, memo.code
+    else
+        entry, code = Entry.resolve(name) -- 設定可能在施工途中被改
+        if memo then
+            memo.entry, memo.code, memo.face, memo.cells, memo.skill, memo.cost = entry or false, code, {}, {}, {}, {}
+        end
+    end
     if not entry then return code, nil, info end
     local overlap = opts ~= nil and opts.overlap == true and Place.OVERLAP[entry.kind] == true
     info.entry = entry
-    local spr = Entry.face(entry, d)
+    local spr = once(memo, "face", d, Entry.face, entry, d)
     if not spr then return "BAD_FACE", nil, info end
     spr = Entry.alternate(spr, anchor[1], anchor[2]) -- 交替柵欄：這一格放的那張（成本、放置、記號都照它）
     info.spr = spr
@@ -198,7 +221,7 @@ function Check.item(player, name, d, anchor, ...)
         end
         offs = Entry.groupCells(set, w)
     else
-        offs = Entry.cells(spr)
+        offs = once(memo, "cells", spr, Entry.cells, spr, nil)
     end
     for j, o in ipairs(offs) do
         cells[j] = { x = anchor[1] + o[1], y = anchor[2] + o[2], z = anchor[3] + o[3], spr = o[4], role = o[5] }
@@ -324,11 +347,23 @@ function Check.item(player, name, d, anchor, ...)
         end
     end
     -- 預覽照摘要讀技能等級（記下讀過的技能）：之後只升技能、背包沒變，Materials.same 才看得出來
-    local perk, level, have, enough = Check.skill(player, entry.kind, spr, preview and opts.summary and opts.summary.levels or nil)
+    local sk = memo and memo.skill[spr]
+    if not sk then
+        sk = { Check.skill(player, entry.kind, spr, preview and opts.summary and opts.summary.levels or nil) }
+        if memo then memo.skill[spr] = sk end
+    end
+    local perk, level, have, enough = sk[1], sk[2], sk[3], sk[4]
     if perk and not enough then return "SKILL", { perk = perk, level = level, have = have }, info end
-    local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
+    -- 單格的成本一次拖曳只算一次（多格的整組可能被修剪，照算）；costs、total 被這次拖曳的格子共用，下游只讀
+    local one = memo and #sprites == 1 and sprites[1]
+    local cc = one and memo.cost[one]
+    if not cc then
+        local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
+        cc = { costs, Cost.sum(costs) }
+        if one then memo.cost[one] = cc end
+    end
+    local costs, total = cc[1], cc[2]
     for j, c in ipairs(cells) do c.cost = costs[j] end
-    local total = Cost.sum(costs)
     info.costs, info.total = costs, total
     local need = total
     if info.replace and info.replace.had then
