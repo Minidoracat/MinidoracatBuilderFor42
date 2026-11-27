@@ -1240,6 +1240,25 @@ function Basement.rehang()
     return not any or register({}, pick)
 end
 
+-- 客戶端與單機：一間的第一個開關裝在登錄過的 (x, y)（Client 判斷第一個），把那一棟記進 unhung，下一次 rehang（玩家在
+-- REHANG 格內）整棟重登錄一次；回記了沒。原因：登錄時引擎只替已載入的格子建房間燈（updateSquares 在房間燈清單空時
+-- createLights，BuildingRoomsEditor.java:381-395），chunk 沒載入時登錄（重連時站在 NEAR 內遠處）、或身邊登錄後走出載入範圍
+-- （LightingJNI.checkLights 把出界的房間燈從世界拿掉，房間自己的清單還留著，LightingJNI.java:375-384），之後讀進時只有房間
+-- 已經有開關才把燈加回（IsoLightSwitch.chunkLoaded，IsoLightSwitch.java:839-866），之後才裝的開關打開不亮。重登錄每次都換新
+-- 的房間：同一棟（同 metaID）的舊建物整棟拿掉（BuildingRoomsEditor.java:241-244 → BREBuilding.java:230-242），舊 IsoRoom
+-- clear（房間燈、開關清單清空，IsoRoom.java:672-693）並從 metaCell.isoRooms 拿掉；格子再取房間時 getRoomByID 建新的 IsoRoom
+-- （IsoMetaGrid.java:372-399，房間燈清單是空的），updateSquares 就替它建燈、收開關，onApplied（Client 的 watchNow）照開著的
+-- 開關補切。只算第一個：同一間再裝的時候燈已經在了。這改了「裝開關當下不登錄」：只限客戶端與單機、每間一次（約 130–180 ms）。
+-- 專用伺服器不做（updateSquares 在伺服器不把房間燈加進世界，BuildingRoomsEditor.java:385；開關格本來就不放進伺服器的房間，
+-- Basement.setSwitchTile）
+function Basement.relight(x, y)
+    if isServer() then return false end
+    local r = bof[key(x, y)]
+    if not (r and alive(r)) then return false end
+    unhung[r] = true
+    return true
+end
+
 -- 專用伺服器：(x, y) 裝上（on）或拆掉了牆上開關。裝上：記成開關格，格子掛著房間就當下摘掉（setRoomID(-1)，開關建構子才不會
 -- 把它收進房間，IsoLightSwitch.java:90-99；切換時不送房間燈，:519-535）。有增減時登錄過的那一棟排進延後批次重登錄（拆掉的
 -- 那格回到房間）；拆掉時還沒登錄的那格照新格子排。客戶端與單機不做事

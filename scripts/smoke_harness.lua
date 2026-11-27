@@ -29388,6 +29388,105 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "無 lotheader 重載（多人傳送直達，這座在最近一份快照範圍外）：下一個 OnTick 就整棟重登錄 1 次（" .. t7[1] .. "）、掛回房間（"
         .. tostring(back7) .. "）；涵蓋這一區的快照到了不再登錄（" .. t7[2] .. "）")
 
+    -- 8 一間的第一個開關（有 lotheader 也一樣：chunk 沒載入時登錄、或走出載入範圍再回來，房間燈不在世界裡，之後才裝的開關
+    -- 打開不亮）：客戶端與單機那一棟重登錄 1 次（Basement.relight → rehang），開著的補切；同一間第二個不再登錄；單機讀格子時
+    -- 登記的不算裝；專用伺服器不動。多人客戶端剛收到的開關還不在房間的開關清單裡（清單空也算第一個）
+    local function dig0(R, X)
+        local sqs, t = {}, {}
+        for x = X, X + 2 do
+            for y = X, X + 2 do
+                local sq = ug(x, y, Z)
+                sq.isUserDefinedRoom = function() return false end
+                sqs[#sqs + 1], t[#t + 1] = sq, { x, y }
+            end
+        end
+        R.add(t)
+        return { sqs = sqs, mid = getCell():getGridSquare(X + 1, X + 1, Z) }
+    end
+    local keepAdded = B.Place.onAdded
+    B.Place.onAdded = function() end -- 只看 Client 的 onAdded（Place 的硬化、容量與這裡無關）
+    local function sw0(sq, on)
+        local o = mkSwitch(sq)
+        o.on = on
+        sws[#sws + 1] = o
+        return o
+    end
+    local X8 = 336 * AR + 9
+    local R8 = fresh("c")
+    cx, cy = X8 + 1, X8 + 1
+    local w8 = dig0(R8, X8)
+    R8.registerNear(nil)
+    local def8 = E.tile[tk(X8 + 1, X8 + 1)]
+    local a8 = E.applies
+    fire("OnObjectAdded", sw0(w8.mid, true))
+    HARNESS_REG_TICK()
+    local t8 = { E.applies - a8 }
+    local new8 = E.tile[tk(X8 + 1, X8 + 1)]
+    local lit8 = def8 ~= nil and new8 ~= nil and new8 ~= def8 and new8.lightsActive == true
+    fire("OnObjectAdded", sw0(getCell():getGridSquare(X8, X8, Z), true))
+    HARNESS_REG_TICK()
+    t8[2] = E.applies - a8 - t8[1]
+    local X9 = 340 * AR + 9
+    local R9 = fresh("1")
+    cx, cy = X9 + 1, X9 + 1
+    local w9 = dig0(R9, X9)
+    R9.registerAll()
+    local a9 = E.applies
+    local function spSwitch(sq) -- 單機：建構子把自己收進那格房間的開關清單（IsoLightSwitch.java:90-100）
+        local o = sw0(sq, false)
+        local room = sq:getRoom()
+        if room then room.def.switches[#room.def.switches + 1] = o end
+        return o
+    end
+    local s9 = spSwitch(w9.mid)
+    B.Place.onLoaded(s9)
+    HARNESS_REG_TICK()
+    local t9 = { E.applies - a9 }
+    B.Place.onLoaded(s9, true)
+    HARNESS_REG_TICK()
+    t9[2] = E.applies - a9 - t9[1]
+    B.Place.onLoaded(spSwitch(getCell():getGridSquare(X9, X9, Z)), true)
+    HARNESS_REG_TICK()
+    t9[3] = E.applies - a9 - t9[1] - t9[2]
+    local X10 = 344 * AR + 9
+    local R10 = fresh("s")
+    local w10 = dig0(R10, X10)
+    R10.registerAll()
+    local a10 = E.applies
+    fire("OnObjectAdded", sw0(w10.mid, true))
+    HARNESS_REG_TICK()
+    local t10 = E.applies - a10
+    local srv10 = R10.relight(X10 + 1, X10 + 1) -- 專用伺服器上沒有本機玩家（players 走 getOnlinePlayers），直接看記不記
+    B.Place.onAdded = keepAdded
+    check(t8[1] == 1 and lit8 and t8[2] == 0 and table.concat(t9, ",") == "0,1,0" and t10 == 0 and srv10 == false,
+        "一間的第一個開關：多人客戶端整棟重登錄 1 次（" .. t8[1] .. "）、開著的補切（" .. tostring(lit8) .. "）、第二個不再登錄（"
+        .. t8[2] .. "）；單機讀格子登記 0、裝第一個 1、第二個 0（" .. table.concat(t9, ",") .. "）；專用伺服器不登錄（" .. t10
+        .. "）、relight 回 false（" .. tostring(srv10) .. "）")
+
+    -- 9 在快照範圍外（stale）的塊掛回後，涵蓋這一區的快照帶來離開期間的變動：再登錄 1 次、新格登錄上
+    local X11 = 348 * AR + 9
+    local R11 = fresh("c")
+    cx, cy = X11 + 1, X11 + 1
+    local w11 = dig3(R11, X11, "c")
+    R11.registerNear(nil)
+    local home11 = math.floor(X11 / AR)
+    R11.reset({}, home11 + 20, home11 + 20)
+    E.reload(w11.sqs, true)
+    local a11 = E.applies
+    fire("LoadChunk", w11.mid:getChunk())
+    HARNESS_REG_TICK()
+    local t11 = { E.applies - a11 }
+    ug(X11 + 3, X11, Z).isUserDefinedRoom = function() return false end
+    local all11 = { { X11 + 3, X11 } }
+    for _, sq in ipairs(w11.sqs) do all11[#all11 + 1] = { sq:getX(), sq:getY() } end
+    R11.reset(all11, home11, home11)
+    R11.registerNear(nil)
+    t11[2] = E.applies - a11 - t11[1]
+    local got11 = E.tile[tk(X11 + 3, X11)] ~= nil and hung(w11)
+    check(t11[1] == 1 and t11[2] == 1 and got11,
+        "stale 的塊掛回後，快照帶來離開期間的變動：掛回 1 次（" .. t11[1] .. "）、快照後再登錄 1 次（" .. t11[2] .. "）、新格登錄上（"
+        .. tostring(got11) .. "）")
+
     HARNESS_REG_TICK()
     for _, R in ipairs(made) do if R.onChunk then Events.LoadChunk.Remove(R.onChunk) end end
     for _, o in ipairs(sws) do o.gone = true end

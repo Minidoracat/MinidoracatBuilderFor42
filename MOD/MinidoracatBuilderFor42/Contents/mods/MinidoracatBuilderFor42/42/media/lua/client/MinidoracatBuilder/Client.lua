@@ -959,6 +959,20 @@ local function watch(obj, room)
     end
 end
 
+-- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的（有別的＝讀進時引擎已經替房間加過燈，
+-- IsoLightSwitch.chunkLoaded）。多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load 收進房間那段被跳過），
+-- 清單空也算。那一棟排重登錄一次，房間燈才建得出來（Basement.relight 說明原因）
+local function firstSwitch(obj)
+    local sq = obj:getSquare()
+    local room = sq and sq:getRoom()
+    if not room or sq:isUserDefinedRoom() or room:getName() ~= MinidoracatBuilder.Basement.ROOM then return end
+    local list = room:getLightSwitches()
+    for i = 0, list:size() - 1 do
+        if list:get(i) ~= obj then return end
+    end
+    if MinidoracatBuilder.Basement.relight(sq:getX(), sq:getY()) then registerLater(nil) end
+end
+
 local function onAdded(obj)
     if not instanceof(obj, "IsoLightSwitch") or not obj:hasModData() or not obj:getModData().builderEntry then return end
     local spr = obj:getSprite()
@@ -975,16 +989,21 @@ local function onAdded(obj)
     end
     if not MinidoracatBuilder.Rules.switchProps(p) then return end
     watch(obj, lightRoom(obj))
+    firstSwitch(obj)
 end
 
 Events.OnObjectAdded.Add(onAdded)
 
--- 讀格子時載入的開關只登記、不馬上切（房間記成沒有）：這時房間多半還沒建；建好後、或本來就有時，watchTick 補切一次
-MinidoracatBuilder.Place.onLoaded = function(obj)
+-- 讀格子時載入的開關只登記、不馬上切（房間記成沒有）：這時房間多半還沒建；建好後、或本來就有時，watchTick 補切一次。
+-- 選用的第二個參數 built＝true：單機剛裝的（Place.build；單機沒有 OnObjectAdded），另外看是不是地下室那一間的第一個
+MinidoracatBuilder.Place.onLoaded = function(obj, ...)
+    local built = ...
     if not instanceof(obj, "IsoLightSwitch") then return end
     local spr = obj:getSprite()
     local p = spr and spr:getProperties()
-    if p and MinidoracatBuilder.Rules.switchProps(p) then watch(obj, nil) end
+    if not (p and MinidoracatBuilder.Rules.switchProps(p)) then return end
+    watch(obj, nil)
+    if built then firstSwitch(obj) end
 end
 
 return Client
