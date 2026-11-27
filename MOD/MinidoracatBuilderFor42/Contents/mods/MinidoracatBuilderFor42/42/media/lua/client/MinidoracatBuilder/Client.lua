@@ -928,14 +928,13 @@ local function watchNow()
         end
     end
 end
--- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒（defs＝登錄好的每一間 RoomDef）：先照登記的本工具開關，
--- 再每間找第一個開著的牆上開關（別的 MOD 的也算；招牌、燈不算）切一次房間燈。新登錄的房間是暗的，沒登記的開關不補就一直暗
-MinidoracatBuilder.Basement.onApplied = function(defs)
+-- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒（rooms＝登錄好、有格子載入的每一間 IsoRoom）：先照登記的
+-- 本工具開關，再每間找第一個開著的牆上開關（別的 MOD 的也算；招牌、燈不算）切一次房間燈。新登錄的房間是暗的，沒登記的開關不補就一直暗
+MinidoracatBuilder.Basement.onApplied = function(rooms)
     watchNow()
-    for _, def in ipairs(defs) do
-        local room = def:getIsoRoom()
-        local list = room and room:getLightSwitches()
-        for i = 0, (list and list:size() or 0) - 1 do
+    for _, room in ipairs(rooms) do
+        local list = room:getLightSwitches()
+        for i = 0, list:size() - 1 do
             local o = list:get(i)
             local spr = o:isActivated() and o:getSprite()
             if spr and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then

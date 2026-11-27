@@ -827,7 +827,6 @@ function Circuits.placed(player, objs)
     if Circuits.isSwitch(first) then
         local code, info = Circuits.autoWire(player, first)
         if code ~= "PART_UNLOADED" then matchRoom(first) end -- 分不了房時不照舊的那一間對齊開關狀態
-        remember(first) -- 裝好還沒按過也記（matchRoom 沒切時）
         if code then return reply(player, nil, d, nil, { auto = "switch", code = code }) end
         print(LOG .. "CIRCUIT auto user=" .. server().who(player) .. " id=" .. tostring(info.id) .. " lamps=" .. info.n
             .. " taken=" .. info.taken .. " skipped=" .. info.skipped .. " joined=" .. tostring(info.jx ~= nil))
@@ -1039,6 +1038,16 @@ function Circuits.command(player, cmd, args)
     return query(player, q, args, d)
 end
 
+-- 原版切了地下室房間裡的燈（本工具的招牌交回原版）：原版 switchLight 連同房的牆上開關一起改（IsoLightSwitch.java:514-524），
+-- 照新狀態重記 builderOn。招牌本身不是牆上開關，remember 不記它
+function Circuits.vanillaToggled(obj)
+    local sq = obj and obj:getSquare()
+    local room = sq and sq:getZ() < 0 and sq:getRoom()
+    if not (room and B.Basement and room:getName() == B.Basement.ROOM) then return end
+    local list = room:getLightSwitches()
+    for i = 0, list:size() - 1 do remember(list:get(i)) end
+end
+
 -- 包原版開關燈動作（設計稿：只包這一個）。在類別上換 complete，伺服器照 rawget→metatable 取得到
 -- （MinidoracatSafehouse Permissions.lua:4-8）；原函式只取一次（熱重載不重包），實作經模組表呼叫。
 -- 出錯時：還沒認定是本工具的就照原版做（不讓本工具的錯擋住原版的燈）；已經認定（可能切到一半）就不再呼叫原版。
@@ -1051,7 +1060,12 @@ if ISToggleLightAction and not B.toggleComplete then
             print(LOG .. "circuit toggle failed: " .. tostring(r))
             if self.mbldClaimed then return false end
         end
-        return MinidoracatBuilder.toggleComplete(self)
+        local done = MinidoracatBuilder.toggleComplete(self)
+        if done then
+            local fine, e = pcall(MinidoracatBuilder.Circuits.vanillaToggled, self.object)
+            if not fine then print(LOG .. "circuit remember failed: " .. tostring(e)) end
+        end
+        return done
     end
 end
 

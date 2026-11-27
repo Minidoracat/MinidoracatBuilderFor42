@@ -1457,6 +1457,8 @@ local function newLight(c)
     if c.yoff and c.yoff ~= 0 then obj:setRenderYOffset(c.yoff) end
     if (p:has(F.solid) or p:has(F.solidtrans)) and not proof("ZombieProof") then obj:setMovedThumpable(true) end
     obj:getModData().builderEntry = spr:getName()
+    -- 地下室牆上開關裝好的狀態記進 builderOn（Circuits.remember 同一個鍵；單機讀檔照它補回）。在這裡記，不靠之後帳本寫得進去
+    if under then obj:getModData().builderOn = obj:isActivated() end
     return obj
 end
 

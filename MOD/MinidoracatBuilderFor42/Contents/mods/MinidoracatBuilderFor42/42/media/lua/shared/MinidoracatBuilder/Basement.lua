@@ -574,8 +574,9 @@ end
 -- sws[i]＝第 i 棟的開關格（伺服器 hang 摘掉）。
 -- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格是新的本 MOD 名稱房間、每一間的第一格都查得到本 MOD 名稱的房間；引擎沒建出來、
 -- 角上是別的房間、原地重登錄時舊的那間還在都不算。查的是 metaGrid，矩形裡的格子都查得到，不看格子有沒有掛房間）。
--- 客戶端與單機有一棟登錄好了就呼叫 Basement.onApplied(defs)（defs＝這次登錄好的每一間 RoomDef；新登錄的房間燈是暗的，
--- BRERoom.java:9-15，由它照開關補）
+-- 客戶端與單機有一棟登錄好了就呼叫 Basement.onApplied(rooms)（rooms＝這次登錄好的每一間裡第一個已載入、掛著它的格子的
+-- IsoRoom，整間都沒載入的不傳；新登錄的房間燈是暗的，BRERoom.java:9-15，由它照開關補）。不對 RoomDef 取 getIsoRoom：
+-- 那會替沒載入的房間建 IsoRoom，擴建時舊的被 clear 卻留在 IsoCell.roomList（IsoRoom.java:672-693）
 local function apply(plans, sws)
     local ok, applied = {}, {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
@@ -634,7 +635,26 @@ local function apply(plans, sws)
             for j, rects in ipairs(plans[i]) do
                 local d = defs[j]
                 if vzm and not keepEmpty(vzm, d) then print(LOG .. "keepEmpty failed at " .. rects[1][1] .. "," .. rects[1][2]) end
-                if server then hang(cell, d, rects, sws[i]) else applied[#applied + 1] = d end
+                if server then
+                    hang(cell, d, rects, sws[i])
+                else -- 逐矩形掃到第一個已載入、掛著這一間的格子（不只看第一格：跨塊時可能只載入另一端）
+                    local room
+                    for _, r in ipairs(rects) do
+                        for x = r[1], r[1] + r[3] - 1 do
+                            for y = r[2], r[2] + r[4] - 1 do
+                                local sq = cell:getGridSquare(x, y, Z)
+                                local got = sq and sq:getRoom()
+                                if got and got:getRoomDef() == d then
+                                    room = got
+                                    break
+                                end
+                            end
+                            if room then break end
+                        end
+                        if room then break end
+                    end
+                    if room then applied[#applied + 1] = room end
+                end
             end
         else
             print(LOG .. "no RoomDef after register at " .. c[1] .. "," .. c[2])
@@ -1242,7 +1262,7 @@ function Basement.onChunk(chunk)
                     local spr = instanceof(o, "IsoLightSwitch") and o:getSprite()
                     if spr and o:hasModData() and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then
                         local on = o:getModData().builderOn
-                        if on ~= nil and on ~= o:isActivated() then
+                        if type(on) == "boolean" and on ~= o:isActivated() then -- 壞值（別的 MOD 寫的）略過，setActivated 會丟錯
                             o:setActivated(on)
                             sws = sws or {}
                             sws[#sws + 1] = o
