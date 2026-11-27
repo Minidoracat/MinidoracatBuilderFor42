@@ -242,6 +242,8 @@ function Client.stand(n, i)
     local b = Client.pending
     if not (b and b.n == n) then return false end
     local c = b.cells[i]
+    -- 挖這一格不在地下一層（地面點下去）：不找站位，交給伺服器回 DIG_LEVEL 說該在哪一層挖；找站位會先失敗、誤報 DIG_STAND
+    if b.e == Entry.DIG_CELL and c[3] ~= -1 then return true end
     local r = walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
     if r == nil then r = standBeside(b.player, c[1], c[2], c[3], false) end
     if r then return true end

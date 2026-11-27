@@ -29556,6 +29556,14 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     b3.player = player({ x = TX + 1.5, y = TY + 0.5, z = -1 })
     local s3 = C.stand(7707, 1)
     local none = s3 == false and b3.noRoom == 1 and #q7 == 0
+    -- 在地面（z=0）點挖一格：不找站位、不記 noRoom，交給伺服器回 DIG_LEVEL（玩家看到「要在地下一層挖」），不報 DIG_STAND
+    local b0 = pend({ { TX, TY, 0, 0 } }, nil)
+    b0.player = player({ x = TX + 1.5, y = TY + 0.5, z = 0 })
+    local s0 = C.stand(7707, 1)
+    local level = s0 == true and b0.noRoom == nil and #q7 == 0
+    check(level, "F7 在地面點挖一格：不找站位、不記 noRoom，讓伺服器回 DIG_LEVEL（" .. tostring(s0) .. " "
+        .. tostring(b0.noRoom) .. " " .. #q7 .. "）")
+    q7 = {}
     pend({ { TX, TY - 1, -1, 0 }, { TX, TY, -1, 0 } }, 1)
     local notYet = C.standReady(7707, 2) == false
     BM.add({ { TX, TY - 1 } })
