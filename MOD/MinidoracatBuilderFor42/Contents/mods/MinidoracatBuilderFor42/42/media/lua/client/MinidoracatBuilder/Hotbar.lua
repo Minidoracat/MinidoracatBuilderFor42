@@ -70,6 +70,8 @@ local function texOf(name)
         local r = R and R.byId[name]
         if r then
             t = R.icon(r)
+        elseif B.Rules.DIG[name] then
+            t = B.Names.digTex(name) -- 和建造視窗同一張（借來的原版圖看不出用途）
         else
             t = getTexture(name)
             if t then t = t:splitIcon() end

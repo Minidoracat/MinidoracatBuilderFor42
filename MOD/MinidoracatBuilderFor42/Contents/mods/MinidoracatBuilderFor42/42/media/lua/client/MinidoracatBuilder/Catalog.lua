@@ -140,6 +140,27 @@ local function work(budget)
     return runKeys(budget)
 end
 
+-- 地下室三項（Rules.DIG）的 ID 是借來的原版圖，原名、tileset 搜不到用途：入口排前面、挖一格排最後（namedMap 的順序
+-- 不固定），再各加一條搜尋鍵「名稱|種類名|挖一格的名稱|basement dig」（搜地下室、挖、basement、dig 都中）
+local function digKeys()
+    local ks, sets = Index.kindSets.dig, Index.bucket.dig
+    if not ks then return end
+    local cellSet = MinidoracatBuilder.Entry.DIG_CELL:match("^(.*)_%d+$")
+    for i = 1, ks.n - 1 do
+        if ks[i] == cellSet then
+            for j = i, ks.n - 1 do ks[j] = ks[j + 1] end
+            ks[ks.n] = cellSet
+            break
+        end
+    end
+    local Names = MinidoracatBuilder.Names
+    local tail = "|" .. Names.kind("dig") .. "|" .. getText("IGUI_MBLD_Dig_Cell") .. "|basement dig"
+    for i = 1, ks.n do
+        local arr = sets[ks[i]]
+        for j = 1, arr.n do Index.addKey(string.lower(Names.of(arr[j], "dig") .. tail), arr[j], "dig", ks[i]) end
+    end
+end
+
 local function finish(state)
     if tickFn then
         Events.OnTickEvenPaused.Remove(tickFn)
@@ -147,6 +168,7 @@ local function finish(state)
     end
     local j = job
     job = nil
+    if state == "ready" then digKeys() end
     Index.finish()
     Catalog.state = state
     -- 毫秒時鐘的累計只當 log 參考；成本以 GameProfiler 為準

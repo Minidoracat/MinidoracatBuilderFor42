@@ -425,13 +425,17 @@ end
 -- ----- 種類頁：照建造視窗的頁籤分組 -----
 
 -- 種類頁一列的名稱。挖掘開著也挖不了（土牆圖塊沒載入）時接原因：先短句（檔號與 console.txt，預設寬度放得下），
--- 再接全文；全文放不下時列被截字，滑鼠停在列上就看得到整句（NavList 截字提示）
+-- 再接全文；全文放不下時列被截字，滑鼠停在列上就看得到整句（NavList 截字提示）。裝了 Basement Building 時接 DIG_BD 那句
 function Admin.kindLabel(k, n)
     local label = Names.kind(k)
     if n then label = counted(label, n) end
-    if k == "dig" and B.Basement and not B.Basement.patched() then
+    if k == "dig" and B.Basement then
         local sep = getText("IGUI_MBLD_Sep")
-        label = label .. sep .. getText("IGUI_MBLD_Admin_DigPatch") .. sep .. getText("IGUI_MBLD_Why_DIG_PATCH")
+        if not B.Basement.patched() then
+            label = label .. sep .. getText("IGUI_MBLD_Admin_DigPatch") .. sep .. getText("IGUI_MBLD_Why_DIG_PATCH")
+        elseif B.Basement.bd() then
+            label = label .. sep .. getText("IGUI_MBLD_Refuse_DIG_BD")
+        end
     end
     return label
 end
