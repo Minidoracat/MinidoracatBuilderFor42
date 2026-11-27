@@ -29473,6 +29473,14 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(level, "F7 在地面點挖一格：不找站位、不記 noRoom，讓伺服器回 DIG_LEVEL（" .. tostring(s0) .. " "
         .. tostring(b0.noRoom) .. " " .. #q7 .. "）")
     q7 = {}
+    -- 第 1 格走 queue（伺服器回 accepted 當下排）→ walkTo：同樣不找站位、不記 noRoom，直接排建造動作
+    local q0 = pend({ { TX, TY, 0, 0 } }, nil)
+    q0.player = player({ x = TX + 1.5, y = TY + 0.5, z = 0 })
+    C.onServerCommand("accepted", { n = 7707 })
+    local first0 = q0.queued == true and q0.noRoom == nil and #q7 == 1 and q7[1].walk == nil
+    check(first0, "F7 在地面點挖一格的第 1 格（accepted→queue→walkTo）：不找站位、不記 noRoom、直接排建造動作（"
+        .. tostring(q0.queued) .. " " .. tostring(q0.noRoom) .. " " .. #q7 .. "）")
+    q7 = {}
     pend({ { TX, TY - 1, -1, 0 }, { TX, TY, -1, 0 } }, 1)
     local notYet = C.standReady(7707, 2) == false
     BM.add({ { TX, TY - 1 } })

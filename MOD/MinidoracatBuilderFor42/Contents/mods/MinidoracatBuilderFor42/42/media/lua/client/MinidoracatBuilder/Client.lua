@@ -86,12 +86,16 @@ end
 
 -- 多格物件不站在自己的其他格上：實心的格子有人站著，伺服器會回 BLOCKED（Place.check 的佔用檢查）。
 -- 樓梯照原版走到底片旁邊（ISBuildIsoEntity.lua:16-24）。挖這一格照格邊種類：站在已挖的那一側（四個正交鄰格裡
--- 已挖的，standBeside；隔著土牆動手），沒挖的鄰格沒有地板站不了
+-- 已挖的，standBeside；隔著土牆動手），沒挖的鄰格沒有地板站不了；不在地下一層（地面點下去）不找站位、回 true：
+-- 交給伺服器回 DIG_LEVEL 說該在哪一層挖，找站位會先失敗、誤報 DIG_STAND（第 1 格 queue、第 2 格起 Client.stand 都走這裡）
 local standBeside
 local function walkTo(player, kind, spr, c)
     local north = Entry.edgeNorth(kind, spr)
     if north ~= nil then return walkNear(player, north, c[1], c[2], c[3]) end
-    if kind == "dig" and spr:getName() == Entry.DIG_CELL then return standBeside(player, c[1], c[2], c[3], true) end
+    if kind == "dig" and spr:getName() == Entry.DIG_CELL then
+        if c[3] ~= -1 then return true end
+        return standBeside(player, c[1], c[2], c[3], true)
+    end
     local cell = getCell()
     local own, x, y = {}, c[1], c[2]
     for _, d in ipairs(Entry.cells(spr)) do
@@ -242,8 +246,6 @@ function Client.stand(n, i)
     local b = Client.pending
     if not (b and b.n == n) then return false end
     local c = b.cells[i]
-    -- 挖這一格不在地下一層（地面點下去）：不找站位，交給伺服器回 DIG_LEVEL 說該在哪一層挖；找站位會先失敗、誤報 DIG_STAND
-    if b.e == Entry.DIG_CELL and c[3] ~= -1 then return true end
     local r = walkTo(b.player, b.kind, Entry.face(b.entry, c[4]), c)
     if r == nil then r = standBeside(b.player, c[1], c[2], c[3], false) end
     if r then return true end
