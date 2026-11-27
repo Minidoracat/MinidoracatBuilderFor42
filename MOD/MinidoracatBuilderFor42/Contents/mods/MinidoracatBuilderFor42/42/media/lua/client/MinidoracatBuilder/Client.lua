@@ -705,16 +705,19 @@ end
 local synced, part = nil, nil
 function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
 
--- 登錄身邊的地下室（Basement.registerNear）排到這一次更新的 OnTick 一起做：每次更新先處理完收到的封包
--- （GameWindow.logic → GameClient.update，GameClient.java:386-393），再跑遊戲時間（EveryOneMinute）與 OnTick
--- （IngameState.java:1558,1653），所以同一批收到的幾則 block、快照與每分鐘檢查併成一次 applyChanges。ids（換過房號的塊，
--- 不管等不等 block）併起來；有排著的才掛 OnTick，做完就拿掉
+-- 登錄身邊的地下室（Basement.registerNear，多人）與掛回走近了的地下室（Basement.rehang，多人與單機）排到這一次更新的 OnTick
+-- 一起做：每次更新先處理完收到的封包（GameWindow.logic → GameClient.update，GameClient.java:386-393），再跑遊戲時間
+-- （EveryOneMinute）與 OnTick（IngameState.java:1558,1653），所以同一批收到的幾則 block、快照與每分鐘檢查併成一次
+-- applyChanges。ids（換過房號的塊，不管等不等 block）併起來；有排著的才掛 OnTick，做完就拿掉
 local soon = nil
 local function registerSoon()
     Events.OnTick.Remove(registerSoon)
     local ids = soon
     soon = nil
-    MinidoracatBuilder.Basement.registerNear(ids)
+    local BM = MinidoracatBuilder.Basement
+    -- 單機不走 registerNear：它會把延後批次裡還沒登錄的新格提前登錄
+    if isClient() then BM.registerNear(ids) end
+    BM.rehang() -- 在 registerNear 之後：同一塊的登錄已經順便重建了要掛回的棟
 end
 local function registerLater(ids)
     if not soon then
@@ -813,8 +816,8 @@ function Client.onBasement(cmd, args)
 end
 
 -- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
--- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要），
--- 並排登錄走近了的、等 block 等太久的地下室（registerLater）
+-- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要）。
+-- 多人與單機每分鐘都排登錄走近了的、等 block 等太久的（多人）與要掛回的（Basement.rehang）地下室（registerLater）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return end
@@ -824,8 +827,7 @@ local function askBasements()
     sendClientCommand(p, MODULE, "basements", {})
 end
 function Client.askEveryMinute()
-    if not isClient() then return end
-    askBasements()
+    if isClient() then askBasements() end
     if MinidoracatBuilder.Basement.any() then registerLater(nil) end -- 沒有地下室的存檔不每分鐘掛 OnTick
 end
 Events.OnGameStart.Add(Client.askEveryMinute)
@@ -922,6 +924,8 @@ local function watchNow()
 end
 -- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒
 MinidoracatBuilder.Basement.onApplied = watchNow
+-- 沒有 .lotheader 的地圖格重新讀進、登錄過的格子沒掛房間（Basement.onChunk）：排到這一次更新的 OnTick 看要不要掛回
+MinidoracatBuilder.Basement.onUnhung = function() registerLater(nil) end
 
 local function watchTick()
     local t = getTimestampMs()

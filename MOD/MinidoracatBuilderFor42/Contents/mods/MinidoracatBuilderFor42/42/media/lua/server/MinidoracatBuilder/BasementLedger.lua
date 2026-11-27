@@ -58,7 +58,8 @@ end
 -- 專用伺服器先從燈的帳本記下開關格（z＝-1、在集合裡、圖是牆上開關 Rules.switchProps，Basement.setSwitchTile），再分房
 -- （Basement.splitAll）、全部登錄。單機這時世界已經載完、玩家周圍的 chunk 都在（GameLoadingState.java:308-317 先
 -- IsoWorld.init 才 initSystems），照牆分；專用伺服器這時還沒有 chunk，照帳本記的房號分（沒記房號的格子算同一間，chunk
--- 載入後巡查照牆分），之後載入時引擎自己照 metaGrid 設房間（IsoChunk.java:2370-2375）
+-- 載入後巡查照牆分），之後載入時有 .lotheader 的地圖格引擎自己照 metaGrid 設房間（IsoChunk.java:3588-3591），沒有的由
+-- Basement.onChunk 掛回
 local started = false
 function BasementLedger.start()
     local Ledger = MinidoracatBuilder.Ledger

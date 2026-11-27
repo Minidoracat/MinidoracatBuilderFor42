@@ -34,7 +34,8 @@ local OTHER = { N = "W", W = "N" }
 -- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號, todo＝有還沒登錄的格子或要重建的棟
 -- （客戶端 registerNear 只看它、不走格子）；客戶端另有 v＝套用過的伺服器修訂號（block、快照）, wait＝開始等 block 的時間,
 -- fresh＝{ [鍵]＝true } 收到 dug 之後還沒等到 block 或快照的格子, stale＝在最近一份快照的範圍外（之後的 dug、block 收不到，
--- 手上的可能是舊的）, hitch＝false：搭便車登錄失敗過，之後只在身邊時登錄（registerNear）}
+-- 手上的可能是舊的）, hitch＝false：搭便車登錄失敗過，之後只在身邊時登錄（registerNear）}；客戶端與單機另有 rehang＝true：
+-- 沒有 .lotheader 的地圖格重新讀進後有登錄過的格子沒掛房間，等走近整棟重登錄（Basement.onChunk、Basement.rehang）
 -- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
 -- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
@@ -71,7 +72,7 @@ local function merge(a, b)
     for k, t in pairs(B.tiles) do
         A.tiles[k], cells[k], A.room[k] = t, a, B.room[k] + A.rooms
     end
-    A.n, A.rooms, A.todo = A.n + B.n, A.rooms + B.rooms, A.todo or B.todo
+    A.n, A.rooms, A.todo, A.rehang = A.n + B.n, A.rooms + B.rooms, A.todo or B.todo, A.rehang or B.rehang
     local p, q = A.box, B.box
     p[1], p[2], p[3], p[4] = math.min(p[1], q[1]), math.min(p[2], q[2]), math.max(p[3], q[3]), math.max(p[4], q[4])
     if B.v and not (A.v and A.v >= B.v) then A.v = B.v end
@@ -109,7 +110,10 @@ function Basement.add(tiles)
                 r = r or (cells[o] == id and b.room[o])
             end
             cells[k], b.n, b.tiles[k], b.room[k], b.todo, b.stale = id, b.n + 1, xy, r or 1, true, nil
-            anyCell = true
+            if not anyCell then -- 沒有地下室的存檔不掛 LoadChunk
+                anyCell = true
+                Events.LoadChunk.Add(Basement.onChunk)
+            end
             local box = b.box
             box[1], box[2], box[3], box[4] = math.min(box[1], x), math.min(box[2], y), math.max(box[3], x), math.max(box[4], y)
             added[#added + 1] = xy
@@ -531,11 +535,12 @@ end
 -- 已載入的格子照那段自己掛。setRoomID：不設 getRoom 回 null；接著 setRoom：Lua 的數字是 double，房間 ID 超過 2^53 時低位會丟，
 -- setRoomID 可能拿到別的房間（IsoGridSquare.java:9414-9420），用房間物件蓋掉；RecalcProperties：setRoomID 拿掉了室外旗標。
 -- 房間燈、重畫不做（伺服器不算光照、不畫，BuildingRoomsEditor.java:385-397）；尋路不看房間，新挖的格子能不能走由鋪地板、
--- 放牆時引擎自己通知。
+-- 放牆時引擎自己通知。之後 chunk 重新讀進時，沒有 .lotheader 的地圖格引擎不掛房間，由 Basement.onChunk 照同樣的三步掛回。
 -- 這一棟的開關格（sw＝{ { x, y }, ... }）已載入又掛著房間就摘掉（矩形裡留著的開關格：角、換地圖格，上面照樣掛，在這裡摘；
--- chunk 重新讀進時照 metaGrid 掛回的也在下一次登錄摘）：setRoomID(-1) 之後 getRoom 回 null（IsoGridSquare.java:9220-9222），
--- 開關切換時不送房間燈（IsoLightSwitch.java:519-535）；舊建物被換掉後沒重掛的格子還指著 def 已清成 null 的
--- 舊房間（BREBuilding.java:230-242、IsoRoom.java:672-674），切開關會丟 NPE（IsoLightSwitch.java:520），所以不能省
+-- 有 .lotheader 的地圖格 chunk 重新讀進時照 metaGrid 掛回的也在下一次登錄摘，沒有的 onChunk 不掛開關格）：setRoomID(-1)
+-- 之後 getRoom 回 null（IsoGridSquare.java:9220-9222），開關切換時不送房間燈（IsoLightSwitch.java:519-535）；舊建物被換掉後
+-- 沒重掛的格子還指著 def 已清成 null 的舊房間（BREBuilding.java:230-242、IsoRoom.java:672-674），切開關會丟 NPE
+-- （IsoLightSwitch.java:520），所以不能省
 local function hang(cell, def, rects, sw)
     local room, id = def:getIsoRoom(), def:getID()
     if not room then return end
@@ -788,8 +793,9 @@ local function alive(r) return cells[key(r.cx, r.cy)] ~= nil end
 -- 半寬 76 格（IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk
 -- 載入時 applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。觸發時遠處合格的塊一起
 -- 登錄（搭便車，Basement.registerNear），同一次 applyChanges；沒有身邊的塊要登錄時遠的留著不登錄。
--- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間。選用的第二個參數 only＝{ [編號]＝true }：只登錄
--- 這幾塊的格子與棟（Basement.registerNear 已經挑過）
+-- 伺服器（與單機）全部登錄。登錄之後才讀進的 chunk（三端都有：客戶端 76–128 格、搭便車的遠塊、專用伺服器開服時還沒有
+-- chunk）只在有 .lotheader 的地圖格由引擎照 metaGrid 掛房間（IsoChunk.java:3588-3591），沒有的由 Basement.onChunk 掛回。
+-- 選用的第二個參數 only＝{ [編號]＝true }：只登錄這幾塊的格子與棟（Basement.registerNear 已經挑過）
 Basement.NEAR = 128
 local function register(list, ...)
     local only = ...
@@ -1182,6 +1188,73 @@ function Basement.registerNear(ids)
         end
         if b.wait and now - b.wait > Basement.WAIT_MS then b.wait = nil end
     end
+    return ok
+end
+
+-- 沒有 .lotheader 的地圖格，chunk 讀進來時引擎不照 metaGrid 掛房間（IsoChunk.java:3588-3591，只有有 lotheader 的才掛），
+-- RoomDef 還在 metaGrid（IsoMetaGrid.java:355-358）。Events.LoadChunk（三端都發，IsoChunk.java:3968；Basement.add 第一次
+-- 加格子才掛）時看這一塊 z＝-1 這一場登錄過、卻沒掛房間的格子（有 lotheader 的引擎已掛好，不會進來）：
+--   專用伺服器當下照 metaGrid 逐格掛（同 hang；開關格跳過），不叫引擎、不送東西給客戶端。
+--   客戶端與單機不能逐格掛（Lua 加不回房間燈；房間 ID 是 long、Lua 只有 double），那一棟標 redo、它角上那一塊標 rehang，
+--   叫 Basement.onUnhung（Client 排到這一次更新的 OnTick），走進 REHANG 格內才由 Basement.rehang 整棟重登錄
+Basement.REHANG = 64 -- 比 chunkMap 半寬 76 少一個 chunk 以上：在反覆卸載、載入的距離來回走不重登錄
+local unhung = false -- 有標 rehang 的塊（Basement.rehang 沒有就直接回）
+function Basement.onChunk(chunk)
+    if chunk:getMinLevel() > Z then return end
+    local x0, y0
+    for i = 0, 63 do -- chunk.wx／wy 是 instance 欄位，Lua 讀不到：用一格反推
+        local sq = chunk:getGridSquare(i % 8, math.floor(i / 8), Z)
+        if sq then
+            x0, y0 = sq:getX() - i % 8, sq:getY() - math.floor(i / 8)
+            break
+        end
+    end
+    if not x0 then return end
+    local server, grid, found = isServer(), nil, false
+    for i = 0, 63 do
+        local lx, ly = i % 8, math.floor(i / 8)
+        local k = key(x0 + lx, y0 + ly)
+        local r = bof[k]
+        if r and not (server and swTiles[k]) then
+            local sq = chunk:getGridSquare(lx, ly, Z)
+            if sq and not sq:getRoom() then
+                if server then
+                    grid = grid or getWorld():getMetaGrid()
+                    local def = grid:getRoomAt(x0 + lx, y0 + ly, Z)
+                    local room = def and def:getName() == Basement.ROOM and def:getIsoRoom()
+                    if room then
+                        sq:setRoomID(def:getID())
+                        sq:setRoom(room) -- ID 是 double，用房間物件蓋掉（同 hang）
+                        sq:RecalcProperties()
+                    end
+                elseif alive(r) then -- 標在角上那一塊：register 照角所在的塊決定重不重建這一棟
+                    redo[r], blocks[cells[key(r.cx, r.cy)]].rehang, found = true, true, true
+                end
+            end
+        end
+    end
+    if found then
+        unhung = true
+        if Basement.onUnhung then Basement.onUnhung() end
+    end
+end
+
+-- 標 rehang 的塊有本機玩家在 REHANG 格內的（在快照範圍外的 stale 不算）一次重登錄（只重建 redo 的棟，沒有新格子）；
+-- 遠的留著。Client 的 registerSoon 在 registerNear 之後叫：同一塊的 todo 登錄已經順便重建了 redo。回成不成功
+-- shortcut: 寬超過 12 格、另一頭還沒載入的塊會登錄兩次，量到連續頓挫時改成等整塊都載入
+function Basement.rehang()
+    if not unhung then return true end
+    local near, pick, any, left = nearIds(players(), Basement.REHANG), {}, false, false
+    for id, b in pairs(blocks) do
+        if b.rehang then
+            if near[id] and not b.stale then pick[id], any = true, true else left = true end
+        end
+    end
+    local ok = not any or register({}, pick)
+    for id in pairs(pick) do
+        if ok then blocks[id].rehang = nil else left = true end
+    end
+    unhung = left
     return ok
 end
 

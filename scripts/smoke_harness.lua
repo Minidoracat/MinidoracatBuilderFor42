@@ -403,7 +403,7 @@ square = function(x, y, z, o)
         local x0, y0 = math.floor(x / 8) * 8, math.floor(y / 8) * 8
         return {
             getGridSquare = function(_, lx, ly, lz) return squares[(x0 + lx) .. "," .. (y0 + ly) .. "," .. lz] end,
-            getMinLevel = function() return 0 end,
+            getMinLevel = function() return math.min(z, 0) end, -- 照取它的那格：地下那格取的塊含 z＝-1
             getMaxLevel = function() return 0 end,
         }
     end
@@ -8626,6 +8626,14 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(Circuits.isSwitch(SW) and not Circuits.isSwitch(SM) and Circuits.isLamp(M) and not Circuits.isLamp(LM),
         "線路：帳本有的開關與燈才算本 MOD 的")
 
+    -- 燈帳本掛的讀塊事件：前面的情境加過地下室格子，Basement 也掛了一個（Basement.onChunk），不算
+    local function legacyHooks()
+        local n = 0
+        for _, f in ipairs(handlers.LoadChunk or {}) do
+            if f ~= MinidoracatBuilder.Basement.onChunk then n = n + 1 end
+        end
+        return n
+    end
     -- 0.3.0 以前的燈：built 照「位置＋圖名」記，升版後讀到那一塊（8×8，LoadChunk 每塊一次）時整塊定案
     local sqA, sqQ = S(144, 144), S(142, 144)
     local V = lamp(sqA, lampA)
@@ -8667,7 +8675,7 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     check(onLanding.keyId == -1 and HARNESS_LEDGER("MinidoracatBuilder", landKey) ~= nil and inst.built[landKey] ~= nil,
         "樓梯平台的紀錄不當成舊燈搬：複製進分片，舊表那一筆留到下一次開服確認")
     fire("LoadChunk", sqA:getChunk())
-    check(lampE(A1.keyId) == a1 and Ledger.legacy == before - 4 and count("LoadChunk") == 1,
+    check(lampE(A1.keyId) == a1 and Ledger.legacy == before - 4 and legacyHooks() == 1,
         "同一塊再讀一次（還有別塊沒讀到、事件還掛著）：已定案，不再動")
     c = unbuild(sqA, "kl_01_1")
     check(c == "dismantled" and here.dropped["Base.ElectricWire"] == 3 and lampE(A2.keyId) == nil
@@ -8725,13 +8733,13 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     fire("OnTick")
     local onTick = R.keyId > 0 and lampE(R.keyId).i["Base.ElectricWire"] == 7 and count("OnTick") == ticks - 1
         and inst.built["170,170,1,kl_01_0"] == nil
-        and inst.built["160,160,0,kl_01_0"] ~= nil and count("LoadChunk") == 1
+        and inst.built["160,160,0,kl_01_0"] ~= nil and legacyHooks() == 1
     local F = lamp(at(160, 160), lampA, "mark")
     fire("LoadChunk", S(160, 160):getChunk())
-    check(onTick and F.keyId > 0 and lampE(F.keyId).i["Base.ElectricWire"] == 9 and count("LoadChunk") == 0,
+    check(onTick and F.keyId > 0 and lampE(F.keyId).i["Base.ElectricWire"] == 9 and legacyHooks() == 0,
         "單機讀檔：帳本建好前讀進來的塊在建好後第一個 tick 定案、摘掉 tick 事件；還沒讀進來的塊讀進來時定案，都定案後摘掉讀塊事件")
     HARNESS_REOPEN(Ledger)
-    check(count("LoadChunk") == 0 and count("OnTick") == ticks - 1, "沒有舊燈：開服不掛讀塊與 tick 事件（每塊、每格都不多花）")
+    check(legacyHooks() == 0 and count("OnTick") == ticks - 1, "沒有舊燈：開服不掛讀塊與 tick 事件（每塊、每格都不多花）")
 
     -- 定案出錯：那一塊的舊鍵留在 built、這一場不再試（讀塊事件照樣摘掉），下次開服重新分組照樣搬
     local E = lamp(at(180, 180), lampA, "mark")
@@ -8740,11 +8748,11 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     inst.built["180,180,0,kl_01_0"] = { ["Base.ElectricWire"] = 4 }
     HARNESS_REOPEN(Ledger)
     fire("LoadChunk", S(180, 180):getChunk())
-    local kept = inst.built["180,180,0,kl_01_0"] ~= nil and E.keyId == -1 and Ledger.legacy == 1 and count("LoadChunk") == 0
+    local kept = inst.built["180,180,0,kl_01_0"] ~= nil and E.keyId == -1 and Ledger.legacy == 1 and legacyHooks() == 0
     E.hasModData = hasMD
     HARNESS_REOPEN(Ledger)
     fire("LoadChunk", S(180, 180):getChunk())
-    check(kept and E.keyId > 0 and lampE(E.keyId).i["Base.ElectricWire"] == 4 and count("LoadChunk") == 0,
+    check(kept and E.keyId > 0 and lampE(E.keyId).i["Base.ElectricWire"] == 4 and legacyHooks() == 0,
         "定案出錯：舊鍵留著、這一場摘掉事件，下次開服照樣搬")
     -- 主系統的檔寫成了、分片沒寫成：發過編號的舊紀錄還在，讀到那一塊時重新發編號，退料照舊
     local lostId = E.keyId
@@ -8807,14 +8815,14 @@ print("情境三十六：燈的帳本照伺服器發的編號認（2026-11-02）
     table.remove(sqN.objects)
     local J2, N2 = lamp(sqJ, lampA, "mark"), lamp(sqN, lampA, "mark")
     fire("LoadChunk", sqJ:getChunk())
-    local hooked = count("LoadChunk") == 1 and Ledger.legacy == 2
+    local hooked = legacyHooks() == 1 and Ledger.legacy == 2
     sqN:transmitRemoveItemFromSquare(N2)
     print = realPrint
     Store.SHARD_BYTES, Store.SHARD_HARD, HARNESS_GOS_COUNT = keepB, keepH, nil
     fire("LoadChunk", sqJ:getChunk())
     check(hooked and inst.built["206,206,0,kl_01_0"] == nil and J2.keyId > 0 and lampE(J2.keyId).i["Base.ElectricWire"] == 6
         and lampE(J2.keyId).o == true and inst.built["205,205,0,kl_01_0"] ~= nil and Ledger.legacy == 0
-        and count("LoadChunk") == 0,
+        and legacyHooks() == 0,
         "還在等的舊燈那一塊卸載再讀進來：重新認新的那一份（讀塊事件留著）；它被移除就清舊紀錄；放得下了、那一塊再讀進來就搬")
     sqJ:transmitRemoveItemFromSquare(J2)
     -- 退料表讀不懂的舊紀錄：重試也一樣，刪掉（那盞本工具拆不了），不留著每次開服重來
@@ -10003,7 +10011,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local keep = { eng, getWorld, BuildingRoomsEditor, VirtualZombieManager, IsoObject }
         IsoObject = ISO
         eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0,
-            newDef = newDef }
+            newDef = newDef, reload = eng.reload, switch = eng.switch }
         getWorld = function()
             local w = realWorld()
             w.getMetaGrid = function() return grid end
@@ -10050,10 +10058,11 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     end
     eng.switch = roomSwitch
     -- 重新讀進格子：照 metaGrid 設房間（IsoChunk.java:3588-3591），再讀物件：房間開關那格有房間就照房間的
-    -- lightsActive、加進房間的開關清單（IsoLightSwitch.java:356-359）
-    function eng.reload(list)
+    -- lightsActive、加進房間的開關清單（IsoLightSwitch.java:356-359）。bare：那一格沒有 .lotheader，引擎不照 metaGrid 設
+    -- （:3588 只在有 lotheader 時走），格子沒有房間、開關不收
+    function eng.reload(list, bare)
         for _, sq in ipairs(list) do
-            local def = grid:getRoomAt(sq:getX(), sq:getY(), sq:getZ())
+            local def = not bare and grid:getRoomAt(sq:getX(), sq:getY(), sq:getZ()) or nil
             sq.roomID, sq.room = def and def.id or -1, def and def:getIsoRoom() or nil
             local room = sq:getRoom()
             for _, o in ipairs(sq.objects) do
@@ -29183,6 +29192,226 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         and EC.tile[tk(XF + 203, XF)] ~= nil,
         "客戶端同一次更新：只含一部分新格的 block（那一塊還在等別格）與每分鐘檢查（走近一塊沒登錄過的）一起登錄 1 次（" .. mixed
         .. "）；快照與比它新的 block 一起登錄 1 次（" .. snapBlock .. "）")
+    end)()
+
+    -- 沒有 .lotheader 的地圖格：chunk 讀進來時引擎不照 metaGrid 掛房間（IsoChunk.java:3588-3591），Basement 掛 LoadChunk 補掛。
+    -- 專用伺服器當下逐格掛（開關格不掛、不叫引擎）；客戶端與單機只記帳，走進 64 格內才整棟重登錄一次。每個情境另載一份
+    -- Basement.lua（各自的集合）、座標各不相同；fire 會跑到每一份掛的 LoadChunk，別份的集合沒有這些格子
+    ;(function()
+    local E, undoE = HARNESS_ENGINE()
+    E.hangLoaded = true -- 登錄時引擎替已載入的格子掛房間、收開關（updateSquares）
+    local keepM, keepS, keepC, keepSend, keepInst = MinidoracatBuilder.Basement, isServer, isClient, sendClientCommand, instanceof
+    sendClientCommand = function() end
+    instanceof = function(o, cls) -- 假的開關照 IsoLightSwitch 認（Place.onLoaded 登記）
+        if cls == "IsoLightSwitch" and type(o) == "table" and o.light == true then return true end
+        return keepInst(o, cls)
+    end
+    local made, sws = {}, {}
+    -- mode："s" 專用伺服器、"c" 多人客戶端、"1" 單機；回新的一份 Basement，MinidoracatBuilder.Basement 換成它（Client 照它叫）
+    local function fresh(mode)
+        MinidoracatBuilder.Basement = nil
+        assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))()
+        local R = MinidoracatBuilder.Basement
+        R.recalcZ = function() end
+        if mode ~= "s" then R.onApplied, R.onUnhung = SB.onApplied, SB.onUnhung end -- Client.lua 載入時掛在最初那一份上
+        isServer, isClient = mode == "s" and yes or no, mode == "c" and yes or no
+        made[#made + 1] = R
+        return R
+    end
+    -- 3×3 (X..X+2, X..X+2)（同一塊 chunk），中間那格有開著的牆上開關：伺服器記成開關格，客戶端與單機登記成讀進來的開關
+    local function dig3(R, X, mode)
+        local sqs, t = {}, {}
+        for x = X, X + 2 do
+            for y = X, X + 2 do
+                local sq = ug(x, y, Z)
+                sq.isUserDefinedRoom = function() return false end
+                sqs[#sqs + 1], t[#t + 1] = sq, { x, y }
+            end
+        end
+        R.add(t)
+        local mid = getCell():getGridSquare(X + 1, X + 1, Z)
+        local sw
+        if mode == "s" then
+            sw = E.switch(mid)
+            R.setSwitchTile(X + 1, X + 1, true)
+        else
+            sw = mkSwitch(mid)
+            sw.on = true
+            B.Place.onLoaded(sw)
+        end
+        sws[#sws + 1] = sw
+        return { sqs = sqs, mid = mid, sw = sw }
+    end
+    -- 每格的房間就是 metaGrid 那一間（skip 那格要沒有房間）
+    local function hung(w, skip)
+        for _, sq in ipairs(w.sqs) do
+            local def = E.tile[tk(sq:getX(), sq:getY())]
+            if sq == skip then
+                if sq:getRoom() ~= nil then return false end
+            elseif not (def and sq:getRoom() == def:getIsoRoom()) then
+                return false
+            end
+        end
+        return true
+    end
+    local function bare(w)
+        for _, sq in ipairs(w.sqs) do if sq:getRoom() ~= nil then return false end end
+        return true
+    end
+    local function minute()
+        HARNESS_RAW_ASK()
+        HARNESS_REG_TICK()
+    end
+    HARNESS_REG_TICK() -- 前面排著的先跑掉
+
+    -- 1 專用伺服器：沒有 lotheader 重新讀進後 LoadChunk 當下掛回（開關格不掛），不叫引擎、不送 meta、不送指令；
+    -- 2 有 lotheader 的對照：照 metaGrid 掛好，不動
+    local X1 = 300 * AR + 9
+    local R1 = fresh("s")
+    local w1 = dig3(R1, X1, "s")
+    R1.registerAll()
+    local before1 = hung(w1, w1.mid)
+    E.reload(w1.sqs, true)
+    local gone1 = bare(w1)
+    local a1, m1, n1 = E.applies, E.metaSent, #q
+    fire("LoadChunk", w1.mid:getChunk())
+    local back1 = hung(w1, w1.mid)
+    check(before1 and gone1 and back1 and E.applies == a1 and E.metaSent == m1 and #q == n1,
+        "無 lotheader 重載（專用伺服器）：LoadChunk 當下逐格掛回 metaGrid 的房間、開關格不掛；不叫引擎、不送 meta、不送指令（"
+        .. tostring(before1) .. tostring(gone1) .. tostring(back1) .. " applies +" .. (E.applies - a1) .. " meta +"
+        .. (E.metaSent - m1) .. " cmd +" .. (#q - n1) .. "）")
+    E.reload(w1.sqs)
+    fire("LoadChunk", w1.mid:getChunk())
+    local ctl1 = hung(w1, w1.mid) and E.applies == a1
+
+    -- 3 多人客戶端在 64 格內：LoadChunk 之後的那個 tick 整棟重登錄 1 次，格子換成新的一間、開著的開關把房間燈補開；
+    -- 之後每分鐘檢查不再登錄
+    local X3 = 304 * AR + 9
+    local R3 = fresh("c")
+    cx, cy = X3 + 1, X3 + 1
+    local w3 = dig3(R3, X3, "c")
+    R3.registerNear(nil)
+    local def3 = E.tile[tk(X3, X3)]
+    E.reload(w3.sqs, true)
+    local a3 = E.applies
+    fire("LoadChunk", w3.mid:getChunk())
+    HARNESS_REG_TICK()
+    local d3 = E.applies - a3
+    local new3 = E.tile[tk(X3, X3)]
+    local lit3 = def3 ~= nil and new3 ~= nil and new3 ~= def3 and new3.lightsActive == true and w3.sw.on
+    local back3 = hung(w3)
+    minute()
+    local again3 = E.applies - a3 - d3
+    check(def3 and d3 == 1 and back3 and lit3 and again3 == 0,
+        "無 lotheader 重載（客戶端，64 格內）：LoadChunk 後的 tick 整棟重登錄 1 次（" .. d3 .. "）、9 格掛上新的一間（"
+        .. tostring(back3) .. "）、開著的開關把房間燈補開（" .. tostring(lit3) .. "）；之後每分鐘檢查不再登錄（" .. again3 .. "）")
+    local a3b = E.applies
+    E.reload(w3.sqs)
+    fire("LoadChunk", w3.mid:getChunk())
+    HARNESS_REG_TICK()
+    minute()
+    local ctl3 = hung(w3) and E.applies == a3b
+
+    -- 4 多人客戶端在 70 格（chunk 讀進了、還沒走近）：不登錄；走進 60 格後下一次每分鐘檢查登錄 1 次
+    local X4 = 308 * AR + 9
+    local R4 = fresh("c")
+    cx, cy = X4 + 1, X4 + 1
+    local w4 = dig3(R4, X4, "c")
+    R4.registerNear(nil)
+    E.reload(w4.sqs, true)
+    cx = X4 + 2 + 70
+    local a4 = E.applies
+    fire("LoadChunk", w4.mid:getChunk())
+    HARNESS_REG_TICK()
+    minute()
+    local far4, bare4 = E.applies - a4, bare(w4)
+    cx = X4 + 2 + 60
+    minute()
+    local near4 = E.applies - a4 - far4
+    check(far4 == 0 and bare4 and near4 == 1 and hung(w4),
+        "無 lotheader 重載（客戶端）：站在 70 格不登錄（" .. far4 .. "）、格子還沒房間（" .. tostring(bare4) .. "）；走進 60 格"
+        .. "下一次每分鐘檢查登錄 1 次、掛回房間（" .. near4 .. "）")
+
+    -- 5 單機：同 3；延後批次裡的新格（只加進集合、還沒登錄）在每分鐘檢查時不提前登錄
+    local X5 = 312 * AR + 9
+    local R5 = fresh("1")
+    cx, cy = X5 + 1, X5 + 1
+    local w5 = dig3(R5, X5, "1")
+    R5.registerAll()
+    local def5 = E.tile[tk(X5, X5)]
+    E.reload(w5.sqs, true)
+    local a5 = E.applies
+    fire("LoadChunk", w5.mid:getChunk())
+    HARNESS_REG_TICK()
+    local d5 = E.applies - a5
+    local new5 = E.tile[tk(X5, X5)]
+    local lit5 = def5 ~= nil and new5 ~= nil and new5 ~= def5 and new5.lightsActive == true and w5.sw.on
+    local back5 = hung(w5)
+    minute()
+    local again5 = E.applies - a5 - d5
+    ug(X5 + 3, X5 + 1, Z)
+    R5.add({ { X5 + 3, X5 + 1 } })
+    local a5b = E.applies
+    minute()
+    local early5 = E.applies - a5b
+    check(d5 == 1 and back5 and lit5 and again5 == 0 and early5 == 0 and E.tile[tk(X5 + 3, X5 + 1)] == nil,
+        "無 lotheader 重載（單機）：LoadChunk 後的 tick 整棟重登錄 1 次（" .. d5 .. "）、掛上新的一間（" .. tostring(back5)
+        .. "）、房間燈補開（" .. tostring(lit5) .. "）、之後每分鐘檢查不再登錄（" .. again5 .. "）；延後批次裡的新格不被每分鐘"
+        .. "檢查提前登錄（" .. early5 .. "）")
+    local a5c = E.applies
+    E.reload(w5.sqs)
+    fire("LoadChunk", w5.mid:getChunk())
+    HARNESS_REG_TICK()
+    local ctl5 = hung(w5) and E.applies == a5c
+    check(ctl1 and ctl3 and ctl5,
+        "有 lotheader 的對照（照 metaGrid 掛好）：LoadChunk 之後三端都不登錄、房間不變（伺服器 " .. tostring(ctl1) .. "、客戶端 "
+        .. tostring(ctl3) .. "、單機 " .. tostring(ctl5) .. "）")
+
+    -- 6 零成本：沒有地下室的那一份不掛 LoadChunk；第一次加格子才掛 1 個，之後再加不再掛
+    local c0 = count("LoadChunk")
+    local R6 = fresh("s")
+    local c1 = count("LoadChunk")
+    R6.add({ { 320 * AR + 9, 320 * AR + 9 } })
+    local c2 = count("LoadChunk")
+    R6.add({ { 320 * AR + 10, 320 * AR + 9 } })
+    local c3 = count("LoadChunk")
+    check(c1 == c0 and c2 == c0 + 1 and c3 == c2,
+        "沒有地下室的存檔不掛 LoadChunk（" .. (c1 - c0) .. "）；第一次加格子掛 1 個（" .. (c2 - c1) .. "）、再加不再掛（"
+        .. (c3 - c2) .. "）")
+
+    -- 7 P2a：遠處的塊搭便車登錄時 chunk 還沒讀進，之後讀進（無 lotheader）沒有房間；走近只重登錄 1 次
+    local X7 = 316 * AR + 9
+    local F7 = X7 + 300
+    local R7 = fresh("c")
+    local far7 = {}
+    ug(X7, X7, Z)
+    ug(X7 + 1, X7, Z)
+    far7[1], far7[2] = ug(F7, F7, Z), ug(F7 + 1, F7, Z)
+    R7.add({ { X7, X7 }, { X7 + 1, X7 } })
+    R7.add({ { F7, F7 }, { F7 + 1, F7 } })
+    cx, cy = X7, X7
+    local a7 = E.applies
+    R7.registerNear(nil)
+    local t7 = { E.applies - a7 }
+    E.reload(far7, true)
+    fire("LoadChunk", far7[1]:getChunk())
+    HARNESS_REG_TICK()
+    t7[2] = E.applies - a7 - t7[1]
+    cx, cy = F7, F7
+    minute()
+    t7[3] = E.applies - a7 - t7[1] - t7[2]
+    minute()
+    t7[4] = E.applies - a7 - t7[1] - t7[2] - t7[3]
+    local def7 = E.tile[tk(F7, F7)]
+    check(table.concat(t7, ",") == "1,0,1,0" and def7 and far7[1]:getRoom() == def7:getIsoRoom(),
+        "P2a 遠處的塊搭便車登錄後才讀進（無 lotheader）：讀進時不登錄、走近重登錄 1 次、之後不再登錄（" .. table.concat(t7, ",")
+        .. "）")
+
+    HARNESS_REG_TICK()
+    for _, R in ipairs(made) do if R.onChunk then Events.LoadChunk.Remove(R.onChunk) end end
+    for _, o in ipairs(sws) do o.gone = true end
+    MinidoracatBuilder.Basement, isServer, isClient, sendClientCommand, instanceof = keepM, keepS, keepC, keepSend, keepInst
+    undoE()
     end)()
 
     enter("s")
