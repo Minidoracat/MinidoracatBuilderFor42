@@ -9897,13 +9897,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
     -- BuildingRoomsEditor.java:233-248、BREBuilding.getLotHeader）、殭屍補充。meta[地圖格:相對角]＝那一棟；live[角]＝第一間
     local eng = { tile = {}, live = {}, meta = {}, foreign = {}, overlap = 0, zombie = {}, ids = 0, applies = 0, metaSent = 0 }
     local function tk(x, y) return x .. "," .. y end
-    -- getCellData：地圖格有 metaCell（預設都有；eng.noCell[lx,ly] 的沒有，像還沒載入的荒野格）
     local grid = { getRoomAt = function(_, x, y, z)
         if z ~= Z then return nil end
         return eng.foreign[tk(x, y)] or eng.tile[tk(x, y)]
-    end, getCellData = function(_, lx, ly)
-        if eng.noCell and eng.noCell[lx .. "," .. ly] then return nil end
-        return {}
     end }
     getWorld = function()
         local w = realWorld()
@@ -9943,8 +9939,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 self.rooms[#self.rooms + 1] = r
                 return r
             end
-            -- eng.reject(b) 回 true 的建物引擎不收（登錄失敗）
-            function b:isValid() return #self.rooms > 0 and #self.rooms[1].rects > 0 and not (eng.reject and eng.reject(self)) end
+            function b:isValid() return #self.rooms > 0 and #self.rooms[1].rects > 0 end
             self.list[#self.list + 1] = b
             return b
         end
@@ -28369,9 +28364,8 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "dug／basements 壞資料整則丟（超過 400 格、長度、範圍、非整數、舊格式、沒有 v、i>n、一段 501 個長方形）；500 個照收、登錄一次；"
         .. "空快照清掉那一區、不叫引擎；單機只重算高度")
 
-    -- 叫引擎的時機：快照 1 次（身邊那座觸發，200 格外那座搭便車一起登錄）；挖 8 格（每格 dug、5 秒、每分鐘檢查兩次）0 次；
-    -- 伺服器那一批的 block 1 次；走近已經搭便車登錄過的那座 0 次；挖了之後一直沒等到 block：等滿 WAIT_MS 之前的每分鐘檢查
-    -- 0 次，過了那一次 1 次
+    -- 叫引擎的時機：快照 1 次；挖 8 格（每格 dug、5 秒、每分鐘檢查兩次）0 次；伺服器那一批的 block 1 次；走近一座沒登錄過的
+    -- 地下室，下一次每分鐘檢查 1 次；挖了之後一直沒等到 block：等滿 WAIT_MS 之前的每分鐘檢查 0 次，過了那一次 1 次
     local AQ = A + 10
     local Q = AQ * AR + 100
     px = Q
@@ -28401,10 +28395,10 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     t8[6] = ap()
     C.askEveryMinute()
     t8[7] = ap()
-    check(table.concat(t8, ",") == "1,0,1,0,0,1,0" and one and one.n == 12 and BM.has(Q + 202, Q + 200, -1)
+    check(table.concat(t8, ",") == "1,0,1,1,0,1,0" and one and one.n == 12 and BM.has(Q + 202, Q + 200, -1)
             and E.live[tk(Q + 200, Q + 200)] and E.live[tk(Q + 200, Q + 200)].n == 3,
-        "客戶端叫引擎的時機：快照 1 次（遠的那座搭便車）、挖 8 格 0 次、block 1 次（整棟 12 格）、走近搭便車登錄過的那座 0 次、"
-        .. "等 block 90 秒內 0 次、過了 1 次、之後不再叫（" .. table.concat(t8, ",") .. "）")
+        "客戶端叫引擎的時機：快照 1 次、挖 8 格 0 次、block 1 次（整棟 12 格）、走近沒登錄過的那座 1 次、等 block 90 秒內 0 次、"
+        .. "過了 1 次、之後不再叫（" .. table.concat(t8, ",") .. "）")
 
     -- 兩塊各自登錄後挖一格接起來：dug 與每分鐘檢查都不叫引擎，等到 block 才登錄一次（不會先各自登錄、block 到了再登錄一次）
     local R = (A + 20) * AR + 100
@@ -28454,85 +28448,6 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
             .. "兩間）（" .. seen(old) .. "／" .. seen(new) .. "）")
     check(not orderOk(old, { ids = new.ids, rs = { new.rs[1], new.rs[2], nil, nil, nil } }),
         "植入違規（新快照後一端房號是 nil）：上一條不過（舊寫法只比兩端不相等，會過）")
-
-    -- P2a 搭便車（Basement.registerNear）：身邊有要登錄的塊時，NEAR 外合格的塊同一次 applyChanges 一起登錄；全部都遠不叫引擎；
-    -- 在等 block、在快照範圍外（stale）、地圖格沒有 metaCell（getCellData 是 nil，todo 留著、走近再登錄）的不帶；搭便車登錄
-    -- 失敗的塊之後不再搭（hitch＝false：下一輪身邊的塊照舊、不叫引擎），走近照登錄
-    do
-        local AP = A - 20 -- 往上 40 個大區會超出 Basement.LIMIT
-        local G = AP * AR + 100
-        local function two(i) -- 第 i 輪：身邊一塊 (g, g) 兩格、300 格外一塊 (f, f) 兩格，玩家站在 (g, g)；回兩塊的角
-            local g, f = G + 10 * i, G + 300 + 10 * i
-            BM.add({ { g, g }, { g + 1, g } })
-            BM.add({ { f, f }, { f + 1, f } })
-            px = g
-            return g, f
-        end
-        local function lot(v) return math.floor(v / 256) end
-        local function clear()
-            BM.reset({}, AP, AP)
-            E.noCell, E.reject = nil, nil
-        end
-        local function on(x) return E.live[tk(x, x)] ~= nil end
-        ap()
-        local g, f = two(1)
-        BM.registerNear(nil)
-        local r1 = { ap(), on(g), on(f) }
-        px = f
-        BM.registerNear(nil)
-        r1[4] = ap()
-        clear()
-        g, f = two(2)
-        px = G - 1000
-        BM.registerNear(nil)
-        local r2 = { ap() }
-        clear()
-        g, f = two(3)
-        BM.await({ { f, f }, { f + 1, f } })
-        BM.registerNear(nil)
-        local r3 = { ap(), on(g), not on(f) }
-        clear()
-        g, f = two(4)
-        BM.reset({ { g, g }, { g + 1, g } }, AP - 1, AP - 1) -- f 在這份快照範圍外：stale
-        BM.registerNear(nil)
-        local r4 = { ap(), on(g), not on(f) }
-        clear()
-        g, f = two(5)
-        E.noCell = { [lot(f) .. "," .. lot(f)] = true }
-        BM.registerNear(nil)
-        local r5 = { ap(), on(g), not on(f) }
-        E.noCell = nil
-        px = f
-        BM.registerNear(nil)
-        r5[4], r5[5] = ap(), on(f)
-        clear()
-        g, f = two(6)
-        E.reject = function(b) return b.rooms[1].rects[1][2] >= f end
-        BM.registerNear(nil)
-        local r6 = { ap(), on(g), not on(f) }
-        E.reject = nil
-        BM.registerNear(nil)
-        r6[4] = ap()
-        px = f
-        BM.registerNear(nil)
-        r6[5], r6[6] = ap(), on(f)
-        clear()
-        local function s(r)
-            local o = {}
-            for i, v in ipairs(r) do o[i] = tostring(v) end
-            return table.concat(o, ",")
-        end
-        local got = s(r1) .. "|" .. s(r2) .. "|" .. s(r3) .. "|" .. s(r4) .. "|" .. s(r5) .. "|" .. s(r6)
-        check(s(r1) == "1,true,true,0" and s(r2) == "0",
-            "P2a ① 身邊一塊、300 格外一塊都要登錄：同一次 applyChanges 兩塊都登錄，走到遠的那塊旁邊不再叫引擎；② 全部都遠不叫引擎（"
-            .. got .. "）")
-        check(s(r3) == "1,true,true" and s(r4) == "1,true,true",
-            "P2a ③ 遠處在等 block、④ 在快照範圍外（stale）：不搭便車，身邊的照登錄（" .. got .. "）")
-        check(s(r5) == "1,true,true,1,true",
-            "P2a ⑤ 遠處的地圖格沒有 metaCell：不搭便車、todo 留著，走近照登錄（" .. got .. "）")
-        check(s(r6) == "1,true,true,0,1,true",
-            "P2a ⑥ 搭便車的塊登錄失敗：之後不再搭（下一輪不叫引擎），走近照登錄（" .. got .. "）")
-    end
 
     BM.reset({}, A, A)
     BM.reset({}, A + 10, A + 10)
@@ -29158,9 +29073,7 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     at(XF + 1, XF + 3)
     enter("s")
     SB.grow(SB.add({ { XF, XF }, { XF + 1, XF }, { XF + 2, XF }, { XF + 200, XF }, { XF + 201, XF }, { XF + 202, XF } }))
-    EC.noCell = { [math.floor((XF + 200) / AR) .. "," .. math.floor(XF / AR)] = true } -- 遠的那座不搭便車：留給走近時登錄
     for _, m in ipairs(snap()) do deliver(m, 0) end
-    EC.noCell = nil
     local farR = EC.tile[tk(XF + 200, XF)] == nil
     at(XF + 100, XF + 3)
     local d1 = dig({ { XF + 3, XF } })
@@ -29451,33 +29364,29 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         "沒有地下室的存檔不掛 LoadChunk（" .. (c1 - c0) .. "）；第一次加格子掛 1 個（" .. (c2 - c1) .. "）、再加不再掛（"
         .. (c3 - c2) .. "）")
 
-    -- 7 P2a：遠處的塊搭便車登錄時 chunk 還沒讀進，之後讀進（無 lotheader）沒有房間；走近只重登錄 1 次
+    -- 7 多人客戶端傳送直達：傳走時收到遠處那一區的快照（這座在範圍外，stale），傳回來 chunk 讀進時已在 64 格內：下一個
+    -- OnTick 就整棟重登錄 1 次，不等涵蓋這一區的快照（每分鐘檢查才要，最多晚 1 分鐘）；那份快照到了不再登錄
     local X7 = 316 * AR + 9
-    local F7 = X7 + 300
     local R7 = fresh("c")
-    local far7 = {}
-    ug(X7, X7, Z)
-    ug(X7 + 1, X7, Z)
-    far7[1], far7[2] = ug(F7, F7, Z), ug(F7 + 1, F7, Z)
-    R7.add({ { X7, X7 }, { X7 + 1, X7 } })
-    R7.add({ { F7, F7 }, { F7 + 1, F7 } })
-    cx, cy = X7, X7
-    local a7 = E.applies
+    cx, cy = X7 + 1, X7 + 1
+    local w7 = dig3(R7, X7, "c")
     R7.registerNear(nil)
-    local t7 = { E.applies - a7 }
-    E.reload(far7, true)
-    fire("LoadChunk", far7[1]:getChunk())
+    local home = math.floor(X7 / AR)
+    R7.reset({}, home + 20, home + 20)
+    E.reload(w7.sqs, true)
+    local a7 = E.applies
+    fire("LoadChunk", w7.mid:getChunk())
     HARNESS_REG_TICK()
+    local t7 = { E.applies - a7 }
+    local back7 = hung(w7)
+    local all7 = {}
+    for _, sq in ipairs(w7.sqs) do all7[#all7 + 1] = { sq:getX(), sq:getY() } end
+    R7.reset(all7, home, home)
+    R7.registerNear(nil)
     t7[2] = E.applies - a7 - t7[1]
-    cx, cy = F7, F7
-    minute()
-    t7[3] = E.applies - a7 - t7[1] - t7[2]
-    minute()
-    t7[4] = E.applies - a7 - t7[1] - t7[2] - t7[3]
-    local def7 = E.tile[tk(F7, F7)]
-    check(table.concat(t7, ",") == "1,0,1,0" and def7 and far7[1]:getRoom() == def7:getIsoRoom(),
-        "P2a 遠處的塊搭便車登錄後才讀進（無 lotheader）：讀進時不登錄、走近重登錄 1 次、之後不再登錄（" .. table.concat(t7, ",")
-        .. "）")
+    check(t7[1] == 1 and back7 and t7[2] == 0,
+        "無 lotheader 重載（多人傳送直達，這座在最近一份快照範圍外）：下一個 OnTick 就整棟重登錄 1 次（" .. t7[1] .. "）、掛回房間（"
+        .. tostring(back7) .. "）；涵蓋這一區的快照到了不再登錄（" .. t7[2] .. "）")
 
     HARNESS_REG_TICK()
     for _, R in ipairs(made) do if R.onChunk then Events.LoadChunk.Remove(R.onChunk) end end

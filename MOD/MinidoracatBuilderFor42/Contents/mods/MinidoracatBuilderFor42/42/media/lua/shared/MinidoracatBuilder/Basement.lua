@@ -34,7 +34,7 @@ local OTHER = { N = "W", W = "N" }
 -- room＝{ [鍵]＝房號 }（同一個房號＝同一間；號碼不必連續）, rooms＝用過的最大房號, todo＝有還沒登錄的格子或要重建的棟
 -- （客戶端 registerNear 只看它、不走格子）；客戶端另有 v＝套用過的伺服器修訂號（block、快照）, wait＝開始等 block 的時間,
 -- fresh＝{ [鍵]＝true } 收到 dug 之後還沒等到 block 或快照的格子, stale＝在最近一份快照的範圍外（之後的 dug、block 收不到，
--- 手上的可能是舊的）, hitch＝false：搭便車登錄失敗過，之後只在身邊時登錄（registerNear）}
+-- 手上的可能是舊的）}
 -- bof[鍵]＝這一場這格登錄進的那一棟 { cx, cy＝metaID 的角, lx, ly＝它外框左上角所在的地圖格（256 格一格，引擎照這一格找
 -- 同一棟）, tiles＝{ [鍵]＝{ x, y } } }，nil＝還沒登錄；redo[棟]＝下一次登錄要整棟重建。棟跟著格子走，不跟著塊：兩塊併起來
 -- 兩邊的棟都留著。unhung[棟]＝客戶端與單機：沒有 .lotheader 的地圖格重新讀進後有格子沒掛房間（Basement.onChunk），等走近
@@ -790,12 +790,13 @@ local function alive(r) return cells[key(r.cx, r.cy)] ~= nil end
 -- 它的格子（apply 的 ok）。
 -- 專用伺服器一棟一間、扣掉開關格（serverRoom）；開關格不當新一棟的角，只會被擴進去，哪裡都併不進去的開關格不登錄。
 -- 客戶端與單機照房號分間（roomsOf）。
--- 客戶端照身邊觸發：有塊的包圍盒離任一位本機玩家 NEAR 格內才登錄（觸發距離）。chunkMap 最寬 19 個 chunk＝152 格、
--- 半寬 76 格（IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk
--- 載入時 applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。觸發時遠處合格的塊一起
--- 登錄（搭便車，Basement.registerNear），同一次 applyChanges；沒有身邊的塊要登錄時遠的留著不登錄。
--- 伺服器（與單機）全部登錄。登錄之後才讀進的 chunk（三端都有：客戶端 76–128 格、搭便車的遠塊、專用伺服器開服時還沒有
--- chunk）只在有 .lotheader 的地圖格由引擎照 metaGrid 掛房間（IsoChunk.java:3588-3591），沒有的由 Basement.onChunk 掛回。
+-- 客戶端只登錄身邊的塊：包圍盒離任一位本機玩家 NEAR 格內。chunkMap 最寬 19 個 chunk＝152 格、半寬 76 格
+-- （IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk 載入時
+-- applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。遠的塊留著不登錄：登錄只替
+-- 已載入的格子建房間燈、收開關（updateSquares，BuildingRoomsEditor.java:369-411），之後讀進時引擎只替讀進時已有開關的
+-- 房間補燈（IsoLightSwitch.chunkLoaded，IsoLightSwitch.java:845-866），先登錄再讀進、之後才裝的開關打開不亮。
+-- 伺服器（與單機）全部登錄。登錄之後才讀進的 chunk（三端都有：客戶端 76–128 格、專用伺服器開服時還沒有 chunk）只在
+-- 有 .lotheader 的地圖格由引擎照 metaGrid 掛房間（IsoChunk.java:3588-3591），沒有的由 Basement.onChunk 掛回。
 -- 選用的第二個參數 only＝{ [編號]＝true }：只登錄這幾塊的格子與棟（Basement.registerNear 已經挑過）。
 -- 要掛回的棟（unhung）只在它角上那一塊這一次本來就要登錄時（有新格子，或 only 挑了它）順便重建；任何一次重建成功都不再
 -- 要掛回（登錄時引擎替已載入的格子掛房間）
@@ -1147,54 +1148,29 @@ function Basement.await(tiles)
 end
 
 -- 客戶端：身邊（NEAR 格內）有還沒登錄的格子或要重建的棟（todo）、而且沒在等 block 或等超過 WAIT_MS（伺服器一批最晚
--- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）時，連同遠處同樣合格的塊一次
--- 登錄（同一次 applyChanges；玩家常在別處叫出新的一棟，順手把遠的也登錄，走回去時不必再叫一次引擎）。只走塊、不走格子；
--- 沒有身邊要登錄的塊不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。在最近一份快照範圍外的塊（stale）不登錄：
+-- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）一次登錄。只走塊、不走格子；沒有
+-- 要登錄的塊不走玩家、不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。在最近一份快照範圍外的塊（stale）不登錄：
 -- 玩家走回去時每分鐘的檢查會先要那一區的快照，先登錄手上舊的、快照帶來離開期間的變動再登錄一次，同一刻就叫兩次引擎；
--- 快照到了它就在範圍內，連同變動一次登錄。遠處的塊另外要包圍盒經過的地圖格都有 metaCell（metaReady），搭便車登錄失敗過
--- 的塊（hitch＝false）之後只在身邊時登錄。回成不成功
+-- 快照到了它就在範圍內，連同變動一次登錄。回成不成功
 Basement.WAIT_MS = Basement.GROW_MAX + 30000
--- 包圍盒經過的地圖格都有 metaCell：地圖沒有資料的荒野格要等那一格有 chunk 載入過才建（IsoMetaGrid.getCellData 回 null），
--- 在那之前登錄的棟引擎收不下
-local function metaReady(grid, box)
-    for lx = lotOf(box[1]), lotOf(box[3]) do
-        for ly = lotOf(box[2]), lotOf(box[4]) do
-            if grid:getCellData(lx, ly) == nil then return false end
-        end
-    end
-    return true
-end
 function Basement.registerNear(ids)
-    local now, pick, far, hitch, list, near, any = getTimestampMs(), {}, {}, {}, {}, nil, false
+    local now, pick, list, near, any = getTimestampMs(), {}, {}, nil, false
     for id, b in pairs(blocks) do
         if b.todo and not b.stale and ((ids and ids[id]) or not b.wait or now - b.wait > Basement.WAIT_MS) then
             near = near or nearIds(players(), Basement.NEAR)
             if near[id] then
                 pick[id], any = true, true
-            elseif b.hitch ~= false then
-                far[#far + 1] = id
+                for k, t in pairs(b.tiles) do
+                    if not bof[k] then list[#list + 1] = t end
+                end
             end
         end
     end
     if not any then return true end
-    -- shortcut: 搭便車的塊數沒有上限，一份快照超過約 50 座或量到單次超過 250 ms 時加上限
-    local grid = #far > 0 and getWorld():getMetaGrid()
-    for _, id in ipairs(far) do
-        if metaReady(grid, blocks[id].box) then pick[id], hitch[id] = true, true end
-    end
-    for id in pairs(pick) do
-        for k, t in pairs(blocks[id].tiles) do
-            if not bof[k] then list[#list + 1] = t end
-        end
-    end
     local ok = register(list, pick)
     for id in pairs(pick) do
         local b = blocks[id]
-        if ok then
-            b.todo = nil
-        elseif hitch[id] then
-            b.hitch = false
-        end
+        if ok then b.todo = nil end
         if b.wait and now - b.wait > Basement.WAIT_MS then b.wait = nil end
     end
     return ok
@@ -1244,9 +1220,10 @@ function Basement.onChunk(chunk)
     if found and Basement.onUnhung then Basement.onUnhung() end
 end
 
--- 要掛回的棟（unhung）角上那一塊有本機玩家在 REHANG 格內的（在快照範圍外的 stale 不算）一次重登錄（register 的 only，
--- 沒有新格子）；遠的留著，角那一格已拿掉的不再掛回。Client 的 registerSoon 在 registerNear 之後叫：同一塊的 todo 登錄已經
--- 順便重建了。回成不成功
+-- 要掛回的棟（unhung）角上那一塊有本機玩家在 REHANG 格內的一次重登錄（register 的 only，沒有新格子）；遠的留著，角那一格
+-- 已拿掉的不再掛回。在快照範圍外的塊（stale）照樣重登錄：只重建這一場登錄過的棟、不加格子；要是等涵蓋它的快照（每分鐘
+-- 檢查才要），多人傳送回來最多 1 分鐘格子都沒房間。快照沒帶來變動就不再登錄，帶來變動才由 registerNear 再登錄一次。
+-- Client 的 registerSoon 在 registerNear 之後叫：同一塊的 todo 登錄已經順便重建了。回成不成功
 -- shortcut: 寬超過 12 格、另一頭還沒載入的塊會登錄兩次，量到連續頓挫時改成等整塊都載入
 function Basement.rehang()
     local near, pick, any, dead = nil, {}, false, {}
@@ -1256,7 +1233,7 @@ function Basement.rehang()
             dead[#dead + 1] = r
         else
             near = near or nearIds(players(), Basement.REHANG)
-            if near[id] and not blocks[id].stale then pick[id], any = true, true end
+            if near[id] then pick[id], any = true, true end
         end
     end
     for _, r in ipairs(dead) do unhung[r] = nil end
