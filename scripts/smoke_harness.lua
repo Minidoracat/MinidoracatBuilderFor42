@@ -27764,8 +27764,10 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     local named = B.Names.of(CELL, "dig") == "IGUI_MBLD_Dig_Cell()" and B.Names.short(S) == "IGUI_MBLD_Dig_EntranceS()"
     B.Names.reset()
     getText = realGetText
-    local KEYS = { "Kind_dig", "Note_dig", "Dig_EntranceS", "Dig_EntranceE", "Dig_Cell", "Refund_dig", "RefundShort_dig",
-        "Admin_Ledger_basements", "Dig_Warn", "Why_DIG_PATCH", "Admin_DigKind", "Admin_DigPatch" }
+    local KEYS = { "Kind_dig", "Note_digEntry", "Note_digCell", "Dig_EntranceS", "Dig_EntranceE", "Dig_Cell", "Refund_dig",
+        "RefundShort_dig", "Admin_Ledger_basements", "Dig_Warn", "Why_DIG_PATCH", "Admin_DigKind", "Admin_DigPatch",
+        "Detail_ToolWear", "Refuse_DIG_LEVEL_Cell", "HintReleaseDig", "DragAllDig", "DragSummaryDig", "StoppedDig", "Dig_Size",
+        "HintDig", "BatchesDig", "AppendDig", "InterruptedDig" }
     for _, code in ipairs(DIG_CODES) do
         KEYS[#KEYS + 1] = "Refuse_" .. code
     end
@@ -27782,8 +27784,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         if have.Refuse_DIG_FULL and not have.Refuse_DIG_FULL:find("%1", 1, true) then
             missing[#missing + 1] = lang .. ":Refuse_DIG_FULL 沒有 %1"
         end
+        if have.Note_dig then missing[#missing + 1] = lang .. ":Note_dig 還在（已拆成 Note_digEntry／Note_digCell）" end
     end
-    check(#missing == 0 and named, "c17 16 語都有挖掘的 " .. #KEYS .. " 個鍵（上限那句帶 %1）；三個項目照用途命名 " .. table.concat(missing, " "))
+    check(#missing == 0 and named, "c17 16 語都有挖掘的 " .. #KEYS .. " 個鍵（上限那句帶 %1）、沒有舊的 Note_dig；三個項目照用途命名 " .. table.concat(missing, " "))
 
     -- 管理面板種類頁：圖塊沒載入時，地下室那列先接短句（檔號、console.txt；寬度歸 verify_local）再接全文，
     -- 截字後前段留著短句、滑鼠停著看全文；載入了只有名稱；別的種類不接
