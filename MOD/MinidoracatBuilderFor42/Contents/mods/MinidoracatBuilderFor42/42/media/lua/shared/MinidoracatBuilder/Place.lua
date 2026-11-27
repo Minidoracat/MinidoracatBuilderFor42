@@ -2225,10 +2225,11 @@ function Place.fitContainers(obj)
 end
 
 function Place.migrate(obj)
-    if not (obj:hasModData() and obj:getModData().builderEntry) then
+    local md = obj:hasModData() and obj:getModData() -- 每個特殊物件都走這裡，Java 呼叫只做一次
+    if not (md and md.builderEntry) then
         -- 原版撿起再放下的（onAdded）：在特殊物件裡（原版放下用 AddSpecialObject，存檔記旗標，IsoGridSquare.java:2856,3147,3233），
         -- 照目前的倍率補容量
-        local moved = obj:hasModData() and movedEntry(obj:getModData())
+        local moved = md and movedEntry(md)
         if moved and Place.keyed(obj) then Place.harden(obj) end -- 撿放過的家電（onAdded）；讀檔早於註冊尋路，不必重推
         if moved then
             Place.fitContainers(obj)
@@ -2257,10 +2258,9 @@ function Place.migrate(obj)
     end
     if not instanceof(obj, "IsoThumpable") then
         -- 舊存檔的家電（newAppliance 以前沒記）
-        if markMovable(obj, obj:getModData().builderEntry) and isServer() then obj:transmitModData() end
+        if markMovable(obj, md.builderEntry) and isServer() then obj:transmitModData() end
         return
     end
-    local md = obj:getModData()
     if obj:getName() == nil then obj:setName(md.builderEntry) end -- 0.3.0 以前蓋的沒有名稱（見 thumpable 的 setName）
     if not sq then return end
     local spr = obj:getSprite()
@@ -2287,10 +2287,21 @@ function Place.migrate(obj)
         end
     end
 end
--- 特殊物件（IsoThumpable 都是）讀檔時另外列一份（IsoGridSquare.java:3232-3235），一般格子沒有
+-- 特殊物件（IsoThumpable 都是）讀檔時另外列一份（IsoGridSquare.java:3232-3235），一般格子沒有。伺服器與客戶端每載入一格都叫一次，
+-- 這兩個 Java 方法預先從方法表取出、以格子／清單為第一個引數直接呼叫：同一個方法、同樣的引數，只省下每次 sq:method() 的
+-- tableget／getmetatable 查表（KahluaThread.java:1113-1148,1195-1240；同 ServerPatch 的 MSP_VfeLoadSlim）。specialObjects 一定是
+-- ArrayList（IsoGridSquare.java:323，final）；兩個類別兩端都有暴露（LuaManager.java:1705,2186），取不到時照一般寫法
+local squareMethods = __classmetatables and IsoGridSquare and __classmetatables[IsoGridSquare.class]
+local listMethods = __classmetatables and ArrayList and __classmetatables[ArrayList.class]
+local getSpecialObjects = squareMethods and squareMethods.__index.getSpecialObjects
+    or function(sq) return sq:getSpecialObjects() end
+local listSize = listMethods and listMethods.__index.size or function(list) return list:size() end
 Events.LoadGridsquare.Add(function(sq)
-    local list = sq:getSpecialObjects()
-    for i = 0, list:size() - 1 do MinidoracatBuilder.Place.migrate(list:get(i)) end
+    local list = getSpecialObjects(sq)
+    local n = listSize(list)
+    if n == 0 then return end
+    local migrate = MinidoracatBuilder.Place.migrate
+    for i = 0, n - 1 do migrate(list:get(i)) end
 end)
 
 return Place

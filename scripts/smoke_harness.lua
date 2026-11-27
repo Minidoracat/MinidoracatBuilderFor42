@@ -198,7 +198,13 @@ IsoSpriteManager = { instance = { getNamedMap = function()
         values = function() return javaList(spriteOrder) end,
     }
 end } }
-ArrayList = { new = function(list) return list end }
+ArrayList = { new = function(list) return list end, class = "ArrayList" }
+-- 照引擎的方法表（__classmetatables[類別.class].__index，LuaJavaClassExposer）：Place 的讀檔回呼預先取出、以物件為第一個引數呼叫
+__classmetatables = {
+    IsoGridSquare = { __index = { getSpecialObjects = function(sq) return sq:getSpecialObjects() end } },
+    ArrayList = { __index = { size = function(list) return list:size() end } },
+}
+IsoGridSquare = { class = "IsoGridSquare" }
 -- 假 SpriteConfigManager：建造配方的轉角柱（Rules.recordCorners 讀 getScript():getCornerSprite()）。
 -- 名稱放 SpriteConfigManager.corners（主程式的 local 已到 200 上限）
 SpriteConfigManager = { corners = {}, GetObjectInfoList = function()
@@ -6898,6 +6904,25 @@ print("情境二十七：沙盒「殭屍打不壞」「殭屍敲不破門」「�
         check(oldShelf.md.movableData and oldShelf.md.movableData.builderEntry == "zp_crate_01_0"
             and shelfNext.boxes[1].cap == 100 and shelfNext.md.builderEntry == nil,
             "舊版撿放過一次的牆櫃（只有巢狀記號）讀檔：補上 movableData，更新後再撿放容量照倍率補回（50×2）")
+
+        -- 讀檔回呼（LoadGridsquare）照格子的特殊物件逐個走 migrate：沒有特殊物件的格子不叫；原版物件不動，撿放過的家電、
+        -- 本 MOD 蓋的照樣補。只有一個特殊物件的格子也要走到（早返回條件寫錯時這裡紅）
+        local realMigrate, migrated = Place.migrate, 0
+        Place.migrate = function(o) migrated = migrated + 1 return realMigrate(o) end
+        local function loadSq(objs) fire("LoadGridsquare", { getSpecialObjects = function() return javaList(objs) end }) end
+        loadSq({})
+        local emptyCalls = migrated
+        local vanilla = loaded("IsoThumpable", wallS, { thump = true, entry = false })
+        local mvStove = moved(sinkS, true)
+        local mvCrate = gen({ movableData = { builderEntry = "zp_crate_01_0" } })
+        local ourWall = loaded("IsoThumpable", wallS, { thump = true })
+        loadSq({ mvCrate })
+        loadSq({ vanilla, mvStove, ourWall })
+        Place.migrate = realMigrate
+        check(emptyCalls == 0 and migrated == 4 and mvCrate.boxes[1].cap == 100 and mvStove.moved == false
+            and ourWall.thump == false and vanilla.thump == true and vanilla.dmg == 8,
+            "讀檔回呼：空格不叫 migrate；撿放過的容器補容量（50×2）、擋路家電照打不壞改、本 MOD 的牆照選項改，原版的不動（"
+                .. emptyCalls .. "、" .. migrated .. "）")
 
         -- 第三輪 #3：帶 movableData 的容器撿放，原版不抄容器名稱（<種類>_customContainerName）：撿走時照序號記下、放下時寫回
         local realRand, realClient, realServer, seq = ZombRand, isClient, isServer, 0
@@ -17468,6 +17493,15 @@ print("情境（車庫門與雙開門）：整組一個項目、拖一排定寬�
         "雙開門開關、「殭屍敲不破門」開著：下一個 tick 第 2、3 片補回敲不破（" .. tostring(hpA) .. "、" .. tostring(hpB)
         .. "；兩片只掛一次 " .. tostring(hooked) .. "）")
     check(after == 0, "補完就摘掉 tick：不留每 tick 的成本")
+    -- 讀檔（LoadGridsquare）：沒記號的第 2、3 片各自那格載入時照第一片重套「殭屍敲不破門」（一格只有這一片）
+    local ldA, ldB = IsoDoor.getDoubleDoorObject(d1, 2), IsoDoor.getDoubleDoorObject(d1, 3)
+    ldA.hp, ldB.hp = 500, 500
+    sb.ZombieProofDoors = true
+    fire("LoadGridsquare", ldA:getSquare())
+    fire("LoadGridsquare", ldB:getSquare())
+    sb.ZombieProofDoors = nil
+    check(not ldA:hasModData() and ldA.hp == 1000000000 and ldB.hp == 1000000000,
+        "雙開門讀檔：沒記號的第 2、3 片照第一片補回敲不破（" .. tostring(ldA.hp) .. "、" .. tostring(ldB.hp) .. "）")
     for i = 1, 4 do IsoDoor.getDoubleDoorObject(d1, i).hp = 500 end
     -- 審查 C2：門每片至少收打壞會掉的五金（IsoDoor.destroy：門把 1、鉸鏈 0–2；三個材質都沒寫再掉木板 1–2）
     local function price(name, keys, m)
