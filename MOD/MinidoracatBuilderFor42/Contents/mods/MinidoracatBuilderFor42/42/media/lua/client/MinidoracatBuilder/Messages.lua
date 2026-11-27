@@ -184,7 +184,7 @@ function Messages.unbuildSummary(summary, name)
     return text, title
 end
 
--- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法建造」；
+-- 跳出通知：家族框架的 Toast（右上一欄，所有 MOD 共用堆疊），沒有框架時退回原版頭頂紅字。title 省略＝「無法動工」；
 -- maxLines 省略＝8（超過的最後一行截字；Toast 只長到實際行數）。4 行時 CatLang 字型下英文的缺料句就放不下，
 -- 法、西、德文更寬
 function Messages.toast(player, text, ...)

@@ -31,7 +31,7 @@ local function perBatch()
     return math.max(1, math.floor(tonumber(Entry.settings().MaxCellsPerDrag) or 32))
 end
 
--- title 省略＝「無法建造」（Messages.toast）
+-- title 省略＝「無法動工」（Messages.toast）
 local function tell(player, code, ...)
     local extra, title = ...
     if code == "PERM_DENIED" then return end -- Safehouse 拒絕時自己推了通知，不再疊一則
