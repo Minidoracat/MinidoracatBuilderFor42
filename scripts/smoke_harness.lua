@@ -10625,15 +10625,17 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             for _, s in ipairs(room.def.switches) do s.on = false end
             return true
         end
+        Basement.settled[def16] = nil -- 只看原版切換記不記確立（前面按 A16 已記過）
         local rT = ISToggleLightAction.complete({ character = p16, object = SG })
+        local settled16 = Basement.settled[def16] == true
         B.toggleComplete = origT
         local m16, mN16 = mark(A16), N16 and mark(N16)
         eng.reload({ zs[6150], zs[6151], zs[6152] })
         fire("LoadChunk", zs[6150]:getChunk())
         check(rT == true and m16 == false and mN16 == false and not A16.on and N16 and not N16.on and mark(SG) == nil
-            and not def16.lightsActive,
-            "單機：按本工具的招牌（原版切）連動關掉的牆上開關照新狀態記，重新讀進仍關、招牌不記（" .. tostring(rT) .. " "
-                .. tostring(m16) .. tostring(mN16) .. tostring(A16.on) .. "）")
+            and not def16.lightsActive and settled16,
+            "單機：按本工具的招牌（原版切）連動關掉的牆上開關照新狀態記、這間燈記成已確立，重新讀進仍關、招牌不記（" .. tostring(rT)
+                .. " " .. tostring(m16) .. tostring(mN16) .. tostring(A16.on) .. tostring(settled16) .. "）")
 
         -- 單機與客戶端：讀進格子時登記的開關（關的 O 先、開的 S 後），登錄好的同一個呼叫內（Basement.apply → onApplied）
         -- 照開著的開關把房間燈切開；關著的開關與燈照原值；只有檯燈的那間（另一塊）不切
@@ -10787,35 +10789,161 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                     .. "只有關著的開關、只有開著的招牌的房間不切（" .. tostring(da and da.lightsActive) .. "）")
         end
 
-        -- 單機：一間跨兩塊。西邊那塊先讀進、補回 S5（記號開）切開房間燈；再讀進東邊那塊，引擎照房間燈把記號關的 S6 蓋成開，
-        -- 讀進後補回關；沒記號的 S7 照引擎（nil 與 false 不同）；S5 與房間燈照舊亮
-        setMode(false, false, player({ id = 2323, x = 6407.5, y = 6480.5, z = Z }))
+        -- 單機：一間跨兩塊。西邊那塊先讀進、補回 S5（記號開）切開房間燈；再讀進東邊那塊，引擎照房間燈把記號關、接了燈的 S6
+        -- 蓋成開，讀進後補回關（這間這一場已確立，接燈開關照記號補回自己的狀態、不切房間燈；它的燈 L44 照存的關著）；沒記號的
+        -- S7 照引擎（nil 與 false 不同）；S5 與房間燈照舊亮
+        local p44 = player({ id = 2323, x = 6407.5, y = 6480.5, z = Z })
+        setMode(false, false, p44)
         local r44, t44 = {}, {}
         for x = 6406, 6409 do r44[x], t44[#t44 + 1] = cell(x, 6480), { x, 6480 } end
         local S5, S6, S7 = mount(r44[6406], false), mount(r44[6409], false), mount(r44[6408], false)
+        local L44 = lamp(r44[6409], false, "t_cellarlamp", LIGHT)
         S5:getModData().builderOn, S6:getModData().builderOn = true, false
-        keep(S5, S6, S7)
+        keep(S5, S6, S7, L44)
         local n44, sl44 = 0, S5.switchLight
         S5.switchLight = function(self, v)
             n44 = n44 + 1
             return sl44(self, v)
         end
-        Basement.grow(Basement.add(t44))
+        local ids44 = Basement.add(t44)
+        B.Ledger.put(S6, {})
+        B.Ledger.put(L44, {})
+        Circuits.placed(p44, { S6 })
+        Basement.grow(ids44)
+        local wired44 = Basement.isWired ~= nil and Basement.isWired(S6) == true and Basement.isWired(S5) == false
         local def44 = eng.tile[tk(6406, 6480)]
+        local fresh44 = def44 ~= nil and Basement.settled ~= nil and Basement.settled[def44] == nil -- 未載入時登錄：還沒確立
         eng.reload({ r44[6406], r44[6407] })
         fire("LoadChunk", r44[6406]:getChunk())
-        local west44, nW44 = S5.on == true and def44 ~= nil and def44.lightsActive == true, n44
+        local west44, nW44 = fresh44 and S5.on == true and def44.lightsActive == true and Basement.settled[def44] == true, n44
         eng.reload({ r44[6408], r44[6409] })
         local over44 = S6.on == true and S7.on == true
         fire("LoadChunk", r44[6409]:getChunk())
         local nE44 = n44
         nowMs = nowMs + 1500
         fire("OnTick")
-        check(west44 and over44 and S6.on == false and S7.on == true and S5.on == true and def44.lightsActive == true
-            and nW44 == 1 and nE44 == 1 and n44 == 1,
-            "單機讀檔：一間跨兩塊，後讀進那塊被引擎蓋成開的、記號關的開關補回關，沒記號的照引擎，房間燈照舊亮；S5 只切一次，"
-                .. "後一塊讀進與 1 秒後都不多切（" .. tostring(west44) .. tostring(over44) .. tostring(S6.on) .. tostring(S7.on)
-                .. " " .. nW44 .. nE44 .. n44 .. "）")
+        check(west44 and over44 and wired44 and S6.on == false and L44.on == false and S7.on == true and S5.on == true
+            and def44.lightsActive == true and nW44 == 1 and nE44 == 1 and n44 == 1,
+            "單機讀檔：一間跨兩塊，後讀進那塊被引擎蓋成開的、記號關的接燈開關補回關，沒記號的照引擎，房間燈照舊亮；S5 只切一次，"
+                .. "後一塊讀進與 1 秒後都不多切（" .. tostring(west44) .. tostring(over44) .. tostring(wired44) .. tostring(S6.on)
+                .. tostring(S7.on) .. " " .. nW44 .. nE44 .. n44 .. "）")
+
+        -- 單機同一場走遠再回來（RoomDef 這一場已確立燈）：每間 6400..6409、兩塊（6400..6407、6408..6415）
+        ;(function()
+            local function hide(sq, o, def) -- 那一塊不在載入範圍：格上與房間的開關清單都沒有它
+                for i, v in ipairs(sq.objects) do if v == o then table.remove(sq.objects, i) break end end
+                for i, v in ipairs(def.switches) do if v == o then table.remove(def.switches, i) break end end
+            end
+            local function room(y, p)
+                setMode(false, false, p)
+                local q, t = {}, {}
+                for x = 6400, 6409 do q[x], t[#t + 1] = cell(x, y), { x, y } end
+                return q, t
+            end
+            local function at(p, x) p.pos.x = x + 0.5 end
+
+            -- #7：同一間兩個沒接燈的開關都開著，站在 S1 關燈時 S2 那塊不在載入範圍（記號還是開）；走過去 S2 讀進，引擎照房間燈
+            -- 蓋成關：S2 照引擎、記號改成關，房間仍暗（不照過時的記號把燈切亮）
+            local pA = player({ id = 2350, x = 6400.5, y = 6510.5, z = Z })
+            local qA, tA = room(6510, pA)
+            local S1, S2 = mount(qA[6400], false), mount(qA[6409], false)
+            keep(S1, S2)
+            eng.hangLoaded = true
+            Basement.grow(Basement.add(tA))
+            eng.hangLoaded = nil
+            local dA = eng.tile[tk(6400, 6510)]
+            local onA = press(pA, S1) == true and S1.on and S2.on and mark(S2) == true and dA.lightsActive == true
+            hide(qA[6409], S2, dA)
+            local offA = press(pA, S1) == true and not S1.on and S2.on and mark(S2) == true and not dA.lightsActive
+            qA[6409].objects[#qA[6409].objects + 1] = S2
+            eng.reload({ qA[6408], qA[6409] })
+            fire("LoadChunk", qA[6409]:getChunk())
+            check(onA and offA and S2.on == false and mark(S2) == false and dA.lightsActive == false,
+                "單機同一場：一端關燈時另一個沒接燈的開關不在載入範圍，走過去讀進後照引擎（關）、記號改成關，房間仍暗（"
+                    .. tostring(onA) .. tostring(offA) .. tostring(S2.on) .. tostring(mark(S2)) .. tostring(dA.lightsActive) .. "）")
+
+            -- #7 反向：兩個都關著，站在 S1 開燈時 S2 不在載入範圍（記號關）；走過去讀進，引擎照房間燈蓋成開：S2 照引擎顯示開、
+            -- 記號改成開，按一次就關
+            local pB = player({ id = 2351, x = 6400.5, y = 6520.5, z = Z })
+            local qB, tB = room(6520, pB)
+            local S3, S4 = mount(qB[6400], false), mount(qB[6409], false)
+            keep(S3, S4)
+            eng.hangLoaded = true
+            Basement.grow(Basement.add(tB))
+            eng.hangLoaded = nil
+            local dB = eng.tile[tk(6400, 6520)]
+            press(pB, S3)
+            press(pB, S3)
+            local offB = not S3.on and not S4.on and mark(S4) == false and not dB.lightsActive
+            hide(qB[6409], S4, dB)
+            local onB = press(pB, S3) == true and S3.on and not S4.on and mark(S4) == false and dB.lightsActive == true
+            qB[6409].objects[#qB[6409].objects + 1] = S4
+            eng.reload({ qB[6408], qB[6409] })
+            fire("LoadChunk", qB[6409]:getChunk())
+            local backB = S4.on == true and mark(S4) == true and dB.lightsActive == true
+            at(pB, 6409)
+            local once = press(pB, S4) == true and not S4.on and not S3.on and dB.lightsActive == false
+            check(offB and onB and backB and once,
+                "單機同一場：一端開燈時另一個沒接燈的開關不在載入範圍，走過去讀進後照引擎顯示開、記號改成開，按一次就關（"
+                    .. tostring(offB) .. tostring(onB) .. tostring(backB) .. tostring(once) .. "）")
+
+            -- #10：同一間接了燈的 W（開，燈 L 亮）與沒接燈的 U（關），房間暗；走遠再回來（兩塊都重讀，讀格子時 W 先登記每秒比對）：
+            -- W 照記號補回開、不切房間燈，L 照舊亮，房間仍暗；1 秒後每秒比對也不切
+            local pC = player({ id = 2352, x = 6400.5, y = 6530.5, z = Z })
+            local qC, tC = room(6530, pC)
+            local W, U = mount(qC[6400], false), mount(qC[6409], false)
+            W:getModData().builderEntry = "t_roomswitch"
+            local L = lamp(qC[6401], false, "t_cellarlamp", LIGHT)
+            keep(W, U, L)
+            local idsC = Basement.add(tC)
+            B.Ledger.put(W, {})
+            B.Ledger.put(L, {})
+            Circuits.placed(pC, { W })
+            eng.hangLoaded = true
+            Basement.grow(idsC)
+            eng.hangLoaded = nil
+            local dC = eng.tile[tk(6400, 6530)]
+            press(pC, W)
+            at(pC, 6409)
+            press(pC, U)
+            press(pC, U)
+            local preC = W.on == true and L.on == true and U.on == false and mark(U) == false and dC.lightsActive == false
+            at(pC, 6400)
+            local allC = {}
+            for x = 6400, 6409 do allC[#allC + 1] = qC[x] end
+            eng.reload(allC)
+            local overC = W.on == false
+            Place.onLoaded(W)
+            fire("LoadChunk", qC[6400]:getChunk())
+            fire("LoadChunk", qC[6409]:getChunk())
+            local backC = W.on == true and L.on == true and U.on == false and dC.lightsActive == false
+            nowMs = nowMs + 1500
+            fire("OnTick")
+            check(preC and overC and backC and dC.lightsActive == false and W.on == true,
+                "單機同一場：接燈開關開、沒接燈開關關、房間暗，走遠再回來接燈開關補回開、房間仍暗，1 秒後也不切（"
+                    .. tostring(preC) .. tostring(overC) .. tostring(backC) .. tostring(dC.lightsActive) .. "）")
+
+            -- 登錄時只載入西端（西端的開關關著）：onApplied 沒切燈，不算確立（看不到東端的開關，不能當成確定是暗的）；東端讀進時
+            -- 照記號把開著的 S9 補回開、房間燈切開
+            local pD = player({ id = 2353, x = 6400.5, y = 6540.5, z = Z })
+            local qD, tD = room(6540, pD)
+            local S8, S9 = mount(qD[6400], false), mount(qD[6409], false)
+            S9:getModData().builderOn = true
+            keep(S8, S9)
+            local getRoomD = qD[6409].getRoom
+            for x = 6408, 6409 do qD[x].getRoom = function() return nil end end -- 那一塊沒讀進：引擎不替它掛房間
+            eng.hangLoaded = true
+            Basement.grow(Basement.add(tD))
+            eng.hangLoaded = nil
+            for x = 6408, 6409 do qD[x].getRoom = getRoomD end
+            local dD = eng.tile[tk(6400, 6540)]
+            local darkD = dD ~= nil and dD.iso ~= nil and dD.lightsActive == false
+            eng.reload({ qD[6408], qD[6409] })
+            fire("LoadChunk", qD[6409]:getChunk())
+            check(darkD and S9.on == true and dD.lightsActive == true,
+                "單機：登錄時只載入一端、那端的開關關著不算確立，另一端讀進時照記號補回開、房間燈切開（" .. tostring(darkD)
+                    .. tostring(S9.on) .. tostring(dD and dD.lightsActive) .. "）")
+        end)()
 
         -- 客戶端：每秒比對的開關 Wa 那格掛著已清掉 def 的舊 IsoRoom（lightRoom 會丟 NPE，IsoLightSwitch.java:520）時，
         -- 另一間登錄好照樣照開著的開關 Ob 補亮（onApplied 的 watchNow 丟錯只記 log）

@@ -455,6 +455,11 @@ local function apply(list, v)
             o:syncIsoObject(false, on and 1 or 0, nil, nil)
         end
     end
+    -- 單機的牆上開關格掛著房間，switchLight 定了整間的燈：記下這一場這間已確立（Basement.onChunk 之後信引擎值）
+    for _, o in ipairs(switches) do
+        local sq = o:getSquare()
+        if sq and B.Basement and B.Basement.settle then B.Basement.settle(sq:getRoom()) end
+    end
     for i, o in ipairs(others) do
         local was = saved[i]
         if o:isActivated() ~= was then
@@ -482,6 +487,8 @@ local function wiredId(d, o)
     if id and count(d.c[id].l) > 0 then return id end
     return nil
 end
+-- Basement.onChunk 分接燈與沒接燈的開關（Basement 不讀帳本）
+if B.Basement then B.Basement.isWired = function(o) return wiredId(data(), o) ~= nil end end
 
 -- 同一間地下室（rid）裡沒接燈的牆上開關（沿房間走，含 sq 上的）
 local function roomSwitches(d, sq, rid)
@@ -1039,13 +1046,14 @@ function Circuits.command(player, cmd, args)
 end
 
 -- 原版切了地下室房間裡的燈（本工具的招牌交回原版）：原版 switchLight 連同房的牆上開關一起改（IsoLightSwitch.java:514-524），
--- 照新狀態重記 builderOn。招牌本身不是牆上開關，remember 不記它
+-- 照新狀態重記 builderOn。招牌本身不是牆上開關，remember 不記它。切的是房間開關（沒有 lightR）時記下這間燈已確立（單機）
 function Circuits.vanillaToggled(obj)
     local sq = obj and obj:getSquare()
     local room = sq and sq:getZ() < 0 and sq:getRoom()
     if not (room and B.Basement and room:getName() == B.Basement.ROOM) then return end
     local list = room:getLightSwitches()
     for i = 0, list:size() - 1 do remember(list:get(i)) end
+    if not lit(obj) and B.Basement.settle then B.Basement.settle(room) end
 end
 
 -- 包原版開關燈動作（設計稿：只包這一個）。在類別上換 complete，伺服器照 rawget→metatable 取得到

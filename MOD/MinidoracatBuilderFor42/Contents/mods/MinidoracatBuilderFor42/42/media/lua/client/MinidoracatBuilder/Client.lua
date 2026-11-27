@@ -899,6 +899,7 @@ local function lightRoom(obj)
     for i, o in ipairs(others) do
         if o:isActivated() ~= was[i] then o:setActivated(was[i]) end
     end
+    MinidoracatBuilder.Basement.settle(room) -- 單機記下這一場這間的燈已確立（Basement.onChunk 之後信引擎值）
     return room
 end
 
@@ -976,9 +977,12 @@ local function watch(obj, room)
         Events.OnTick.Add(watchTick)
     end
 end
--- 單機讀進格子時照記號補回的開關（Basement.onChunk）：照開關切房間燈，記下現在的房間（之後每秒比對時不再多切）
-MinidoracatBuilder.Basement.onSwitches = function(list)
+-- 單機讀進格子時照記號補回的開關（Basement.onChunk）：照開關切房間燈，記下現在的房間（之後每秒比對時不再多切）。
+-- 選用的第二個清單：已確立燈的房間裡補回的接燈開關，只記下房間、不切（切了會照它的狀態改整間的燈）
+MinidoracatBuilder.Basement.onSwitches = function(list, ...)
+    local quiet = ...
     for _, o in ipairs(list) do watch(o, lightRoom(o)) end
+    for _, o in ipairs(quiet or {}) do watch(o, o:getSquare():getRoom()) end
 end
 
 -- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的本工具牆上開關（有＝讀進時引擎已經替房間加過燈，

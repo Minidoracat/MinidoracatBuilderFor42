@@ -1212,10 +1212,22 @@ end
 --   叫 Basement.onUnhung（Client 排到這一次更新的 OnTick），有本機玩家走進那一點 REHANG 格內才整棟重登錄
 --   單機另外補回這一塊掛著房間的格子上的牆上開關：引擎讀檔先照 metaGrid 掛房間再讀物件，房間開關的狀態被蓋成房間的
 --   lightsActive（IsoChunk.java:3588-3591；IsoLightSwitch.java:356-358），而這一場的 RoomDef 是本 MOD 新建的（暗），存檔
---   時開著的開關讀進來就變關。照開關自己記的 builderOn（Circuits 按開關、裝開關時寫）設回去，整塊補完再交給
---   Basement.onSwitches（Client 切房間燈）。多人客戶端照伺服器送來的狀態，伺服器的開關格不掛房間，都不補
+--   時開著的開關讀進來就變關。房間這一場還沒確立燈（Basement.settled；讀檔後第一次、剛重登錄）時照開關自己記的 builderOn
+--   （Circuits 按開關、裝開關時寫）設回去，整塊補完再交給 Basement.onSwitches（Client 切房間燈）。已確立的房間引擎給的值
+--   就是真相（同場走遠再回來，記號可能是另一端切之前的）：沒接燈的開關照引擎、記號跟著改；接了燈的照記號補回自己的狀態、
+--   不切房間燈（它的燈自己存著狀態），交給 onSwitches 的第二個清單只記下房間。多人客戶端照伺服器送來的狀態，伺服器的開關格
+--   不掛房間，都不補
 Basement.REHANG = 64 -- 量到讀進的 chunk 中心（不量整塊包圍盒）：比 chunkMap 半寬 76 少一個 chunk 以上，在那塊反覆卸載、
 -- 載入的距離來回走不重登錄；寬的塊玩家站在近端、遠端在載入邊緣時也一樣
+-- 單機：這一場已經切過燈的房間（以 RoomDef 為鍵，Java 物件比參考）。Circuits 切開關、原版切換、Client.lightRoom 切房間燈時記；
+-- 新登錄的房間沒照開著的開關切過就不算（只載入一部分時看不到另一端的開關，不能當成確定是暗的）
+Basement.settled = {}
+function Basement.settle(room)
+    local def = room and not isServer() and not isClient() and room:getRoomDef()
+    if def then Basement.settled[def] = true end
+end
+-- 開關接了燈沒有（Circuits 設；沒設時當沒接燈）
+Basement.isWired = nil
 function Basement.onChunk(chunk)
     if chunk:getMinLevel() > Z then return end
     local x0, y0
@@ -1228,7 +1240,7 @@ function Basement.onChunk(chunk)
     end
     if not x0 then return end
     local server, grid, found = isServer(), nil, false
-    local single, sws = not server and not isClient(), nil
+    local single, sws, quiet = not server and not isClient(), nil, nil
     for i = 0, 63 do
         local lx, ly = i % 8, math.floor(i / 8)
         local k = key(x0 + lx, y0 + ly)
@@ -1256,24 +1268,36 @@ function Basement.onChunk(chunk)
                     found = true
                 end
             elseif sq and single then
+                local def = sq:getRoom():getRoomDef()
+                local settled = def ~= nil and Basement.settled[def] == true
                 local objs = sq:getObjects()
                 for j = 0, objs:size() - 1 do
                     local o = objs:get(j)
                     local spr = instanceof(o, "IsoLightSwitch") and o:getSprite()
                     if spr and o:hasModData() and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then
-                        local on = o:getModData().builderOn
-                        if type(on) == "boolean" and on ~= o:isActivated() then -- 壞值（別的 MOD 寫的）略過，setActivated 會丟錯
+                        local md = o:getModData()
+                        local on, now = md.builderOn, o:isActivated()
+                        local wired = settled and Basement.isWired and Basement.isWired(o)
+                        if type(on) ~= "boolean" or on == now then -- 沒記號、壞值（setActivated 會丟錯）或一致：不動
+                        elseif settled and not wired then
+                            md.builderOn = now
+                        else
                             o:setActivated(on)
-                            sws = sws or {}
-                            sws[#sws + 1] = o
+                            if wired then
+                                quiet = quiet or {}
+                                quiet[#quiet + 1] = o
+                            else
+                                sws = sws or {}
+                                sws[#sws + 1] = o
+                            end
                         end
                     end
                 end
             end
         end
     end
-    if sws and Basement.onSwitches then
-        local fine, e = pcall(Basement.onSwitches, sws)
+    if (sws or quiet) and Basement.onSwitches then
+        local fine, e = pcall(Basement.onSwitches, sws or {}, quiet)
         if not fine then print(LOG .. "onSwitches failed: " .. tostring(e)) end
     end
     if found and Basement.onUnhung then Basement.onUnhung() end
