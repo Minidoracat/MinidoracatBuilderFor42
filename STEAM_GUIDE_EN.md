@@ -61,7 +61,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [*] [b]Same name, one tile per facing[/b]: tiles in one tileset with the same name and exactly one tile per facing (some mods' photocopiers, for example) are listed separately, and you can rotate between them while placing.
 [*] [b]Order[/b]: items from the same tileset are sorted by number.
 [*] [b]Nothing found[/b]: an empty list tells you why, for example try a shorter word, or switch to All sources and the All tab.
-[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected (with the newer Minidoracat UI Library, hovering over it tells you why). Wells and Hand Pumps and Water are off by default and are not counted in N.
+[*] [b]Kinds the admin turned off[/b]: you can't see or build them, the status line says the admin turned off N kinds, and a tab whose kinds are all off can't be selected (with the newer Minidoracat UI Library, hovering over it tells you why). Wells and Hand Pumps, Water and Basements are off by default and are not counted in N.
 [*] [b]When the admin changes settings[/b]: an open window follows within a few seconds, so there is no need to reopen it.
 [/list]
 [h3]Eyedropper and Pick tile[/h3]
@@ -172,7 +172,7 @@ Build with any loaded tile, including other mods' tile packs; you pay for what y
 [h3]Dragging a row or an area[/h3]
 {{img:05-drag-en.jpg}}
 [list]
-[*] [b]What you can drag[/b]: floors, floor overlays, water, walls, posts, fences and roofs: hold the left button, drag, and release to queue them. Recipe walls, fences and posts too.
+[*] [b]What you can drag[/b]: floors, floor overlays, water, walls, posts, fences, roofs and Dig Basement Tile: hold the left button, drag, and release to queue them. Recipe walls, fences and posts too.
 [*] [b]Drag straight[/b]: builds a row.
 [*] [b]Drag diagonally[/b]: makes a rectangle. Floors, floor overlays, water and roofs fill it; walls and fences go around its edges, using the piece for the right direction on each side; posts go on every square of the edges.
 [*] [b]A ring missing two sides[/b]: when the tileset has no piece for the other direction, those two sides turn red and aren't built.
@@ -578,12 +578,13 @@ These tiles don't say what they are made of. They used to cost as wood, and now 
 [tr][td]Lights[/td][td]Screwdriver[/td][/tr]
 [tr][td]Well[/td][td]Shovel or spade + Mason's Trowel[/td][/tr]
 [tr][td]Water[/td][td]Shovel or spade[/td][/tr]
+[tr][td]Basement digging[/td][td]Shovel or spade (an entrance also needs the wooden stairs' tools)[/td][/tr]
 [tr][td]Dirt, gravel and sand floors, curtains, grass and wildflowers[/td][td]None[/td][/tr]
 [/table]
 [list]
 [*] [b]The details decide[/b]: Tools (carry them) in the details lists exactly what to carry.
 [*] [b]Furniture-style tiles[/b]: don't need the tools vanilla needs to move them.
-[*] [b]Nothing wears out[/b]: tools only need to be on you.
+[*] [b]Nothing wears out[/b]: tools only need to be on you, except the shovel for digging a basement, which wears down as you dig.
 [*] [b]Welding Torch[/b]: uses no fuel, unless the server turns on Vanilla recipe materials.
 [/list]
 [h3]XP[/h3]
@@ -608,7 +609,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [list]
 [*] [b]Which level[/b]: each item needs the skill level of the matching vanilla recipe, see the table.
 [*] [b]Which skill[/b]: follows the kind of material it is costed as, so anything costed as wood needs Carpentry.
-[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights, floor overlays (half-tile floors included) and water.
+[*] [b]No skill needed[/b]: wall-mounted objects, window fittings, overlays, curtains, lights, floor overlays (half-tile floors included), water and basements (entrances and Dig Basement Tile).
 [*] [b]Wells and hand pumps[/b]: a well needs Masonry 4, a hand pump Welding 5.
 [*] [b]Skill too low[/b]: the cursor square turns red, and the box by the mouse and the notice say which skill and level you need.
 [*] [b]Details[/b]: an extra line such as Skill: Carpentry 2, with your level and a warning when it's too low.
@@ -756,6 +757,7 @@ Two sandbox options, both off by default, and you can turn on just one. Change t
 [tr][td]Right-click "Dismantle (Build Anything)", which returns between 1 and all of each material[/td][td]Dismantle it with Build Anything[/td][/tr]
 [tr][td]Vanilla "Remove curtains", returns 1 sheet[/td][td]Take the curtain down as in vanilla[/td][/tr]
 [tr][td]Only by smashing with a sledgehammer. No materials back.[/td][td]For example doors and windows that can't be moved (not garage or double doors, see above)[/td][/tr]
+[tr][td]Dug ground can't be filled back in. No materials back.[/td][td]Basements: the dug area stays; entrance stairs can be dismantled like regular stairs, see Basements[/td][/tr]
 [/table]
 === 🧰 Blueprints: planning
 Draw a whole building on the ground as a blueprint first (only a ghost, nothing is charged), then build from it, save it or share it with friends. A blueprint only shows on your own screen; other players can't see it.
