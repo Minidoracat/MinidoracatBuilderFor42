@@ -719,9 +719,9 @@ local function registerSoon()
     local ids = soon
     soon = nil
     local BM = MinidoracatBuilder.Basement
-    -- 單機不走 registerNear：它會把延後批次裡還沒登錄的新格提前登錄
-    if isClient() then BM.registerNear(ids) end
-    BM.rehang() -- 在 registerNear 之後：同一塊的登錄已經順便重建了要掛回的棟
+    -- 多人：registerNear 把要掛回、走近了的棟併進同一次登錄（同一幀只叫一次引擎）。單機不走 registerNear：它會把延後批次
+    -- 裡還沒登錄的新格提前登錄，只掛回
+    if isClient() then BM.registerNear(ids) else BM.rehang() end
 end
 local function registerLater(ids)
     if not soon then
@@ -959,16 +959,18 @@ local function watch(obj, room)
     end
 end
 
--- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的（有別的＝讀進時引擎已經替房間加過燈，
--- IsoLightSwitch.chunkLoaded）。多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load 收進房間那段被跳過），
--- 清單空也算。那一棟排重登錄一次，房間燈才建得出來（Basement.relight 說明原因）
+-- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的本工具開關（有＝讀進時引擎已經替房間加過燈，
+-- IsoLightSwitch.chunkLoaded）。別的 MOD 的牆上開關不算：chunk 讀進後才放的，建構子把自己收進清單、卻不建燈
+-- （IsoLightSwitch.java:90-100），最壞多登錄一次。多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load
+-- 收進房間那段被跳過），清單空也算。那一棟排重登錄一次，房間燈才建得出來（Basement.relight 說明原因）
 local function firstSwitch(obj)
     local sq = obj:getSquare()
     local room = sq and sq:getRoom()
     if not room or sq:isUserDefinedRoom() or room:getName() ~= MinidoracatBuilder.Basement.ROOM then return end
     local list = room:getLightSwitches()
     for i = 0, list:size() - 1 do
-        if list:get(i) ~= obj then return end
+        local o = list:get(i)
+        if o ~= obj and o:hasModData() and o:getModData().builderEntry then return end
     end
     if MinidoracatBuilder.Basement.relight(sq:getX(), sq:getY()) then registerLater(nil) end
 end

@@ -347,22 +347,27 @@ function Check.item(player, name, d, anchor, ...)
         end
     end
     -- 預覽照摘要讀技能等級（記下讀過的技能）：之後只升技能、背包沒變，Materials.same 才看得出來
+    local perk, level, have, enough
     local sk = memo and memo.skill[spr]
-    if not sk then
-        sk = { Check.skill(player, entry.kind, spr, preview and opts.summary and opts.summary.levels or nil) }
-        if memo then memo.skill[spr] = sk end
+    if sk then
+        perk, level, have, enough = sk[1], sk[2], sk[3], sk[4]
+    else
+        perk, level, have, enough = Check.skill(player, entry.kind, spr,
+            preview and opts.summary and opts.summary.levels or nil)
+        if memo then memo.skill[spr] = { perk, level, have, enough } end
     end
-    local perk, level, have, enough = sk[1], sk[2], sk[3], sk[4]
     if perk and not enough then return "SKILL", { perk = perk, level = level, have = have }, info end
     -- 單格的成本一次拖曳只算一次（多格的整組可能被修剪，照算）；costs、total 被這次拖曳的格子共用，下游只讀
     local one = memo and #sprites == 1 and sprites[1]
     local cc = one and memo.cost[one]
-    if not cc then
-        local costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
-        cc = { costs, Cost.sum(costs) }
-        if one then memo.cost[one] = cc end
+    local costs, total
+    if cc then
+        costs, total = cc[1], cc[2]
+    else
+        costs = Cost.forCells(entry.kind, sprites, setting("CostMultiplier", 1))
+        total = Cost.sum(costs)
+        if one then memo.cost[one] = { costs, total } end
     end
-    local costs, total = cc[1], cc[2]
     for j, c in ipairs(cells) do c.cost = costs[j] end
     info.costs, info.total = costs, total
     local need = total

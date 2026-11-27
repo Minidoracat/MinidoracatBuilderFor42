@@ -1041,6 +1041,18 @@ Catalog.start()
 fire("OnTickEvenPaused")
 check(Catalog.state == "failed", "分類丟錯：狀態 failed")
 check(count("OnTickEvenPaused") == 0, "出錯後 tick 事件已摘掉")
+do -- 整理完補挖掘的搜尋字（digKeys）丟錯：印 log、照樣 ready（不停在整理中）
+    world(list)
+    Catalog.state = "idle"
+    Catalog.start()
+    local Ix = MinidoracatBuilder.Index
+    local keepSets = Ix.kindSets
+    Ix.kindSets = setmetatable(keepSets, { __index = function(_, k) if k == "dig" then error("dig boom") end end })
+    local digSafe = pcall(function() for _ = 1, 50 do fire("OnTickEvenPaused") end end)
+    setmetatable(keepSets, nil)
+    check(digSafe and Catalog.state == "ready" and count("OnTickEvenPaused") == 0,
+        "挖掘搜尋字丟錯：不往外丟（" .. tostring(digSafe) .. "）、照樣 ready（" .. tostring(Catalog.state) .. "）、tick 事件已摘掉")
+end
 
 print("情境八：項目解析（伺服器重算這一項）")
 -- 假 grid：cells[y][x] = sprite；原點＝第一個非空成員（IsoSpriteGrid.getAnchorSprite）
@@ -11693,12 +11705,13 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             local Cur, Cost, CELL = MinidoracatBuilder.Cursor, MinidoracatBuilder.Cost, Entry.DIG_CELL
             local q = player({ id = 7120, x = X0 + 0.5, y = Y0 + 4.5, z = Z })
             local A = { { X0, Y0 + 5, Z }, { X0, Y0 + 6, Z }, { X0, Y0 + 7, Z } }
-            local realResolve, realFor = Entry.resolve, Cost.forCells
-            local nRes, nFor = 0, 0
+            local realResolve, realFor, realSkill = Entry.resolve, Cost.forCells, Check.skill
+            local nRes, nFor, nSk = 0, 0, 0
             Entry.resolve = function(...) nRes = nRes + 1 return realResolve(...) end
             Cost.forCells = function(...) nFor = nFor + 1 return realFor(...) end
+            Check.skill = function(...) nSk = nSk + 1 return realSkill(...) end
             local res, okN, _, planned = Cur.preview(q, CELL, 0, A, nil)
-            Entry.resolve, Cost.forCells = realResolve, realFor
+            Entry.resolve, Cost.forCells, Check.skill = realResolve, realFor, realSkill
             local function tot(t)
                 if not t then return "-" end
                 local s = {}
@@ -11716,9 +11729,9 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 same = same and code == r.code and tot(info.total) == tot(r.info and r.info.total)
                     and #info.cells == #(r.cells or {})
             end
-            check(okN == 3 and nRes == 1 and nFor == 1 and same,
-                "P1 拖 3 格挖一格：Entry.resolve、Cost.forCells 各只叫 1 次（opts.memo），結果和不帶 memo 逐格呼叫相同（ok=" .. okN
-                .. " resolve=" .. nRes .. " forCells=" .. nFor .. " same=" .. tostring(same) .. "）")
+            check(okN == 3 and nRes == 1 and nFor == 1 and nSk == 1 and same,
+                "P1 拖 3 格挖一格：Entry.resolve、Cost.forCells、Check.skill 各只叫 1 次（opts.memo），結果和不帶 memo 逐格呼叫相同（ok="
+                .. okN .. " resolve=" .. nRes .. " forCells=" .. nFor .. " skill=" .. nSk .. " same=" .. tostring(same) .. "）")
             local first = Check.item(q, CELL, 0, A[1])
             sb.KindDig = false
             local second = Check.item(q, CELL, 0, A[1])
@@ -28007,12 +28020,12 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(codes and Messages.refusal("DIG_FULL", {}) == "IGUI_MBLD_Refuse_DIG_FULL(" .. BM.MAX .. ")"
         and Messages.refusal("DIG_FULL", { max = 7 }) == "IGUI_MBLD_Refuse_DIG_FULL(7)",
         "c17 十一個挖掘碼都在 Messages.CODES、各說自己的句子；DIG_FULL 照伺服器帶的上限，沒帶退回 Basement.MAX")
-    -- DIG_LEVEL 入口、挖一格各一句（Basement.pre 的 extra 帶 entry）；沒帶 entry 的舊伺服器：z＝0 被擋的只會是挖一格
+    -- DIG_LEVEL 入口、挖一格各一句（Basement.pre 的 extra 帶 entry）；沒帶 entry 的是通用那句（規則版本 27 起伺服器都帶）
     check(Messages.refusal("DIG_LEVEL", { entry = true, z = -1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL()"
         and Messages.refusal("DIG_LEVEL", { entry = false, z = 1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL_Cell()"
-        and Messages.refusal("DIG_LEVEL", { x = 1, y = 2, z = 0 }) == "IGUI_MBLD_Refuse_DIG_LEVEL_Cell()"
+        and Messages.refusal("DIG_LEVEL", { x = 1, y = 2, z = 0 }) == "IGUI_MBLD_Refuse_DIG_LEVEL()"
         and Messages.refusal("DIG_LEVEL", { x = 1, y = 2, z = -1 }) == "IGUI_MBLD_Refuse_DIG_LEVEL()",
-        "DIG_LEVEL：入口（entry＝true）說入口要放在一樓地面，挖一格（entry＝false，或沒帶 entry 而 z＝0）說要在地下一層用")
+        "DIG_LEVEL：入口（entry＝true）說入口要放在一樓地面，挖一格（entry＝false）說要在地下一層用；沒帶 entry 說通用那句")
     B.Names.reset()
     local named = B.Names.of(CELL, "dig") == "IGUI_MBLD_Dig_Cell()" and B.Names.short(S) == "IGUI_MBLD_Dig_EntranceS()"
     B.Names.reset()
@@ -29486,6 +29499,121 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     check(t11[1] == 1 and t11[2] == 1 and got11,
         "stale 的塊掛回後，快照帶來離開期間的變動：掛回 1 次（" .. t11[1] .. "）、快照後再登錄 1 次（" .. t11[2] .. "）、新格登錄上（"
         .. tostring(got11) .. "）")
+
+    -- 10 寬的塊（80 格長的一排，跨 10 塊 chunk）：玩家站在近端（包圍盒裡），遠端那塊 chunk 中心在 72 格、在載入邊緣反覆讀進
+    -- → 不登錄（只量要掛回的點，不量整塊包圍盒）；走到那塊 64 格內 → 登錄 1 次。近端與遠端都沒掛、遠端最後讀進 → 玩家在
+    -- 近端 64 格內仍登錄（每塊讀進的點都記，不只最後一個）
+    local X12, Y12 = 352 * AR + 8, 352 * AR + 9
+    local R12 = fresh("c")
+    cx, cy = X12 + 4, Y12
+    local row12, near12, far12 = {}, {}, {}
+    for x = X12, X12 + 79 do
+        local sq = ug(x, Y12, Z)
+        sq.isUserDefinedRoom = function() return false end
+        row12[#row12 + 1] = { x, Y12 }
+        if x < X12 + 8 then near12[#near12 + 1] = sq elseif x >= X12 + 72 then far12[#far12 + 1] = sq end
+    end
+    R12.add(row12)
+    R12.registerNear(nil)
+    local a12 = E.applies
+    for _ = 1, 3 do
+        E.reload(far12, true)
+        fire("LoadChunk", far12[1]:getChunk())
+        HARNESS_REG_TICK()
+    end
+    minute()
+    local t12 = { E.applies - a12 }
+    cx = X12 + 16
+    minute()
+    t12[2] = E.applies - a12 - t12[1]
+    local back12 = hung({ sqs = far12 })
+    cx = X12 + 204
+    E.reload(near12, true)
+    fire("LoadChunk", near12[1]:getChunk())
+    HARNESS_REG_TICK()
+    E.reload(far12, true)
+    fire("LoadChunk", far12[1]:getChunk())
+    HARNESS_REG_TICK()
+    t12[3] = E.applies - a12 - t12[1] - t12[2]
+    cx = X12 + 4
+    minute()
+    t12[4] = E.applies - a12 - t12[1] - t12[2] - t12[3]
+    local both12 = hung({ sqs = near12 }) and hung({ sqs = far12 })
+    check(table.concat(t12, ",") == "0,1,0,1" and back12 and both12,
+        "寬的塊只量要掛回的點：遠端 chunk（72 格）反覆讀進不登錄、走進 64 格登錄 1 次、掛回；近端、遠端都沒掛、遠端最後讀進，"
+        .. "站在近端仍登錄 1 次（" .. table.concat(t12, ",") .. "；" .. tostring(back12) .. tostring(both12) .. "）")
+
+    -- 11 同一次更新：A 塊有新格（todo）、B 塊只要掛回 → 只叫引擎 1 次，兩棟都掛好；B 同時有新格但在快照範圍外（stale），
+    -- 這次不收它的新格、todo 留著，涵蓋它的快照到了再登錄
+    local function dig9(R, X, Y)
+        local sqs, t = {}, {}
+        for x = X, X + 2 do
+            for y = Y, Y + 2 do
+                local sq = ug(x, y, Z)
+                sq.isUserDefinedRoom = function() return false end
+                sqs[#sqs + 1], t[#t + 1] = sq, { x, y }
+            end
+        end
+        R.add(t)
+        return { sqs = sqs, t = t, mid = getCell():getGridSquare(X + 1, Y + 1, Z) }
+    end
+    local H13 = 356
+    local XA, XB, Y13 = H13 * AR + 246, (H13 + 1) * AR + 2, H13 * AR + 100
+    local R13 = fresh("c")
+    cx, cy = XA + 1, Y13 + 1
+    local wA, wB = dig9(R13, XA, Y13), dig9(R13, XB, Y13)
+    R13.registerNear(nil)
+    cx = XA + 300
+    E.reload(wB.sqs, true)
+    fire("LoadChunk", wB.mid:getChunk())
+    HARNESS_REG_TICK()
+    ug(XB + 3, Y13, Z).isUserDefinedRoom = function() return false end
+    R13.add({ { XB + 3, Y13 } })
+    ug(XA - 1, Y13, Z).isUserDefinedRoom = function() return false end
+    local snapA = { { XA - 1, Y13 } }
+    for _, t in ipairs(wA.t) do snapA[#snapA + 1] = t end
+    R13.reset(snapA, H13 - 1, H13 - 1) -- 涵蓋 A（x < (H13＋1)×AR），B 在範圍外
+    local a13 = E.applies
+    cx = XA + 1
+    minute()
+    local t13 = { E.applies - a13 }
+    local ok13 = hung(wA) and hung(wB) and E.tile[tk(XA - 1, Y13)] ~= nil and E.tile[tk(XB + 3, Y13)] == nil
+    local snapAB = { { XB + 3, Y13 } }
+    for _, t in ipairs(snapA) do snapAB[#snapAB + 1] = t end
+    for _, t in ipairs(wB.t) do snapAB[#snapAB + 1] = t end
+    R13.reset(snapAB, H13, H13)
+    R13.registerNear(nil)
+    t13[2] = E.applies - a13 - t13[1]
+    local gotB = E.tile[tk(XB + 3, Y13)] ~= nil
+    check(t13[1] == 1 and ok13 and t13[2] == 1 and gotB,
+        "同一次更新 A 新格＋B 掛回：只叫引擎 1 次（" .. t13[1] .. "）、兩棟掛好、B 範圍外的新格這次不收（" .. tostring(ok13)
+        .. "）；涵蓋 B 的快照到了再登錄 1 次（" .. t13[2] .. "）、B 的新格登錄上（todo 沒被誤清，" .. tostring(gotB) .. "）")
+
+    -- 12 別的 MOD 的牆上開關（沒有 builderEntry）在 chunk 讀進後才放：建構子把自己收進房間的開關清單、不建燈
+    -- （IsoLightSwitch.java:90-100），不算「別的」；之後裝的本工具開關仍是第一個 → 登錄 1 次；本工具第二個 → 0
+    local X14 = 360 * AR + 9
+    local R14 = fresh("c")
+    cx, cy = X14 + 1, X14 + 1
+    local w14 = dig0(R14, X14)
+    R14.registerNear(nil)
+    B.Place.onAdded = function() end
+    local other = sw0(getCell():getGridSquare(X14 + 2, X14 + 2, Z), false)
+    other.md = {}
+    local room14 = other.sq:getRoom()
+    room14.def.switches[#room14.def.switches + 1] = other
+    local a14 = E.applies
+    fire("OnObjectAdded", other)
+    HARNESS_REG_TICK()
+    local t14 = { E.applies - a14 }
+    fire("OnObjectAdded", sw0(w14.mid, true))
+    HARNESS_REG_TICK()
+    t14[2] = E.applies - a14 - t14[1]
+    fire("OnObjectAdded", sw0(getCell():getGridSquare(X14, X14, Z), true))
+    HARNESS_REG_TICK()
+    t14[3] = E.applies - a14 - t14[1] - t14[2]
+    B.Place.onAdded = keepAdded
+    check(table.concat(t14, ",") == "0,1,0",
+        "別的 MOD 的開關先放（不算）、本工具的第一個登錄 1 次、本工具第二個不再登錄（" .. table.concat(t14, ",") .. "）")
 
     HARNESS_REG_TICK()
     for _, R in ipairs(made) do if R.onChunk then Events.LoadChunk.Remove(R.onChunk) end end

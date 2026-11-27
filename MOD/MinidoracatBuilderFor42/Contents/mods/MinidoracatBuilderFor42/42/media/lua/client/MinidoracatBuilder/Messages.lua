@@ -91,8 +91,8 @@ function Messages.refusal(code, ...)
         if extra and extra.n == 1 then return getText("IGUI_MBLD_Refuse_NO_ROOM_One") end
         return getText(key, tostring(extra and extra.i or 1))
     end
-    -- 入口、挖一格各一句（Basement.pre 帶 entry）；沒帶 entry 的舊伺服器：z＝0 被擋的只會是挖一格
-    if code == "DIG_LEVEL" and extra and (extra.entry == false or (extra.entry == nil and extra.z == 0)) then
+    -- 入口、挖一格各一句（Basement.pre 帶 entry）
+    if code == "DIG_LEVEL" and extra and extra.entry == false then
         return getText("IGUI_MBLD_Refuse_DIG_LEVEL_Cell")
     end
     return getText(key)

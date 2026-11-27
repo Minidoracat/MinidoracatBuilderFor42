@@ -168,7 +168,10 @@ local function finish(state)
     end
     local j = job
     job = nil
-    if state == "ready" then digKeys() end
+    if state == "ready" then -- 丟錯只少挖掘的搜尋字，目錄照樣能用：不停在整理中
+        local ok, err = pcall(digKeys)
+        if not ok then print(LOG .. "catalog dig keys failed: " .. tostring(err)) end
+    end
     Index.finish()
     Catalog.state = state
     -- 毫秒時鐘的累計只當 log 參考；成本以 GameProfiler 為準
