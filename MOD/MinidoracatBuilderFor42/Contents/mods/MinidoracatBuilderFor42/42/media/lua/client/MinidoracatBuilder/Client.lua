@@ -906,7 +906,7 @@ end
 -- 蓋牆、拆牆讓區域重算時，引擎把那棟的房間全部丟掉重建（WorldRegionToMetaGrid.java:386-431 移除並 clear 舊的 IsoRoom，
 -- IsoMetaGrid.java:382-399 建新的），房間燈照物件池裡 RoomDef 的舊值建（:271、:610-612），不看開關；單機讀檔時開關先載入、
 -- 房間後建，load 裡補切的那段又只在多人客戶端跑（IsoLightSwitch.java:352-353）。重建沒有 Lua 事件，RoomDef 的 lightsActive
--- 也讀不到，所以記下每個本工具開關上次所在的 IsoRoom，每秒比一次：換了一個（或從沒有變成有）就照開關的狀態補切一次。
+-- 也讀不到，所以記下每個本工具開關與單機補回的牆上開關上次所在的 IsoRoom，每秒比一次：換了一個（或從沒有變成有）就照開關的狀態補切一次。
 -- 只在換房間物件時切：switchLight 會讓整張光照重算（:556 recalcLightTime），不能每秒都切。
 local WATCH_MS = 1000
 local watched, watchAt, watching = {}, 0, false
@@ -931,7 +931,9 @@ end
 -- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒（rooms＝登錄好、有格子載入的每一間 IsoRoom）：先照登記的
 -- 本工具開關，再每間找第一個開著的牆上開關（別的 MOD 的也算；招牌、燈不算）切一次房間燈。新登錄的房間是暗的，沒登記的開關不補就一直暗
 MinidoracatBuilder.Basement.onApplied = function(rooms)
-    watchNow()
+    -- 舊 IsoRoom 的 def 已清掉時 lightRoom 會丟 NPE（IsoLightSwitch.java:520）：只記 log，不擋下面每間的補切
+    local fine, e = pcall(watchNow)
+    if not fine then print(LOG .. "watchNow failed: " .. tostring(e)) end
     for _, room in ipairs(rooms) do
         local list = room:getLightSwitches()
         for i = 0, list:size() - 1 do
@@ -958,8 +960,8 @@ local function watchTick()
     end
 end
 
--- 本工具的開關（不含燈、招牌）進到客戶端的世界：多人新放的（OnObjectAdded）、單機新放的（Place.build）與讀格子時
--- 載入的（Place.migrate）
+-- 記下要每秒比對的開關：本工具的開關（不含燈、招牌）進到客戶端的世界，多人新放的（OnObjectAdded）、單機新放的（Place.build）
+-- 與讀格子時載入的（Place.migrate）；以及單機讀進時照記號補回的牆上開關（Basement.onSwitches，別的 MOD 的也算）
 local function watch(obj, room)
     local def = room and room:getRoomDef() or nil
     for i = 1, #watched do
@@ -981,7 +983,8 @@ end
 
 -- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的本工具牆上開關（有＝讀進時引擎已經替房間加過燈，
 -- IsoLightSwitch.chunkLoaded）。別的 MOD 的牆上開關不算：chunk 讀進後才放的，建構子把自己收進清單、卻不建燈
--- （IsoLightSwitch.java:90-100），最壞多登錄一次。本工具的招牌（帶 builderEntry、不是 Rules.switchProps）也不建燈，不算。
+-- （IsoLightSwitch.java:90-100），最壞多登錄一次。本工具的招牌（帶 builderEntry、不是 Rules.switchProps）也不算：chunk 讀進後才放的
+-- 同樣不建燈；跟 chunk 一起讀進的會在清單裡、chunkLoaded 已替房間建了燈，不算它最壞也只多登錄一次。
 -- 多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load 收進房間那段被跳過），清單空也算。那一棟排重登錄
 -- 一次，房間燈才建得出來（Basement.relight 說明原因）
 local function firstSwitch(obj)

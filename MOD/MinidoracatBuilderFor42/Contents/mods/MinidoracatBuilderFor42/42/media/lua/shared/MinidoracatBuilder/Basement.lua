@@ -1329,8 +1329,9 @@ end
 -- 已經有開關才把燈加回（IsoLightSwitch.chunkLoaded，IsoLightSwitch.java:839-866），之後才裝的開關打開不亮。重登錄每次都換新
 -- 的房間：同一棟（同 metaID）的舊建物整棟拿掉（BuildingRoomsEditor.java:241-244 → BREBuilding.java:230-242），舊 IsoRoom
 -- clear（房間燈、開關清單清空，IsoRoom.java:672-693）並從 metaCell.isoRooms 拿掉；格子再取房間時 getRoomByID 建新的 IsoRoom
--- （IsoMetaGrid.java:372-399，房間燈清單是空的），updateSquares 就替它建燈、收開關，onApplied（Client 的 watchNow）照開著的
--- 開關補切。只算第一個：同一間再裝的時候燈已經在了。這改了「裝開關當下不登錄」：只限客戶端與單機、每間一次（約 130–180 ms）。
+-- （IsoMetaGrid.java:372-399，房間燈清單是空的），updateSquares 就替它建燈、收開關，onApplied（Client 的 watchNow＋每間第一個
+-- 開著的牆上開關）照開著的開關補切。只算第一個：同一間再裝的時候燈已經在了。這改了「裝開關當下不登錄」：只限客戶端與單機、
+-- 每間一次（約 130–180 ms）。
 -- 專用伺服器不做（updateSquares 在伺服器不把房間燈加進世界，BuildingRoomsEditor.java:385；開關格本來就不放進伺服器的房間，
 -- Basement.setSwitchTile）
 function Basement.relight(x, y)

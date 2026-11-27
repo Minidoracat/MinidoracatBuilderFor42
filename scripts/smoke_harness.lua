@@ -10337,7 +10337,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         print = realPrint
         eng.hangLoaded = nil
         isServer = realServer
-        Basement.onApplied = realApplied -- Client.lua 載入時設的那個（watchNow），後面的測試要用
+        Basement.onApplied = realApplied -- Client.lua 載入時設的那個（watchNow＋每間第一個開著的牆上開關），後面的測試要用
         local boomLog = false
         for _, s in ipairs(logs2) do boomLog = boomLog or s:find("onApplied failed: ", 1, true) ~= nil end
         check(onServer == 0 and afterOk == 1 and afterFail == 1 and okAfterBoom and boomLog
@@ -10795,17 +10795,55 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         local S5, S6, S7 = mount(r44[6406], false), mount(r44[6409], false), mount(r44[6408], false)
         S5:getModData().builderOn, S6:getModData().builderOn = true, false
         keep(S5, S6, S7)
+        local n44, sl44 = 0, S5.switchLight
+        S5.switchLight = function(self, v)
+            n44 = n44 + 1
+            return sl44(self, v)
+        end
         Basement.grow(Basement.add(t44))
         local def44 = eng.tile[tk(6406, 6480)]
         eng.reload({ r44[6406], r44[6407] })
         fire("LoadChunk", r44[6406]:getChunk())
-        local west44 = S5.on == true and def44 ~= nil and def44.lightsActive == true
+        local west44, nW44 = S5.on == true and def44 ~= nil and def44.lightsActive == true, n44
         eng.reload({ r44[6408], r44[6409] })
         local over44 = S6.on == true and S7.on == true
         fire("LoadChunk", r44[6409]:getChunk())
-        check(west44 and over44 and S6.on == false and S7.on == true and S5.on == true and def44.lightsActive == true,
-            "單機讀檔：一間跨兩塊，後讀進那塊被引擎蓋成開的、記號關的開關補回關，沒記號的照引擎，房間燈照舊亮（"
-                .. tostring(west44) .. tostring(over44) .. tostring(S6.on) .. tostring(S7.on) .. "）")
+        local nE44 = n44
+        nowMs = nowMs + 1500
+        fire("OnTick")
+        check(west44 and over44 and S6.on == false and S7.on == true and S5.on == true and def44.lightsActive == true
+            and nW44 == 1 and nE44 == 1 and n44 == 1,
+            "單機讀檔：一間跨兩塊，後讀進那塊被引擎蓋成開的、記號關的開關補回關，沒記號的照引擎，房間燈照舊亮；S5 只切一次，"
+                .. "後一塊讀進與 1 秒後都不多切（" .. tostring(west44) .. tostring(over44) .. tostring(S6.on) .. tostring(S7.on)
+                .. " " .. nW44 .. nE44 .. n44 .. "）")
+
+        -- 客戶端：每秒比對的開關 Wa 那格掛著已清掉 def 的舊 IsoRoom（lightRoom 會丟 NPE，IsoLightSwitch.java:520）時，
+        -- 另一間登錄好照樣照開著的開關 Ob 補亮（onApplied 的 watchNow 丟錯只記 log）
+        setMode(false, true, player({ id = 2341, x = 6445.5, y = 6500.5, z = Z }))
+        local qa, qb = cell(6440, 6500), cell(6450, 6500)
+        local Wa = mount(qa, true)
+        Wa:getModData().builderEntry = "t_roomswitch"
+        local Ob = extend(eng.switch(qb))
+        Ob.on = true
+        keep(Wa, Ob)
+        eng.hangLoaded = true
+        Basement.grow(Basement.add({ { 6440, 6500 } }))
+        Place.onLoaded(Wa)
+        local stale = eng.newDef(Basement.ROOM):getIsoRoom()
+        stale.def = nil -- 舊 IsoRoom 被 clear（IsoRoom.java:672-674）
+        local keepRoom = qa.room
+        qa.room = stale
+        local realPrintW, logsW = print, {}
+        print = function(s) logsW[#logsW + 1] = tostring(s) end
+        local okW = pcall(Basement.grow, Basement.add({ { 6450, 6500 } }))
+        print = realPrintW
+        eng.hangLoaded = nil
+        qa.room, Wa.gone = keepRoom, true -- 不留給後面的每秒比對
+        local dB, logW = eng.tile[tk(6450, 6500)], false
+        for _, s in ipairs(logsW) do logW = logW or s:find("watchNow failed: ", 1, true) ~= nil end
+        check(okW and dB and dB.lightsActive == true and Ob.on and logW,
+            "客戶端：每秒比對的開關掛著已清掉的舊房間（lightRoom 丟錯）時，另一間登錄好照樣照開著的開關補亮、只記 log（"
+                .. tostring(dB and dB.lightsActive) .. tostring(logW) .. "）")
 
         -- 多人客戶端：一間跨兩塊、只有東邊那塊讀進（西邊的格子沒掛房間），登錄好照東邊開著的開關把房間燈切開
         setMode(false, true, player({ id = 2340, x = 6424.5, y = 6490.5, z = Z }))
