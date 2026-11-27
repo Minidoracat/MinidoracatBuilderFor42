@@ -24,7 +24,19 @@ function MinidoracatBuilderPlaceAction:waitToStart()
     return self.character:shouldBeTurning()
 end
 
+-- 挖地下室（入口、挖一格）照原版鏟土（ISShovelGround.lua:45-46、BuildingHelper.lua:71-87）：鏟子只要帶在身上，
+-- 手上畫它不必裝備（引擎有 override 就畫動作指定的，ModelManager.java:651-663）。override 要在 setActionAnim 之前設：
+-- 狀態封包在 setActionAnim 當下讀手上模型，MP 別人才看得到鏟子（StatePacket.java:60-70）。
+-- 建造作弊沒帶鏟子時 shovel 是 nil：徒手挖（getShovelAnim(nil) 回 Dig）。pending 只有送出的那台有，伺服器不跑 start
 function MinidoracatBuilderPlaceAction:start()
+    local b = pending(self)
+    if b and b.kind == "dig" then
+        local shovel = MinidoracatBuilder.Materials.tool(self.character, "DIG_GRAVE")
+        self:setOverrideHandModels(shovel, nil)
+        self:setActionAnim(BuildingHelper.getShovelAnim(shovel))
+        self.sound = self.character:playSound("Shoveling")
+        return
+    end
     self:setActionAnim("Build")
     self.sound = self.character:playSound("Hammering")
 end

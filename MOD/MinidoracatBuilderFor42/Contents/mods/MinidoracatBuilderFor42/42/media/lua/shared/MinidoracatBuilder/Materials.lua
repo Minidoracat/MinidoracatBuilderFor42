@@ -95,13 +95,19 @@ function Materials.missingTools(player, tools)
     return out
 end
 
--- 挖地下室磨鏟子（使用者 2026-11-25；其他工具照舊不消耗）：背包裡第一把沒壞、帶這個標籤的工具（同 hasTool 的找法）
+-- 背包（含袋子）裡第一把沒壞、帶這個標籤（ItemTag 欄位名）的工具，同 hasTool 的找法；沒有回 nil。
+-- 挖地下室的動作畫在手上的鏟子（PlaceAction:start）與 wear 磨的是同一把
+function Materials.tool(player, name)
+    local tag = ItemTag[name]
+    return tag ~= nil and player:getInventory():getFirstTagEvalRecurse(tag, notBroken) or nil
+end
+
+-- 挖地下室磨鏟子（使用者 2026-11-25；其他工具照舊不消耗）：Materials.tool 找到的那把
 -- 擲 n 次 damageCheck(0, 2, false)，同原版十字鎬、大鎚（ISPickAxeGroundCoverItem.lua:150：每次以 1／(ConditionLowerChance×2)
 -- 的機率掉 1 點，InventoryItem.java:4553-4570）；有掉就同步給客戶端（同 ISShovelGround.lua:109）。建造作弊不擲
 function Materials.wear(player, name, n)
-    local tag = ItemTag[name]
-    if tag == nil or Materials.cheat(player) then return end
-    local item = player:getInventory():getFirstTagEvalRecurse(tag, notBroken)
+    if Materials.cheat(player) then return end
+    local item = Materials.tool(player, name)
     if not item then return end
     local lost = false
     for _ = 1, n do

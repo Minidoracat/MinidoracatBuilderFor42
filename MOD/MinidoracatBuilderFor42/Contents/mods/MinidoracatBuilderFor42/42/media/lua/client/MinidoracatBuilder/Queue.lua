@@ -427,12 +427,14 @@ local function halt(s, g, noRoom, ...)
     stopAll(s, g, { noRoom = noRoom })
     if g.owner ~= "drag" then return end
     local p = s.player
-    local title = g.placed > 0 and getText("IGUI_MBLD_Interrupted") or nil
+    local dig = B.Rules.DIG[g.name] ~= nil
+    local interrupted = dig and "IGUI_MBLD_InterruptedDig" or "IGUI_MBLD_Interrupted"
+    local title = g.placed > 0 and getText(interrupted) or nil
     if noRoom then
         tell(p, g.name == Entry.DIG_CELL and "DIG_STAND" or "NO_ROOM", { i = noRoom, n = g.count }, title)
     elseif g.placed > 0 or byUser then
-        Messages.toast(p, getText("IGUI_MBLD_Stopped", tostring(g.placed), tostring(g.count)),
-            title or getText("IGUI_MBLD_Interrupted"))
+        Messages.toast(p, getText(dig and "IGUI_MBLD_StoppedDig" or "IGUI_MBLD_Stopped", tostring(g.placed), tostring(g.count)),
+            title or getText(interrupted))
     else
         tell(p, "WALK")
     end

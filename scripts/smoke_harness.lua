@@ -2624,10 +2624,12 @@ local function stopNotices()
     local P0 = { getPlayerNum = function() return 0 end }
     run(1, 1, nil, nil, "floors_interior_01_0")
     local had = B.Queue.last(P0) ~= nil
-    check(run(3, 1, 2, nil, B.Entry.DIG_CELL) == "IGUI_MBLD_Interrupted|IGUI_MBLD_Refuse_DIG_STAND"
+    check(run(3, 1, 2, nil, B.Entry.DIG_CELL) == "IGUI_MBLD_InterruptedDig|IGUI_MBLD_Refuse_DIG_STAND"
         and had and B.Queue.last(P0) == nil and B.Queue.lastDig(P0),
-        "地下室挖一格旁邊沒有已挖的格子可站：報 DIG_STAND（要站在已挖的鄰格），不報一般的旁邊沒空位；"
+        "地下室挖一格旁邊沒有已挖的格子可站：報 DIG_STAND（要站在已挖的鄰格），不報一般的旁邊沒空位；標題用挖掘版；"
         .. "上一批剛蓋的換成這批挖掘（拆不回去，「拆掉剛蓋的」不拆到前一批）")
+    check(run(3, 1, nil, nil, B.Entry.DIG_CELL) == "IGUI_MBLD_InterruptedDig|IGUI_MBLD_StoppedDig(1,3)",
+        "U6 挖掘停下：用挖掘版的標題與句子（挖好 1／3 格，不說沒扣材料）")
     run(2, 2)
     check(not B.Queue.lastDig(P0), "之後手拖蓋別的東西：清掉「上一批是挖掘」")
     C.build, Messages.toast, Cursor.get, ISTimedActionQueue, getText = realBuild, realToast, realGet, realQ, realGetText
@@ -15952,6 +15954,31 @@ print("情境五十一之二：挖地下室的項目與成本（Rules、Entry、
     check(sh.rolls == 3 and sh.args == "0,2,false" and broken.rolls == 0 and sentHit == 1
         and sh2.rolls == 2 and sent == 1 and sh3.rolls == 0 and okNone,
         "c10 Materials.wear：第一把沒壞的鏟子擲 n 次 damageCheck(0, 2, false)，有掉才同步一次；建造作弊不擲；沒鏟子不丟錯")
+    -- U6 挖掘動作（2026-11-27）：手上畫鏟子要在 setActionAnim 之前設（MP 狀態封包在那時讀 override），鏟土動畫與聲音；
+    -- 其他種類照舊蓋東西的動作；建造作弊沒帶鏟子 shovel 是 nil、不丟錯
+    local keepHelper, keepPending = BuildingHelper, B.Client.pending
+    BuildingHelper = { getShovelAnim = function(it) return "Dig(" .. (it and it.ft or "none") .. ")" end }
+    local function act(kind, p)
+        B.Client.pending = kind and { n = 4242, kind = kind, player = p } or nil
+        local log = {}
+        local a = setmetatable({ character = p, n = 4242, i = 1 }, { __index = MinidoracatBuilderPlaceAction })
+        function a:setOverrideHandModels(r, l) log[#log + 1] = "hand:" .. (r and r.ft or "nil") .. "," .. tostring(l) end
+        function a:setActionAnim(x) log[#log + 1] = "anim:" .. tostring(x) end
+        function p:playSound(s) log[#log + 1] = "sound:" .. s; return 7 end
+        local ok, err = pcall(a.start, a)
+        return ok and table.concat(log, " ") .. (a.sound == 7 and "" or " nosound") or tostring(err)
+    end
+    local holder = player({ id = 7 })
+    holder.inv:add(item("Base.Hammer", { HAMMER = true }))
+    holder.inv:add(shovel(false))
+    local u6dig, u6floor, u6server = act("dig", holder), act("floor", holder), act(nil, holder)
+    local u6cheat = act("dig", player({ id = 7, cheat = true }))
+    BuildingHelper, B.Client.pending = keepHelper, keepPending
+    check(u6dig == "hand:Base.Shovel,nil anim:Dig(Base.Shovel) sound:Shoveling"
+        and u6floor == "anim:Build sound:Hammering" and u6server == "anim:Build sound:Hammering"
+        and u6cheat == "hand:nil,nil anim:Dig(none) sound:Shoveling",
+        "U6 PlaceAction:start：挖掘先設手上鏟子再設鏟土動作、聲音 Shoveling；不是挖掘照舊 Build／Hammering；"
+        .. "作弊沒鏟子徒手挖不丟錯（" .. u6dig .. " / " .. u6floor .. " / " .. u6server .. " / " .. u6cheat .. "）")
 
     sb.KindDig, sb.CostMultiplier, sb.RecipeMaterials, sb.RequireSkill = keep[1], keep[2], keep[3], keep[4]
     sendItemStats, ISBuildMenu = keepSend, keepMenu
