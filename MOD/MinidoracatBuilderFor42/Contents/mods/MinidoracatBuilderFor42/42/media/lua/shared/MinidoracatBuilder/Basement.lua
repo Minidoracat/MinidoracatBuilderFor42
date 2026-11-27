@@ -524,10 +524,15 @@ end
 -- 這間不補殭屍。引擎只在 spawnCount == -1 時算要補幾隻（VirtualZombieManager.java:666-673），房間是 emptyoutside 時算成 0
 -- （:765-772）；新建的房間 doneSpawn 就是 true（BRERoom.java:11-15），chunk 載入時照 spawnCount 補（IsoChunk.java:4181-4193）。
 -- spawnCount 是沒有 setter 的 instance 欄位（RoomDef.java:27），Lua 碰不到（LuaJavaClassExposer.java:299-311 只開放 static
--- 欄位），所以暫時改名成 emptyoutside、讓引擎算一次記成 0、再改回來。回成不成功
+-- 欄位），所以暫時改名成 emptyoutside、讓引擎算一次記成 0、再改回來。IsoRoom 的名字在建立當下從 RoomDef 抄一份
+-- （IsoMetaGrid.java:383-386，之後 getName 回抄的那份）：格子還沒載入時這裡是第一次取房間，改名後才取會一直叫 emptyoutside
+-- （室外、Client 不認），所以先取再改名。回成不成功
 local function keepEmpty(vzm, def)
-    def:setName("emptyoutside")
-    local ok = pcall(function() vzm:addIndoorZombiesToChunk(nil, def:getIsoRoom()) end)
+    local ok = pcall(function()
+        local room = def:getIsoRoom()
+        def:setName("emptyoutside")
+        vzm:addIndoorZombiesToChunk(nil, room)
+    end)
     def:setName(Basement.ROOM)
     return ok
 end
@@ -569,9 +574,10 @@ end
 -- sws[i]＝第 i 棟的開關格（伺服器 hang 摘掉）。
 -- 回 ok：ok[i]＝第 i 棟登錄好了（套用後角那一格是新的本 MOD 名稱房間、每一間的第一格都查得到本 MOD 名稱的房間；引擎沒建出來、
 -- 角上是別的房間、原地重登錄時舊的那間還在都不算。查的是 metaGrid，矩形裡的格子都查得到，不看格子有沒有掛房間）。
--- 客戶端與單機有一棟登錄好了就呼叫 Basement.onApplied（新登錄的房間燈是暗的，BRERoom.java:9-15，由它照開關補）
+-- 客戶端與單機有一棟登錄好了就呼叫 Basement.onApplied(defs)（defs＝這次登錄好的每一間 RoomDef；新登錄的房間燈是暗的，
+-- BRERoom.java:9-15，由它照開關補）
 local function apply(plans, sws)
-    local ok = {}
+    local ok, applied = {}, {}
     if not (BuildingRoomsEditor and BuildingRoomsEditor.getInstance) then
         print(LOG .. "BuildingRoomsEditor is missing; the game update may have changed it")
         return ok
@@ -628,19 +634,15 @@ local function apply(plans, sws)
             for j, rects in ipairs(plans[i]) do
                 local d = defs[j]
                 if vzm and not keepEmpty(vzm, d) then print(LOG .. "keepEmpty failed at " .. rects[1][1] .. "," .. rects[1][2]) end
-                if server then hang(cell, d, rects, sws[i]) end
+                if server then hang(cell, d, rects, sws[i]) else applied[#applied + 1] = d end
             end
         else
             print(LOG .. "no RoomDef after register at " .. c[1] .. "," .. c[2])
         end
     end
-    if not server and Basement.onApplied then
-        local any = false
-        for _ in pairs(ok) do any = true break end
-        if any then
-            local fine, e = pcall(Basement.onApplied)
-            if not fine then print(LOG .. "onApplied failed: " .. tostring(e)) end
-        end
+    if not server and Basement.onApplied and #applied > 0 then
+        local fine, e = pcall(Basement.onApplied, applied)
+        if not fine then print(LOG .. "onApplied failed: " .. tostring(e)) end
     end
     return ok
 end
@@ -1188,6 +1190,10 @@ end
 --   專用伺服器當下照 metaGrid 逐格掛（同 hang；開關格跳過），不叫引擎、不送東西給客戶端。
 --   客戶端與單機不能逐格掛（Lua 加不回房間燈；房間 ID 是 long、Lua 只有 double），那一棟記上這塊 chunk 的中心（unhung），
 --   叫 Basement.onUnhung（Client 排到這一次更新的 OnTick），有本機玩家走進那一點 REHANG 格內才整棟重登錄
+--   單機另外補回這一塊掛著房間的格子上的牆上開關：引擎讀檔先照 metaGrid 掛房間再讀物件，房間開關的狀態被蓋成房間的
+--   lightsActive（IsoChunk.java:3588-3591；IsoLightSwitch.java:356-358），而這一場的 RoomDef 是本 MOD 新建的（暗），存檔
+--   時開著的開關讀進來就變關。照開關自己記的 builderOn（Circuits 按開關、裝開關時寫）設回去，整塊補完再交給
+--   Basement.onSwitches（Client 切房間燈）。多人客戶端照伺服器送來的狀態，伺服器的開關格不掛房間，都不補
 Basement.REHANG = 64 -- 量到讀進的 chunk 中心（不量整塊包圍盒）：比 chunkMap 半寬 76 少一個 chunk 以上，在那塊反覆卸載、
 -- 載入的距離來回走不重登錄；寬的塊玩家站在近端、遠端在載入邊緣時也一樣
 function Basement.onChunk(chunk)
@@ -1202,6 +1208,7 @@ function Basement.onChunk(chunk)
     end
     if not x0 then return end
     local server, grid, found = isServer(), nil, false
+    local single, sws = not server and not isClient(), nil
     for i = 0, 63 do
         local lx, ly = i % 8, math.floor(i / 8)
         local k = key(x0 + lx, y0 + ly)
@@ -1228,8 +1235,26 @@ function Basement.onChunk(chunk)
                     if not ps[c] then ps[c] = { x0 + 4, y0 + 4 } end
                     found = true
                 end
+            elseif sq and single then
+                local objs = sq:getObjects()
+                for j = 0, objs:size() - 1 do
+                    local o = objs:get(j)
+                    local spr = instanceof(o, "IsoLightSwitch") and o:getSprite()
+                    if spr and o:hasModData() and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then
+                        local on = o:getModData().builderOn
+                        if on ~= nil and on ~= o:isActivated() then
+                            o:setActivated(on)
+                            sws = sws or {}
+                            sws[#sws + 1] = o
+                        end
+                    end
+                end
             end
         end
+    end
+    if sws and Basement.onSwitches then
+        local fine, e = pcall(Basement.onSwitches, sws)
+        if not fine then print(LOG .. "onSwitches failed: " .. tostring(e)) end
     end
     if found and Basement.onUnhung then Basement.onUnhung() end
 end

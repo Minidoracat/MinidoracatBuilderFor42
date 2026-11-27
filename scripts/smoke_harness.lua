@@ -1048,10 +1048,18 @@ do -- 整理完補挖掘的搜尋字（digKeys）丟錯：印 log、照樣 ready
     local Ix = MinidoracatBuilder.Index
     local keepSets = Ix.kindSets
     Ix.kindSets = setmetatable(keepSets, { __index = function(_, k) if k == "dig" then error("dig boom") end end })
+    local realPrint, digLogs = print, {}
+    print = function(s) digLogs[#digLogs + 1] = tostring(s) end
     local digSafe = pcall(function() for _ = 1, 50 do fire("OnTickEvenPaused") end end)
+    print = realPrint
     setmetatable(keepSets, nil)
-    check(digSafe and Catalog.state == "ready" and count("OnTickEvenPaused") == 0,
-        "挖掘搜尋字丟錯：不往外丟（" .. tostring(digSafe) .. "）、照樣 ready（" .. tostring(Catalog.state) .. "）、tick 事件已摘掉")
+    local digLogged = 0
+    for _, s in ipairs(digLogs) do
+        if s:find("catalog dig keys failed", 1, true) and s:find("dig boom", 1, true) then digLogged = digLogged + 1 end
+    end
+    check(digSafe and Catalog.state == "ready" and count("OnTickEvenPaused") == 0 and digLogged == 1,
+        "挖掘搜尋字丟錯：不往外丟（" .. tostring(digSafe) .. "）、照樣 ready（" .. tostring(Catalog.state) .. "）、tick 事件已摘掉、"
+            .. "log 恰一筆帶原因（" .. digLogged .. "）")
 end
 
 print("情境八：項目解析（伺服器重算這一項）")
@@ -4324,6 +4332,8 @@ local function circuitScenario()
     check(act(P, O.SW1) == true and not O.SW1.on and not O.L1.on and not O.L2a.on and not O.L2b.on and not O.MV.on
         and O.L1.synced == 1 and O.L2b.synced == 1 and O.L1.lit == false and O.MAP.on and O.FAKE.on and O.OUT.on
         and HARNESS_TOGGLES == 0, "按開關：開關與線路上每片燈都關、各同步一次；不在線路上的不動，不呼叫原版")
+    check((O.SW1.md or {}).builderOn == nil and (O.L1.md or {}).builderOn == nil,
+        "地面的開關與燈按了不記 builderOn（只記地下室的牆上開關）")
     check(O.MAP.synced == 1 and O.MAP.sent == 1 and O.FAKE.synced == 1 and O.OUT.synced == 0,
         "同一間不在線路上的燈照伺服器狀態再同步一次（客戶端的自建房間會跟著開關切，builder-circuits-1029b），室外的不送")
     check(act(P, O.SW1) == false and not O.L1.on, "0.5 秒內再按：冷卻，不切")
@@ -9926,15 +9936,22 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         function def:setName(n) self.name = n end
         local b = { setUserDefined = function(_, v) def.user = v end, setAllExplored = function(_, v) def.explored = v end }
         function def:getBuilding() return self.bld or b end
-        local room = { def = def }
-        function room:getName() return self.def and self.def.name end -- IsoRoom.java:57（照 RoomDef 的名字）
-        function room:getRoomDef() return self.def end
-        function room:getLightSwitches()
-            local list = javaList(def.switches)
-            function list.add(_, o) def.switches[#def.switches + 1] = o end
-            return list
+        -- IsoRoom：第一次取才建（getRoomByID，IsoMetaGrid.java:382-386），名字在那一刻從 RoomDef 抄一份字串，之後 RoomDef
+        -- 改名不跟著變（IsoRoom.java:57-58 回抄的那份；clear 也不清它，:672-693）
+        function def:getIsoRoom()
+            if not self.iso then
+                local room = { def = def, name = def.name }
+                function room:getName() return self.name end
+                function room:getRoomDef() return self.def end
+                function room:getLightSwitches()
+                    local list = javaList(def.switches)
+                    function list.add(_, o) def.switches[#def.switches + 1] = o end
+                    return list
+                end
+                self.iso = room
+            end
+            return self.iso
         end
-        function def:getIsoRoom() return room end
         return def
     end
     eng.newDef = newDef
@@ -9974,7 +9991,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 local old = eng.meta[mk]
                 if old then -- 舊的整棟拿掉，房間的 def 清成 null（BREBuilding.java:230-242、IsoRoom.java:672-674）
                     for k, d in pairs(eng.tile) do if d.bld == old then eng.tile[k] = nil end end
-                    for _, d in ipairs(old.rooms) do d:getIsoRoom().def = nil end
+                    for _, d in ipairs(old.rooms) do if d.iso then d.iso.def = nil end end
                 end
                 local bld = { rooms = {} } -- 同一棟的房間共用（getBuilding 回它）
                 function bld.setUserDefined(_, v) for _, d in ipairs(bld.rooms) do d.user = v end end
@@ -10393,6 +10410,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             for _, s in ipairs(def and def.switches or {}) do if s == o then return true end end
             return false
         end
+        local function mark(o) return o.md and o.md.builderOn end -- 開關記下的狀態（沒 modData 回 nil，不建）
         local function press(p, o)
             nowMs = nowMs + 1000
             local act = { object = o, character = p }
@@ -10432,6 +10450,7 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         B.Ledger.put(W, {})
         B.Ledger.put(L, {})
         Circuits.placed(p, { W })
+        local wMark = mark(W) -- 裝好還沒按過：Circuits.placed 記下當下的狀態
         local meta0 = eng.metaSent
         -- 重登錄之前那一塊重新讀進（引擎照 metaGrid 把 A 那格掛回舊房間、A 收進清單）：切之前先摘掉，不連動整間、不送 meta
         eng.reload({ sqA })
@@ -10465,6 +10484,10 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
             "地下室沒接燈的牆上開關：重登錄後開關格不在矩形裡；按一個同一間的一起切（開、再按另一個關），隔壁間與接了燈的不動；"
                 .. "接了燈的照線路；canSwitchLight 不過就不動（" .. tostring(out) .. "," .. tostring(r1) .. "," .. tostring(r2)
                 .. "," .. tostring(r3) .. "," .. tostring(r4) .. "）")
+        -- 記號 builderOn：伺服器也寫（只有單機讀）。按過的地下室牆上開關記下狀態、新裝的記下裝好時的狀態；燈不記
+        check(wMark == false and mark(A) == A.on and mark(Bsw) == Bsw.on and mark(W) == W.on and mark(L) == nil,
+            "伺服器記號 builderOn：新裝的開關記下裝好時的狀態（" .. tostring(wMark) .. "）、按過的地下室開關記下狀態（"
+                .. tostring(mark(A)) .. tostring(mark(Bsw)) .. "）、燈不記")
         -- 照當下的牆換分房（Basement.resplit，分法變了）時只登錄這一塊：另一塊排著的重建（裝開關標的 redo）留給延後批次，
         -- 不在玩家按開關、放開關的那一刻順手重登錄（專用伺服器上一棟一次 56–73 ms）
         local tB = { { 6300, 6300 }, { 6301, 6300 } }
@@ -10553,11 +10576,16 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
         eng.hangLoaded = nil
         local def16 = eng.tile[tk(6150, 6150)]
         local s1 = press(p16, A16)
+        local m1 = mark(A16)
         local lit1 = s1 == true and def16 and def16.lightsActive and A16.on and L1.on and not L16.on and not W16.on
         local s2 = press(p16, A16)
+        local m2 = mark(A16)
         local lit2 = s2 == true and def16 and not def16.lightsActive and not A16.on and L1.on and not L16.on and not W16.on
         check(lit1 and lit2, "單機地下室：沒接燈的開關開、關房間燈，同一間的獨立檯燈（開）與別條線路的燈（關）不變（"
             .. tostring(lit1) .. tostring(lit2) .. "）")
+        check(m1 == true and m2 == false and mark(W16) == false and mark(L1) == nil and mark(L16) == nil,
+            "單機記號 builderOn：按開關記下狀態（" .. tostring(m1) .. tostring(m2) .. "）、新裝的記成裝好時的狀態（"
+                .. tostring(mark(W16)) .. "）、燈不記")
 
         -- 單機與客戶端：讀進格子時登記的開關（關的 O 先、開的 S 後），登錄好的同一個呼叫內（Basement.apply → onApplied）
         -- 照開著的開關把房間燈切開；關著的開關與燈照原值；只有檯燈的那間（另一塊）不切
@@ -10582,6 +10610,124 @@ print("情境三十九之二：地下室的紀錄與登錄（Store.unpos、Basem
                 and not L3.on and L4.on and L4.lit == 0 and L3.lit == 0 and def4.lightsActive == false,
                 (mode[2] and "客戶端" or "單機") .. "地下室登錄好（apply 呼叫 onApplied）：同一個呼叫內照開著的開關把房間燈切開，"
                     .. "關著的開關與燈照原值；只有檯燈的那間不切")
+        end
+
+        -- Q3-c：讀檔時引擎先照 metaGrid 掛房間再讀物件，房間開關的狀態被蓋成房間的 lightsActive（IsoChunk.java:3588-3591；
+        -- IsoLightSwitch.java:356-358），而這一場的 RoomDef 是本 MOD 新建的（暗）。單機：記號 builderOn 讀進後補回，
+        -- 整塊補完再切房間燈；未載入時登錄的房間名字照樣是本 MOD 的（keepEmpty 先建 IsoRoom 再改名）
+        local p40 = player({ id = 2320, x = 6401.5, y = 6400.5, z = Z })
+        setMode(false, false, p40)
+        local r40, t40, sqs40, r41, t41 = {}, {}, {}, {}, {}
+        for x = 6400, 6403 do
+            r40[x], t40[#t40 + 1] = cell(x, 6400), { x, 6400 }
+            sqs40[#sqs40 + 1] = r40[x]
+        end
+        for x = 6400, 6402 do r41[x], t41[#t41 + 1] = cell(x, 6410), { x, 6410 } end
+        local S1, S2, S3 = mount(r40[6400], false), mount(r40[6401], false), mount(r40[6402], true)
+        local S4 = mount(r41[6401], false)
+        for _, o in ipairs({ S1, S2, S3 }) do o:getModData().builderEntry = "t_roomswitch" end
+        S1:getModData().builderOn, S2:getModData().builderOn = true, false -- S3：1.5.0 的存檔，沒有記號
+        S4:getModData().builderOn = true -- 別的 MOD 的開關（沒有 builderEntry）
+        gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1] = S1, S2, S3, S4
+        for _, o in ipairs({ S1, S2, S3 }) do Place.onLoaded(o) end -- Place.migrate 只登記本工具的
+        local z40 = #eng.zombie
+        Basement.grow(Basement.add(t40)) -- 格子還沒讀進（引擎不替它們掛房間）時登錄
+        local def40 = eng.tile[tk(6400, 6400)]
+        local name40 = def40 and def40:getIsoRoom():getName()
+        local zomb40 = #eng.zombie > z40 and eng.zombie[#eng.zombie] == "emptyoutside"
+        Basement.grow(Basement.add(t41))
+        local def41 = eng.tile[tk(6400, 6410)]
+        check(name40 == Basement.ROOM and zomb40,
+            "單機未載入時登錄：房間名照樣是本 MOD 的（" .. tostring(name40) .. "）、補殭屍那一次照 emptyoutside 算（"
+                .. tostring(zomb40) .. "）")
+        local n40, sl40 = 0, S1.switchLight
+        S1.switchLight = function(self, v)
+            n40 = n40 + 1
+            return sl40(self, v)
+        end
+        eng.reload(sqs40) -- 有 lotheader：照 metaGrid 掛回房間，開關都被蓋成房間的燈（暗）
+        eng.reload({ r41[6400], r41[6401], r41[6402] })
+        local a40 = eng.applies
+        fire("LoadChunk", r40[6400]:getChunk())
+        fire("LoadChunk", r41[6400]:getChunk())
+        local back40 = S1.on == true and def40.lightsActive == true and S2.on == false and S3.on == false and n40 == 1
+            and eng.applies == a40
+        nowMs = nowMs + 1500
+        fire("OnTick")
+        local still40 = n40 == 1 and S1.on == true and def40.lightsActive == true and S2.on == false
+        check(back40 and still40,
+            "單機讀檔（Q3-c）：記號開的開關補回開、房間燈當下切開；記號關的仍關、沒記號的照引擎；不登錄、1 秒後不再多切（"
+                .. tostring(S1.on) .. tostring(def40.lightsActive) .. tostring(S2.on) .. tostring(S3.on) .. " " .. n40
+                .. " " .. eng.applies - a40 .. "）")
+        check(S4.on == true and def41 and def41.lightsActive == true,
+            "單機讀檔（Q3-c）：別的 MOD 的開關有記號一樣補回，那一間的房間燈切開（" .. tostring(S4.on) .. "）")
+
+        -- 伺服器（角是開關格）與多人客戶端：讀進時不補回（伺服器上開關格沒有房間；多人客戶端照伺服器送來的），伺服器不送 meta
+        setMode(true, false, player({ id = 2321, x = 6401.5, y = 6420.5, z = Z }))
+        local r42, t42, sqs42 = {}, {}, {}
+        for x = 6400, 6403 do
+            r42[x], t42[#t42 + 1] = cell(x, 6420), { x, 6420 }
+            sqs42[#sqs42 + 1] = r42[x]
+        end
+        Basement.add(t42)
+        local K42 = mount(r42[6400], false)
+        local U42 = extend(eng.switch(r42[6402])) -- 不經本工具裝的（沒記開關格），在房間裡
+        U42.on = false
+        K42:getModData().builderOn, U42:getModData().builderOn = true, true
+        gone[#gone + 1], gone[#gone + 1] = K42, U42
+        Basement.registerAll()
+        eng.reload(sqs42)
+        local m42 = eng.metaSent
+        fire("LoadChunk", r42[6400]:getChunk())
+        local srv42 = K42.on == false and U42.on == false and eng.metaSent == m42
+        setMode(false, true, player({ id = 2322, x = 6401.5, y = 6430.5, z = Z }))
+        local r43, t43, sqs43 = {}, {}, {}
+        for x = 6400, 6403 do
+            r43[x], t43[#t43 + 1] = cell(x, 6430), { x, 6430 }
+            sqs43[#sqs43 + 1] = r43[x]
+        end
+        local V43 = mount(r43[6401], false)
+        V43:getModData().builderEntry, V43:getModData().builderOn = "t_roomswitch", true
+        gone[#gone + 1] = V43
+        Basement.grow(Basement.add(t43))
+        eng.reload(sqs43)
+        fire("LoadChunk", r43[6400]:getChunk())
+        check(srv42 and V43.on == false,
+            "伺服器與多人客戶端讀進時不照記號補回開關，伺服器不送 meta（" .. tostring(srv42) .. tostring(V43.on) .. "）")
+
+        -- 單機與客戶端：一間裡只有別的 MOD 的開關開著，擴建重登錄（新的 RoomDef 是暗的）：照開著的開關把新房間燈切開；
+        -- 只有檯燈、只有關著的開關、只有開著的招牌的房間不切
+        for i, mode in ipairs({ { false, false }, { false, true } }) do
+            local y = 6440 + 10 * i
+            setMode(mode[1], mode[2], player({ id = 2330 + i, x = 6401.5, y = y + 0.5, z = Z }))
+            local sqs, t6 = {}, {}
+            for _, x0 in ipairs({ 6400, 6410, 6420, 6430 }) do -- 四塊各兩格，擴建時各加東邊一格
+                for x = x0, x0 + 1 do sqs[x], t6[#t6 + 1] = cell(x, y), { x, y } end
+            end
+            local Oa = extend(eng.switch(sqs[6400]))
+            Oa.on = true
+            local Lb = lamp(sqs[6410], true, "t_cellarlamp_mov", MOVABLE)
+            local Oc = extend(eng.switch(sqs[6420]))
+            Oc.on = false
+            Oc:getModData().builderEntry = "t_roomswitch"
+            local Sd = lamp(sqs[6430], true, "t_cellarsign" .. i, { streetlight = "" })
+            Sd:getModData().builderEntry = "t_cellarsign" .. i
+            gone[#gone + 1], gone[#gone + 1], gone[#gone + 1], gone[#gone + 1] = Oa, Lb, Oc, Sd
+            eng.hangLoaded = true
+            Basement.grow(Basement.add(t6))
+            local wider = {}
+            for _, x0 in ipairs({ 6400, 6410, 6420, 6430 }) do
+                cell(x0 + 2, y)
+                wider[#wider + 1] = { x0 + 2, y }
+            end
+            local d0 = eng.tile[tk(6400, y)]
+            Basement.grow(Basement.add(wider))
+            eng.hangLoaded = nil
+            local da, db, dc, dd = eng.tile[tk(6400, y)], eng.tile[tk(6410, y)], eng.tile[tk(6420, y)], eng.tile[tk(6430, y)]
+            check(da and da ~= d0 and da.lightsActive == true and Oa.on and db and db.lightsActive == false and dc
+                and dc.lightsActive == false and dd and dd.lightsActive == false and Lb.lit == 0 and Sd.lit == 0 and not Oc.on,
+                (mode[2] and "客戶端" or "單機") .. "擴建重登錄：只有別的 MOD 的開關開著的那間，新房間燈切開；只有檯燈、"
+                    .. "只有關著的開關、只有開著的招牌的房間不切（" .. tostring(da and da.lightsActive) .. "）")
         end
 
         for _, o in ipairs(gone) do o.gone = true end
@@ -29139,7 +29285,9 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         assert(loadfile(MEDIA .. "/shared/MinidoracatBuilder/Basement.lua"))()
         local R = MinidoracatBuilder.Basement
         R.recalcZ = function() end
-        if mode ~= "s" then R.onApplied, R.onUnhung = SB.onApplied, SB.onUnhung end -- Client.lua 載入時掛在最初那一份上
+        if mode ~= "s" then -- Client.lua 載入時掛在最初那一份上
+            R.onApplied, R.onUnhung, R.onSwitches = SB.onApplied, SB.onUnhung, SB.onSwitches
+        end
         isServer, isClient = mode == "s" and yes or no, mode == "c" and yes or no
         made[#made + 1] = R
         return R
@@ -29330,7 +29478,8 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         .. "）；走進 60 格下一次每分鐘檢查登錄 1 次、掛回房間（" .. table.concat(t8, ",") .. "）")
 
     -- 5 同一塊在 64 格內本來就要登錄（單機延後批次的新格、多人 todo）：同一次 applyChanges 順便重建要掛回的那一棟，之後
-    -- Basement.rehang 不再登錄。新格在角的正北（併不進那一棟，自己起一棟），只靠「角上那一塊本來就要登錄」順便重建
+    -- 掛回（Basement.registerNear 併掛回（多人）／Basement.rehang（單機））不再登錄。新格在角的正北（併不進那一棟，自己起
+    -- 一棟），只靠「角上那一塊本來就要登錄」順便重建
     local X9 = 328 * AR + 9
     local R9 = fresh("1")
     cx, cy = X9 + 1, X9 + 1
@@ -29402,7 +29551,8 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
         .. tostring(back7) .. "）；涵蓋這一區的快照到了不再登錄（" .. t7[2] .. "）")
 
     -- 8 一間的第一個開關（有 lotheader 也一樣：chunk 沒載入時登錄、或走出載入範圍再回來，房間燈不在世界裡，之後才裝的開關
-    -- 打開不亮）：客戶端與單機那一棟重登錄 1 次（Basement.relight → rehang），開著的補切；同一間第二個不再登錄；單機讀格子時
+    -- 打開不亮）：客戶端與單機那一棟重登錄 1 次（Basement.relight → Basement.registerNear 併掛回（多人）／Basement.rehang
+    -- （單機）），開著的補切；同一間第二個不再登錄；單機讀格子時
     -- 登記的不算裝；專用伺服器不動。多人客戶端剛收到的開關還不在房間的開關清單裡（清單空也算第一個）
     local function dig0(R, X)
         local sqs, t = {}, {}
@@ -29614,6 +29764,84 @@ print("情境五十一之三：地下室的客戶端（藍圖不認挖掘、拒�
     B.Place.onAdded = keepAdded
     check(table.concat(t14, ",") == "0,1,0",
         "別的 MOD 的開關先放（不算）、本工具的第一個登錄 1 次、本工具第二個不再登錄（" .. table.concat(t14, ",") .. "）")
+
+    -- 12 單機版：別的 MOD 的牆上開關（md＝{}）先放，再裝本工具開著的開關（Place.build → onLoaded(obj, true)）→ 仍是第一個：
+    -- 那一棟重登錄 1 次、換新房間、新房間燈切開
+    local X15 = 364 * AR + 9
+    local R15 = fresh("1")
+    cx, cy = X15 + 1, X15 + 1
+    local w15 = dig0(R15, X15)
+    R15.registerAll()
+    local def15 = E.tile[tk(X15 + 1, X15 + 1)]
+    local other15 = spSwitch(getCell():getGridSquare(X15 + 2, X15 + 2, Z))
+    other15.md = {}
+    local a15 = E.applies
+    local ours15 = spSwitch(w15.mid)
+    ours15.on = true
+    B.Place.onLoaded(ours15, true)
+    HARNESS_REG_TICK()
+    local t15 = E.applies - a15
+    local new15 = E.tile[tk(X15 + 1, X15 + 1)]
+    local lit15 = def15 ~= nil and new15 ~= nil and new15 ~= def15 and new15.lightsActive == true
+    check(t15 == 1 and lit15, "單機：別的 MOD 的開關先放（不算），本工具的第一個裝好整棟重登錄 1 次（" .. t15 .. "）、換新房間、"
+        .. "房間燈切開（" .. tostring(lit15) .. "）")
+
+    -- 13 本工具的招牌（帶 builderEntry、IsoLightSwitch、不是開關：不建房間燈）先放在那一間，之後裝的本工具開關仍是第一個
+    -- → 登錄 1 次
+    local X16 = 368 * AR + 9
+    local R16 = fresh("c")
+    cx, cy = X16 + 1, X16 + 1
+    local w16 = dig0(R16, X16)
+    R16.registerNear(nil)
+    B.Place.onAdded = function() end
+    local SIGN16 = sprite("t_mbld_sign16", 0, { keys = { streetlight = "" } })
+    local sign16 = sw0(getCell():getGridSquare(X16 + 2, X16 + 2, Z), true)
+    function sign16:getSprite() return SIGN16 end
+    function sign16:getProperties() return SIGN16:getProperties() end
+    sign16.md = { builderEntry = "t_mbld_sign16" }
+    local room16 = sign16.sq:getRoom()
+    room16.def.switches[#room16.def.switches + 1] = sign16
+    local a16 = E.applies
+    fire("OnObjectAdded", sign16)
+    HARNESS_REG_TICK()
+    local t16 = { E.applies - a16 }
+    fire("OnObjectAdded", sw0(w16.mid, true))
+    HARNESS_REG_TICK()
+    t16[2] = E.applies - a16 - t16[1]
+    B.Place.onAdded = keepAdded
+    check(table.concat(t16, ",") == "0,1",
+        "本工具的招牌先放（不算開關）、之後裝的本工具開關仍是第一個：登錄 1 次（" .. table.concat(t16, ",") .. "）")
+
+    -- 14 同一塊裡兩棟（西邊那段跨到西鄰地圖格，併不進東邊那棟）各有要掛回的點，玩家只走近東邊那棟的點 → 引擎 1 次，
+    -- 兩棟都掛回（以塊挑：同一塊的棟一起重建）
+    local XL, Y17 = 372 * AR, 372 * AR + 100
+    local R17 = fresh("c")
+    cx, cy = XL + 10, Y17 + 1
+    local wA17 = dig9(R17, XL, Y17)
+    R17.registerNear(nil)
+    local rowB17, farB17 = {}, {}
+    for x = XL - 80, XL - 1 do
+        local sq = ug(x, Y17, Z)
+        sq.isUserDefinedRoom = function() return false end
+        rowB17[#rowB17 + 1] = { x, Y17 }
+        if x < XL - 72 then farB17[#farB17 + 1] = sq end
+    end
+    R17.add(rowB17)
+    R17.registerNear(nil)
+    local dA17, dB17 = E.tile[tk(XL, Y17)], E.tile[tk(XL - 80, Y17)]
+    local two17 = dA17 ~= nil and dB17 ~= nil and dA17:getBuilding() ~= dB17:getBuilding()
+        and R17.blockOf(XL, Y17, Z) == R17.blockOf(XL - 80, Y17, Z)
+    E.reload(wA17.sqs, true)
+    fire("LoadChunk", wA17.mid:getChunk())
+    E.reload(farB17, true)
+    fire("LoadChunk", farB17[1]:getChunk())
+    local a17 = E.applies
+    HARNESS_REG_TICK()
+    local t17 = E.applies - a17
+    local both17 = hung(wA17) and hung({ sqs = farB17 })
+    check(two17 and t17 == 1 and both17,
+        "同一塊的兩棟都要掛回、玩家只走近其中一棟的點：引擎 1 次（" .. t17 .. "）、兩棟都掛回（" .. tostring(two17)
+        .. tostring(both17) .. "）")
 
     HARNESS_REG_TICK()
     for _, R in ipairs(made) do if R.onChunk then Events.LoadChunk.Remove(R.onChunk) end end

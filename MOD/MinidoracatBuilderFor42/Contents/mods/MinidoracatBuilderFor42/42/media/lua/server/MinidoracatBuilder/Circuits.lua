@@ -139,6 +139,13 @@ local function underSwitch(o)
         and Basement.has(sq:getX(), sq:getY(), sq:getZ())
 end
 
+-- 地下室牆上開關的狀態另記一份在 modData.builderOn：引擎讀檔時先掛房間再讀物件，開關被蓋成房間的燈（IsoLightSwitch.java:356-358），
+-- 而地下室的房間每場重建、一開始是暗的，存檔時開著的開關讀進來就變關。兩端都寫（伺服器按、裝的時候也寫，存檔帶著走），
+-- 只有單機讀（Basement.onChunk 補回）
+local function remember(o)
+    if underSwitch(o) then o:getModData().builderOn = o:isActivated() end
+end
+
 -- 一盞燈的每一片（同一組的燈；switchLight 連動多格用 setActive，不能搬的片會被擋，IsoLightSwitch.java:543-557）
 local function pieces(o)
     local out = {}
@@ -415,6 +422,7 @@ local function apply(list, v)
                 lamps[#lamps + 1] = o
             else
                 o:setActivated(v)
+                remember(o)
                 switches[#switches + 1] = o
             end
         end
@@ -819,6 +827,7 @@ function Circuits.placed(player, objs)
     if Circuits.isSwitch(first) then
         local code, info = Circuits.autoWire(player, first)
         if code ~= "PART_UNLOADED" then matchRoom(first) end -- 分不了房時不照舊的那一間對齊開關狀態
+        remember(first) -- 裝好還沒按過也記（matchRoom 沒切時）
         if code then return reply(player, nil, d, nil, { auto = "switch", code = code }) end
         print(LOG .. "CIRCUIT auto user=" .. server().who(player) .. " id=" .. tostring(info.id) .. " lamps=" .. info.n
             .. " taken=" .. info.taken .. " skipped=" .. info.skipped .. " joined=" .. tostring(info.jx ~= nil))

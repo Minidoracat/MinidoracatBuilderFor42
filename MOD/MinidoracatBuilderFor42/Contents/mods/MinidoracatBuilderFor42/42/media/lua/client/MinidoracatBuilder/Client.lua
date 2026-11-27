@@ -709,7 +709,8 @@ end
 local synced, part = nil, nil
 function Client.basementSynced() return synced and synced.ax, synced and synced.ay end
 
--- 登錄身邊的地下室（Basement.registerNear，多人）與掛回走近了的地下室（Basement.rehang，多人與單機）排到這一次更新的 OnTick
+-- 登錄身邊的地下室（Basement.registerNear，多人）與掛回走近了的地下室（Basement.registerNear 併掛回（多人）／
+-- Basement.rehang（單機））排到這一次更新的 OnTick
 -- 一起做：每次更新先處理完收到的封包（GameWindow.logic → GameClient.update，GameClient.java:386-393），再跑遊戲時間
 -- （EveryOneMinute）與 OnTick（IngameState.java:1558,1653），所以同一批收到的幾則 block、快照與每分鐘檢查併成一次
 -- applyChanges。ids（換過房號的塊，不管等不等 block）併起來；有排著的才掛 OnTick，做完就拿掉
@@ -821,7 +822,8 @@ end
 
 -- 多人：進場當下要一次玩家所在大區的地下室（觸發 OnGameStart 時玩家與連線都已建立，IngameState.java:766）；之後每分鐘看
 -- 所在大區不是已收到快照的那一區就再要（伺服器每人 5 秒限一次、限速時不回：被丟掉的、進場那次沒送出去的，下一分鐘再要）。
--- 多人與單機每分鐘都排登錄走近了的、等 block 等太久的（多人）與要掛回的（Basement.rehang）地下室（registerLater）
+-- 多人與單機每分鐘都排登錄走近了的、等 block 等太久的（多人）與要掛回的（Basement.registerNear 併掛回（多人）／
+-- Basement.rehang（單機））地下室（registerLater）
 local function askBasements()
     local p = getSpecificPlayer(0) -- shortcut: 分割畫面只看第一位玩家，有人回報再改
     if not p then return end
@@ -926,8 +928,23 @@ local function watchNow()
         end
     end
 end
--- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒
-MinidoracatBuilder.Basement.onApplied = watchNow
+-- 地下室登錄好（Basement 換掉房間）的同一個呼叫裡就補切，不等下一秒（defs＝登錄好的每一間 RoomDef）：先照登記的本工具開關，
+-- 再每間找第一個開著的牆上開關（別的 MOD 的也算；招牌、燈不算）切一次房間燈。新登錄的房間是暗的，沒登記的開關不補就一直暗
+MinidoracatBuilder.Basement.onApplied = function(defs)
+    watchNow()
+    for _, def in ipairs(defs) do
+        local room = def:getIsoRoom()
+        local list = room and room:getLightSwitches()
+        for i = 0, (list and list:size() or 0) - 1 do
+            local o = list:get(i)
+            local spr = o:isActivated() and o:getSprite()
+            if spr and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then
+                lightRoom(o)
+                break
+            end
+        end
+    end
+end
 -- 沒有 .lotheader 的地圖格重新讀進、登錄過的格子沒掛房間（Basement.onChunk）：排到這一次更新的 OnTick 看要不要掛回
 MinidoracatBuilder.Basement.onUnhung = function() registerLater(nil) end
 
@@ -958,11 +975,16 @@ local function watch(obj, room)
         Events.OnTick.Add(watchTick)
     end
 end
+-- 單機讀進格子時照記號補回的開關（Basement.onChunk）：照開關切房間燈，記下現在的房間（之後每秒比對時不再多切）
+MinidoracatBuilder.Basement.onSwitches = function(list)
+    for _, o in ipairs(list) do watch(o, lightRoom(o)) end
+end
 
--- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的本工具開關（有＝讀進時引擎已經替房間加過燈，
+-- 剛裝的開關是本 MOD 地下室裡那一間的第一個：房間的開關清單裡沒有它以外的本工具牆上開關（有＝讀進時引擎已經替房間加過燈，
 -- IsoLightSwitch.chunkLoaded）。別的 MOD 的牆上開關不算：chunk 讀進後才放的，建構子把自己收進清單、卻不建燈
--- （IsoLightSwitch.java:90-100），最壞多登錄一次。多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load
--- 收進房間那段被跳過），清單空也算。那一棟排重登錄一次，房間燈才建得出來（Basement.relight 說明原因）
+-- （IsoLightSwitch.java:90-100），最壞多登錄一次。本工具的招牌（帶 builderEntry、不是 Rules.switchProps）也不建燈，不算。
+-- 多人客戶端剛收到的開關可能還不在清單裡（上面 lightRoom 前的說明：load 收進房間那段被跳過），清單空也算。那一棟排重登錄
+-- 一次，房間燈才建得出來（Basement.relight 說明原因）
 local function firstSwitch(obj)
     local sq = obj:getSquare()
     local room = sq and sq:getRoom()
@@ -970,7 +992,8 @@ local function firstSwitch(obj)
     local list = room:getLightSwitches()
     for i = 0, list:size() - 1 do
         local o = list:get(i)
-        if o ~= obj and o:hasModData() and o:getModData().builderEntry then return end
+        local spr = o ~= obj and o:hasModData() and o:getModData().builderEntry and o:getSprite()
+        if spr and MinidoracatBuilder.Rules.switchProps(spr:getProperties()) then return end
     end
     if MinidoracatBuilder.Basement.relight(sq:getX(), sq:getY()) then registerLater(nil) end
 end
