@@ -40,6 +40,7 @@ local OTHER = { N = "W", W = "N" }
 -- 兩邊的棟都留著。swTiles[鍵]＝專用伺服器上裝了牆上開關的格子（不放進引擎房間，Basement.setSwitchTile）
 -- Basement.saved＝伺服器與單機的帳本記的房號（BasementLedger 設：get(x, y)＝房號或 nil、put(x, y, 房號)＝記成了沒）；客戶端是 nil
 local cells, blocks, bof, redo, swTiles, lastId = {}, {}, {}, {}, {}, 0
+local anyCell = false -- 這一份加過格子沒有（Basement.any）：沒有地下室的存檔不讀格子、不排登錄
 
 local function inRange(x, y)
     return x >= 0 and y >= 0 and x < Basement.LIMIT and y < Basement.LIMIT
@@ -58,6 +59,7 @@ end
 
 -- 這格的北、西兩條邊歸本 MOD 管：這格或它的北、西鄰格在集合裡
 function Basement.near(sq)
+    if not anyCell then return false end
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
     return z == Z and (has(x, y, z) or has(x, y - 1, z) or has(x - 1, y, z))
 end
@@ -107,6 +109,7 @@ function Basement.add(tiles)
                 r = r or (cells[o] == id and b.room[o])
             end
             cells[k], b.n, b.tiles[k], b.room[k], b.todo, b.stale = id, b.n + 1, xy, r or 1, true, nil
+            anyCell = true
             local box = b.box
             box[1], box[2], box[3], box[4] = math.min(box[1], x), math.min(box[2], y), math.max(box[3], x), math.max(box[4], y)
             added[#added + 1] = xy
@@ -114,6 +117,9 @@ function Basement.add(tiles)
     end
     return added
 end
+
+-- 加過格子沒有（之後全拿掉也算加過）：Client.askEveryMinute 沒有就不排登錄
+function Basement.any() return anyCell end
 
 -- 大區 (ax, ay) 與周圍一圈（3×3 個大區）的範圍：x0 ≤ x < x1、y0 ≤ y < y1
 local function range(ax, ay)
@@ -136,17 +142,20 @@ function Basement.reset(tiles, ax, ay)
             inside[#inside + 1] = t
         end
     end
-    local rest, gone, was = {}, {}, {}
+    local rest, gone = {}, {}
     for k, id in pairs(cells) do
         local b = blocks[id]
         local t = b.tiles[k]
         if keep[k] or (b.fresh and b.fresh[k]) or t[1] < x0 or t[1] >= x1 or t[2] < y0 or t[2] >= y1 then
-            rest[#rest + 1], was[k] = t, id .. ":" .. b.room[k]
+            rest[#rest + 1] = t
         else
             gone[#gone + 1] = k
         end
     end
     if #gone > 0 then
+        -- 舊的塊與房號（重算後照它分間）：只在要重算時才走一次，沒有格子被拿掉的快照（大多數）不配
+        local was = {}
+        for k, id in pairs(cells) do was[k] = id .. ":" .. blocks[id].room[k] end
         for _, k in ipairs(gone) do
             local r = bof[k]
             if r then r.tiles[k], bof[k], redo[r] = nil, nil, true end
@@ -775,11 +784,12 @@ local function alive(r) return cells[key(r.cx, r.cy)] ~= nil end
 -- 它的格子（apply 的 ok）。
 -- 專用伺服器一棟一間、扣掉開關格（serverRoom）；開關格不當新一棟的角，只會被擴進去，哪裡都併不進去的開關格不登錄。
 -- 客戶端與單機照房號分間（roomsOf）。
--- 客戶端只登錄身邊的塊：包圍盒離任一位本機玩家 NEAR 格內。chunkMap 最寬 19 個 chunk＝152 格、半寬 76 格
--- （IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk 載入時
--- applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。遠的塊留著不登錄。
+-- 客戶端照身邊觸發：有塊的包圍盒離任一位本機玩家 NEAR 格內才登錄（觸發距離）。chunkMap 最寬 19 個 chunk＝152 格、
+-- 半寬 76 格（IsoChunkMap.java:60,112-120），其餘留給下一次檢查（Client.askEveryMinute）之前走過去的距離；登錄晚於 chunk
+-- 載入時 applyChanges 會替本機已載入的格子補上房間（BuildingRoomsEditor.java:369-411,413-436）。觸發時遠處合格的塊一起
+-- 登錄（搭便車，Basement.registerNear），同一次 applyChanges；沒有身邊的塊要登錄時遠的留著不登錄。
 -- 伺服器（與單機）全部登錄：它的 chunk 載入時靠 metaGrid 裡已經有房間。選用的第二個參數 only＝{ [編號]＝true }：只登錄
--- 這幾塊的格子與棟（Basement.registerNear 已經挑過身邊的）
+-- 這幾塊的格子與棟（Basement.registerNear 已經挑過）
 Basement.NEAR = 128
 local function register(list, ...)
     local only = ...
@@ -1122,29 +1132,54 @@ function Basement.await(tiles)
 end
 
 -- 客戶端：身邊（NEAR 格內）有還沒登錄的格子或要重建的棟（todo）、而且沒在等 block 或等超過 WAIT_MS（伺服器一批最晚
--- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）一次登錄。只走塊、不走格子；沒有
--- 要登錄的塊不走玩家、不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。在最近一份快照範圍外的塊（stale）不登錄：
+-- GROW_MAX 毫秒，再留 30 秒）的塊，加上 ids（{ [編號]＝true }，不管等不等；可以是 nil）時，連同遠處同樣合格的塊一次
+-- 登錄（同一次 applyChanges；玩家常在別處叫出新的一棟，順手把遠的也登錄，走回去時不必再叫一次引擎）。只走塊、不走格子；
+-- 沒有身邊要登錄的塊不叫引擎。等超過的塊登錄後不再等（之後的 dug 從頭等）。在最近一份快照範圍外的塊（stale）不登錄：
 -- 玩家走回去時每分鐘的檢查會先要那一區的快照，先登錄手上舊的、快照帶來離開期間的變動再登錄一次，同一刻就叫兩次引擎；
--- 快照到了它就在範圍內，連同變動一次登錄。回成不成功
+-- 快照到了它就在範圍內，連同變動一次登錄。遠處的塊另外要包圍盒經過的地圖格都有 metaCell（metaReady），搭便車登錄失敗過
+-- 的塊（hitch＝false）之後只在身邊時登錄。回成不成功
 Basement.WAIT_MS = Basement.GROW_MAX + 30000
+-- 包圍盒經過的地圖格都有 metaCell：地圖沒有資料的荒野格要等那一格有 chunk 載入過才建（IsoMetaGrid.getCellData 回 null），
+-- 在那之前登錄的棟引擎收不下
+local function metaReady(grid, box)
+    for lx = lotOf(box[1]), lotOf(box[3]) do
+        for ly = lotOf(box[2]), lotOf(box[4]) do
+            if grid:getCellData(lx, ly) == nil then return false end
+        end
+    end
+    return true
+end
 function Basement.registerNear(ids)
-    local now, pick, list, near, any = getTimestampMs(), {}, {}, nil, false
+    local now, pick, far, hitch, list, near, any = getTimestampMs(), {}, {}, {}, {}, nil, false
     for id, b in pairs(blocks) do
         if b.todo and not b.stale and ((ids and ids[id]) or not b.wait or now - b.wait > Basement.WAIT_MS) then
             near = near or nearIds(players(), Basement.NEAR)
             if near[id] then
                 pick[id], any = true, true
-                for k, t in pairs(b.tiles) do
-                    if not bof[k] then list[#list + 1] = t end
-                end
+            elseif b.hitch ~= false then
+                far[#far + 1] = id
             end
         end
     end
     if not any then return true end
+    -- shortcut: 搭便車的塊數沒有上限，一份快照超過約 50 座或量到單次超過 250 ms 時加上限
+    local grid = #far > 0 and getWorld():getMetaGrid()
+    for _, id in ipairs(far) do
+        if metaReady(grid, blocks[id].box) then pick[id], hitch[id] = true, true end
+    end
+    for id in pairs(pick) do
+        for k, t in pairs(blocks[id].tiles) do
+            if not bof[k] then list[#list + 1] = t end
+        end
+    end
     local ok = register(list, pick)
     for id in pairs(pick) do
         local b = blocks[id]
-        if ok then b.todo = nil end
+        if ok then
+            b.todo = nil
+        elseif hitch[id] then
+            b.hitch = false
+        end
         if b.wait and now - b.wait > Basement.WAIT_MS then b.wait = nil end
     end
     return ok
@@ -1345,6 +1380,12 @@ local function group(uf, x, y)
     return id, blocks[id].n
 end
 
+-- (x, y) 那一座（已挖的塊或 planned 裡排在前面的格子連成的）有幾格；都不是回 nil。游標標籤寫挖完後的格數
+function Basement.sizeAt(planned, x, y)
+    local _, n = group(planned and planned.dig, x, y)
+    return n
+end
+
 -- 預覽接受了一格挖掘（Cursor.preview）：記成排在前面（planned[鍵]），z=-1 的格子併進併查集，和四鄰的已挖塊、排在前面的格子連起來
 function Basement.plan(planned, x, y, z)
     planned[Place.key(x, y, z)] = true
@@ -1456,9 +1497,11 @@ local function pos(sq) return { x = sq:getX(), y = sq:getY(), z = sq:getZ() } en
 
 -- 挖開 c 會不會打通不該通的地方：周圍有外來房間、已挖的鄰格沒有權限（不然在安全屋外緊貼邊界挖一格，兩格之間的土牆
 -- 消失就打通進去了）、打開的那條邊上有掛件。回 code, extra 或 nil。直接挖（pre）和收編帳本缺的格子（BasementLedger）
--- 同一套；also＝這一批已經算挖開、還沒進集合的格鍵（Place.key）
-function Basement.opens(player, c, preview, also)
-    if foreignRoomNear(getWorld():getMetaGrid(), c.x, c.y) then return "DIG_ROOM", at(c) end
+-- 同一套；also＝這一批已經算挖開、還沒進集合的格鍵（Place.key）。選用的第五個參數 checked＝true：外來房間呼叫端查過了
+-- （Basement.pre），不再查
+function Basement.opens(player, c, preview, also, ...)
+    local checked = ...
+    if not checked and foreignRoomNear(getWorld():getMetaGrid(), c.x, c.y) then return "DIG_ROOM", at(c) end
     local Check, cell = MinidoracatBuilder.Check, getCell()
     for _, d in ipairs(DIRS) do
         local nx, ny = c.x + d[1], c.y + d[2]
@@ -1492,7 +1535,10 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
         if not inRange(c.x, c.y) then return "BLOCKED", at(c) end
         if STAIR[c.role] then entrance = true end
     end
-    if anchor[3] ~= (entrance and 0 or Z) then return "DIG_LEVEL", { x = anchor[1], y = anchor[2], z = anchor[3] } end
+    -- entry：放的是入口（不是挖一格），拒絕訊息照它說該放哪一層
+    if anchor[3] ~= (entrance and 0 or Z) then
+        return "DIG_LEVEL", { x = anchor[1], y = anchor[2], z = anchor[3], entry = entrance }
+    end
     -- 入口：樓梯三格已經在集合裡幾格（3 而且同一塊＝加開）
     local stairs, inSet, blk, same, top, bottom = 0, 0, nil, true, nil, nil
     for _, c in ipairs(cells) do
@@ -1546,7 +1592,7 @@ function Basement.pre(player, entry, cells, anchor, planned, preview)
         end
     end
     for _, c in ipairs(dig) do
-        local code, extra = Basement.opens(player, c, preview, nil)
+        local code, extra = Basement.opens(player, c, preview, nil, true) -- 外來房間上面查過了
         if code then return code, extra end
     end
     local cell = getCell()

@@ -826,7 +826,7 @@ end
 function Client.askEveryMinute()
     if not isClient() then return end
     askBasements()
-    registerLater(nil)
+    if MinidoracatBuilder.Basement.any() then registerLater(nil) end -- 沒有地下室的存檔不每分鐘掛 OnTick
 end
 Events.OnGameStart.Add(Client.askEveryMinute)
 Events.EveryOneMinute.Add(Client.askEveryMinute)
